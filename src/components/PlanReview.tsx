@@ -9,7 +9,7 @@
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { KIND_LABEL, KINDS, MAX_LEVEL, byLevel, dependentsOf, describePrereq } from "../utils/curriculumRules";
@@ -20,6 +20,7 @@ interface Status {
   approved: Array<{ planId: string; sectionId: number; sectionName: string }>;
   sections: Array<{ sectionId: number; sectionName: string; plans: Array<{ id: string; name: string }> }>;
   canApprove: boolean;
+  canImport?: boolean;
 }
 interface CourseRow { id: number; code: string; name: string; credit: number; ownerSectionName: string; owned: boolean }
 interface View {
@@ -43,7 +44,80 @@ const request = async (url: string, init?: RequestInit) => {
   return data;
 };
 
+/** رؤوسُ ورقة الصحيفة بالعربية كما يكتبها القسم ← مفاتيحُ الاستيراد. */
+const SHEET_HEADERS: Array<[string, string]> = [
+  ["القسم", "section"], ["الصحيفة", "plan"], ["رمز المقرر", "code"], ["المستوى", "level"], ["النوع", "kind"],
+  ["المسبق (كلها)", "prereqAll"], ["المسبق (أحدها)", "prereqAny"], ["وحدات مجتازة", "minUnits"], ["المقرن", "coreq"],
+  ["المجموعة الاختيارية", "group"], ["حد المقررات", "groupMinCourses"], ["حد الوحدات", "groupMinUnits"],
+];
+
 const KIND_TONE: Record<CourseKind | "none", string> = { compulsory: "ok", college: "info", university: "brass", elective: "soft", none: "none" };
+
+/** استيرادُ ورقة الصحائف (إدارةُ النظام): مسوّداتٌ تُراجَع لا اعتماد، وما لم يُفهم يُقال بسطره. */
+function ImportPanel({ onDone }: { onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ created: number; skipped: string[]; diagnostics: Array<{ line: number; text: string }>; diagnosticsTotal: number } | null>(null);
+  const [error, setError] = useState("");
+  const template = async () => {
+    const XLSX = await import("xlsx");
+    const sheet = XLSX.utils.aoa_to_sheet([
+      SHEET_HEADERS.map(h => h[0]),
+      ["قسم التربية الإسلامية", "الجديدة", "ISL101", 1, "إجباري", "", "", "", "", "", "", ""],
+      ["قسم التربية الإسلامية", "الجديدة", "ISL201", 2, "إجباري", "ISL101", "", "", "", "", "", ""],
+      ["قسم التربية الإسلامية", "الجديدة", "ISL305", "", "اختياري", "", "", "", "", "اختياري القسم", 1, 3],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "قواعد المقررات");
+    XLSX.writeFile(wb, "نموذج_قواعد_الصحائف.xlsx");
+  };
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true); setError(""); setResult(null);
+    try {
+      const XLSX = await import("xlsx");
+      /* CSV نصٌّ UTF-8 (العربيةُ تتلف إن قُرئ كبايتات)؛ وExcel ثنائيّ. */
+      const book = /\.csv$/i.test(file.name) ? XLSX.read((await file.text()).replace(/^\uFEFF/, ""), { type: "string" }) : XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const grid: any[][] = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1, defval: "", raw: false });
+      const head = (grid[0] || []).map(cell => String(cell).trim());
+      const keyOf = (cell: string) => SHEET_HEADERS.find(h => h[0] === cell || h[1] === cell)?.[1];
+      const rows = grid.slice(1).filter(line => line.some(cell => String(cell).trim())).map(line => {
+        const row: Record<string, string> = {};
+        head.forEach((cell, i) => { const key = keyOf(cell); if (key) row[key] = String(line[i] ?? "").trim(); });
+        return row;
+      });
+      if (!rows.length) throw new Error("لا أسطر في الملف. استخدم النموذج.");
+      setResult(await request("/api/plan-review/import", { method: "POST", body: JSON.stringify({ rows }) }));
+      onDone();
+    } catch (e: any) { setError(e.message || "تعذّر قراءة الملف"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="pr-import">
+      <div className="pr-import-head">
+        <span className="pr-import-ic"><FileSpreadsheet /></span>
+        <div><b>استيراد قواعد الصحائف</b><small>ورقةٌ بسطرٍ لكل مقرر؛ تُنشأ مسوّداتٌ تُراجعها الأقسام ويعتمدها رئيس اللجنة.</small></div>
+        <div className="pr-import-actions">
+          <SecondaryButton onClick={template} data-guide-ignore="نموذج الاستيراد داخل شاشةٍ مسجّلة في المرشد باسم page.planReview">نموذج فارغ</SecondaryButton>
+          <label className={`btn btn-primary${busy ? " is-busy" : ""}`}>
+            {busy ? "جارٍ القراءة…" : "اختر ملف Excel أو CSV"}
+            <input type="file" accept=".xlsx,.xls,.csv" hidden disabled={busy} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+        </div>
+      </div>
+      {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
+      {result ? (
+        <div className="pr-import-result">
+          <Notice type={result.created ? "success" : "warning"} inline>
+            أُنشئت {countOf(result.created, AR.draft)}
+            {result.skipped.length ? ` · تُرك ما هو قيد المراجعة (${result.skipped.join("، ")})` : ""}
+            {result.diagnosticsTotal ? ` · ${countOf(result.diagnosticsTotal, AR.note)}` : ""}.
+          </Notice>
+          {result.diagnostics.length ? <ul className="pr-issues">{result.diagnostics.slice(0, 8).map((d, i) => <li key={i} className="warn"><AlertTriangle size={14} /> السطر {d.line + 1}: {d.text}</li>)}</ul> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
 
 export default function PlanReview() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -129,6 +203,7 @@ export default function PlanReview() {
     <div className="pr-page" dir="rtl">
       <PageTitle eyebrow="مراجعة الصحيفة" subtitle="مستوى كل مقرر ونوعه وما يسبقه، ثم يعتمدها رئيس لجنة الجدول.">قواعد المقررات</PageTitle>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
+      {status?.canImport ? <ImportPanel onDone={() => void loadStatus()} /> : null}
       {!status?.sections.length ? <EmptyState title="لا صحائف في نطاقك" detail="تظهر هنا صحائف الأقسام التي تملك نطاقها." /> : (
         <>
           <div className="pr-pickers">

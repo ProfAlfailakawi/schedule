@@ -1,14 +1,14 @@
 /**
- * ── بروفةُ التسجيل: المسار الكامل داخل العملية (المرحلة ٦) ─────────────────────
+ * ── رادارُ التسجيل: المسار الكامل داخل العملية (المرحلة ٦) ─────────────────────
  *
- * مستودعٌ حقيقيّ بملفٍّ مؤقّت، ومسارا الباب والبروفة على Express محلّي: طلبةٌ ينشئون
- * ملفّاتهم ويكتبون رغباتهم عبر الباب، وإدارةُ النظام تشغّل البروفة، ثم تُقرأ التذاكر.
+ * مستودعٌ حقيقيّ بملفٍّ مؤقّت، ومسارا الباب والرادار على Express محلّي: طلبةٌ ينشئون
+ * ملفّاتهم ويكتبون رغباتهم عبر الباب، وإدارةُ النظام تشغّل الرادار، ثم تُقرأ التذاكر.
  *
  *   F1 التشغيل: لإدارة النظام وحدها، ولا يتزاحم.
  *   F2 التذكرة: ثلاثُ خطط، ونافذة، والمسبقُ يمنع، والمعتمَدُ من القواعد وحده يُعتدّ به.
  *   F3 الظهور: لا موعدَ ولا شعبةَ قبل توقيع جدول القسم، وبعده تظهر.
  *   F4 النطاق: القسمُ يرى مقرراتِه في الملخّص، والإدارةُ ترى الكلّ، ولا أسماء في أيٍّ منهما.
- *   F5 الأمان: التذكرةُ لصاحبها وحده، وتتقادم إن عُدّل الملفّ بعد البروفة.
+ *   F5 الأمان: التذكرةُ لصاحبها وحده، وتتقادم إن عُدّل الملفّ بعد آخر تحديث للرادار.
  */
 import fs from "fs";
 import os from "os";
@@ -87,6 +87,7 @@ await Repository.approveRuleDraft("p11", draft.updatedAt, "اختبار");
 const USERS: Record<string, any> = {
   admin: { user: { Role: "committeeChair", Name: "المدير", IsAdminUser: true }, scopes: [] },
   chair11: { user: { Role: "committeeChair", Name: "رئيس لجنة" }, scopes: [{ AdCollegeId: 1, AdSectionId: 11 }] },
+  chair12: { user: { Role: "committeeChair", Name: "رئيس لجنة ٢" }, scopes: [{ AdCollegeId: 1, AdSectionId: 12 }] },
 };
 const app = express();
 app.use(express.json());
@@ -94,6 +95,7 @@ app.use((req: any, _res, next) => { const who = USERS[String(req.headers["x-who"
 const identityKey = createHmac("sha256", "test-secret").update("identity").digest();
 registerStudentDoorRoutes(app, {
   surveyFingerprint: async civilId => createHash("sha256").update("fp|" + civilId).digest("hex").slice(0, 32),
+  sealIdentity: async value => "sealed:" + Buffer.from(value).toString("base64url"),
   identityKey: async () => identityKey,
   isProduction: () => false,
 });
@@ -114,7 +116,7 @@ async function http(method: string, url: string, opts: { body?: unknown; cookie?
 }
 async function student(seed: number, passedCodes: number[], wishes?: { targetUnits: number; courseIds?: number[]; constraints?: any }, sectionId = 11, planId = "p11") {
   const ID = civil(seed);
-  const made = await http("POST", "/api/public/me/enter", { body: { civil: ID, code: "135790", create: true, agree: true } });
+  const made = await http("POST", "/api/public/me/enter", { body: { civil: ID, code: "135790", create: true, agree: true, name: "طالب تجريبي اختباري" } });
   const cookie = made.cookie;
   await http("PUT", "/api/public/me/profile", { cookie, body: { sectionId, curriculumPlanId: planId, passedCourseIds: passedCodes } });
   if (wishes) await http("PUT", "/api/public/me/wishes", { cookie, body: { targetUnits: wishes.targetUnits, courseIds: wishes.courseIds || [], constraints: wishes.constraints || {} } });
@@ -130,8 +132,14 @@ try {
   const noWishes = await student(42, []);
   const arb = await student(43, [], { targetUnits: 12 }, 12, "p12");
 
-  check((await http("GET", "/api/public/me/ticket", { cookie: rookies[0].cookie })).json.reason === "no-run", "F0 قبل البروفة: «لم تُجرَ بعد»");
+  check((await http("GET", "/api/public/me/ticket", { cookie: rookies[0].cookie })).json.reason === "no-run", "F0 قبل الرادار: «لم تُجرَ بعد»");
   check((await http("GET", "/api/public/me/ticket")).status === 401, "F0 بلا جلسة: ٤٠١");
+
+  const offered = (await http("GET", "/api/public/me/offered", { cookie: rookies[0].cookie })).json;
+  const o102 = offered.courses.find((c: any) => c.id === 102), o101 = offered.courses.find((c: any) => c.id === 101);
+  check(offered.ready === true && o102.needs.join() === "أصول" && o101.needs.length === 0, "F0 «المطروح لي» يقول ما يلزم أولاً من قواعد الصحيفة المعتمدة", [o101?.needs, o102?.needs]);
+  const offeredMid = (await http("GET", "/api/public/me/offered", { cookie: mid.cookie })).json;
+  check(offeredMid.courses.every((c: any) => c.id !== 101) && offeredMid.courses.find((c: any) => c.id === 102).needs.length === 0, "F0 ومن اجتاز المسبق لا يُقال له شيء");
 
   /* F1 */
   check((await http("POST", "/api/simulation/run")).status === 401, "F1 بلا دخول: ٤٠١");
@@ -198,7 +206,84 @@ try {
   check((await http("GET", "/api/simulation/summary")).status === 401, "F5 الملخّصُ بدخولٍ فقط");
   await Repository.updateStudentProfile((await Repository.listStudentProfiles())[0].id, current => (current ? { ...current, updatedAt: new Date(Date.now() + 60_000).toISOString() } : undefined));
   const staleSeen = await Promise.all(rookies.slice(0, 3).map(async r => (await http("GET", "/api/public/me/ticket", { cookie: r.cookie })).json.stale));
-  check(staleSeen.some(Boolean), "F5 ملفٌّ عُدّل بعد البروفة: تذكرتُه «قديمة»", staleSeen);
+  check(staleSeen.some(Boolean), "F5 ملفٌّ عُدّل بعد آخر تحديث للرادار: تذكرتُه «قديمة»", staleSeen);
+
+  /* ── G: «هل سجلت؟» بعد بدء الجولة ── */
+  const r1 = (await http("GET", "/api/public/me/report", { cookie: rookies[1].cookie })).json;
+  check(r1.ready === true && r1.canReport === false && r1.courses.length > 0, "G1 قبل الجولة: السؤال ظاهرٌ لكن مقفل", r1);
+  check((await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: 101, state: "registered" }] } })).json.code === "report-closed", "G1 الإرسالُ قبل الجولة مرفوض");
+  await Repository.setTermStudentPhases(1, { wishesOpen: add(today, -20), wishesClose: add(today, -10), rounds: [{ id: "r1", name: "مبكر", start: add(today, -1), end: add(today, 5) }, { id: "r2", name: "عادي", start: add(today, 10), end: add(today, 15) }], requestsClose: add(today, 40) });
+  const open = (await http("GET", "/api/public/me/report", { cookie: rookies[1].cookie })).json;
+  check(open.canReport === true, "G2 الجولة جارية: السؤال مفتوح");
+  const cs = open.courses.map((c: any) => c.courseId);
+  const bad = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: 999999, state: "registered" }] } });
+  check(bad.status === 400 && bad.json.code === "empty", "G2 مقررٌ ليس له: لا يُقبل");
+  const hidden = [101, 102, 103, 104, 105, 106].find(id => !cs.includes(id));
+  if (hidden) check((await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: hidden, state: "stuck", reason: "full" }] } })).json.code === "empty", "G2 مقررٌ لم يُعرض عليه لا يُقبل ولو كان من صحيفته (تُفرض مجموعةُ الواجهة نفسُها)", { hidden, cs });
+  const stuckId = cs[0], okId = cs[1];
+  const noHelp = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: okId, state: "registered" }, { courseId: stuckId, state: "stuck", reason: "full" }] } });
+  check(noHelp.status === 200 && noHelp.json.registered === 1 && noHelp.json.stuck === 1 && noHelp.json.cases.length === 0, "G3 تعثّرٌ بلا طلب مساعدة: يُحصى ولا يُنشأ طلب", noHelp.json);
+  const outcome1 = (await http("GET", "/api/simulation/outcome", { who: "admin" })).json;
+  check(outcome1.answered === 1 && outcome1.courses.find((c: any) => c.courseId === stuckId)?.full === 1 && outcome1.courses.find((c: any) => c.courseId === okId)?.registered === 1, "G3 العدّاداتُ تحسب الجواب", outcome1);
+  /* الاسمُ والرقمُ مختومان منذ الإنشاء: لا يُسألان ثانيةً ولا يُقبل رقمٌ مدنيٌّ يُرسَل معهما */
+  const helped = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: okId, state: "registered" }, { courseId: stuckId, state: "stuck", reason: "prereq" }], help: true } });
+  check(helped.status === 200 && helped.json.cases.length === 1 && /^[A-Z0-9-]{4,}$/i.test(helped.json.cases[0].caseRef), "G5 طلبُ المساعدة بالمختوم من الملف: لا اسمَ ولا رقماً يُعاد إدخالهما", helped.json);
+  const fp1 = (await Repository.listStudentProfiles()).find(p => p.registration)!.fingerprint;
+  const needs = await Repository.getStudentNeedsByFingerprint(fp1, 1, 1);
+  check(needs.length === 1 && needs[0].nameCipher?.startsWith("sealed:") && needs[0].civilCipher?.startsWith("sealed:") && needs[0].surveySectionId === 11 && !JSON.stringify(needs[0]).includes(rookies[1].ID), "G5 الاسمُ والرقمُ مختومان، والحالةُ لقسم المقرر");
+  const prof = (await Repository.listStudentProfiles()).find(p => p.fingerprint === fp1)!;
+  check(Boolean(prof.nameCipher && prof.civilCipher) && !JSON.stringify(prof).includes(rookies[1].ID) && !JSON.stringify(prof).includes("طالب تجريبي"), "G5 الملفُّ يحمل المختوم فقط: لا اسمَ ولا رقماً مكشوفين");
+  const mePlain = JSON.stringify((await http("GET", "/api/public/me/profile", { cookie: rookies[1].cookie })).json);
+  check(mePlain.includes('"hasIdentity":true') && !mePlain.includes("Cipher") && !mePlain.includes("sealed:"), "G5 الطالبُ يعرف أنّ اسمه محفوظ ولا يُعاد إليه المختوم");
+  /* ملفٌّ قديم بلا مختوم: يُسأل مرةً، ورقمُه يجب أن يطابق ملفَّه، ثم يُحفظ */
+  await Repository.updateStudentProfile(fp1, cur => (cur ? { ...cur, nameCipher: undefined, civilCipher: undefined } : undefined));
+  const legacyBad = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck" }], help: { name: "عبدالله محمد العلي", civil: rookies[2].ID } } });
+  check(legacyBad.status === 403 && legacyBad.json.code === "civil-mismatch", "G4 ملفٌّ قديم: رقمٌ مدنيٌّ لغير صاحبه ٤٠٣ (لا يُنتحل طالب)");
+  const legacyNoName = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck" }], help: { name: "س", civil: rookies[1].ID } } });
+  check(legacyNoName.json.code === "bad-name", "G4 اسمٌ غير صالح");
+  const legacyOk = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck", reason: "prereq" }], help: { name: "عبدالله محمد العلي", civil: rookies[1].ID } } });
+  const prof2 = (await Repository.listStudentProfiles()).find(p => p.fingerprint === fp1)!;
+  check(legacyOk.status === 200 && Boolean(prof2.nameCipher && prof2.civilCipher), "G4 ملفٌّ قديم: يُسأل مرةً ويُحفظ مختوماً للمرة القادمة", legacyOk.json);
+  const noName = await http("POST", "/api/public/me/enter", { body: { civil: civil(900), code: "135790", create: true, agree: true } });
+  check(noName.status === 400 && noName.json.code === "bad-name", "G0 إنشاءُ ملفٍّ بلا اسمٍ صالح مرفوض");
+  const outcome2 = (await http("GET", "/api/simulation/outcome", { who: "admin" })).json;
+  check(outcome2.answered === 1 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.stuck === 1 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.full === 0 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.prereq === 1, "G6 إعادةُ الجواب تطرح القديم وتضيف الجديد: لا عدّ مزدوج", outcome2);
+  const chairOut = (await http("GET", "/api/simulation/outcome", { who: "chair11" })).json;
+  check(chairOut.scoped === true && chairOut.courses.every((c: any) => c.code.startsWith("ISL")), "G6 القسمُ يرى مقرراتِه وحدها");
+  check(chairOut.answered === null && chairOut.answers > 0 && outcome2.answered === 1, "G6 عددُ المجيبين الكلّيُّ للإدارة وحدها؛ والقسمُ يُقال له عددُ الأجوبة عن مقرراتِه", [chairOut.answered, chairOut.answers]);
+  const arbOut = (await http("GET", "/api/simulation/outcome", { who: "chair12" })).json;
+  check(arbOut.courses.length === 0, "G6 قسمٌ آخر: لا شيء من مقررات غيره");
+  check((await http("GET", "/api/simulation/outcome")).status === 401, "G6 بدخولٍ فقط");
+
+  /* ── H: الإشعاراتُ مربوطةٌ بالحال ── */
+  const nt = (await http("GET", "/api/public/me/notices", { cookie: rookies[1].cookie })).json.notices as Array<{ id: string; tone: string; title: string; detail?: string }>;
+  check(nt.some(n => n.id === "report-done") && nt.some(n => n.id.startsWith("ticket-ready:")), "H1 «ما الجديد؟»: أجاب وتذكرتُه جاهزة", nt.map(n => n.id));
+  check(nt.some(n => n.id.startsWith("case:") && n.id.endsWith(":pending")), "H1 وطلبُه في القسم ينتظر القرار");
+  const myNeed = (await Repository.getStudentNeedsByFingerprint(fp1, 0, 1))[0];
+  await Repository.setStudentCourseState(myNeed.id, { courseId: myNeed.courseIds[0], state: "committee-rejected", reasonCode: "prerequisite", by: "department", at: new Date().toISOString() } as any);
+  const nt2 = (await http("GET", "/api/public/me/notices", { cookie: rookies[1].cookie })).json.notices as Array<{ id: string; tone: string; title: string; detail?: string }>;
+  const rej = nt2.find(n => n.id.endsWith(":committee-rejected"));
+  check(Boolean(rej) && rej!.tone === "alert" && rej!.detail === "متطلّبٌ سابق لم يُستوفَ" && nt2[0].tone !== "done", "H1 قرارُ القسم يصل الطالبَ بسببه ويتصدّر القائمة", nt2);
+  const fresh = (await http("GET", "/api/public/me/notices", { cookie: rookies[5].cookie })).json.notices as Array<{ id: string }>;
+  check(fresh.some(n => n.id.startsWith("ticket-ready:")) && !fresh.some(n => n.id === "report-done"), "H1 طالبٌ لم يُجب: تذكرتُه جاهزة و«أخبرنا» ظاهرة", fresh);
+  check((await http("GET", "/api/public/me/notices")).status === 401, "H1 بلا جلسة: ٤٠١");
+
+  /* العاملون: صحائفُ قيد المراجعة ورادارٌ وتعثّر بحدود النطاق */
+  const { pendingPlanReviews } = await import("../src/server/planReviewRoutes");
+  const { radarNoticeFor } = await import("../src/server/simulationRoutes");
+  await Repository.updateRuleDraft("p12", () => ({ id: "p12", planId: "p12", AdCollegeId: 1, AdSectionId: 12, version: 0, status: "review", basedOnVersion: 0, updatedAt: new Date().toISOString(), rules: [{ courseId: 201, level: 1, kind: "compulsory" }], groups: [] } as any));
+  const scopeDeps = {
+    isScopeAllowed: (req: any, c: number, sec: number) => Boolean(req.user?.IsAdminUser) || (req.scopes || []).some((x: any) => x.AdCollegeId === c && x.AdSectionId === sec),
+    isPowerUser: (req: any) => Boolean(req.user?.IsAdminUser),
+  };
+  const asReq = (who: string) => ({ user: USERS[who].user, scopes: USERS[who].scopes });
+  const rv12 = await pendingPlanReviews(asReq("chair12"), scopeDeps), rv11 = await pendingPlanReviews(asReq("chair11"), scopeDeps), rvAdmin = await pendingPlanReviews(asReq("admin"), scopeDeps);
+  check(rv12.length === 1 && rv12[0].sectionName === "قسم اللغة العربية" && rv11.length === 0 && rvAdmin.length === 1, "H2 الصحيفةُ قيد المراجعة تصل قسمَها وإدارةَ النظام وحدهما");
+  const rad11 = await radarNoticeFor(asReq("chair11"), scopeDeps), radAdmin = await radarNoticeFor(asReq("admin"), scopeDeps);
+  check(Boolean(rad11.radar) && rad11.radar!.scoped === true && radAdmin.radar!.scoped === false && radAdmin.radar!.needsDecision >= rad11.radar!.needsDecision, "H2 الرادار بحدود النطاق: القسمُ أقلُّ من الإدارة أو يساويها", [rad11.radar, radAdmin.radar]);
+  check(rad11.outcome !== null && rad11.outcome.answered >= 1 && rad11.outcome.stuck >= 1 && radAdmin.outcome!.stuck >= rad11.outcome.stuck, "H2 ما تعثّر فيه الطلبةُ يصل القسمَ بعدّه في مقرراته", [rad11.outcome, radAdmin.outcome]);
+  const rad12 = await radarNoticeFor(asReq("chair12"), scopeDeps);
+  check(rad12.outcome!.stuck === 0, "H2 قسمٌ لم يتعثّر طلبتُه في مقرراته: صفر");
 } finally { server.close(); }
 
 console.log(`\n${passed} passed, ${failed} failed`);

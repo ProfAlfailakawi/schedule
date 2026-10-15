@@ -43,6 +43,21 @@ interface Context {
 const READERS = new Set(["committeeChair", "departmentHead", "standard"]);
 const WORKSPACE_FORM = 7;
 
+/** صحائفُ قيد المراجعة التي يراها هذا الحساب: لجرس الإشعارات. نفسُ حارس النطاق والصفة في الشاشة. */
+export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "isScopeAllowed" | "isPowerUser">): Promise<Array<{ planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; updatedAt: string }>> {
+  const role = roleDefinition(req.user?.Role).id;
+  const drafts = (await Repository.listRuleDrafts()).filter(draft => draft.status === "review");
+  const visible = drafts.filter(draft => deps.isPowerUser(req) || (READERS.has(role) && deps.isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)));
+  if (!visible.length) return [];
+  const sections = new Map<number, string>((await Repository.getSections() as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
+  const out = [];
+  for (const draft of visible) {
+    const plan = (await Repository.getCurriculumPlans(draft.AdSectionId)).find(row => row.id === draft.planId);
+    out.push({ planId: draft.planId, planName: plan?.name || "الصحيفة", sectionId: draft.AdSectionId, collegeId: draft.AdCollegeId, sectionName: sections.get(draft.AdSectionId) || "", updatedAt: draft.updatedAt });
+  }
+  return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): void {
   const fail = (res: Response, status: number, error: string, extra: Record<string, unknown> = {}) => res.status(status).json({ error, ...extra });
   const roleId = (req: any): string => roleDefinition(req.user?.Role).id;
@@ -145,7 +160,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => plan.status !== "archived" && !plan.virtual);
       if (plans.length) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: plans.map(plan => ({ id: plan.id, name: plan.name })) });
     }
-    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair" });
+    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isPowerUser(req) });
   });
 
   app.get("/api/plan-review/plan", deps.requireAuth, async (req: Request, res: Response) => {
@@ -258,7 +273,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       }));
       created += 1;
     }
-    res.locals.auditChanges = `استيراد قواعد صحائف: ${created} مسوّدة`;
+    res.locals.auditChanges = `استيراد قواعد صحائف: ${countOf(created, AR.draft)}`;
     res.json({ created, skipped, diagnostics: diagnostics.slice(0, 300), diagnosticsTotal: diagnostics.length });
   });
 }

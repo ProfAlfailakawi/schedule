@@ -438,7 +438,7 @@
 .pr-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:6px}
 .pr-opt{display:flex;gap:6px;align-items:center;font-size:.88rem}
 
-/* ── بروفةُ التسجيل (sm-*) ───────────────────────────────────────────────── */
+/* ── رادارُ التسجيل (sm-*) ───────────────────────────────────────────────── */
 .sm-page{display:grid;gap:16px;min-inline-size:0}
 .sm-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));gap:12px}
 .sm-kpi{position:relative;display:grid;gap:6px;padding:16px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface);align-content:start;min-inline-size:0}
@@ -480,3 +480,19 @@
 @keyframes sm-rot{to{transform:rotate(360deg)}}
 @media (max-width:720px){.sm-row{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){.sm-spin{animation:none}}
+.sm-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sm-phase{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:12px 14px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface)}
+.sm-phase.before{background:var(--accent-softer)}
+.sm-phase.after{background:var(--brass-soft);border-color:var(--brass)}
+.sm-phase>div:first-of-type{display:grid;gap:2px;min-inline-size:0;flex:1 1 220px}
+.sm-phase small{color:var(--muted)}
+.sm-links{display:flex;gap:6px;flex-wrap:wrap;align-self:center}
+.sm-links button{border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:var(--r-full);padding:6px 14px;cursor:pointer;font:inherit}
+.pr-import{display:grid;gap:10px;padding:14px;border:1.5px dashed var(--line-strong);border-radius:var(--r-md);background:var(--surface)}
+.pr-import-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pr-import-head>div:nth-child(2){display:grid;gap:2px;flex:1 1 220px;min-inline-size:0}
+.pr-import-head small{color:var(--muted)}
+.pr-import-ic{display:grid;place-items:center;inline-size:40px;block-size:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
+.pr-import-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pr-import-actions label{cursor:pointer;display:inline-flex;align-items:center}
+.pr-import-result{display:grid;gap:8px}

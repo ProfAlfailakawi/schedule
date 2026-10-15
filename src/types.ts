@@ -822,9 +822,35 @@ export interface StudentProfile {
    * مرحلة الرغبات وتُبنى منها تذكرتُه.
    */
   wishes?: StudentWishes;
+  /** جوابُه على «هل سجلت؟» في فصلٍ بعينه. */
+  registration?: StudentRegistrationReport;
+  /**
+   * اسمُه ورقمُه المدني **مختومان** (AES-GCM بمفتاح الخادم، كما في طلبات الطلبة). يُكتبان
+   * مرةً عند إنشاء الملف كي لا يُسألا ثانيةً إذا تعثّر وطلب مساعدة قسمه، ويُحذفان مع
+   * الملف. لا يخرجان إلى الطالب ولا إلى أيّ شاشةٍ إلا في الطلب الذي يرسله بنفسه.
+   */
+  nameCipher?: string;
+  civilCipher?: string;
 }
 
-/** تذكرةُ طالبٍ من بروفة تسجيل فصلٍ بعينه. وثيقةٌ لكل طالب: `{termId}_{fingerprint}`. */
+/** ما قاله الطالبُ بعد جولة التسجيل: لكل مقررٍ سجّله أو تعثّر فيه وسبب التعثّر. */
+export type RegistrationAnswerReason = "full" | "prereq" | "conflict" | "other";
+export interface StudentRegistrationReport {
+  termId: number;
+  at: string;
+  answers: Array<{ courseId: number; state: "registered" | "stuck"; reason?: RegistrationAnswerReason }>;
+}
+
+/** عدّاداتُ أجوبة «هل سجلت؟» لفصلٍ: مشاظِرةٌ على عدّة وثائق كي لا تزدحم وثيقةٌ واحدة يومَ التسجيل. */
+export interface RegistrationOutcomeShard {
+  id: string;
+  termId: number;
+  shard: number;
+  students: number;
+  byCourse: Record<string, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>;
+}
+
+/** تذكرةُ طالبٍ من رادار تسجيل فصلٍ بعينه. وثيقةٌ لكل طالب: `{termId}_{fingerprint}`. */
 export interface RegistrationTicket {
   id: string;
   termId: number;
@@ -839,7 +865,7 @@ export interface RegistrationTicket {
   unmet: Array<{ courseId: number; reason: "not-offered" | "conflict" | "full" | "prereq" | "units" }>;
 }
 
-/** ملخّصُ آخر بروفةٍ لفصل: أعدادٌ لا أسماء. وثيقةٌ واحدة لكل فصل. */
+/** ملخّصُ آخر تحديثٍ لفصل: أعدادٌ لا أسماء. وثيقةٌ واحدة لكل فصل. */
 export interface RegistrationRun {
   id: string;
   termId: number;

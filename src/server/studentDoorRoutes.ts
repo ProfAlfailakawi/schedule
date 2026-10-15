@@ -27,7 +27,11 @@ import {
   lockState, planProgress, profileLifetime, resetLifetime, sanitizePassed, shouldTouch, unitsOf, RESET_COOLDOWN_DAYS,
 } from "../utils/studentProfile";
 import { ticketContext } from "./simulationData";
+import { unmetPrereq } from "../utils/curriculumRules";
+import { buildStudentNotices } from "../utils/studentNotices";
+import { caseRefFor } from "../db/repository";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
+import { deadlineDateShort } from "../utils/submissionDeadlines";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { createAttemptLimiter } from "./publicAttemptLimiter";
 import { createTtlMemo } from "./notificationCache";
@@ -37,6 +41,8 @@ import {
 
 export interface StudentDoorDeps {
   surveyFingerprint: (civil: string) => Promise<string>;
+  /** يختم الاسمَ والرقم المدني للطلب (AES-GCM) كما تفعل صفحةُ الاستبيان. */
+  sealIdentity: (value: string) => Promise<string>;
   identityKey: () => Promise<Buffer>;
   isProduction: () => boolean;
 }
@@ -122,8 +128,14 @@ async function summaryOf(profile: StudentProfile) {
     setupDone, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
     passedCourseIds: profile.passedCourseIds, passedUnits: profile.passedUnits,
     progress, wishes: profile.wishes || null,
-    createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason,
+    createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason, hasIdentity: Boolean(profile.nameCipher && profile.civilCipher),
   };
+}
+
+/** الاسمُ الثلاثي: ٦–٨٠ حرفاً بلا أرقامٍ ولا رموز. فارغٌ إن لم يصلح. */
+function cleanName(value: unknown): string {
+  const name = String(value ?? "").replace(/\s+/g, " ").trim();
+  return name.length >= 6 && name.length <= 80 && !/[<>{}\\\d]/.test(name) ? name : "";
 }
 
 export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): void {
@@ -245,7 +257,10 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         if (req.body?.agree !== true) { fail(res, 400, "وافق على حفظ ملفك أولاً.", "no-consent"); return; }
         const problem = codeProblem(code);
         if (problem) { fail(res, 400, problem, "weak-code"); return; }
+        const name = cleanName(req.body?.name);
+        if (!name) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
         const { hash, salt } = await hashCode(code);
+        const nameCipher = await deps.sealIdentity(name), civilCipher = await deps.sealIdentity(civil);
         let existed = false;
         const iso = new Date(now).toISOString();
         const created = await Repository.updateStudentProfile(fingerprint, current => {
@@ -253,7 +268,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
           const base = { createdAt: iso, lastSeenAt: iso };
           return {
             id: fingerprint, fingerprint, AdCollegeId: 0, AdSectionId: 0, passedCourseIds: [], passedUnits: 0,
-            codeHash: hash, codeSalt: salt, updatedAt: iso, ...base, ...profileLifetime(base, new Date(now)),
+            codeHash: hash, codeSalt: salt, nameCipher, civilCipher, updatedAt: iso, ...base, ...profileLifetime(base, new Date(now)),
           };
         });
         if (existed || !created) { fail(res, 409, "لهذا الرقم المدني ملفٌّ بالفعل — أدخل رمزك.", "exists"); return; }
@@ -411,9 +426,19 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const [catalog, index] = await Promise.all([sectionCatalog(profile.AdSectionId), offeringIndex(Number(term.AdTermId))]);
     const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
     const progress = planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit);
+    /* قواعدُ الصحيفة المعتمدة (إن وُجدت): ما ينقص الطالبَ من مسبقاتٍ قبل أن يستطيع أخذ المقرر. */
+    const ruleSet = profile.curriculumPlanId ? await Repository.getRuleSet(profile.curriculumPlanId) : undefined;
+    const passedSet = new Set(profile.passedCourseIds);
+    const nameOf = (id: number) => catalog.courses.get(id)?.name || `مقرر ${id}`;
+    const needsOf = (id: number): string[] => {
+      const rule = ruleSet?.rules.find(row => row.courseId === id);
+      if (!rule?.prereq) return [];
+      const lack = unmetPrereq(rule.prereq, passedSet, profile.passedUnits);
+      return [...lack.all.map(nameOf), ...lack.anyOf.map(group => `(${group.map(nameOf).join(" أو ")})`), ...(lack.unitsShort ? [countOf(lack.unitsShort, AR.unit)] : [])];
+    };
     const courses = progress.remainingIds.map(id => {
       const info = catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
-      return { id, ...info, sections: index.get(id)?.sections || 0 };
+      return { id, ...info, sections: index.get(id)?.sections || 0, needs: needsOf(id) };
     }).sort((a, b) => b.sections - a.sections || a.code.localeCompare(b.code, "en"));
     const offered = courses.filter(course => course.sections > 0);
     res.json({
@@ -422,7 +447,143 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     });
   });
 
-  /* ── تذكرتي: خططي (أ/ب/ج) ونافذتي من بروفة التسجيل ──────────────────────────
+  /* ── ما الجديد؟ ── إشعاراتُ الطالب مشتقّةٌ من حاله لحظةَ السؤال (utils/studentNotices). */
+  app.get("/api/public/me/notices", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    const terms = await Repository.getTerms();
+    const term = pickDoorTerm(terms as any);
+    if (!term) { res.json({ notices: [] }); return; }
+    const termId = Number(term.AdTermId);
+    const reading = readStudentPhase(term.AdTermStudentPhases);
+    const [run, ticket, needs, catalog] = await Promise.all([
+      Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint),
+      Repository.getStudentNeedsByFingerprint(fingerprint, 0, termId), profile.AdSectionId > 0 ? sectionCatalog(profile.AdSectionId) : Promise.resolve(null),
+    ]);
+    const courseNames = new Map((await Repository.getCourses() as any[]).map(course => [Number(course.AdCourseId), String(course.CourseName || "")] as const));
+    const nameOf = (id: number) => courseNames.get(id) || catalog?.courses.get(id)?.name || `مقرر ${id}`;
+    const live = run && ticket && ticket.runId === run.runId ? ticket : null;
+    const round = live ? term.AdTermStudentPhases?.rounds?.[live.window - 1] : undefined;
+    /* العددُ نفسُه الذي تعرضه بطاقةُ «هل سجلت؟»: خطّةُ (أ) إن وُجدت، وإلا ما طُرح من متبقّي صحيفته. */
+    const reportCourses = profile.AdSectionId > 0 ? ((await reportContext(profile, fingerprint))?.ids.length || 0) : 0;
+    const cases = needs.flatMap(need => need.courseIds.map(courseId => {
+      const state = (need.courseStates || []).find(row => Number(row.courseId) === courseId);
+      return { courseId, name: nameOf(courseId), state: (state?.state || "pending") as any, reasonCode: state?.reasonCode, note: state?.note, dropped: state?.droppedByStudent };
+    }));
+    res.json({
+      notices: buildStudentNotices({
+        setupDone: profile.AdSectionId > 0,
+        phase: { mode: reading.mode, canEditWishes: reading.canEditWishes, canReport: reading.canReport, line: reading.line, nextAt: reading.nextAt ? deadlineDateShort(reading.nextAt) : "", nextLabel: reading.nextLabel },
+        hasWishes: Boolean(profile.wishes && profile.wishes.termId === termId),
+        ticket: live ? { stale: Date.parse(profile.updatedAt) > Date.parse(run!.ranAt), window: live.window, of: run!.rounds, windowName: round?.name, start: round?.start ? deadlineDateShort(round.start) : "", end: round?.end ? deadlineDateShort(round.end) : "" } : null,
+        reportAnswered: Boolean(profile.registration && profile.registration.termId === termId),
+        reportCourses, cases,
+      }),
+    });
+  });
+
+  /* ── هل سجلت؟ ── بعد جولة التسجيل: ما سجّلتَه وما تعثّرتَ فيه ولماذا.
+     من تعثّر وطلب المساعدة كتب اسمَه ورقمَه المدني (يُختمان) فتصل حالتُه قسمَ المقرر؛
+     ولا يُحفظ الاسمُ في ملفّه الدائم أبداً. ما يقوله لنا يُضاف إلى عدّادات الرادار
+     (أعداد لا أسماء) فيعرف صاحبُ القرار أين صدقت الرادارُ وأين لم تصدق. */
+  const REASONS = new Set(["full", "prereq", "conflict", "other"]);
+  const REASON_TEXT: Record<string, string> = { full: "امتلأت الشعب", prereq: "المسبق لا يسمح", conflict: "تعارض مع مقرر آخر", other: "سبب آخر" };
+
+  async function reportContext(profile: StudentProfile, fingerprint: string) {
+    const terms = await Repository.getTerms();
+    const term = pickDoorTerm(terms as any);
+    if (!term) return null;
+    const reading = readStudentPhase(term.AdTermStudentPhases);
+    const termId = Number(term.AdTermId);
+    const catalog = await sectionCatalog(profile.AdSectionId);
+    const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
+    const [run, ticket, index] = await Promise.all([Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint), offeringIndex(termId)]);
+    const info = (id: number) => catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
+    const planned = run && ticket && ticket.runId === run.runId ? (ticket.plans.find(plan => plan.label === "A")?.items.map(item => item.courseId) || []) : [];
+    const remaining = planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds.filter(id => (index.get(id)?.sections || 0) > 0);
+    const ids = [...new Set([...planned, ...(planned.length ? [] : remaining.slice(0, 12))])];
+    /* ما يُعرض له هو ما يُقبل منه: لا مقررَ مخفيّاً يُرسَل مباشرةً فيُفسد العدّادات أو يُنشئ حالةً لقسمٍ لم تكن في خطّته. */
+    return { term, termId, reading, ids, info, allowed: new Set(ids) };
+  }
+
+  app.get("/api/public/me/report", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    if (profile.AdSectionId <= 0) { res.json({ ready: false, reason: "no-setup" }); return; }
+    const ctx = await reportContext(profile, fingerprint);
+    if (!ctx) { res.json({ ready: false, reason: "no-term" }); return; }
+    const mine = profile.registration && profile.registration.termId === ctx.termId ? profile.registration : null;
+    res.json({
+      ready: true, canReport: ctx.reading.canReport, line: ctx.reading.line,
+      courses: ctx.ids.map(id => ({ courseId: id, ...ctx.info(id) })),
+      answers: mine?.answers || [], answeredAt: mine?.at || "",
+    });
+  });
+
+  app.post("/api/public/me/report", writeLimit, requireDoor, async (req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    if (profile.AdSectionId <= 0) { fail(res, 409, "أكمل ملفّك أولاً.", "no-setup"); return; }
+    const ctx = await reportContext(profile, fingerprint);
+    if (!ctx || !ctx.reading.canReport) { fail(res, 409, "سؤال «هل سجلت؟» غير مفتوح الآن.", "report-closed", { line: ctx?.reading.line || "" }); return; }
+    const raw = Array.isArray(req.body?.answers) ? req.body.answers.slice(0, 40) : [];
+    const answers: NonNullable<StudentProfile["registration"]>["answers"] = [];
+    const seen = new Set<number>();
+    for (const item of raw) {
+      const courseId = Number(item?.courseId);
+      if (!Number.isInteger(courseId) || seen.has(courseId) || !ctx.allowed.has(courseId)) continue;
+      seen.add(courseId);
+      if (item?.state === "registered") answers.push({ courseId, state: "registered" });
+      else if (item?.state === "stuck") answers.push({ courseId, state: "stuck", reason: REASONS.has(String(item?.reason)) ? item.reason : "other" });
+    }
+    if (!answers.length) { fail(res, 400, "اختر حالة مقرّرٍ واحدٍ على الأقل.", "empty"); return; }
+    const stuck = answers.filter(answer => answer.state === "stuck");
+    const help = req.body?.help;
+    /* الاسمُ والرقمُ مختومان في ملفّه منذ إنشائه: لا يُسألان ثانيةً. أما ملفٌّ أُنشئ قبل ذلك فيُسأل مرةً ويُحفظ مختوماً. */
+    let sealed: { nameCipher: string; civilCipher: string } | null = profile.nameCipher && profile.civilCipher ? { nameCipher: profile.nameCipher, civilCipher: profile.civilCipher } : null;
+    let remember: { nameCipher: string; civilCipher: string } | null = null;
+    if (stuck.length && help && !sealed) {
+      const civil = toEnglishDigits(help?.civil).replace(/\D/g, "");
+      const name = cleanName(help?.name);
+      if (!name) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
+      if (civil.length !== 12 || !validateCivilId(civil).isValid) { fail(res, 400, "الرقم المدني غير صحيح.", "bad-civil"); return; }
+      if ((await deps.surveyFingerprint(civil)) !== fingerprint) { fail(res, 403, "هذا الرقم المدني ليس رقمَ هذا الملف.", "civil-mismatch"); return; }
+      sealed = remember = { nameCipher: await deps.sealIdentity(name), civilCipher: await deps.sealIdentity(civil) };
+    }
+
+    const saved = await Repository.recordRegistrationAnswers(fingerprint, ctx.termId, current => {
+      if (!current) return undefined;
+      return { ...current, ...(remember || {}), registration: { termId: ctx.termId, at: new Date().toISOString(), answers } };
+    });
+    if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
+
+    /* حالةٌ لكل قسمٍ يملك مقرراً تعثّر فيه: يصله الطلبُ على كشف التسجيل كأيّ طلب. */
+    const cases: Array<{ sectionName: string; caseRef: string }> = [];
+    if (sealed && help) {
+      const [courses, sections] = await Promise.all([Repository.getCourses(), Repository.getSections()]);
+      const courseOf = new Map((courses as any[]).map(course => [Number(course.AdCourseId), course] as const));
+      const byOwner = new Map<number, typeof stuck>();
+      for (const answer of stuck) {
+        const owner = Number(courseOf.get(answer.courseId)?.AdSectionId) || 0;
+        if (owner) byOwner.set(owner, [...(byOwner.get(owner) || []), answer]);
+      }
+      const { nameCipher, civilCipher } = sealed;
+      for (const [ownerSectionId, list] of byOwner) {
+        const ownerCollegeId = Number(courseOf.get(list[0].courseId)?.AdCollegeId) || profile.AdCollegeId;
+        const homeInOwnerCollege = profile.AdCollegeId === ownerCollegeId;
+        const need = await Repository.saveStudentNeed({
+          fingerprint, AdCollegeId: ownerCollegeId, AdSectionId: homeInOwnerCollege ? profile.AdSectionId : ownerSectionId,
+          studentSectionId: profile.AdSectionId, surveySectionId: ownerSectionId, AdTermId: ctx.termId,
+          curriculumPlanId: profile.curriculumPlanId, courseIds: list.map(answer => answer.courseId), requestType: "new-course",
+          nameCipher, civilCipher, eligibility: "not-checked",
+          details: `من «مساري» بعد التسجيل — ${list.map(answer => `${ctx.info(answer.courseId).name}: ${REASON_TEXT[answer.reason || "other"]}`).join("؛ ")}`,
+        } as any);
+        cases.push({ sectionName: String((sections as any[]).find(row => Number(row.AdSectionId) === ownerSectionId)?.AdSectionName || ""), caseRef: caseRefFor(need) });
+      }
+    }
+    noStore(res); res.json({ ok: true, registered: answers.length - stuck.length, stuck: stuck.length, cases });
+  });
+
+  /* ── تذكرتي: خططي (أ/ب/ج) ونافذتي من رادار التسجيل ──────────────────────────
      تقديرٌ لا حجز. والشعبةُ وموعدُها لا يظهران إلا إن وُقّع جدولُ قسمها؛ قبل ذلك
      يرى الطالبُ المقرراتِ ووحداتها، لا الأوقات (المسوّداتُ للأقسام والعمادة). */
   app.get("/api/public/me/ticket", requireDoor, async (_req: Request, res: Response) => {

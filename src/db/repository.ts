@@ -21,7 +21,9 @@ import {
   TermStudentPhases,
   StudentProfile,
   CurriculumRuleSet,
+  RegistrationOutcomeShard,
   RegistrationRun,
+  StudentRegistrationReport,
   RegistrationTicket,
   AdCollege,
   AdSection,
@@ -232,6 +234,7 @@ interface DBState {
   curriculumRuleDrafts?: CurriculumRuleSet[];
   registrationTickets?: RegistrationTicket[];
   registrationRuns?: RegistrationRun[];
+  registrationOutcomes?: RegistrationOutcomeShard[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
   degreeRules?: AdDegreeRule[];
@@ -273,7 +276,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], registrationTickets: [], registrationRuns: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], registrationTickets: [], registrationRuns: [], registrationOutcomes: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
@@ -5044,8 +5047,9 @@ export const Repository = {
    * والفصل في الذاكرة على ما رجع (عشراتٌ لا آلاف)، كي لا يلزم فهرسٌ مركّب.
    */
   getStudentNeedsByFingerprint: async (fingerprint: string, collegeId: number, termId: number): Promise<StudentNeed[]> => {
+    /* كليةٌ = 0: كلُّ الكليات (طلبٌ في مقرراتِ قسمٍ من كليةٍ أخرى يُحفظ باسم كليّة المقرر). */
     const mine = (item: StudentNeed) => item.fingerprint === fingerprint
-      && Number(item.AdCollegeId) === Number(collegeId) && Number(item.AdTermId) === Number(termId);
+      && (!Number(collegeId) || Number(item.AdCollegeId) === Number(collegeId)) && Number(item.AdTermId) === Number(termId);
     if (!fingerprint) return [];
     if (firestoreDb && !demoSandboxContext.getStore()) {
       /* كلُّ ما بصمته هذه — صفحةً صفحة — ثم الفصلُ والكلية في الذاكرة: حدٌّ بلا ترقيمٍ
@@ -5092,7 +5096,7 @@ export const Repository = {
   },
   /** كلُّ المسوّدات: عددُها بعددِ الصحائف (عشراتٌ) فتُقرأ كلُّها وتُصفّى في الذاكرة. */
   /**
-   * ── بروفةُ التسجيل ───────────────────────────────────────────────────────────
+   * ── رادارُ التسجيل ───────────────────────────────────────────────────────────
    * كلُّ ملفّات الطلبة (بلا أسماء) لتُغذّي المحرّك. ترقيمٌ صفحةً صفحة؛ وسقفٌ يحمي الذاكرة.
    */
   listStudentProfiles: async (limit = 60000): Promise<StudentProfile[]> => {
@@ -5112,8 +5116,8 @@ export const Repository = {
     return [...(db.studentProfiles || [])].slice(0, limit);
   },
   /**
-   * قفلٌ في قاعدة البيانات لبروفةٍ واحدة لكل فصل: مديران على نسختين من الخادم لا يشغّلان
-   * معاً (وإلا كتب كلٌّ فوق تذاكر الآخر وتركا الملخّصَ يشير إلى بروفةٍ كُنست تذاكرُها).
+   * قفلٌ في قاعدة البيانات لتحديثٍ واحد لكل فصل: مديران على نسختين من الخادم لا يشغّلان
+   * معاً (وإلا كتب كلٌّ فوق تذاكر الآخر وتركا الملخّصَ يشير إلى تحديثٍ كُنست تذاكرُه).
    * ينتهي وحدَه بعد `ttlMs` إن مات الخادمُ في منتصف العمل.
    */
   acquireRegistrationRunLease: async (termId: number, holder: string, ttlMs = 15 * 60_000): Promise<boolean> => {
@@ -5161,8 +5165,8 @@ export const Repository = {
     return (db.registrationTickets || []).find(row => row.id === id);
   },
   /**
-   * يحفظ نتيجةَ بروفة: التذاكرُ دُفعاتٍ (٤٠٠ في الدفعة)، ثم الملخّصُ آخراً — فالباب لا يقرأ
-   * إلا ما اكتمل: تذكرةٌ لا يطابق `runId` ملخّصَها تُهمل. ولا تُحذف تذاكرُ البروفة السابقة
+   * يحفظ نتيجةَ تحديث: التذاكرُ دُفعاتٍ (٤٠٠ في الدفعة)، ثم الملخّصُ آخراً — فالباب لا يقرأ
+   * إلا ما اكتمل: تذكرةٌ لا يطابق `runId` ملخّصَها تُهمل. ولا تُحذف تذاكرُ الرادار السابقة
    * (تُهمل ولا تُقرأ؛ ويحذفها مطهّرُ الملفات حين يحذف ملفَّ صاحبها).
    */
   saveRegistrationRun: async (run: RegistrationRun, tickets: RegistrationTicket[]): Promise<void> => {
@@ -5173,7 +5177,7 @@ export const Repository = {
         await batch.commit();
       }
       await firestoreDb.collection("registrationRuns").doc(run.id).set(run);
-      /* كنسُ تذاكر البروفة السابقة لهذا الفصل (طلبةٌ حُذفت ملفّاتهم أو خرجوا من الحساب). */
+      /* كنسُ تذاكر الرادار السابقة لهذا الفصل (طلبةٌ حُذفت ملفّاتهم أو خرجوا من الحساب). */
       let after: FirebaseFirestore.QueryDocumentSnapshot | null = null;
       for (;;) {
         let query: FirebaseFirestore.Query = firestoreDb.collection("registrationTickets").where("termId", "==", run.termId).orderBy(FieldPath.documentId()).limit(400);
@@ -5191,6 +5195,75 @@ export const Repository = {
     db.registrationTickets = db.registrationTickets.filter(row => row.termId !== run.termId).concat(tickets);
     db.registrationRuns = db.registrationRuns.filter(row => row.id !== run.id).concat(run);
     saveDatabase();
+  },
+  /**
+   * ── «هل سجلت؟»: عدّاداتٌ مشاظِرة ─────────────────────────────────────────────
+   * كلُّ جوابٍ يطرح قديمَه ويضيف جديدَه في شظيةٍ يحدّدها اسمُ الطالب المجزّأ (٦٤ شظية)،
+   * فلا تتزاحم آلافُ الكتابات على وثيقةٍ واحدة يومَ التسجيل. القراءةُ تجمع الشظايا.
+   */
+  /**
+   * يكتب جوابَ الطالب وعدّاداتِه **معاً** (معاملةٌ واحدة على وثيقتي الملف والشظية): إن ماتت
+   * العمليةُ في المنتصف لا يبقى جوابٌ بلا عدٍّ، ولا يُحسب القديمُ مرتين عند إعادة المحاولة.
+   * `mutate` يُرجع الملفَّ الجديد (وفيه `registration` الجديد) أو undefined لترك الحال.
+   */
+  recordRegistrationAnswers: async (fingerprint: string, termId: number, mutate: (current: StudentProfile | undefined) => StudentProfile | undefined): Promise<StudentProfile | undefined> => {
+    if (!fingerprint) throw new Error("بصمة الطالب مطلوبة");
+    const OUTCOME_SHARDS = 64;
+    let h = 2166136261; for (let i = 0; i < fingerprint.length; i++) { h ^= fingerprint.charCodeAt(i); h = Math.imul(h, 16777619); }
+    const shard = (h >>> 0) % OUTCOME_SHARDS, id = `${termId}_${shard}`;
+    const deltaOf = (before: StudentRegistrationReport["answers"] | undefined, after: StudentRegistrationReport["answers"] | undefined) => {
+      const delta = new Map<number, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>();
+      const bump = (answers: StudentRegistrationReport["answers"] | undefined, sign: 1 | -1) => {
+        for (const answer of answers || []) {
+          const row = delta.get(answer.courseId) || { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 };
+          if (answer.state === "registered") row.registered += sign; else { row.stuck += sign; row[answer.reason || "other"] += sign; }
+          delta.set(answer.courseId, row);
+        }
+      };
+      bump(before, -1); bump(after, 1);
+      return { delta, students: (after && after.length ? 1 : 0) - (before && before.length ? 1 : 0) };
+    };
+    const termAnswers = (profile: StudentProfile | undefined) => (profile?.registration && profile.registration.termId === termId ? profile.registration.answers : undefined);
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const profileRef = firestoreDb.collection("studentProfiles").doc(fingerprint);
+      const shardRef = firestoreDb.collection("registrationOutcomes").doc(id);
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(profileRef);
+        const current = snap.exists ? (snap.data() as StudentProfile) : undefined;
+        const next = mutate(current);
+        if (!next) return current;
+        const { delta, students } = deltaOf(termAnswers(current), termAnswers(next));
+        const byCourse: Record<string, any> = {};
+        for (const [courseId, row] of delta) byCourse[String(courseId)] = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, FieldValue.increment(v)]));
+        transaction.set(profileRef, { ...next, id: fingerprint, fingerprint });
+        transaction.set(shardRef, { id, termId, shard, students: FieldValue.increment(students), byCourse }, { merge: true });
+        return next;
+      });
+    }
+    if (!Array.isArray(db.studentProfiles)) db.studentProfiles = [];
+    const index = db.studentProfiles.findIndex(row => row.id === fingerprint);
+    const current = index >= 0 ? db.studentProfiles[index] : undefined;
+    const next = mutate(current);
+    if (!next) return current;
+    const { delta, students } = deltaOf(termAnswers(current), termAnswers(next));
+    if (!Array.isArray(db.registrationOutcomes)) db.registrationOutcomes = [];
+    let doc = db.registrationOutcomes.find(row => row.id === id);
+    if (!doc) { doc = { id, termId, shard, students: 0, byCourse: {} }; db.registrationOutcomes.push(doc); }
+    doc.students += students;
+    for (const [courseId, row] of delta) {
+      const target = doc.byCourse[String(courseId)] || (doc.byCourse[String(courseId)] = { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 });
+      for (const key of Object.keys(row) as Array<keyof typeof row>) target[key] += row[key];
+    }
+    const row = { ...next, id: fingerprint, fingerprint };
+    if (index >= 0) db.studentProfiles[index] = row; else db.studentProfiles.push(row);
+    saveDatabase();
+    return row;
+  },
+  getRegistrationOutcome: async (termId: number): Promise<RegistrationOutcomeShard[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      return (await firestoreDb.collection("registrationOutcomes").where("termId", "==", termId).get()).docs.map(doc => doc.data() as RegistrationOutcomeShard);
+    }
+    return (db.registrationOutcomes || []).filter(row => row.termId === termId);
   },
   listRuleDrafts: async (): Promise<CurriculumRuleSet[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
