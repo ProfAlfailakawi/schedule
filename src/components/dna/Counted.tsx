@@ -61,7 +61,8 @@ export function Counted({ value, duration = 900, play = true, observe = false, p
 
   // One-shot observer: the count starts when the figure is actually visible.
   useEffect(() => {
-    if (!observe || seen || done.current || !play) return;
+    // Nothing to count yet (zero while loading): don't arm the observer/failsafe, so a late positive value still waits for the figure to be on screen.
+    if (!observe || seen || done.current || !play || !(value > 0)) return;
     const el = node.current;
     if (!el || typeof IntersectionObserver === 'undefined') { setSeen(true); return; }
     const io = new IntersectionObserver((entries) => {
@@ -70,7 +71,7 @@ export function Counted({ value, duration = 900, play = true, observe = false, p
     io.observe(el);
     const failsafe = window.setTimeout(() => { io.disconnect(); setSeen(true); }, 6000);
     return () => { io.disconnect(); window.clearTimeout(failsafe); };
-  }, [observe, seen, play]);
+  }, [observe, seen, play, value > 0]);
 
   useEffect(() => {
     if (!play) { if (!done.current) setShown(0); return; }
