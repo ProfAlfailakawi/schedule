@@ -438,8 +438,8 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
 
   /* ── هل سجلت؟ ── بعد جولة التسجيل: ما سجّلتَه وما تعثّرتَ فيه ولماذا.
      من تعثّر وطلب المساعدة كتب اسمَه ورقمَه المدني (يُختمان) فتصل حالتُه قسمَ المقرر؛
-     ولا يُحفظ الاسمُ في ملفّه الدائم أبداً. ما يقوله لنا يُضاف إلى عدّادات البروفة
-     (أعداد لا أسماء) فيعرف صاحبُ القرار أين صدقت البروفةُ وأين لم تصدق. */
+     ولا يُحفظ الاسمُ في ملفّه الدائم أبداً. ما يقوله لنا يُضاف إلى عدّادات الرادار
+     (أعداد لا أسماء) فيعرف صاحبُ القرار أين صدقت الرادارُ وأين لم تصدق. */
   const REASONS = new Set(["full", "prereq", "conflict", "other"]);
   const REASON_TEXT: Record<string, string> = { full: "امتلأت الشعب", prereq: "المسبق لا يسمح", conflict: "تعارض مع مقرر آخر", other: "سبب آخر" };
 
@@ -537,7 +537,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     noStore(res); res.json({ ok: true, registered: answers.length - stuck.length, stuck: stuck.length, cases });
   });
 
-  /* ── تذكرتي: خططي (أ/ب/ج) ونافذتي من بروفة التسجيل ──────────────────────────
+  /* ── تذكرتي: خططي (أ/ب/ج) ونافذتي من رادار التسجيل ──────────────────────────
      تقديرٌ لا حجز. والشعبةُ وموعدُها لا يظهران إلا إن وُقّع جدولُ قسمها؛ قبل ذلك
      يرى الطالبُ المقرراتِ ووحداتها، لا الأوقات (المسوّداتُ للأقسام والعمادة). */
   app.get("/api/public/me/ticket", requireDoor, async (_req: Request, res: Response) => {

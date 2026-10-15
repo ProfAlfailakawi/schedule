@@ -1,5 +1,5 @@
 /**
- * ── بروفةُ التسجيل ──────────────────────────────────────────────────────────
+ * ── رادارُ التسجيل ──────────────────────────────────────────────────────────
  *
  * ما سيحدث يومَ التسجيل لو سجّل الطلبةُ بحسب ما كتبوه: أيُّ مقرراتٍ ستزدحم، وأيُّها
  * مطلوبٌ ولا يُطرح، وكم طالباً في كل نافذة. أعدادٌ لا أسماء، وكلُّ رقمٍ يحمل أساسَه.
@@ -59,21 +59,21 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
     try { await request("/api/simulation/run", { method: "POST" }); await load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
 
-  /** تقريرُ العمادة: ورقةٌ للبروفة وأخرى لما قاله الطلبة بعد التسجيل. أعدادٌ لا أسماء. */
+  /** تقريرُ العمادة: ورقةٌ للتحديث وأخرى لما قاله الطلبة بعد التسجيل. أعدادٌ لا أسماء. */
   const exportXlsx = async () => {
     if (!data?.run) return;
     const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
     const head = ["رمز المقرر", "المقرر", "عدد الشعب", "السعة", "المقاعد المحجوزة افتراضياً", "المطلوب", "وجد مقعداً", "امتلأت الشعب", "مطلوب ولا يُطرح", "تعارض أوقات", "فوق الوحدات", "ينقصهم مسبق"];
     const body = (data.courses || []).map(c => [c.code, c.name, c.sections, c.capacity, c.taken, c.wanted, c.seated, c.unmet.full, c.unmet["not-offered"], c.unmet.conflict, c.unmet.units, c.unmet.prereq]);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([head, ...body]), "بروفة التسجيل");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([head, ...body]), "رادار التسجيل");
     if (outcome && outcome.answered > 0) {
       const oh = ["رمز المقرر", "المقرر", "سجّلوا", "تعثّروا", "امتلأت", "مسبق", "تعارض", "آخر"];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([oh, ...outcome.courses.map(c => [c.code, c.name, c.registered, c.stuck, c.full, c.prereq, c.conflict, c.other])]), "بعد التسجيل");
     }
     const about = [["الفصل", data.term?.name || ""], ["أُجريت", data.run.ranAt], ["الملفات المكتملة", data.run.students], ["بلا رغبات", data.run.defaulted], ["صحائف بلا قواعد معتمدة", data.run.withoutRules], ["ملاحظة", "تقدير من ملفات الطلبة وجداول الأقسام، لا بيانات التسجيل الرسمي."]];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(about), "الأساس");
-    XLSX.writeFile(wb, "تقرير_بروفة_التسجيل.xlsx");
+    XLSX.writeFile(wb, "تقرير_رادار_التسجيل.xlsx");
   };
 
   const rows = useMemo(() => [...(data?.courses || [])].sort((a, b) => weight(b) - weight(a) || b.wanted - a.wanted || a.code.localeCompare(b.code, "en")), [data]);
@@ -90,18 +90,18 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
 
   return (
     <div className="sm-page" dir="rtl">
-      <PageTitle eyebrow="بروفة التسجيل" subtitle="لو سجّل الطلبةُ بحسب ما كتبوه: أين الزحام، وما المطلوب ولا يُطرح؟"
+      <PageTitle eyebrow="رادار التسجيل" subtitle="لو سجّل الطلبةُ بحسب ما كتبوه: أين الزحام، وما المطلوب ولا يُطرح؟"
         action={(
           <div className="sm-actions">
-            {data?.run ? <SecondaryButton onClick={exportXlsx} data-guide-ignore="تصديرُ تقرير البروفة داخل شاشةٍ مسجّلة في المرشد باسم page.simulation"><Download size={16} /> تقرير Excel</SecondaryButton> : null}
+            {data?.run ? <SecondaryButton onClick={exportXlsx} data-guide-ignore="تصديرُ تقرير الرادار داخل شاشةٍ مسجّلة في المرشد باسم page.simulation"><Download size={16} /> تقرير Excel</SecondaryButton> : null}
             <MasariQrButton data-guide-ignore="زرُّ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation" />
             {data?.canRun ? (
-              <PrimaryButton disabled={busy} onClick={run} data-guide-ignore="تشغيلُ البروفة داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">
-                {busy ? <RefreshCw size={16} className="sm-spin" /> : <Play size={16} />} {r ? "أعد البروفة" : "شغّل البروفة"}
+              <PrimaryButton disabled={busy} onClick={run} data-guide-ignore="تحديثُ الرادار داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">
+                {busy ? <RefreshCw size={16} className="sm-spin" /> : <Play size={16} />} {r ? "حدّث الرادار" : "شغّل الرادار"}
               </PrimaryButton>
             ) : null}
           </div>
-        )}>بروفة يوم التسجيل</PageTitle>
+        )}>رادار يوم التسجيل</PageTitle>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
       {data?.phase ? (
         <div className={`sm-phase ${data.phase.namesVisible ? "after" : "before"}`}>
@@ -116,8 +116,8 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
           ) : null}
         </div>
       ) : null}
-      {!data?.term ? <EmptyState title="لا فصلَ للبروفة" detail="تظهر حين يكون للفصل القادم تواريخُ طلبة." /> : !r ? (
-        <EmptyState title="لم تُجرَ بروفةٌ بعد" detail={data.canRun ? "اضغط «شغّل البروفة» لتُبنى خططُ الطلبة من ملفّاتهم." : "تُجريها إدارةُ النظام حين تكتمل رغباتُ الطلبة."} />
+      {!data?.term ? <EmptyState title="لا فصلَ للرادار" detail="تظهر حين يكون للفصل القادم تواريخُ طلبة." /> : !r ? (
+        <EmptyState title="لم يُبنَ الرادار بعد" detail={data.canRun ? "اضغط «شغّل الرادار» لتُبنى خططُ الطلبة من ملفّاتهم." : "تُجريها إدارةُ النظام حين تكتمل رغباتُ الطلبة."} />
       ) : (
         <>
           <div className="sm-kpis">
@@ -182,7 +182,7 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
     <section className="sm-list sm-out">
       <header><h3>بعد التسجيل: ماذا قال الطلبة؟</h3></header>
       <div className="sm-kpis">
-        <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answered.toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا «هل سجلت؟»</small><em>{share}٪ ممن شملتهم البروفة</em></article>
+        <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answered.toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا «هل سجلت؟»</small><em>{share}٪ ممن شملتهم الرادار</em></article>
         <article className="sm-kpi"><span className="sm-ic"><Layers /></span><b>{okPct}٪</b><small>من المقرراتِ المُجاب عنها سُجّلت</small>
           <div className="sm-meter"><i style={{ inlineSize: `${okPct}%` }} /></div><em>{countOf(registered, AR.course)} سُجّلت · {countOf(stuck, AR.course)} تعثّرت</em></article>
       </div>

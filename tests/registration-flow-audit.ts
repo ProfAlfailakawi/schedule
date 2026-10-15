@@ -1,14 +1,14 @@
 /**
- * ── بروفةُ التسجيل: المسار الكامل داخل العملية (المرحلة ٦) ─────────────────────
+ * ── رادارُ التسجيل: المسار الكامل داخل العملية (المرحلة ٦) ─────────────────────
  *
- * مستودعٌ حقيقيّ بملفٍّ مؤقّت، ومسارا الباب والبروفة على Express محلّي: طلبةٌ ينشئون
- * ملفّاتهم ويكتبون رغباتهم عبر الباب، وإدارةُ النظام تشغّل البروفة، ثم تُقرأ التذاكر.
+ * مستودعٌ حقيقيّ بملفٍّ مؤقّت، ومسارا الباب والرادار على Express محلّي: طلبةٌ ينشئون
+ * ملفّاتهم ويكتبون رغباتهم عبر الباب، وإدارةُ النظام تشغّل الرادار، ثم تُقرأ التذاكر.
  *
  *   F1 التشغيل: لإدارة النظام وحدها، ولا يتزاحم.
  *   F2 التذكرة: ثلاثُ خطط، ونافذة، والمسبقُ يمنع، والمعتمَدُ من القواعد وحده يُعتدّ به.
  *   F3 الظهور: لا موعدَ ولا شعبةَ قبل توقيع جدول القسم، وبعده تظهر.
  *   F4 النطاق: القسمُ يرى مقرراتِه في الملخّص، والإدارةُ ترى الكلّ، ولا أسماء في أيٍّ منهما.
- *   F5 الأمان: التذكرةُ لصاحبها وحده، وتتقادم إن عُدّل الملفّ بعد البروفة.
+ *   F5 الأمان: التذكرةُ لصاحبها وحده، وتتقادم إن عُدّل الملفّ بعد آخر تحديث للرادار.
  */
 import fs from "fs";
 import os from "os";
@@ -132,7 +132,7 @@ try {
   const noWishes = await student(42, []);
   const arb = await student(43, [], { targetUnits: 12 }, 12, "p12");
 
-  check((await http("GET", "/api/public/me/ticket", { cookie: rookies[0].cookie })).json.reason === "no-run", "F0 قبل البروفة: «لم تُجرَ بعد»");
+  check((await http("GET", "/api/public/me/ticket", { cookie: rookies[0].cookie })).json.reason === "no-run", "F0 قبل الرادار: «لم تُجرَ بعد»");
   check((await http("GET", "/api/public/me/ticket")).status === 401, "F0 بلا جلسة: ٤٠١");
 
   const offered = (await http("GET", "/api/public/me/offered", { cookie: rookies[0].cookie })).json;
@@ -206,7 +206,7 @@ try {
   check((await http("GET", "/api/simulation/summary")).status === 401, "F5 الملخّصُ بدخولٍ فقط");
   await Repository.updateStudentProfile((await Repository.listStudentProfiles())[0].id, current => (current ? { ...current, updatedAt: new Date(Date.now() + 60_000).toISOString() } : undefined));
   const staleSeen = await Promise.all(rookies.slice(0, 3).map(async r => (await http("GET", "/api/public/me/ticket", { cookie: r.cookie })).json.stale));
-  check(staleSeen.some(Boolean), "F5 ملفٌّ عُدّل بعد البروفة: تذكرتُه «قديمة»", staleSeen);
+  check(staleSeen.some(Boolean), "F5 ملفٌّ عُدّل بعد آخر تحديث للرادار: تذكرتُه «قديمة»", staleSeen);
 
   /* ── G: «هل سجلت؟» بعد بدء الجولة ── */
   const r1 = (await http("GET", "/api/public/me/report", { cookie: rookies[1].cookie })).json;

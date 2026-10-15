@@ -1,5 +1,5 @@
 /**
- * ── بروفةُ التسجيل: مسارات العاملين ─────────────────────────────────────────
+ * ── رادارُ التسجيل: مسارات العاملين ─────────────────────────────────────────
  *
  * التشغيلُ لإدارة النظام (يحسب لكل الطلبة معاً)، والقراءةُ لكل صاحب نطاقٍ بحدود
  * نطاقه: القسمُ يرى مقرراتِه، والعمادةُ والتسجيلُ يرون كلّ شيء. أعدادٌ لا أسماء —
@@ -82,25 +82,25 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
   });
 
   app.post("/api/simulation/run", deps.requireAuth, async (req: Request, res: Response) => {
-    if (!deps.isPowerUser(req)) { fail(res, 403, "تشغيل البروفة لإدارة النظام.", "not-allowed"); return; }
+    if (!deps.isPowerUser(req)) { fail(res, 403, "تحديث الرادار لإدارة النظام.", "not-allowed"); return; }
     /* العلَمُ يُرفع قبل أيّ انتظار (تشغيلان في العملية نفسها)، ثم القفلُ في قاعدة البيانات
        (نسختان من الخادم). وكلاهما يُفكّ في finally. */
-    if (running) { fail(res, 409, "بروفةٌ تعمل الآن. انتظر انتهاءها.", "busy"); return; }
+    if (running) { fail(res, 409, "الرادار يُحدَّث الآن. انتظر انتهاءه.", "busy"); return; }
     running = true;
     let lease: { termId: number; holder: string } | null = null;
     try {
       const terms = await Repository.getTerms();
       const term = pickDoorTerm(terms as any);
-      if (!term) { fail(res, 409, "لا فصلَ جارياً أو قادماً تُبنى له البروفة.", "no-term"); return; }
+      if (!term) { fail(res, 409, "لا فصلَ جارياً أو قادماً يُبنى له الرادار.", "no-term"); return; }
       const holder = `${process.pid}-${Date.now()}`;
-      if (!(await Repository.acquireRegistrationRunLease(Number(term.AdTermId), holder))) { fail(res, 409, "بروفةٌ تعمل الآن على خادمٍ آخر. انتظر انتهاءها.", "busy"); return; }
+      if (!(await Repository.acquireRegistrationRunLease(Number(term.AdTermId), holder))) { fail(res, 409, "الرادار يُحدَّث الآن على خادمٍ آخر. انتظر انتهاءه.", "busy"); return; }
       lease = { termId: Number(term.AdTermId), holder };
       const run = await runRegistrationSimulation(term, deps.actorName(req));
-      res.locals.auditChanges = `بروفة تسجيل «${term.AdTermName || term.AdTermId}»: ${countOf(run.students, AR.profile)}`;
+      res.locals.auditChanges = `رادار تسجيل «${term.AdTermName || term.AdTermId}»: ${countOf(run.students, AR.profile)}`;
       res.json({ ok: true, students: run.students, ranAt: run.ranAt });
     } catch (error) {
       console.error("[simulation] run:", error instanceof Error ? error.message : error);
-      fail(res, 500, "تعذّر إتمام البروفة. أعد المحاولة بعد قليل.");
+      fail(res, 500, "تعذّر تحديث الرادار. أعد المحاولة بعد قليل.");
     } finally {
       running = false;
       if (lease) await Repository.releaseRegistrationRunLease(lease.termId, lease.holder).catch(() => undefined);

@@ -634,7 +634,7 @@ export default function App() {
   const [changesBadge, setChangesBadge] = useState(0);
   /* أيقونةُ «مراجعة الصحيفة» مؤقتة: لا تظهر إلا وفي نطاق الحساب مسوّدةٌ تنتظر. */
   const [planReviewCount, setPlanReviewCount] = useState(0);
-  /* وأيقونةُ «بروفة التسجيل»: تظهر لمن يشغّلها، أو متى وُجدت بروفةٌ في نطاقه. */
+  /* وأيقونةُ «رادار التسجيل»: تظهر لمن يشغّلها، أو متى وُجدت تحديثٌ في نطاقه. */
   const [simulationVisible, setSimulationVisible] = useState(false);
   useEffect(() => {
     if (!user) { setPlanReviewCount(0); return; }
@@ -1786,7 +1786,7 @@ export default function App() {
           unauthorized()
         );
       case "simulation":
-        /* القراءةُ بحدود النطاق في الخادم؛ والأيقونةُ لا تظهر إلا إن كانت هناك بروفةٌ أو من يشغّلها. */
+        /* القراءةُ بحدود النطاق في الخادم؛ والأيقونةُ لا تظهر إلا إن كانت هناك تحديثٌ أو من يشغّلها. */
         return simulationVisible ? <RegistrationRehearsal onNavigate={(view) => go(view as View)} /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
@@ -2543,7 +2543,7 @@ export default function App() {
                 onGo={go}
                 view="simulation"
                 icon={<Ticket />}
-                label="بروفة التسجيل"
+                label="رادار التسجيل"
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.simulation"
               />
             ) : null}

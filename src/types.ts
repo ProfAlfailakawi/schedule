@@ -843,7 +843,7 @@ export interface RegistrationOutcomeShard {
   byCourse: Record<string, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>;
 }
 
-/** تذكرةُ طالبٍ من بروفة تسجيل فصلٍ بعينه. وثيقةٌ لكل طالب: `{termId}_{fingerprint}`. */
+/** تذكرةُ طالبٍ من رادار تسجيل فصلٍ بعينه. وثيقةٌ لكل طالب: `{termId}_{fingerprint}`. */
 export interface RegistrationTicket {
   id: string;
   termId: number;
@@ -858,7 +858,7 @@ export interface RegistrationTicket {
   unmet: Array<{ courseId: number; reason: "not-offered" | "conflict" | "full" | "prereq" | "units" }>;
 }
 
-/** ملخّصُ آخر بروفةٍ لفصل: أعدادٌ لا أسماء. وثيقةٌ واحدة لكل فصل. */
+/** ملخّصُ آخر تحديثٍ لفصل: أعدادٌ لا أسماء. وثيقةٌ واحدة لكل فصل. */
 export interface RegistrationRun {
   id: string;
   termId: number;

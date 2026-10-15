@@ -418,7 +418,7 @@ function loadTicket(){var host=document.getElementById("ticket");if(!host)return
 function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
   var w=t.window,when=w.name?(w.name+(w.start?" · "+fmtShort(w.start)+(w.end?" → "+fmtShort(w.end):""):"")):"يحدّد موعدَها صاحبُ القرار";
   var h='<section class="card tk fade"><div class="hd"><span class="win"><b>'+w.n+'</b><small>من '+w.of+'</small></span><div class="tx"><b>تذكرتي · نافذتي '+w.n+'</b><span class="muted">'+esc(when)+'</span></div></div><div class="perf"></div><div class="bd">';
-  if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد البروفة — ستتحدّث تذكرتك في المرة القادمة</div>';
+  if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد آخر حساب — ستتحدّث تذكرتك في التحديث القادم</div>';
   if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
   h+='<div class="seg fit" role="group" aria-label="الخطة">'+t.plans.map(function(p){return '<button type="button" data-l="'+p.label+'" aria-pressed="'+(p.label===cur.label?"true":"false")+'">'+({A:"الخطة أ",B:"الخطة ب",C:"الخطة ج"})[p.label]+'</button>'}).join("")+'</div>';
   h+='<div class="row between"><span class="muted">'+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(cur.units,AR.unit)+'</span></div>';

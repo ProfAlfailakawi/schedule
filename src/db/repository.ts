@@ -5095,7 +5095,7 @@ export const Repository = {
   },
   /** كلُّ المسوّدات: عددُها بعددِ الصحائف (عشراتٌ) فتُقرأ كلُّها وتُصفّى في الذاكرة. */
   /**
-   * ── بروفةُ التسجيل ───────────────────────────────────────────────────────────
+   * ── رادارُ التسجيل ───────────────────────────────────────────────────────────
    * كلُّ ملفّات الطلبة (بلا أسماء) لتُغذّي المحرّك. ترقيمٌ صفحةً صفحة؛ وسقفٌ يحمي الذاكرة.
    */
   listStudentProfiles: async (limit = 60000): Promise<StudentProfile[]> => {
@@ -5115,8 +5115,8 @@ export const Repository = {
     return [...(db.studentProfiles || [])].slice(0, limit);
   },
   /**
-   * قفلٌ في قاعدة البيانات لبروفةٍ واحدة لكل فصل: مديران على نسختين من الخادم لا يشغّلان
-   * معاً (وإلا كتب كلٌّ فوق تذاكر الآخر وتركا الملخّصَ يشير إلى بروفةٍ كُنست تذاكرُها).
+   * قفلٌ في قاعدة البيانات لتحديثٍ واحد لكل فصل: مديران على نسختين من الخادم لا يشغّلان
+   * معاً (وإلا كتب كلٌّ فوق تذاكر الآخر وتركا الملخّصَ يشير إلى تحديثٍ كُنست تذاكرُه).
    * ينتهي وحدَه بعد `ttlMs` إن مات الخادمُ في منتصف العمل.
    */
   acquireRegistrationRunLease: async (termId: number, holder: string, ttlMs = 15 * 60_000): Promise<boolean> => {
@@ -5164,8 +5164,8 @@ export const Repository = {
     return (db.registrationTickets || []).find(row => row.id === id);
   },
   /**
-   * يحفظ نتيجةَ بروفة: التذاكرُ دُفعاتٍ (٤٠٠ في الدفعة)، ثم الملخّصُ آخراً — فالباب لا يقرأ
-   * إلا ما اكتمل: تذكرةٌ لا يطابق `runId` ملخّصَها تُهمل. ولا تُحذف تذاكرُ البروفة السابقة
+   * يحفظ نتيجةَ تحديث: التذاكرُ دُفعاتٍ (٤٠٠ في الدفعة)، ثم الملخّصُ آخراً — فالباب لا يقرأ
+   * إلا ما اكتمل: تذكرةٌ لا يطابق `runId` ملخّصَها تُهمل. ولا تُحذف تذاكرُ الرادار السابقة
    * (تُهمل ولا تُقرأ؛ ويحذفها مطهّرُ الملفات حين يحذف ملفَّ صاحبها).
    */
   saveRegistrationRun: async (run: RegistrationRun, tickets: RegistrationTicket[]): Promise<void> => {
@@ -5176,7 +5176,7 @@ export const Repository = {
         await batch.commit();
       }
       await firestoreDb.collection("registrationRuns").doc(run.id).set(run);
-      /* كنسُ تذاكر البروفة السابقة لهذا الفصل (طلبةٌ حُذفت ملفّاتهم أو خرجوا من الحساب). */
+      /* كنسُ تذاكر الرادار السابقة لهذا الفصل (طلبةٌ حُذفت ملفّاتهم أو خرجوا من الحساب). */
       let after: FirebaseFirestore.QueryDocumentSnapshot | null = null;
       for (;;) {
         let query: FirebaseFirestore.Query = firestoreDb.collection("registrationTickets").where("termId", "==", run.termId).orderBy(FieldPath.documentId()).limit(400);

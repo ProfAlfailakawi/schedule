@@ -438,7 +438,7 @@
 .pr-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:6px}
 .pr-opt{display:flex;gap:6px;align-items:center;font-size:.88rem}
 
-/* ── بروفةُ التسجيل (sm-*) ───────────────────────────────────────────────── */
+/* ── رادارُ التسجيل (sm-*) ───────────────────────────────────────────────── */
 .sm-page{display:grid;gap:16px;min-inline-size:0}
 .sm-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));gap:12px}
 .sm-kpi{position:relative;display:grid;gap:6px;padding:16px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface);align-content:start;min-inline-size:0}
