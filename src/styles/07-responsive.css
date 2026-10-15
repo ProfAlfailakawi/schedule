@@ -828,6 +828,10 @@
   .schedule-page>.schedule-agenda-surface,
   .schedule-page>.rooms-surface,
   .schedule-page>.sched-skeleton-surface{order:-1}
+  /* The page title and «إضافة موعد» are the first thing a phone reader sees —
+     the board comes right after them, not before. The phone-portrait block
+     further down (.schedule-phone) already agrees: heading first. */
+  .schedule-page>.page-heading{order:-5}
   /* On a phone the dense spatial boards still behave like viewports, but the
      list returns to being a real editor. Keep the gesture guard only where a
      swipe could be mistaken for moving a lecture: week and rooms. */
