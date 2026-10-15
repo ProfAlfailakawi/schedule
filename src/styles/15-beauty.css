@@ -2,7 +2,7 @@
    15 · Beauty layer — presentation only
    ──────────────────────────────────────────────────────────────────────────
    Depth, a display-numeral scale and duotone icon tiles, built on the
-   existing tokens only (so light and dark follow automatically). No markup,
+   existing tokens only (the app is light-only today; tokens keep a future theme possible). No markup,
    text, data or logic is touched. Everything that moves is guarded by
    prefers-reduced-motion at the bottom of each block. Gradients are flat
    linear/radial fills — no blur stacks — so phones stay cheap.

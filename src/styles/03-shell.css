@@ -922,7 +922,7 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
   .ob-dots.is-playing button.on::after{animation:none;transform:scaleX(1)}
 }
 .ob-acts{display:flex;align-items:center;gap:16px}
-.ob-skip{border:0;background:none;color:var(--muted);font-size:var(--t-sm);font-weight:600;font-family:inherit;cursor:pointer}
+.ob-skip{min-width:44px;min-height:44px;padding:0 14px;border:0;background:none;color:var(--muted);font-size:var(--t-sm);font-weight:600;font-family:inherit;cursor:pointer}
 .ob-skip:hover{color:var(--ink)}
 
 @media (max-width:760px){

@@ -8644,3 +8644,9 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
   .schedule-agenda .agenda-meta:not(:has(.unit-pill:not(.is-empty))){visibility:hidden}
   .schedule-agenda:not(:has(.agenda-meta .unit-pill:not(.is-empty))) .agenda-meta{display:none}
 }
+
+/* Touch: the quick-create wheels are finger targets on a phone, not 28px rows. */
+@media (max-width:760px),(pointer:coarse){
+  .qc-wheel-track{height:150px;padding-block:52px}
+  .qc-wheel-cell{min-height:44px}
+}
