@@ -207,6 +207,7 @@ button,input{font:inherit;color:inherit}
 .tk .bar{block-size:8px;border-radius:99px;background:var(--soft);overflow:hidden}
 .tk .bar i{display:block;block-size:100%;border-radius:99px;background:var(--accent)}
 .chip.warn{background:var(--gold-soft);color:var(--gold)}
+.opt .tx small.need{color:var(--gold);display:flex;align-items:center;gap:5px;flex-wrap:wrap}.opt .tx small.need .i{inline-size:13px;block-size:13px}
 .rp .ln{display:grid;gap:10px;padding:12px;border-radius:14px;background:var(--soft)}
 .rp .ln .top{display:flex;align-items:center;gap:10px}
 .rp .ln .top b{flex:1;min-inline-size:0;font-size:14.5px;line-height:1.5}
@@ -456,7 +457,7 @@ function loadOffered(){var host=document.getElementById("offered");if(!host)retu
     var h='<section class="card fade"><h2><span class="b">'+ic("layers")+'</span>المطروح لي<span class="chip gold">مبدئي</span></h2>';
     if(!o.remainingCount){h+='<p class="lead">أنجزت كل مقررات صحيفتك. مبارك!</p>'}
     else{h+='<div class="row" style="gap:16px">'+ring(pct)+'<div style="flex:1;display:grid;gap:4px"><span class="big">'+o.offeredCount+' <small>من '+o.remainingCount+'</small></span><span class="muted">من مقرراتك المتبقية مطروحٌ منها ما يعادل '+countOf(o.offeredUnits,AR.unit)+' هذا الفصل (قيد الإعداد).</span></div></div>'
-      +'<details class="more"><summary>'+ic("down")+' المقررات</summary><div class="list" style="margin-block-start:6px">'+o.courses.map(function(c){return '<div class="opt'+(c.sections?"":" off")+'"><span class="tx"><b>'+esc(c.name)+'</b><small><span class="code">'+esc(c.code)+'</span> · '+countOf(c.credit,AR.unit)+'</small></span><span class="chip'+(c.sections?" ok":"")+'">'+(c.sections?countOf(c.sections,AR.section):"غير مطروح")+'</span></div>'}).join("")+'</div></details>'}
+      +'<details class="more"><summary>'+ic("down")+' المقررات</summary><div class="list" style="margin-block-start:6px">'+o.courses.map(function(c){return '<div class="opt'+(c.sections?"":" off")+'"><span class="tx"><b>'+esc(c.name)+'</b><small><span class="code">'+esc(c.code)+'</span> · '+countOf(c.credit,AR.unit)+'</small>'+(c.needs&&c.needs.length?'<small class="need">'+ic("lock","")+' يلزمك أولاً: '+esc(c.needs.join(" + "))+'</small>':'')+'</span><span class="chip'+(c.sections?" ok":"")+'">'+(c.sections?countOf(c.sections,AR.section):"غير مطروح")+'</span></div>'}).join("")+'</div></details>'}
     host.innerHTML=h+'</section>';animateRings()})}
 function renderWishes(){var host=document.getElementById("wishes"),s=S.state,ph=s.phase,w=s.profile.wishes;if(w&&s.term&&w.termId!==s.term.id)w=null;if(!host)return;
   if(ph.mode!=="wishes"&&!(w&&ph.mode==="frozen")){host.innerHTML="";return}

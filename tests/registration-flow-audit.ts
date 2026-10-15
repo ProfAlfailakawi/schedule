@@ -135,6 +135,12 @@ try {
   check((await http("GET", "/api/public/me/ticket", { cookie: rookies[0].cookie })).json.reason === "no-run", "F0 قبل البروفة: «لم تُجرَ بعد»");
   check((await http("GET", "/api/public/me/ticket")).status === 401, "F0 بلا جلسة: ٤٠١");
 
+  const offered = (await http("GET", "/api/public/me/offered", { cookie: rookies[0].cookie })).json;
+  const o102 = offered.courses.find((c: any) => c.id === 102), o101 = offered.courses.find((c: any) => c.id === 101);
+  check(offered.ready === true && o102.needs.join() === "أصول" && o101.needs.length === 0, "F0 «المطروح لي» يقول ما يلزم أولاً من قواعد الصحيفة المعتمدة", [o101?.needs, o102?.needs]);
+  const offeredMid = (await http("GET", "/api/public/me/offered", { cookie: mid.cookie })).json;
+  check(offeredMid.courses.every((c: any) => c.id !== 101) && offeredMid.courses.find((c: any) => c.id === 102).needs.length === 0, "F0 ومن اجتاز المسبق لا يُقال له شيء");
+
   /* F1 */
   check((await http("POST", "/api/simulation/run")).status === 401, "F1 بلا دخول: ٤٠١");
   check((await http("POST", "/api/simulation/run", { who: "chair11" })).status === 403, "F1 رئيسُ لجنةٍ لا يشغّل (يحسب لكل الطلبة)");

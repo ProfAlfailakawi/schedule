@@ -27,6 +27,7 @@ import {
   lockState, planProgress, profileLifetime, resetLifetime, sanitizePassed, shouldTouch, unitsOf, RESET_COOLDOWN_DAYS,
 } from "../utils/studentProfile";
 import { ticketContext } from "./simulationData";
+import { unmetPrereq } from "../utils/curriculumRules";
 import { caseRefFor } from "../db/repository";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
@@ -414,9 +415,19 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const [catalog, index] = await Promise.all([sectionCatalog(profile.AdSectionId), offeringIndex(Number(term.AdTermId))]);
     const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
     const progress = planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit);
+    /* قواعدُ الصحيفة المعتمدة (إن وُجدت): ما ينقص الطالبَ من مسبقاتٍ قبل أن يستطيع أخذ المقرر. */
+    const ruleSet = profile.curriculumPlanId ? await Repository.getRuleSet(profile.curriculumPlanId) : undefined;
+    const passedSet = new Set(profile.passedCourseIds);
+    const nameOf = (id: number) => catalog.courses.get(id)?.name || `مقرر ${id}`;
+    const needsOf = (id: number): string[] => {
+      const rule = ruleSet?.rules.find(row => row.courseId === id);
+      if (!rule?.prereq) return [];
+      const lack = unmetPrereq(rule.prereq, passedSet, profile.passedUnits);
+      return [...lack.all.map(nameOf), ...lack.anyOf.map(group => `(${group.map(nameOf).join(" أو ")})`), ...(lack.unitsShort ? [countOf(lack.unitsShort, AR.unit)] : [])];
+    };
     const courses = progress.remainingIds.map(id => {
       const info = catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
-      return { id, ...info, sections: index.get(id)?.sections || 0 };
+      return { id, ...info, sections: index.get(id)?.sections || 0, needs: needsOf(id) };
     }).sort((a, b) => b.sections - a.sections || a.code.localeCompare(b.code, "en"));
     const offered = courses.filter(course => course.sections > 0);
     res.json({
