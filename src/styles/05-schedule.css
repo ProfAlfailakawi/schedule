@@ -8608,3 +8608,39 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
   .schedule-context .context-intelligence-summary article,
   .schedule-context .context-relations article { padding: 14px; }
 }
+
+/* ── Desktop list: no empty columns ──────────────────────────────────────────
+   «— ⧗ —» on every row was three empty cells. A value that is not there is not
+   drawn, and a column that no row fills is not reserved. Placement is by area,
+   so a hidden cell never lets its neighbours slide into the wrong column. */
+@media (min-width:761px){
+  .schedule-agenda{
+    --ag-cols:34px minmax(220px,1.5fr) minmax(148px,.95fr) minmax(126px,.9fr) minmax(90px,auto) auto;
+    --ag-areas:"index core time place meta actions";
+  }
+  .schedule-agenda:not(:has(.agenda-meta .unit-pill:not(.is-empty))){
+    --ag-cols:34px minmax(220px,1.5fr) minmax(148px,.95fr) minmax(126px,.9fr) auto;
+    --ag-areas:"index core time place actions";
+  }
+  .schedule-agenda:not(:has(.agenda-place:not(.is-empty))){
+    --ag-cols:34px minmax(220px,1.5fr) minmax(148px,.95fr) minmax(90px,auto) auto;
+    --ag-areas:"index core time meta actions";
+  }
+  .schedule-agenda:not(:has(.agenda-meta .unit-pill:not(.is-empty))):not(:has(.agenda-place:not(.is-empty))){
+    --ag-cols:34px minmax(220px,1.5fr) minmax(148px,.95fr) auto;
+    --ag-areas:"index core time actions";
+  }
+  .schedule-agenda .agenda-card{grid-template-columns:var(--ag-cols);grid-template-areas:var(--ag-areas)}
+  .schedule-agenda .agenda-card>.agenda-index{grid-area:index}
+  .schedule-agenda .agenda-card>.agenda-core{grid-area:core}
+  .schedule-agenda .agenda-card>.agenda-time{grid-area:time}
+  .schedule-agenda .agenda-card>.agenda-place{grid-area:place}
+  .schedule-agenda .agenda-card>.agenda-meta{grid-area:meta}
+  .schedule-agenda .agenda-card>.agenda-actions{grid-area:actions}
+  .schedule-agenda .agenda-place.is-empty,
+  .schedule-agenda .agenda-place .place-dash,
+  .schedule-agenda .code-chip.is-empty,
+  .schedule-agenda .unit-pill.is-empty{display:none}
+  .schedule-agenda .agenda-meta:not(:has(.unit-pill:not(.is-empty))){visibility:hidden}
+  .schedule-agenda:not(:has(.agenda-meta .unit-pill:not(.is-empty))) .agenda-meta{display:none}
+}
