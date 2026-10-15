@@ -145,8 +145,8 @@ const ctx = (plan: number[]) => ({
   ];
   fs.writeFileSync(path.join(dir, "db.json"), JSON.stringify({
     users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [],
-    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية" }],
-    sections: [{ AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" }, { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }],
+    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية" }, { AdCollegeId: 2, AdCollegeCode: "EDU2", AdCollegeName: "كلية أخرى" }],
+    sections: [{ AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" }, { AdSectionId: 22, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" }, { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }],
     instructors: [], courses, schedules: [], rooms: [], courseTransitions: [],
     curriculumPlans: [{ id: "p11", AdCollegeId: 1, AdSectionId: 11, name: "الجديدة", status: "active", createdAt: "2026-01-01" }],
     curriculumPlanCourses: [101, 102, 103, 104, 201].map(id => ({ id: `pc${id}`, planId: "p11", AdCollegeId: 1, AdSectionId: 11, AdCourseId: id, createdAt: "2026-01-01" })),
@@ -191,6 +191,13 @@ const ctx = (plan: number[]) => ({
     const beforeSource = JSON.stringify(await Repository.getCourses());
     const source = await call("tech", "GET", "/api/plan-review/reference?sectionId=21");
     check(source.status === 200 && source.json.references.length === 2 && source.json.references[1].degreeUnits === 125, "R5 رئيس القسم يرى مرجع الصحيفتين ومجموعيهما دون صحيفة تشغيلية");
+    check(source.json.sections.length === 1 && source.json.sections[0].sectionId === 21, "R5 رئيس القسم يرى كلية نطاقه فقط في اختيار مطابقة الكليات");
+    const allColleges = await call("admin", "GET", "/api/plan-review/reference?sectionId=21");
+    check(allColleges.status === 200 && allColleges.json.sections.length === 2 && allColleges.json.sections.some((row: any) => row.sectionId === 22 && row.collegeName === "كلية أخرى"), "R5 الإدارة تجهّز مقارنة تكنولوجيا التعليم لكل كلية من سجلاتها");
+    const sec22Ref = allColleges.json.sections.find((row: any) => row.sectionId === 22).references.find((row: any) => row.id === "new");
+    const missingOwnedCourse = sec22Ref.groups.flatMap((group: any) => group.courses).find((course: any) => course.code === "0109108");
+    check(missingOwnedCourse.state === "missing" && missingOwnedCourse.ownerSectionId === 22, "R5 رمز القسم المتكرر يُحلّ داخل الكلية، فتظهر الإضافة لمالكها الصحيح");
+    check((await call("tech", "GET", "/api/plan-review/reference?sectionId=22")).status === 403, "R5 رئيس القسم لا يفتح مقارنة كلية خارج نطاقه");
     const foundation = source.json.references[1].groups.flatMap((group: any) => group.courses).find((course: any) => course.code === "0109105");
     check(foundation.state === "different" && foundation.differences.includes("name") && foundation.name === "أسس تكنولوجيا التعليم", "R5 المطابقة تكشف الاسم الخطأ من رمز القسم والمقرر");
     check(JSON.stringify(await Repository.getCourses()) === beforeSource, "R5 قراءة المقارنة لا تغيّر أي مقرر حي");

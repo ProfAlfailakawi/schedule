@@ -19,12 +19,15 @@ check(/app\.(?:post|put)\("\/api\/courses(?:\/:id)?", requirePermission\(6\)/.te
   && /!isScopeAllowed\(req, collegeId, sectionId\)/.test(server)
   && /!isScopeAllowed\(req, currentCourse\.AdCollegeId, currentCourse\.AdSectionId\)/.test(server),
   "إنشاء وتعديل المقرر يظلان محميين بإذن 6 ونطاق القسم في الخادم");
-check(/sectionIdsByCode\.get\(course\.code\.slice\(2, 4\)\)/.test(reviewRoutes)
+check(/sectionIdsByCollegeCode\.get\(`\$\{Number\(target\.AdCollegeId\)\}:\$\{course\.code\.slice\(2, 4\)\}`\)/.test(reviewRoutes)
   && /inferred\.length === 1 \? inferred\[0\] : 0/.test(reviewRoutes),
-  "تحديد القسم المالك للمقرر الناقص لا يعتمد تشابه الأسماء ويطلب حسم الالتباس");
-check(/course\.ownerSectionId === sectionId/.test(referenceView)
+  "تحديد مالك المقرر الناقص يستخدم رمز القسم داخل الكلية ويطلب حسم الالتباس عند التكرار");
+check(/course\.ownerSectionId === selectedSectionId/.test(referenceView)
   && /course\.current!\.id/.test(referenceView),
-  "تصحيح السجل وبدء الإضافة يظهران للقسم المالك وحده");
+  "تصحيح السجل وبدء الإضافة يظهران للقسم المالك المختار وحده");
+check(/collegeName/.test(referenceView) && /body\.sections/.test(referenceView)
+  && /deps\.isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId\)\)/.test(reviewRoutes),
+  "مقارنة كل كلية تبقى محصورة بأقسام المستخدم المصرح بها");
 check(/schedule-reference-course-action/.test(coursesView)
   && /setCapacity\(""\)/.test(coursesView),
   "التحويل إلى نموذج المقرر يملأ المصدر ويترك السعة الفعلية للقسم ليحددها");

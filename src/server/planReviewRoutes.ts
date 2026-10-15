@@ -176,27 +176,37 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       fail(res, 403, "خارج نطاق هذه الصحيفة."); return;
     }
     if (!isTechnologyEducation(section.AdSectionName)) { res.json({ references: [] }); return; }
-    const [courses, sections, plans, links] = await Promise.all([Repository.getCourses(), Repository.getSections(), Repository.getCurriculumPlans(sectionId), Repository.getCurriculumPlanCourses(sectionId)]);
+    const [courses, sections, colleges] = await Promise.all([Repository.getCourses(), Repository.getSections(), Repository.getColleges()]);
+    const technologySections = sections.filter(row => isTechnologyEducation(row.AdSectionName)
+      && (deps.isPowerUser(req) || deps.isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))));
     const sectionCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
-    const sectionIdsByCode = new Map<string, number[]>();
-    for (const [id, code] of sectionCodes) sectionIdsByCode.set(code, [...(sectionIdsByCode.get(code) || []), id]);
-    const collegeCourses = courses.filter(row => Number(row.AdCollegeId) === Number(section.AdCollegeId)).map(row => {
-      const code = referenceCodeKey(row.CourseCode), ownerCode = sectionCodes.get(Number(row.AdSectionId));
-      return { ...row, CourseCode: /^\d{1,3}$/.test(code) && /^\d{2}$/.test(ownerCode || "") ? `01${ownerCode}${code.padStart(3, "0")}` : code };
-    });
-    res.json({ sectionId, references: TECHNOLOGY_EDUCATION_CURRICULA.map(reference => {
-      const matchingPlans = plans.filter(plan => !plan.virtual && plan.status === (reference.id === "new" ? "active" : "transition"));
-      const plan = matchingPlans.length === 1 ? matchingPlans[0] : undefined;
-      const members = new Set(links.filter(link => link.planId === plan?.id).map(link => Number(link.AdCourseId)));
-      const groups = compareCurriculumReference(reference, collegeCourses, members).map(group => ({ ...group, courses: group.courses.map(course => {
-        const matched = course.current && collegeCourses.find(row => Number(row.AdCourseId) === Number(course.current?.id));
-        const inferred = sectionIdsByCode.get(course.code.slice(2, 4)) || [];
-        const ownerSectionId = Number(matched?.AdSectionId) || (inferred.length === 1 ? inferred[0] : 0);
-        const owner = sections.find(row => Number(row.AdSectionId) === ownerSectionId);
-        return { ...course, ownerSectionId, ownerSectionName: String(owner?.AdSectionName || ""), ownerCollegeId: Number(section.AdCollegeId) };
-      }) }));
-      return { ...reference, planId: plan?.id || null, groups };
-    }) });
+    const sectionIdsByCollegeCode = new Map<string, number[]>();
+    for (const row of sections) {
+      const key = `${Number(row.AdCollegeId)}:${sectionCodes.get(Number(row.AdSectionId)) || ""}`;
+      sectionIdsByCollegeCode.set(key, [...(sectionIdsByCollegeCode.get(key) || []), Number(row.AdSectionId)]);
+    }
+    const sectionResults = await Promise.all(technologySections.map(async target => {
+      const [plans, links] = await Promise.all([Repository.getCurriculumPlans(Number(target.AdSectionId)), Repository.getCurriculumPlanCourses(Number(target.AdSectionId))]);
+      const collegeCourses = courses.filter(row => Number(row.AdCollegeId) === Number(target.AdCollegeId)).map(row => {
+        const code = referenceCodeKey(row.CourseCode), ownerCode = sectionCodes.get(Number(row.AdSectionId));
+        return { ...row, CourseCode: /^\d{1,3}$/.test(code) && /^\d{2}$/.test(ownerCode || "") ? `01${ownerCode}${code.padStart(3, "0")}` : code };
+      });
+      const references = TECHNOLOGY_EDUCATION_CURRICULA.map(reference => {
+        const matchingPlans = plans.filter(plan => !plan.virtual && plan.status === (reference.id === "new" ? "active" : "transition"));
+        const plan = matchingPlans.length === 1 ? matchingPlans[0] : undefined;
+        const members = new Set(links.filter(link => link.planId === plan?.id).map(link => Number(link.AdCourseId)));
+        const groups = compareCurriculumReference(reference, collegeCourses, members).map(group => ({ ...group, courses: group.courses.map(course => {
+          const matched = course.current && collegeCourses.find(row => Number(row.AdCourseId) === Number(course.current?.id));
+          const inferred = sectionIdsByCollegeCode.get(`${Number(target.AdCollegeId)}:${course.code.slice(2, 4)}`) || [];
+          const ownerSectionId = Number(matched?.AdSectionId) || (inferred.length === 1 ? inferred[0] : 0);
+          const owner = sections.find(row => Number(row.AdSectionId) === ownerSectionId);
+          return { ...course, ownerSectionId, ownerSectionName: String(owner?.AdSectionName || ""), ownerCollegeId: Number(target.AdCollegeId) };
+        }) }));
+        return { ...reference, planId: plan?.id || null, groups };
+      });
+      return { sectionId: Number(target.AdSectionId), collegeId: Number(target.AdCollegeId), collegeName: colleges.find(row => Number(row.AdCollegeId) === Number(target.AdCollegeId))?.AdCollegeName || "", sectionName: target.AdSectionName, references };
+    }));
+    res.json({ sectionId, references: sectionResults.find(row => row.sectionId === sectionId)?.references || [], sections: sectionResults });
   });
 
   app.get("/api/plan-review/plan", deps.requireAuth, async (req: Request, res: Response) => {

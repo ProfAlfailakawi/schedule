@@ -55,6 +55,9 @@ export const HEAD_KIND: AccountKind = { suffix: "head", role: DEPARTMENT_HEAD_RO
 export const ADVISOR_KIND: AccountKind = { suffix: "advisor", role: ADVISOR_ROLE, namePrefix: "إرشاد" };
 
 function lower(value: string) { return String(value || "").trim().toLowerCase(); }
+function accountPrefix(value: string) {
+  return String(value || "").replace(/^(?:01)+(?=[A-Za-z])/i, "");
+}
 
 /** رمز الكلية صالحاً لاسم دخول: حروف وأرقام لاتينية فقط، وإلا رقمُها. */
 function collegeTag(college: HeadPlanCollege | undefined, collegeId: number): string {
@@ -109,7 +112,7 @@ export function planDepartmentHeadAccounts(input: {
        This keeps advisor identities predictable (Math → Mathadvisor) without
        requiring a placeholder account or silently choosing an unrelated ID. */
     const sectionCode = String(section.AdSectionCode || "").replace(/[^A-Za-z0-9]/g, "");
-    const prefix = deptLogin ? deptLogin.replace(DEPT_SUFFIX, "") : sectionCode || `s${sectionId}`;
+    const prefix = accountPrefix(deptLogin ? deptLogin.replace(DEPT_SUFFIX, "") : sectionCode) || `s${sectionId}`;
     const currentHead = scoped.find(user => user.Role === kind.role);
     return { section, collegeId, sectionId, deptLogin, prefix, currentHead };
   });

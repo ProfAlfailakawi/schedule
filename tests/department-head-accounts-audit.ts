@@ -40,6 +40,20 @@ check(by(10).status === "exists" && by(10).existingLogin === "Techhead", "Techhe
 check(by(11).status === "create" && by(11).proposedLogin === "Sochead", "Socdept ← Sochead");
 check(by(20).status === "create" && by(20).proposedLogin === "TechheadBB", "البادئة نفسها في كلية أخرى تأخذ رمز الكلية");
 check(by(21).status === "create" && by(21).proposedLogin === "Mathhead" && Boolean(by(21).note), "قسم بلا حساب dept: يُستخدم رمز القسم واسمه واضح للمدير");
+const prefixedArabic = planDepartmentHeadAccounts({
+  users: [{ SystemUserId: 50, SystemUserLogin: "01Arabicdept", Role: "committeeChair" }],
+  assigns: [{ SystemUserId: 50, AdCollegeId: 1, AdSectionId: 30 }],
+  colleges: [{ AdCollegeId: 1, AdCollegeCode: "BG", AdCollegeName: "كلية" }],
+  sections: [{ AdSectionId: 30, AdCollegeId: 1, AdSectionCode: "01Arabic", AdSectionName: "قسم اللغة العربية" }],
+});
+check(prefixedArabic[0].proposedLogin === "Arabichead", "بادئة dept والقسم تزيل 01 من اسم الدخول");
+const arabicAdvisor = planAdvisorAccounts({
+  users: [{ SystemUserId: 51, SystemUserLogin: "01Arabicdept", Role: "committeeChair" }],
+  assigns: [{ SystemUserId: 51, AdCollegeId: 1, AdSectionId: 30 }],
+  colleges: [{ AdCollegeId: 1, AdCollegeCode: "BG", AdCollegeName: "كلية" }],
+  sections: [{ AdSectionId: 30, AdCollegeId: 1, AdSectionCode: "01Arabic", AdSectionName: "قسم اللغة العربية" }],
+});
+check(arabicAdvisor[0].proposedLogin === "Arabicadvisor", "حساب الإرشاد العربي يُقترح Arabicadvisor دون 01");
 const logins = plan.map(row => (row.existingLogin || row.proposedLogin).toLowerCase());
 check(new Set(logins).size === logins.length, "لا اسمان متطابقان في الخطة");
 
