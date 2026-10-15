@@ -86,22 +86,27 @@ export function planAdvisorAccounts(input: Parameters<typeof planDepartmentHeadA
     .replace(/^\s*قسم\s+/i, "").replace(/\s+/g, " ").trim().toLowerCase();
   const sectionNameByKey = new Map<string, string>();
   const grouped = new Map<string, HeadPlanSection[]>();
+  const ambiguousKeys = new Set<string>();
   for (const section of input.sections) {
     if (!collegeById.has(Number(section.AdCollegeId))) continue;
     const normalized = normalizeSection(section.AdSectionName);
     if (!normalized) continue;
     const inCollege = `${Number(section.AdCollegeId)}:${normalized}`;
-    /* الاسم نفسه عبر الكليات هو القسم ذاته. أما تكراره داخل كلية واحدة
-       فيبقى ملتبساً، لذلك نعزله برقم القسم بدلاً من دمج غير مقصود. */
-    const key = input.sections.filter(candidate => Number(candidate.AdCollegeId) === Number(section.AdCollegeId) && normalizeSection(candidate.AdSectionName) === normalized).length > 1
-      ? `${inCollege}:${Number(section.AdSectionId)}`
-      : normalized;
+    const peers = input.sections.filter(candidate => Number(candidate.AdCollegeId) === Number(section.AdCollegeId) && normalizeSection(candidate.AdSectionName) === normalized);
+    const codes = new Set(peers.map(candidate => String(candidate.AdSectionCode || "").trim().toLowerCase()));
+    /* قد يتكرر سجل القسم في الكلية نفسها بالاسم والرمز نفسيهما (مثل 49 و74).
+       يظل قسماً واحداً للإرشاد، وتُضم كل سجلاته إلى نطاق الحساب. اختلاف
+       الرمز أو غيابه في سجل مكرر يبقيه ملتبساً حتى يراجعه المدير. */
+    const ambiguousPeers = peers.length > 1 && (codes.size !== 1 || codes.has(""));
+    const key = ambiguousPeers ? `${inCollege}:${Number(section.AdSectionId)}` : normalized;
+    if (ambiguousPeers) ambiguousKeys.add(key);
     const list = grouped.get(key) || [];
     list.push(section); grouped.set(key, list);
     sectionNameByKey.set(key, String(section.AdSectionName || "").trim());
   }
 
   const sectionGroups = Array.from(grouped.entries()).map(([key, rows]) => {
+    const ambiguousSection = ambiguousKeys.has(key);
     const sectionIds = new Set(rows.map(row => Number(row.AdSectionId)));
     const collegeIds = new Set(rows.map(row => Number(row.AdCollegeId)));
     const scopeAssignments = rows.map(row => ({ AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId) }));
@@ -126,8 +131,16 @@ export function planAdvisorAccounts(input: Parameters<typeof planDepartmentHeadA
     const rankedDeptPrefixes = Array.from(departmentLoginCounts.entries()).sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     const prefixConflict = rankedDeptPrefixes.length > 1 && rankedDeptPrefixes[0][1] === rankedDeptPrefixes[1][1];
     const chosenDeptPrefix = !prefixConflict ? rankedDeptPrefixes[0]?.[0] : undefined;
-    const prefix = accountPrefix(chosenDeptPrefix || codes[0] || `s${sortedRows[0]?.AdSectionId}`)
+    const derivedPrefix = accountPrefix(chosenDeptPrefix || codes[0] || `s${sortedRows[0]?.AdSectionId}`)
       .replace(/^0+(?=\d)/, "") || `s${sortedRows[0]?.AdSectionId}`;
+    const semanticPrefixes: Record<string, string> = {
+      "التربيه الاسلاميه": "Islamic",
+      "وحده اللغه الانجليزيه": "EnglishUnit",
+      "وحده الكهرباء": "Electric",
+    };
+    const prefix = !chosenDeptPrefix && (/^\d/.test(derivedPrefix) || /^s\d+$/i.test(derivedPrefix))
+      ? semanticPrefixes[key] || derivedPrefix
+      : derivedPrefix;
     const proposedLogin = `${prefix}${ADVISOR_KIND.suffix}`;
     const scopedAdvisors = Array.from(assignedAdvisors).map(id => userById.get(id)!).filter(Boolean);
     const accountScopeCount = (id: number) => input.assigns.filter(assign => Number(assign.SystemUserId) === id).length;
@@ -141,7 +154,7 @@ export function planAdvisorAccounts(input: Parameters<typeof planDepartmentHeadA
       sectionId: Number(first.AdSectionId), sectionName: sectionNameByKey.get(key) || String(first.AdSectionName || ""),
       deptLogin: chosenDeptPrefix ? `${chosenDeptPrefix}dept` : null,
       proposedLogin, proposedName: `${ADVISOR_KIND.namePrefix} ${String(first.AdSectionName || "").trim()}`.trim(),
-      status: prefixConflict ? "review" : scopedAdvisors.length ? "exists" : "create",
+      status: prefixConflict || ambiguousSection ? "review" : scopedAdvisors.length ? "exists" : "create",
       collegeIds: Array.from(collegeIds).sort((a,b) => a-b), collegeNames: colleges.map(college => String(college.AdCollegeName)),
       sectionIds: Array.from(sectionIds).sort((a,b) => a-b), scopeAssignments, duplicateUserIds,
     };
@@ -151,6 +164,7 @@ export function planAdvisorAccounts(input: Parameters<typeof planDepartmentHeadA
       if (currentAssignments.length !== scopeAssignments.length) row.note = "الحساب موجود؛ سيُستكمل نطاقه ليشمل كليات القسم المتناظرة";
       if (canonical!.SystemUserLogin.toLowerCase() !== proposedLogin.toLowerCase()) row.note = `${row.note ? `${row.note}؛ ` : ""}اسم الحساب المقترح الموحد: ${proposedLogin}`;
       if (prefixConflict) row.note = `${row.note ? `${row.note}؛ ` : ""}تعارضت بادئات حسابات الأقسام؛ احتفظنا بالحساب الحالي دون إعادة تسميته`;
+      if (ambiguousSection) row.note = `${row.note ? `${row.note}؛ ` : ""}اسم القسم مكرر داخل الكلية برموز مختلفة؛ يلزم مراجعة النطاق`;
     } else if (scopedAdvisors.length > 1) {
       row.existingUserId = Number(canonical!.SystemUserId); row.existingLogin = String(canonical!.SystemUserLogin);
       const targetKeys = new Set(scopeAssignments.map(assign => `${assign.AdCollegeId}:${assign.AdSectionId}`));
@@ -160,14 +174,15 @@ export function planAdvisorAccounts(input: Parameters<typeof planDepartmentHeadA
       const credentialsAreBlank = scopedAdvisors.every(user => !String(user.SystemUserPass || "").trim() && !String(user.SystemUserPassVault || "").trim());
       const loginOwner = users.find(user => String(user.SystemUserLogin).toLowerCase() === proposedLogin.toLowerCase());
       const loginIsLocal = !loginOwner || duplicateUserIds.includes(Number(loginOwner.SystemUserId));
-      row.consolidationReady = !prefixConflict && scopesAreLocal && credentialsAreBlank && loginIsLocal && scopedAdvisors.every(user => !user.IsActive);
+      row.consolidationReady = !prefixConflict && !ambiguousSection && scopesAreLocal && credentialsAreBlank && loginIsLocal && scopedAdvisors.every(user => !user.IsActive);
       row.status = "review";
       row.note = "توجد حسابات مرشدين مكررة لهذا القسم؛ يلزم توحيدها مع الحفاظ على سجل الحسابات";
       if (!row.consolidationReady) row.note += loginIsLocal ? "؛ يلزم مراجعة الحسابات النشطة أو التي لها كلمة سر أو نطاق آخر يدوياً" : "؛ اسم الدخول المقترح متعارض مع حساب آخر";
     } else {
       if (prefixConflict) row.note = "تعارضت بادئات حسابات الأقسام بين الكليات؛ حدّد اسم الدخول الموحد قبل إنشاء الحساب";
+      if (ambiguousSection) row.note = `${row.note ? `${row.note}؛ ` : ""}اسم القسم مكرر داخل الكلية برموز مختلفة؛ يلزم مراجعة النطاق`;
       const existing = users.find(user => String(user.SystemUserLogin).toLowerCase() === proposedLogin.toLowerCase());
-      if (existing && !prefixConflict) {
+      if (existing && !prefixConflict && !ambiguousSection) {
         row.status = "exists"; row.existingUserId = Number(existing.SystemUserId); row.existingLogin = String(existing.SystemUserLogin);
         row.note = "الحساب موجود بلا نطاق لهذا القسم؛ راجعه قبل الإسناد";
       }
