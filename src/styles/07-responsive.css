@@ -1895,3 +1895,8 @@ html[data-demo-admin-readonly="true"] .app-main::before{
   .smart-guide-fab{min-width:44px}
   .sidebar-brand>button{min-height:44px}
 }
+
+/* Phone: the appointment editor's text buttons are real touch targets. */
+@media (max-width:760px){
+  .schedule-form-sections button:not([aria-label]){min-height:44px}
+}
