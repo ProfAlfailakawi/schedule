@@ -824,6 +824,40 @@ export interface StudentProfile {
   wishes?: StudentWishes;
 }
 
+/** تذكرةُ طالبٍ من بروفة تسجيل فصلٍ بعينه. وثيقةٌ لكل طالب: `{termId}_{fingerprint}`. */
+export interface RegistrationTicket {
+  id: string;
+  termId: number;
+  runId: string;
+  fp: string;
+  planId: string;
+  /** رقمُ نافذته (١ = الأولى). الساعاتُ يقرّرها صاحبُ القرار. */
+  window: number;
+  remainingUnits: number;
+  defaulted: boolean;
+  plans: Array<{ label: "A" | "B" | "C"; units: number; items: Array<{ courseId: number; offeringId: string; tight: boolean }> }>;
+  unmet: Array<{ courseId: number; reason: "not-offered" | "conflict" | "full" | "prereq" | "units" }>;
+}
+
+/** ملخّصُ آخر بروفةٍ لفصل: أعدادٌ لا أسماء. وثيقةٌ واحدة لكل فصل. */
+export interface RegistrationRun {
+  id: string;
+  termId: number;
+  runId: string;
+  ranAt: string;
+  ranBy: string;
+  students: number;
+  withoutRules: number;
+  defaulted: number;
+  rounds: number;
+  windows: number[];
+  /** لكل مقرر: سعتُه وما أُخذ منه وكم شعبةً، مع أسباب ما لم يتحقّق. */
+  courses: Array<{
+    courseId: number; collegeId: number; sectionId: number; sections: number; capacity: number; taken: number;
+    wanted: number; seated: number; unmet: { "not-offered": number; conflict: number; full: number; prereq: number; units: number };
+  }>;
+}
+
 export interface StudentWishes {
   termId: number;
   /** الوحدات التي يريدها هذا الفصل: 12–18. */

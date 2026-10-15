@@ -21,6 +21,8 @@ import {
   TermStudentPhases,
   StudentProfile,
   CurriculumRuleSet,
+  RegistrationRun,
+  RegistrationTicket,
   AdCollege,
   AdSection,
   AdInstructor,
@@ -228,6 +230,8 @@ interface DBState {
   studentProfiles?: StudentProfile[];
   curriculumRuleSets?: CurriculumRuleSet[];
   curriculumRuleDrafts?: CurriculumRuleSet[];
+  registrationTickets?: RegistrationTicket[];
+  registrationRuns?: RegistrationRun[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
   degreeRules?: AdDegreeRule[];
@@ -269,7 +273,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], registrationTickets: [], registrationRuns: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
@@ -2326,6 +2330,7 @@ export const caseRefFor = (need: { id: string; caseRef?: string }): string =>
  * automatic single-field index, so no composite index is involved.
  */
 const STUDENT_NEEDS_PAGE = 1000;
+const localRunLeases = new Map<number, { until: number; holder: string }>();
 async function readStudentNeedsWhere(field: "AdTermId" | "AdCollegeId", value: number): Promise<StudentNeed[]> {
   if (!firestoreDb) return [];
   const out: StudentNeed[] = [];
@@ -5086,6 +5091,107 @@ export const Repository = {
     return (db.curriculumRuleSets || []).find(row => row.id === planId);
   },
   /** كلُّ المسوّدات: عددُها بعددِ الصحائف (عشراتٌ) فتُقرأ كلُّها وتُصفّى في الذاكرة. */
+  /**
+   * ── بروفةُ التسجيل ───────────────────────────────────────────────────────────
+   * كلُّ ملفّات الطلبة (بلا أسماء) لتُغذّي المحرّك. ترقيمٌ صفحةً صفحة؛ وسقفٌ يحمي الذاكرة.
+   */
+  listStudentProfiles: async (limit = 60000): Promise<StudentProfile[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const out: StudentProfile[] = [];
+      let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      while (out.length < limit) {
+        let query: FirebaseFirestore.Query = firestoreDb.collection("studentProfiles").orderBy(FieldPath.documentId()).limit(1000);
+        if (last) query = query.startAfter(last);
+        const snap = await query.get();
+        for (const doc of snap.docs) out.push(doc.data() as StudentProfile);
+        if (snap.size < 1000) break;
+        last = snap.docs[snap.docs.length - 1];
+      }
+      return out.slice(0, limit);
+    }
+    return [...(db.studentProfiles || [])].slice(0, limit);
+  },
+  /**
+   * قفلٌ في قاعدة البيانات لبروفةٍ واحدة لكل فصل: مديران على نسختين من الخادم لا يشغّلان
+   * معاً (وإلا كتب كلٌّ فوق تذاكر الآخر وتركا الملخّصَ يشير إلى بروفةٍ كُنست تذاكرُها).
+   * ينتهي وحدَه بعد `ttlMs` إن مات الخادمُ في منتصف العمل.
+   */
+  acquireRegistrationRunLease: async (termId: number, holder: string, ttlMs = 15 * 60_000): Promise<boolean> => {
+    const now = Date.now();
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("registrationRunLocks").doc(String(termId));
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        const until = snap.exists ? Number((snap.data() as any).until) || 0 : 0;
+        if (until > now) return false;
+        transaction.set(ref, { until: now + ttlMs, holder });
+        return true;
+      });
+    }
+    const held = localRunLeases.get(termId);
+    if (held && held.until > now) return false;
+    localRunLeases.set(termId, { until: now + ttlMs, holder });
+    return true;
+  },
+  releaseRegistrationRunLease: async (termId: number, holder: string): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("registrationRunLocks").doc(String(termId));
+      await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        if (snap.exists && (snap.data() as any).holder === holder) transaction.delete(ref);
+      });
+      return;
+    }
+    if (localRunLeases.get(termId)?.holder === holder) localRunLeases.delete(termId);
+  },
+  getRegistrationRun: async (termId: number): Promise<RegistrationRun | undefined> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("registrationRuns").doc(String(termId)).get();
+      return doc.exists ? (doc.data() as RegistrationRun) : undefined;
+    }
+    return (db.registrationRuns || []).find(row => row.id === String(termId));
+  },
+  getRegistrationTicket: async (termId: number, fingerprint: string): Promise<RegistrationTicket | undefined> => {
+    if (!fingerprint) return undefined;
+    const id = `${termId}_${fingerprint}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("registrationTickets").doc(id).get();
+      return doc.exists ? (doc.data() as RegistrationTicket) : undefined;
+    }
+    return (db.registrationTickets || []).find(row => row.id === id);
+  },
+  /**
+   * يحفظ نتيجةَ بروفة: التذاكرُ دُفعاتٍ (٤٠٠ في الدفعة)، ثم الملخّصُ آخراً — فالباب لا يقرأ
+   * إلا ما اكتمل: تذكرةٌ لا يطابق `runId` ملخّصَها تُهمل. ولا تُحذف تذاكرُ البروفة السابقة
+   * (تُهمل ولا تُقرأ؛ ويحذفها مطهّرُ الملفات حين يحذف ملفَّ صاحبها).
+   */
+  saveRegistrationRun: async (run: RegistrationRun, tickets: RegistrationTicket[]): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      for (let i = 0; i < tickets.length; i += 400) {
+        const batch = firestoreDb.batch();
+        for (const ticket of tickets.slice(i, i + 400)) batch.set(firestoreDb.collection("registrationTickets").doc(ticket.id), ticket);
+        await batch.commit();
+      }
+      await firestoreDb.collection("registrationRuns").doc(run.id).set(run);
+      /* كنسُ تذاكر البروفة السابقة لهذا الفصل (طلبةٌ حُذفت ملفّاتهم أو خرجوا من الحساب). */
+      let after: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      for (;;) {
+        let query: FirebaseFirestore.Query = firestoreDb.collection("registrationTickets").where("termId", "==", run.termId).orderBy(FieldPath.documentId()).limit(400);
+        if (after) query = query.startAfter(after);
+        const page = await query.get();
+        const old = page.docs.filter(doc => (doc.data() as RegistrationTicket).runId !== run.runId);
+        if (old.length) { const batch = firestoreDb.batch(); old.forEach(doc => batch.delete(doc.ref)); await batch.commit(); }
+        if (page.size < 400) break;
+        after = page.docs[page.docs.length - 1];
+      }
+      return;
+    }
+    if (!Array.isArray(db.registrationTickets)) db.registrationTickets = [];
+    if (!Array.isArray(db.registrationRuns)) db.registrationRuns = [];
+    db.registrationTickets = db.registrationTickets.filter(row => row.termId !== run.termId).concat(tickets);
+    db.registrationRuns = db.registrationRuns.filter(row => row.id !== run.id).concat(run);
+    saveDatabase();
+  },
   listRuleDrafts: async (): Promise<CurriculumRuleSet[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       return (await firestoreDb.collection("curriculumRuleDrafts").get()).docs.map(doc => doc.data() as CurriculumRuleSet);
