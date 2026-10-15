@@ -36,6 +36,11 @@ export function countShouldAnimate(env: { value: number; reduced: boolean; playe
   return !env.needsObserver || env.hasObserver;
 }
 
+/** Pure: a zero is "nothing to count yet" — shown as is, but the one-shot stays armed for the first later positive value. */
+export function countStaysEligible(env: { value: number; reduced: boolean; played: boolean }): boolean {
+  return !(env.value > 0) && !env.reduced && !env.played;
+}
+
 const envNow = (value: number, observe: boolean, playKey?: string | number | null) => typeof window !== 'undefined' && countShouldAnimate({
   value,
   reduced: reducedMotion(),
@@ -56,7 +61,8 @@ export function Counted({ value, duration = 900, play = true, observe = false, p
 
   // One-shot observer: the count starts when the figure is actually visible.
   useEffect(() => {
-    if (!observe || seen || done.current || !play) return;
+    // Nothing to count yet (zero while loading): don't arm the observer/failsafe, so a late positive value still waits for the figure to be on screen.
+    if (!observe || seen || done.current || !play || !(value > 0)) return;
     const el = node.current;
     if (!el || typeof IntersectionObserver === 'undefined') { setSeen(true); return; }
     const io = new IntersectionObserver((entries) => {
@@ -65,12 +71,16 @@ export function Counted({ value, duration = 900, play = true, observe = false, p
     io.observe(el);
     const failsafe = window.setTimeout(() => { io.disconnect(); setSeen(true); }, 6000);
     return () => { io.disconnect(); window.clearTimeout(failsafe); };
-  }, [observe, seen, play]);
+  }, [observe, seen, play, value > 0]);
 
   useEffect(() => {
     if (!play) { if (!done.current) setShown(0); return; }
     if (done.current) { setShown(value); return; }
-    if (!envNow(value, observe, playKey)) { done.current = true; setShown(value); return; }
+    if (!envNow(value, observe, playKey)) {
+      // Zero while data is still loading: show it, but keep the count-up for the first positive value.
+      if (countStaysEligible({ value, reduced: reducedMotion(), played: journeyAlreadyPlayed(playKey) })) { setShown(value); return; }
+      done.current = true; setShown(value); return;
+    }
     if (!seen) return;
     let frame = 0;
     const base = Math.min(shownRef.current, value);
