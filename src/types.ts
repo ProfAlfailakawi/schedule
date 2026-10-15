@@ -749,9 +749,14 @@ export interface StudentProfile {
   lastSeenAt: string;
   /** متى يُحذف هذا الملف، وسببه. */
   deleteAt: string;
-  deleteReason: "initial" | "graduation" | "inactive";
+  deleteReason: "initial" | "graduation" | "inactive" | "reset";
   /** التخرّج المتوقَّع (ISO) كما قدّره النظام من المتبقّي — تقديرٌ لا وعد. */
   expectedGraduationAt?: string;
+  /**
+   * «نسيت رمزي»: لا أحدَ يسترجع الرمز، ولا يُمحى الملفُّ بكلمةٍ من غريب. يُطلب
+   * الحذفُ فيُمحى بعد مهلة، ودخولُ صاحبه بالرمز في المهلة يُلغيه.
+   */
+  resetRequestedAt?: string;
   /**
    * رغبات الطالب في فصلٍ بعينه: ما يريد تسجيله ووحداته وقيوده. تُقرأ في
    * مرحلة الرغبات وتُبنى منها تذكرتُه.

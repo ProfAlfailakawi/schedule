@@ -26,6 +26,8 @@ export const TYPICAL_TERM_UNITS = 13.5;
 export const MONTHS_PER_TERM = 6;
 /** آخرُ دخول لا يُكتب أكثر من مرةٍ في اليوم: القراءةُ لا تُكلّف كتابة. */
 export const TOUCH_EVERY_MS = 24 * 3_600_000;
+/** مهلةُ «نسيت رمزي»: يُحذف الملفُّ بعدها ما لم يدخل صاحبُه بالرمز. */
+export const RESET_COOLDOWN_DAYS = 30;
 /** عمر جلسة «هذا جهازي الشخصي». */
 export const REMEMBER_DAYS = 180;
 
@@ -149,4 +151,13 @@ export function profileLifetime(
 export function shouldTouch(lastSeenAt: string, now: number): boolean {
   const seen = Date.parse(lastSeenAt);
   return !Number.isFinite(seen) || now - seen >= TOUCH_EVERY_MS;
+}
+
+/** حذفٌ مطلوب: بعد المهلة، أو قبلها إن كان عمرُ الملف أقصر. */
+export function resetLifetime(profile: Pick<StudentProfile, "deleteAt">, now: Date): Lifetime {
+  const at = now.getTime() + RESET_COOLDOWN_DAYS * DAY_MS;
+  const current = Date.parse(profile.deleteAt);
+  return Number.isFinite(current) && current < at
+    ? { deleteAt: profile.deleteAt, deleteReason: "reset" }
+    : { deleteAt: new Date(at).toISOString(), deleteReason: "reset" };
 }
