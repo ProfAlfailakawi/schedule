@@ -488,3 +488,11 @@
 .sm-phase small{color:var(--muted)}
 .sm-links{display:flex;gap:6px;flex-wrap:wrap;align-self:center}
 .sm-links button{border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:var(--r-full);padding:6px 14px;cursor:pointer;font:inherit}
+.pr-import{display:grid;gap:10px;padding:14px;border:1.5px dashed var(--line-strong);border-radius:var(--r-md);background:var(--surface)}
+.pr-import-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pr-import-head>div:nth-child(2){display:grid;gap:2px;flex:1 1 220px;min-inline-size:0}
+.pr-import-head small{color:var(--muted)}
+.pr-import-ic{display:grid;place-items:center;inline-size:40px;block-size:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
+.pr-import-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pr-import-actions label{cursor:pointer;display:inline-flex;align-items:center}
+.pr-import-result{display:grid;gap:8px}

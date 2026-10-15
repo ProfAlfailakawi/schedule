@@ -145,7 +145,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => plan.status !== "archived" && !plan.virtual);
       if (plans.length) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: plans.map(plan => ({ id: plan.id, name: plan.name })) });
     }
-    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair" });
+    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isPowerUser(req) });
   });
 
   app.get("/api/plan-review/plan", deps.requireAuth, async (req: Request, res: Response) => {
@@ -258,7 +258,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       }));
       created += 1;
     }
-    res.locals.auditChanges = `استيراد قواعد صحائف: ${created} مسوّدة`;
+    res.locals.auditChanges = `استيراد قواعد صحائف: ${countOf(created, AR.draft)}`;
     res.json({ created, skipped, diagnostics: diagnostics.slice(0, 300), diagnosticsTotal: diagnostics.length });
   });
 }
