@@ -126,8 +126,14 @@ async function summaryOf(profile: StudentProfile) {
     setupDone, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
     passedCourseIds: profile.passedCourseIds, passedUnits: profile.passedUnits,
     progress, wishes: profile.wishes || null,
-    createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason,
+    createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason, hasIdentity: Boolean(profile.nameCipher && profile.civilCipher),
   };
+}
+
+/** الاسمُ الثلاثي: ٦–٨٠ حرفاً بلا أرقامٍ ولا رموز. فارغٌ إن لم يصلح. */
+function cleanName(value: unknown): string {
+  const name = String(value ?? "").replace(/\s+/g, " ").trim();
+  return name.length >= 6 && name.length <= 80 && !/[<>{}\\\d]/.test(name) ? name : "";
 }
 
 export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): void {
@@ -249,7 +255,10 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         if (req.body?.agree !== true) { fail(res, 400, "وافق على حفظ ملفك أولاً.", "no-consent"); return; }
         const problem = codeProblem(code);
         if (problem) { fail(res, 400, problem, "weak-code"); return; }
+        const name = cleanName(req.body?.name);
+        if (!name) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
         const { hash, salt } = await hashCode(code);
+        const nameCipher = await deps.sealIdentity(name), civilCipher = await deps.sealIdentity(civil);
         let existed = false;
         const iso = new Date(now).toISOString();
         const created = await Repository.updateStudentProfile(fingerprint, current => {
@@ -257,7 +266,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
           const base = { createdAt: iso, lastSeenAt: iso };
           return {
             id: fingerprint, fingerprint, AdCollegeId: 0, AdSectionId: 0, passedCourseIds: [], passedUnits: 0,
-            codeHash: hash, codeSalt: salt, updatedAt: iso, ...base, ...profileLifetime(base, new Date(now)),
+            codeHash: hash, codeSalt: salt, nameCipher, civilCipher, updatedAt: iso, ...base, ...profileLifetime(base, new Date(now)),
           };
         });
         if (existed || !created) { fail(res, 409, "لهذا الرقم المدني ملفٌّ بالفعل — أدخل رمزك.", "exists"); return; }
@@ -491,28 +500,30 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     if (!answers.length) { fail(res, 400, "اختر حالة مقرّرٍ واحدٍ على الأقل.", "empty"); return; }
     const stuck = answers.filter(answer => answer.state === "stuck");
     const help = req.body?.help;
-    let identity: { name: string; civil: string } | null = null;
-    if (stuck.length && help) {
-      const civil = toEnglishDigits(help.civil).replace(/\D/g, "");
-      const name = String(help.name || "").replace(/\s+/g, " ").trim();
-      if (name.length < 6 || name.length > 80 || /[<>{}\\\d]/.test(name)) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
+    /* الاسمُ والرقمُ مختومان في ملفّه منذ إنشائه: لا يُسألان ثانيةً. أما ملفٌّ أُنشئ قبل ذلك فيُسأل مرةً ويُحفظ مختوماً. */
+    let sealed: { nameCipher: string; civilCipher: string } | null = profile.nameCipher && profile.civilCipher ? { nameCipher: profile.nameCipher, civilCipher: profile.civilCipher } : null;
+    let remember: { nameCipher: string; civilCipher: string } | null = null;
+    if (stuck.length && help && !sealed) {
+      const civil = toEnglishDigits(help?.civil).replace(/\D/g, "");
+      const name = cleanName(help?.name);
+      if (!name) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
       if (civil.length !== 12 || !validateCivilId(civil).isValid) { fail(res, 400, "الرقم المدني غير صحيح.", "bad-civil"); return; }
       if ((await deps.surveyFingerprint(civil)) !== fingerprint) { fail(res, 403, "هذا الرقم المدني ليس رقمَ هذا الملف.", "civil-mismatch"); return; }
-      identity = { name, civil };
+      sealed = remember = { nameCipher: await deps.sealIdentity(name), civilCipher: await deps.sealIdentity(civil) };
     }
 
     let before: NonNullable<StudentProfile["registration"]>["answers"] | undefined;
     const saved = await Repository.updateStudentProfile(fingerprint, current => {
       if (!current) return undefined;
       before = current.registration && current.registration.termId === ctx.termId ? current.registration.answers : undefined;
-      return { ...current, registration: { termId: ctx.termId, at: new Date().toISOString(), answers } };
+      return { ...current, ...(remember || {}), registration: { termId: ctx.termId, at: new Date().toISOString(), answers } };
     });
     if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
     await Repository.applyRegistrationOutcome(ctx.termId, fingerprint, before, answers);
 
     /* حالةٌ لكل قسمٍ يملك مقرراً تعثّر فيه: يصله الطلبُ على كشف التسجيل كأيّ طلب. */
     const cases: Array<{ sectionName: string; caseRef: string }> = [];
-    if (identity) {
+    if (sealed && help) {
       const [courses, sections] = await Promise.all([Repository.getCourses(), Repository.getSections()]);
       const courseOf = new Map((courses as any[]).map(course => [Number(course.AdCourseId), course] as const));
       const byOwner = new Map<number, typeof stuck>();
@@ -520,7 +531,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         const owner = Number(courseOf.get(answer.courseId)?.AdSectionId) || 0;
         if (owner) byOwner.set(owner, [...(byOwner.get(owner) || []), answer]);
       }
-      const nameCipher = await deps.sealIdentity(identity.name), civilCipher = await deps.sealIdentity(identity.civil);
+      const { nameCipher, civilCipher } = sealed;
       for (const [ownerSectionId, list] of byOwner) {
         const ownerCollegeId = Number(courseOf.get(list[0].courseId)?.AdCollegeId) || profile.AdCollegeId;
         const homeInOwnerCollege = profile.AdCollegeId === ownerCollegeId;

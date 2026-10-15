@@ -330,18 +330,20 @@ function viewCode(){
 }
 function viewCreate(){
   app.innerHTML='<section class="hero fade"><span class="disc">'+ic("spark")+'</span><h1>ابدأ ملفّك</h1><p>اختر رمزاً من 6 أرقام يحمي ملفّك. لا يعرفه غيرك.</p></section>'
-   +'<section class="card fade">'+otp("c1","رمزك الشخصي")+otp("c2","أعد كتابة الرمز")+rememberSwitch()
-   +'<label class="chk"><input type="checkbox" id="agree"><span>أوافق على حفظ ملفّي: أرقام المقررات التي أنجزتها فقط. يُحذف تلقائياً بعد تخرّجي المتوقَّع بسنة أو إن انقطعت عامين، وأستطيع حذفه متى شئت.</span></label>'
+   +'<section class="card fade"><div class="field"><label for="nm">الاسم الثلاثي</label><input class="inp" id="nm" autocomplete="name" maxlength="80"><p class="muted">'+ic("shield","")+' يُحفظ مختوماً مع ملفّك، ولا يراه أحدٌ إلا قسمُ مقررك إن تعثّرتَ وطلبتَ مساعدته.</p></div>'+otp("c1","رمزك الشخصي")+otp("c2","أعد كتابة الرمز")+rememberSwitch()
+   +'<label class="chk"><input type="checkbox" id="agree"><span>أوافق على حفظ ملفّي: اسمي (مختوماً) وأرقام المقررات التي أنجزتها ورغباتي. يُحذف تلقائياً بعد تخرّجي المتوقَّع بسنة أو إن انقطعت عامين، وأستطيع حذفه متى شئت.</span></label>'
    +errBox("verr")+'<button class="btn" id="mk" disabled>أنشئ ملفّي '+ic("back")+'</button><button class="link" id="other">رقم مدني آخر</button></section>';
-  var a="",b="",agree=document.getElementById("agree"),mk=document.getElementById("mk");wireRemember();
-  function sync(){mk.disabled=!(a.length===6&&b.length===6&&agree.checked);showErr("verr",a.length===6&&b.length===6&&a!==b?"الرمزان غير متطابقين":"")}
+  var a="",b="",agree=document.getElementById("agree"),mk=document.getElementById("mk"),nm=document.getElementById("nm");wireRemember();
+  function nameOk(){var v=nm.value.replace(/\s+/g," ").trim();return v.length>=6&&v.length<=80&&!/[<>{}\\\d]/.test(v)}
+  nm.addEventListener("input",function(){sync()});
+  function sync(){mk.disabled=!(nameOk()&&a.length===6&&b.length===6&&agree.checked);showErr("verr",a.length===6&&b.length===6&&a!==b?"الرمزان غير متطابقين":"")}
   wireOtp("c1",function(v){a=v;sync()});wireOtp("c2",function(v){b=v;sync()});agree.addEventListener("change",sync);
   mk.addEventListener("click",function(){if(a!==b){showErr("verr","الرمزان غير متطابقين");return}mk.disabled=true;mk.textContent="ينشئ…";
-    api("POST","/api/public/me/enter",{civil:S.civil,code:a,create:true,agree:true,remember:S.remember}).then(function(r){
+    api("POST","/api/public/me/enter",{civil:S.civil,code:a,create:true,agree:true,remember:S.remember,name:nm.value}).then(function(r){
       if(!r.ok){mk.disabled=false;mk.innerHTML='أنشئ ملفّي '+ic("back");showErr("verr",r.d.error||"تعذّر الإنشاء");return}
       afterSignIn()})});
   document.getElementById("other").addEventListener("click",function(){S.civil="";setView("gate")});
-  setTimeout(function(){var i=document.getElementById("c1");if(i)i.focus()},60);
+  setTimeout(function(){var i=document.getElementById("nm");if(i)i.focus()},60);
 }
 function afterSignIn(){S.civil="";api("GET","/api/public/me/state").then(function(r){if(r.ok){S.state=r.d;setTop()}S.draft=null;S.offered=null;setView(S.state&&S.state.profile&&S.state.profile.setupDone?"home":"setup")})}
 
@@ -435,8 +437,10 @@ function paintReport(host){var d=S.report,h='<section class="card rp fade"><h2><
   d.courses.forEach(function(c){var a=S.rp[c.courseId]||{},stuck=a.state==="stuck";if(stuck)anyStuck=true;
     h+='<div class="ln" data-c="'+c.courseId+'"><div class="top"><b>'+esc(c.name)+'</b><div class="yn"><button type="button" data-v="registered" aria-pressed="'+(a.state==="registered")+'">سجّلت</button><button type="button" data-v="stuck" aria-pressed="'+stuck+'">تعثّرت</button></div></div>'
       +(stuck?'<div class="why">'+[["full","امتلأت الشعب"],["prereq","المسبق لا يسمح"],["conflict","تعارض"],["other","آخر"]].map(function(x){return '<button type="button" data-w="'+x[0]+'" aria-pressed="'+(a.reason===x[0])+'">'+x[1]+'</button>'}).join("")+'</div>':'')+'</div>'});
-  if(anyStuck&&d.canReport){h+='<div class="help"><label class="row" style="gap:10px"><input type="checkbox" id="hp"'+(S.rpHelp?" checked":"")+'><span>أريد أن يساعدني القسم في حالتي</span></label>'
-    +(S.rpHelp?'<div class="field"><label for="hn">الاسم الثلاثي</label><input class="inp" id="hn" autocomplete="name"></div><div class="field"><label for="hc">الرقم المدني</label><input class="inp civil" id="hc" inputmode="numeric" maxlength="12" dir="ltr" autocomplete="off"></div><p class="muted">'+ic("shield","")+' يصل اسمك ورقمك المدني لقسم المقرر وللتسجيل فقط، ولا يُحفظان في ملفّك الدائم.</p>':'')+'</div>'}
+  if(anyStuck&&d.canReport){var known=S.state&&S.state.profile&&S.state.profile.hasIdentity;
+    h+='<div class="help"><label class="row" style="gap:10px"><input type="checkbox" id="hp"'+(S.rpHelp?" checked":"")+'><span>أريد أن يساعدني القسم في حالتي</span></label>'
+    +(S.rpHelp&&known?'<p class="muted">'+ic("shield","")+' سيصل اسمك المحفوظ مع ملفّك لقسم المقرر وللتسجيل فقط.</p>':'')
+    +(S.rpHelp&&!known?'<div class="field"><label for="hn">الاسم الثلاثي</label><input class="inp" id="hn" autocomplete="name"></div><div class="field"><label for="hc">الرقم المدني</label><input class="inp civil" id="hc" inputmode="numeric" maxlength="12" dir="ltr" autocomplete="off"></div><p class="muted">'+ic("shield","")+' يصل اسمك ورقمك المدني لقسم المقرر وللتسجيل فقط، ولا يُحفظان في ملفّك الدائم.</p>':'')+'</div>'}
   h+=errBox("rperr");
   if(d.canReport)h+='<button class="btn" id="rps"'+(Object.keys(S.rp).length?"":" disabled")+'>'+ic("check")+' أرسل</button>';
   h+='<div id="rpdone"></div></section>';host.innerHTML=h;
@@ -446,7 +450,7 @@ function paintReport(host){var d=S.report,h='<section class="card rp fade"><h2><
   var hp=document.getElementById("hp");if(hp)hp.addEventListener("change",function(){S.rpHelp=hp.checked;paintReport(host)});
   var sv=document.getElementById("rps");if(sv)sv.addEventListener("click",function(){sv.disabled=true;showErr("rperr","");
     var answers=Object.keys(S.rp).map(function(k){return{courseId:Number(k),state:S.rp[k].state,reason:S.rp[k].reason}});
-    var body={answers:answers};if(anyStuck&&S.rpHelp){body.help={name:(document.getElementById("hn")||{}).value||"",civil:(document.getElementById("hc")||{}).value||""}}
+    var body={answers:answers};if(anyStuck&&S.rpHelp){body.help=(S.state.profile&&S.state.profile.hasIdentity)?true:{name:(document.getElementById("hn")||{}).value||"",civil:(document.getElementById("hc")||{}).value||""}}
     api("POST","/api/public/me/report",body).then(function(r){sv.disabled=false;if(!r.ok){showErr("rperr",r.d.error||"تعذّر الإرسال");return}
       var m='<p class="lead">شكراً — سُجّل جوابك.</p>';(r.d.cases||[]).forEach(function(c){m+='<p class="muted">حالتك لدى '+esc(c.sectionName)+'؛ رقمها:</p><div class="ref">'+esc(c.caseRef)+'</div>'});
       document.getElementById("rpdone").innerHTML=m;toast("وصل جوابك")})})}

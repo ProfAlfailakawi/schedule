@@ -116,7 +116,7 @@ async function http(method: string, url: string, opts: { body?: unknown; cookie?
 }
 async function student(seed: number, passedCodes: number[], wishes?: { targetUnits: number; courseIds?: number[]; constraints?: any }, sectionId = 11, planId = "p11") {
   const ID = civil(seed);
-  const made = await http("POST", "/api/public/me/enter", { body: { civil: ID, code: "135790", create: true, agree: true } });
+  const made = await http("POST", "/api/public/me/enter", { body: { civil: ID, code: "135790", create: true, agree: true, name: "طالب تجريبي اختباري" } });
   const cookie = made.cookie;
   await http("PUT", "/api/public/me/profile", { cookie, body: { sectionId, curriculumPlanId: planId, passedCourseIds: passedCodes } });
   if (wishes) await http("PUT", "/api/public/me/wishes", { cookie, body: { targetUnits: wishes.targetUnits, courseIds: wishes.courseIds || [], constraints: wishes.constraints || {} } });
@@ -223,14 +223,27 @@ try {
   check(noHelp.status === 200 && noHelp.json.registered === 1 && noHelp.json.stuck === 1 && noHelp.json.cases.length === 0, "G3 تعثّرٌ بلا طلب مساعدة: يُحصى ولا يُنشأ طلب", noHelp.json);
   const outcome1 = (await http("GET", "/api/simulation/outcome", { who: "admin" })).json;
   check(outcome1.answered === 1 && outcome1.courses.find((c: any) => c.courseId === stuckId)?.full === 1 && outcome1.courses.find((c: any) => c.courseId === okId)?.registered === 1, "G3 العدّاداتُ تحسب الجواب", outcome1);
-  const badName = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck" }], help: { name: "س", civil: rookies[1].ID } } });
-  check(badName.json.code === "bad-name", "G4 اسمٌ غير صالح");
-  const wrongCivil = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck" }], help: { name: "عبدالله محمد العلي", civil: rookies[2].ID } } });
-  check(wrongCivil.status === 403 && wrongCivil.json.code === "civil-mismatch", "G4 رقمٌ مدنيٌّ لغير صاحب الملف: ٤٠٣ (لا يُنتحل طالب)");
-  const helped = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: okId, state: "registered" }, { courseId: stuckId, state: "stuck", reason: "prereq" }], help: { name: "عبدالله محمد العلي", civil: rookies[1].ID } } });
-  check(helped.status === 200 && helped.json.cases.length === 1 && /^[A-Z0-9-]{4,}$/i.test(helped.json.cases[0].caseRef), "G5 طلبُ المساعدة ينشئ حالةً لقسم المقرر برقم حالة", helped.json);
-  const needs = await Repository.getStudentNeedsByFingerprint((await Repository.listStudentProfiles()).find(p => p.registration)!.fingerprint, 1, 1);
+  /* الاسمُ والرقمُ مختومان منذ الإنشاء: لا يُسألان ثانيةً ولا يُقبل رقمٌ مدنيٌّ يُرسَل معهما */
+  const helped = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: okId, state: "registered" }, { courseId: stuckId, state: "stuck", reason: "prereq" }], help: true } });
+  check(helped.status === 200 && helped.json.cases.length === 1 && /^[A-Z0-9-]{4,}$/i.test(helped.json.cases[0].caseRef), "G5 طلبُ المساعدة بالمختوم من الملف: لا اسمَ ولا رقماً يُعاد إدخالهما", helped.json);
+  const fp1 = (await Repository.listStudentProfiles()).find(p => p.registration)!.fingerprint;
+  const needs = await Repository.getStudentNeedsByFingerprint(fp1, 1, 1);
   check(needs.length === 1 && needs[0].nameCipher?.startsWith("sealed:") && needs[0].civilCipher?.startsWith("sealed:") && needs[0].surveySectionId === 11 && !JSON.stringify(needs[0]).includes(rookies[1].ID), "G5 الاسمُ والرقمُ مختومان، والحالةُ لقسم المقرر");
+  const prof = (await Repository.listStudentProfiles()).find(p => p.fingerprint === fp1)!;
+  check(Boolean(prof.nameCipher && prof.civilCipher) && !JSON.stringify(prof).includes(rookies[1].ID) && !JSON.stringify(prof).includes("طالب تجريبي"), "G5 الملفُّ يحمل المختوم فقط: لا اسمَ ولا رقماً مكشوفين");
+  const mePlain = JSON.stringify((await http("GET", "/api/public/me/profile", { cookie: rookies[1].cookie })).json);
+  check(mePlain.includes('"hasIdentity":true') && !mePlain.includes("Cipher") && !mePlain.includes("sealed:"), "G5 الطالبُ يعرف أنّ اسمه محفوظ ولا يُعاد إليه المختوم");
+  /* ملفٌّ قديم بلا مختوم: يُسأل مرةً، ورقمُه يجب أن يطابق ملفَّه، ثم يُحفظ */
+  await Repository.updateStudentProfile(fp1, cur => (cur ? { ...cur, nameCipher: undefined, civilCipher: undefined } : undefined));
+  const legacyBad = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck" }], help: { name: "عبدالله محمد العلي", civil: rookies[2].ID } } });
+  check(legacyBad.status === 403 && legacyBad.json.code === "civil-mismatch", "G4 ملفٌّ قديم: رقمٌ مدنيٌّ لغير صاحبه ٤٠٣ (لا يُنتحل طالب)");
+  const legacyNoName = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck" }], help: { name: "س", civil: rookies[1].ID } } });
+  check(legacyNoName.json.code === "bad-name", "G4 اسمٌ غير صالح");
+  const legacyOk = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck", reason: "prereq" }], help: { name: "عبدالله محمد العلي", civil: rookies[1].ID } } });
+  const prof2 = (await Repository.listStudentProfiles()).find(p => p.fingerprint === fp1)!;
+  check(legacyOk.status === 200 && Boolean(prof2.nameCipher && prof2.civilCipher), "G4 ملفٌّ قديم: يُسأل مرةً ويُحفظ مختوماً للمرة القادمة", legacyOk.json);
+  const noName = await http("POST", "/api/public/me/enter", { body: { civil: civil(900), code: "135790", create: true, agree: true } });
+  check(noName.status === 400 && noName.json.code === "bad-name", "G0 إنشاءُ ملفٍّ بلا اسمٍ صالح مرفوض");
   const outcome2 = (await http("GET", "/api/simulation/outcome", { who: "admin" })).json;
   check(outcome2.answered === 1 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.stuck === 1 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.full === 0 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.prereq === 1, "G6 إعادةُ الجواب تطرح القديم وتضيف الجديد: لا عدّ مزدوج", outcome2);
   const chairOut = (await http("GET", "/api/simulation/outcome", { who: "chair11" })).json;
