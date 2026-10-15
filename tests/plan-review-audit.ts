@@ -200,6 +200,8 @@ const ctx = (plan: number[]) => ({
 
     const st = await call("chair11", "GET", "/api/plan-review/status");
     check(st.json.pending.length === 1 && st.json.pending[0].sectionName === "قسم التربية الإسلامية" && st.json.canApprove === true, "R5 تظهر الأيقونة لرئيس اللجنة: مسوّدةٌ تنتظر");
+    const sec11 = st.json.sections.find((x: any) => x.sectionId === 11);
+    check(sec11.plans[0].pending === true && typeof sec11.plans[0].status === "string", "R5 الصحيفةُ التي تنتظر مراجعةً تتصدّر قائمة القسم (لا الصحيفة السابقة)", sec11);
     check((await call("chair12", "GET", "/api/plan-review/status")).json.pending.length === 0, "R5 قسمٌ آخر لا يرى مسوّدةَ غيره");
     check((await call("head11", "GET", "/api/plan-review/status")).json.pending.length === 1 && (await call("head11", "GET", "/api/plan-review/status")).json.canApprove === false, "R5 رئيس القسم يرى ولا يعتمد");
     check((await call("dean", "GET", "/api/plan-review/status")).json.pending.length === 0, "R5 العميدُ لا شأن له بالمراجعة");

@@ -101,6 +101,7 @@ import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPha
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
+import { seedDemoRadar } from "./src/server/demoRadarSeed";
 import { radarNoticeFor, registerSimulationRoutes } from "./src/server/simulationRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
@@ -677,6 +678,10 @@ let publicRateLimitSweptAt = 0;
 
 function rateLimitPublic(req: Request, res: Response, next: NextFunction) {
   if (PUBLIC_RATE_LIMIT_MAX <= 0) { next(); return; }
+  /* «مساري» (/api/public/me/*) له حدودُه التي تحكمه (أخطاء الرمز على الملف والعنوان، والكتابة في الدقيقة)،
+     ولا يصحّ أن يزاحمه عدّادٌ واحدٌ لكل عنوان: شبكةُ الجامعة عنوانٌ واحد لآلاف الطلبة، وصفحةُ الباب
+     الواحدة تنادي خمسَ مراتٍ — فيُحجب الطالبُ التاسعُ في الدقيقة ويومُ التسجيل هو يومُه. */
+  if (req.originalUrl.startsWith("/api/public/me/")) { next(); return; }
   const now = Date.now();
   // Expired windows are dropped once per window, so a long-lived instance that
   // has served many addresses does not keep a row for every one of them.
@@ -2336,6 +2341,9 @@ async function seedDemoStories(): Promise<void> {
 
   // ── مقترحان دراسيان (e): واحدٌ مرسَلٌ ينتظر ردّ الأستاذ، وآخرُ مسودة.
   await seedDemoStudyProposals(DEMO_STORY_SCOPE).catch(error => console.error("[demo] seeding study proposals failed:", error));
+
+  // ── رادارُ التسجيل (f): صحائفُ وقواعد وطلبةٌ وتذاكرُ وأجوبة، بالأسماء الوهمية نفسها.
+  await seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() }).catch(error => console.error("[demo] seeding radar failed:", error));
 }
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {

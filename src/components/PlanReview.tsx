@@ -18,7 +18,7 @@ import type { CourseKind, CurriculumCourseRule, ElectiveGroup } from "../types";
 interface Status {
   pending: Array<{ planId: string; sectionId: number; sectionName: string }>;
   approved: Array<{ planId: string; sectionId: number; sectionName: string }>;
-  sections: Array<{ sectionId: number; sectionName: string; plans: Array<{ id: string; name: string }> }>;
+  sections: Array<{ sectionId: number; sectionName: string; plans: Array<{ id: string; name: string; status?: string; pending?: boolean }> }>;
   canApprove: boolean;
   canImport?: boolean;
 }
