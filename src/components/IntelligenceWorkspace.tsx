@@ -3449,7 +3449,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </div>
 
                       {item.simulationImpact ? <p className="demand-why">
-                        بعد إضافة الشعب المقترحة وإعادة محاكاة {countOf(item.simulationImpact.respondents, AR.student)} من أصحاب الرغبات الحالية، يرتفع القادرون على بلوغ 12 وحدة بمقدار <b>{countOf(item.simulationImpact.delta12, AR.student)}</b>، وبلوغ 15 وحدة بمقدار <b>{countOf(item.simulationImpact.delta15, AR.student)}</b>. المقاعد افتراضية؛ هذه معاينة بلا حفظ.
+                        بعد إضافة الشعب المقترحة وإعادة محاكاة {countOf(item.simulationImpact.respondents, AR.student)} من أصحاب الرغبات الحالية، يرتفع القادرون على بلوغ 12 وحدة بمقدار <b>{countOf(item.simulationImpact.delta12, AR.student)}</b>، وبلوغ 15 وحدة بمقدار <b>{countOf(item.simulationImpact.delta15, AR.student)}</b>. وتقل حالات تعارض المقررات في الخطط من <b>{countOf(item.simulationImpact.conflictsBefore, AR.course)}</b> إلى <b>{countOf(item.simulationImpact.conflictsAfter, AR.course)}</b>. المقاعد افتراضية؛ هذه معاينة بلا حفظ.
                       </p> : item.predicted ? <p className="opening-note">هذا توقع من بيانات سابقة؛ لم يُخلط مع الرغبات الحالية ولم يُعرض كتحسن مؤكد.</p> : null}
 
                       {item.placements.length ? (
@@ -3523,7 +3523,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <p className="demand-why">
                         بعد إعادة المحاكاة، يرتفع القادرون على بلوغ 12 وحدة من <b>{countOf((fix.simulationImpact?.before.canReach15 || 0) + (fix.simulationImpact?.before.canReach12To14 || 0), AR.student)}</b> إلى{" "}
                         <b>{countOf((fix.simulationImpact?.after.canReach15 || 0) + (fix.simulationImpact?.after.canReach12To14 || 0), AR.student)}</b> من أصل {countOf(fix.simulationImpact?.respondents || 0, AR.student)} مشاركاً؛ وبلوغ 15 وحدة يتحسن بمقدار{" "}
-                        <b>{countOf(fix.simulationImpact?.delta15 || 0, AR.student)}</b>. المقاعد افتراضية، والنتيجة للرغبات المرسلة فقط.
+                        <b>{countOf(fix.simulationImpact?.delta15 || 0, AR.student)}</b>. وتقل تعارضات الخطط من <b>{countOf(fix.simulationImpact?.conflictsBefore || 0, AR.course)}</b> إلى <b>{countOf(fix.simulationImpact?.conflictsAfter || 0, AR.course)}</b> بتغيير {countOf(fix.simulationImpact?.scheduleChanges || 1, AR.schedule)}. المقاعد افتراضية، والنتيجة للرغبات المرسلة فقط.
                       </p>
                       <div className="demand-actions">
                         <SecondaryButton onClick={() => openRepair(fix)} data-guide-ignore="معاينة نقل الجدول داخل نسخة محلية لا تحفظ التعديل">

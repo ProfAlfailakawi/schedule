@@ -40,6 +40,8 @@ check(ranked[0].simulationImpact.before.canReach15 === 0 && ranked[0].simulation
   "احتساب أثر بلوغ 15 وحدة من الجدول المعدل فعلياً");
 check(ranked[0].simulationImpact.respondents === 1 && ranked[0].simulationImpact.virtualCapacity,
   "إظهار حجم العينة والتنبيه إلى أن السعة افتراضية");
+check(ranked[0].simulationImpact.deltaConflicts >= 0 && ranked[0].simulationImpact.scheduleChanges === 1,
+  "التوصية تعرض تغير التعارضات وعدد تغييرات الجدول المحسوبين من السيناريو");
 check(schedules[1].fsunday && !schedules[1].fthursday, "المعاينة لا تغيّر مسودة الجدول الأصلية");
 
 const swapRows: FSchedule[] = [
@@ -58,7 +60,8 @@ const swap = swapCandidates.find(item => item.swapWith?.rowId === 22);
 check(Boolean(swap), "اقتراح تبديل شعبة مع شعبة أخرى يفك تعارض الفوج دون تعارض موارد جديد");
 if (swap) {
   const swappedRank = rankDemandRepairsBySimulation(input, swapRows, coursesById, 7, [swap], { collegeId: 1, sectionId: 11 });
-  check(swappedRank.length === 1 && swappedRank[0].swapWith?.rowId === 22, "إعادة محاكاة التبديل تحفظ المقترح فقط إذا تحسنت قدرة الطلبة");
+  check(swappedRank.length === 1 && swappedRank[0].swapWith?.rowId === 22 && swappedRank[0].simulationImpact.scheduleChanges === 2,
+    "إعادة محاكاة التبديل تحفظ المقترح فقط إذا تحسنت قدرة الطلبة، وتعدّ التغييرين");
 }
 const opening = rankSectionOpeningsBySimulation(input, swapRows.filter(row => row.AdCourseId !== 3), coursesById, 7, [{
   courseId: 3, courseName: "ج", courseCode: "C3", demand: 1, predicted: false, capacity: 2,
@@ -68,3 +71,5 @@ const opening = rankSectionOpeningsBySimulation(input, swapRows.filter(row => ro
 }]);
 check(opening.tested === 1 && opening.proposals.length === 1 && opening.proposals[0].simulationImpact.delta15 === 1,
   "فتح الشعبة لا يُوصى به إلا بعد تحسن 15 وحدة في إعادة المحاكاة الفعلية");
+check(opening.proposals[0].simulationImpact.conflictsBefore >= 0 && opening.proposals[0].simulationImpact.conflictsAfter >= 0,
+  "فتح الشعبة يعرض حالات التعارض قبلها وبعدها من إعادة المحاكاة نفسها");

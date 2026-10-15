@@ -431,7 +431,7 @@ function viewHome(){
   dockEl.innerHTML="";var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
   var idn=p.identity?'<section class="card idn fade" style="margin-block-start:6px"><div class="row" style="gap:12px"><span class="ic">'+ic("user")+'</span><div class="tx"><b>أهلاً، '+esc(p.identity.name)+'</b><small>الرقم المدني <bdi dir="ltr">'+esc(p.identity.civilMasked)+'</bdi> · راجع بياناتك أدناه وتأكّد أنها صحيحة</small></div><button type="button" class="link" id="nmb">الاسم غير صحيح؟</button></div></section>':"";
   var h=idn+'<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div><p class="muted grad-estimate">'+(pr.remainingUnits?'التخرج المتوقع: نحو '+countOf(Math.ceil(pr.remainingUnits/15),AR.term)+' بحسب المتبقي ومعدل 15 وحدة في الفصل.':'أكملت وحدات الصحيفة بحسب المقررات التي علّمتها.')+' تقدير يتغير مع تحديث إنجازك والقواعد المعتمدة، وليس موعداً رسمياً.</p></section>';
-  h+='<div id="notices"></div><div id="cases"></div>';h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
+  h+='<div id="notices"></div><div id="cases"></div><div id="caseRequest"></div>';h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
   h+='<div id="ticket"></div><div id="report"></div><div id="offered"></div><div id="wishes"></div>';
   h+='<section class="card fade"><h2><span class="b">'+ic("user")+'</span>ملفي</h2><p class="muted">'+ic("shield","")+' يُحفظ ملفّك حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn alt small" id="chg" style="inline-size:auto">'+ic("key")+'غيّر الرمز</button><button class="btn alt small" id="del" style="inline-size:auto">'+ic("trash")+'احذف ملفّي</button><button class="btn alt small" id="out" style="inline-size:auto">'+ic("out")+'اخرج</button></div></section>';
   app.innerHTML=h;animateRings();markOverflow();
@@ -440,7 +440,7 @@ function viewHome(){
   document.getElementById("chg").addEventListener("click",sheetCode);
   var nmb=document.getElementById("nmb");if(nmb)nmb.addEventListener("click",sheetName);
   document.getElementById("del").addEventListener("click",sheetForget);
-  loadNotices();loadCases();loadTicket();loadReport();loadOffered();renderWishes();
+  loadNotices();loadCases();loadCaseRequest();loadTicket();loadReport();loadOffered();renderWishes();
 }
 var DAYN=["أحد","اثنين","ثلاثاء","أربعاء","خميس"];
 function hhmm(m){var h=Math.floor(m/60),n=m%60;return (h<10?"0":"")+h+":"+(n<10?"0":"")+n}
@@ -465,6 +465,25 @@ function loadCases(){var host=document.getElementById("cases");if(!host)return;
       if(c.courses&&c.courses.length)h+='<div class="case-courses">'+c.courses.map(function(course){return '<span class="case-course">'+esc(course.name)+(course.dropped?' · أُزيل من الطلب':course.state!=="pending"?' · '+esc(course.status):'')+'</span>'}).join("")+'</div>';
       if(c.detail)h+='<p class="case-detail">'+esc(c.detail)+'</p>';h+='</article>'});
     host.innerHTML=h+'</section>'})}
+function loadCaseRequest(){var host=document.getElementById("caseRequest");if(!host)return;
+  api("GET","/api/public/me/request-context").then(function(r){if(!r.ok||!r.d.ready||!r.d.canRequest){host.innerHTML="";return}paintCaseRequest(host,r.d)})}
+function paintCaseRequest(host,d){
+  var options=function(list){return '<option value="">اختر المقرر</option>'+list.map(function(c){return '<option value="'+c.id+'">'+esc(c.code)+' · '+esc(c.name)+'</option>'}).join("")};
+  var h='<details class="card fade more"><summary>تعذّر تكوين جدول؟ اطلب مراجعة القسم</summary><div style="margin-block-start:10px"><p class="muted">يصل اختيارك للقسم للمراجعة. لا يثبت الأهلية، ولا يحجز مقعداً، ولا يؤكد وجود تعارض.</p>'
+    +'<div class="field"><label for="crtype">نوع الطلب</label><select class="inp" id="crtype"><option value="new-course">أحتاج طرح مقرر من صحيفتي</option><option value="course-conflict">أواجه تعارضاً بين مقررين</option></select></div>'
+    +'<div class="field" id="crcourses"></div><div class="field"><label for="crdetails">سبب مختصر</label><textarea class="inp" id="crdetails" maxlength="600" rows="3" placeholder="اكتب ما يحتاج القسم معرفته"></textarea></div>'
+    +'<label class="row" style="gap:10px;align-items:flex-start"><input type="checkbox" id="crconsent"><span>أوافق على إرسال اسمي ورقمي المدني إلى القسم لمراجعة هذا الطلب.</span></label>'
+    +errBox("crerr")+'<button class="btn" id="crsend">أرسل طلب المراجعة</button><div id="crdone"></div></div></details>';
+  host.innerHTML=h;
+  var kind=document.getElementById("crtype"),courses=document.getElementById("crcourses");
+  function draw(){var conflict=kind.value==="course-conflict";courses.innerHTML=conflict
+    ?'<label for="crone">المقرر من صحيفتك</label><select class="inp" id="crone">'+options(d.courses)+'</select><label for="crtwo" style="margin-block-start:8px">المقرر المتعارض معه في كليتك</label><select class="inp" id="crtwo">'+options(d.conflictCourses)+'</select>'
+    :'<label for="crone">المقرر المتبقي في صحيفتك</label><select class="inp" id="crone">'+options(d.courses)+'</select>'}
+  kind.addEventListener("change",draw);draw();
+  document.getElementById("crsend").addEventListener("click",function(){var button=this,selected=[Number((document.getElementById("crone")||{}).value||0)];if(kind.value==="course-conflict")selected.push(Number((document.getElementById("crtwo")||{}).value||0));
+    var consent=document.getElementById("crconsent").checked,details=document.getElementById("crdetails").value;button.disabled=true;showErr("crerr","");
+    api("POST","/api/public/me/request",{requestType:kind.value,courseIds:selected,details:details,consent:consent}).then(function(r){button.disabled=false;if(!r.ok){showErr("crerr",r.d.error||"تعذّر إرسال الطلب");return}
+      document.getElementById("crdone").innerHTML='<p class="lead">وصل طلبك إلى القسم.</p><p class="muted">رقم الحالة</p><div class="ref">'+esc(r.d.caseRef)+'</div>';loadCases();toast("وصل طلب المراجعة")})})}
 function loadTicket(){var host=document.getElementById("ticket");if(!host)return;
   api("GET","/api/public/me/ticket").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var t=r.d;S.ticket=t;S.tkPlan=S.tkPlan||"A";paintTicket(host)})}
 function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];

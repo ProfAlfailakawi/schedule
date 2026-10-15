@@ -127,6 +127,10 @@ export interface DemandRepairImpact {
   after: SimResult["capacity"];
   delta12: number;
   delta15: number;
+  conflictsBefore: number;
+  conflictsAfter: number;
+  deltaConflicts: number;
+  scheduleChanges: number;
   respondents: number;
   virtualCapacity: true;
 }
@@ -153,6 +157,10 @@ export function rankSectionOpeningsBySimulation(
     for (const ticket of result.tickets) if (ids.has(ticket.fp)) value[ticket.assessment || "unknown"] += 1;
     return value;
   };
+  const conflictCount = (result: SimResult, scope?: { collegeId: number; sectionId: number }) => {
+    const ids = new Set(responders.filter(student => !scope || (student.collegeId === scope.collegeId && student.sectionId === scope.sectionId)).map(student => student.fp));
+    return result.tickets.filter(ticket => ids.has(ticket.fp)).reduce((sum, ticket) => sum + ticket.unmet.filter(item => item.reason === "conflict").length, 0);
+  };
   const scopedFor = (proposal: SectionProposal) => {
     const course = courses.get(proposal.courseId);
     return { collegeId: Number(course?.AdCollegeId) || 0, sectionId: Number(course?.AdSectionId) || 0 };
@@ -178,6 +186,8 @@ export function rankSectionOpeningsBySimulation(
     });
     const before = summarize(baseline, scope), after = summarize(afterResult, scope);
     const delta12 = reaches12(after) - reaches12(before), delta15 = after.canReach15 - before.canReach15;
+    const conflictsBefore = conflictCount(baseline, scope), conflictsAfter = conflictCount(afterResult, scope);
+    const deltaConflicts = conflictsBefore - conflictsAfter;
     const beforeAll = new Map(baseline.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
     const afterAll = new Map(afterResult.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
     const regresses = responders.some(student => {
@@ -187,10 +197,13 @@ export function rankSectionOpeningsBySimulation(
       if (prior === "graduatingBelow12") return next !== "graduatingBelow12" && next !== "canReach15" && next !== "canReach12To14";
       return false;
     });
-    if (regresses || delta12 < 0 || delta15 < 0 || (delta12 === 0 && delta15 === 0)) continue;
-    accepted.push({ ...proposal, simulationImpact: { before, after, delta12, delta15, respondents: responders.filter(student => student.collegeId === scope.collegeId && student.sectionId === scope.sectionId).length, virtualCapacity: true } });
+    if (regresses || delta12 < 0 || delta15 < 0 || (delta12 === 0 && delta15 === 0 && deltaConflicts <= 0)) continue;
+    accepted.push({ ...proposal, simulationImpact: { before, after, delta12, delta15, conflictsBefore, conflictsAfter, deltaConflicts,
+      scheduleChanges: proposal.placements.length, respondents: responders.filter(student => student.collegeId === scope.collegeId && student.sectionId === scope.sectionId).length, virtualCapacity: true } });
   }
-  accepted.sort((a, b) => b.simulationImpact.delta12 - a.simulationImpact.delta12 || b.simulationImpact.delta15 - a.simulationImpact.delta15 || b.shortfall - a.shortfall);
+  accepted.sort((a, b) => b.simulationImpact.delta12 - a.simulationImpact.delta12 || b.simulationImpact.delta15 - a.simulationImpact.delta15
+    || b.simulationImpact.deltaConflicts - a.simulationImpact.deltaConflicts
+    || a.simulationImpact.scheduleChanges - b.simulationImpact.scheduleChanges || b.shortfall - a.shortfall);
   return { proposals: accepted, tested: proposals.filter(proposal => !proposal.predicted && proposal.placements.length > 0).length, rejected: proposals.length - accepted.length };
 }
 
@@ -206,6 +219,7 @@ export function rankDemandRepairsBySimulation(
 ): Array<DemandRepair & { simulationImpact: DemandRepairImpact }> {
   const responders = input.students.filter(student => student.wishes);
   const scoped = responders.filter(student => student.collegeId === scope.collegeId && student.sectionId === scope.sectionId);
+  const scopedIds = new Set(scoped.map(student => student.fp));
   const count = (result: SimResult) => {
     const ids = new Set(scoped.map(student => student.fp));
     const value: SimResult["capacity"] = { canReach15: 0, canReach12To14: 0, below12: 0, graduatingBelow12: 0, unknown: 0 };
@@ -214,6 +228,9 @@ export function rankDemandRepairsBySimulation(
   };
   const baselineResult = simulateRegistration({ ...input, students: responders, assessCapacity: true });
   const before = count(baselineResult);
+  const conflictCount = (result: SimResult) => result.tickets.filter(ticket => scopedIds.has(ticket.fp))
+    .reduce((sum, ticket) => sum + ticket.unmet.filter(item => item.reason === "conflict").length, 0);
+  const conflictsBefore = conflictCount(baselineResult);
   const baselineByStudent = new Map(baselineResult.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
   const reaches12 = (value: SimResult["capacity"]) => value.canReach15 + value.canReach12To14;
   return repairs.flatMap(repair => {
@@ -233,6 +250,7 @@ export function rankDemandRepairsBySimulation(
     const afterResult = simulateRegistration({ ...input, students: responders, offerings, assessCapacity: true });
     const after = count(afterResult);
     const delta12 = reaches12(after) - reaches12(before), delta15 = after.canReach15 - before.canReach15;
+    const conflictsAfter = conflictCount(afterResult), deltaConflicts = conflictsBefore - conflictsAfter;
     const afterByStudent = new Map(afterResult.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
     const regresses = responders.some(student => {
       const prior = baselineByStudent.get(student.fp), next = afterByStudent.get(student.fp);
@@ -243,10 +261,13 @@ export function rankDemandRepairsBySimulation(
     });
     /* Never trade away a known student's 12-unit, 15-unit, or graduation
        outcome anywhere in the responding population to improve this section. */
-    if (regresses || delta12 < 0 || delta15 < 0 || (delta12 === 0 && delta15 === 0)) return [];
-    return [{ ...repair, simulationImpact: { before, after, delta12, delta15, respondents: scoped.length, virtualCapacity: true as const } }];
+    if (regresses || delta12 < 0 || delta15 < 0 || (delta12 === 0 && delta15 === 0 && deltaConflicts <= 0)) return [];
+    return [{ ...repair, simulationImpact: { before, after, delta12, delta15, conflictsBefore, conflictsAfter, deltaConflicts,
+      scheduleChanges: repair.swapWith ? 2 : 1, respondents: scoped.length, virtualCapacity: true as const } }];
   }).sort((a, b) => b.simulationImpact.delta12 - a.simulationImpact.delta12
     || b.simulationImpact.delta15 - a.simulationImpact.delta15
+    || b.simulationImpact.deltaConflicts - a.simulationImpact.deltaConflicts
+    || a.simulationImpact.scheduleChanges - b.simulationImpact.scheduleChanges
     || b.removes - a.removes || a.distanceMinutes - b.distanceMinutes);
 }
 

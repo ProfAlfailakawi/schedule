@@ -17,7 +17,7 @@
 import rateLimit from "express-rate-limit";
 import type { Express, Request, Response, NextFunction } from "express";
 import { Repository } from "../db/repository";
-import type { AdCourse, StudentProfile, StudentWishes } from "../types";
+import type { AdCourse, StudentNeed, StudentProfile, StudentWishes } from "../types";
 import { validateCivilId } from "../utils/civilId";
 import { toEnglishDigits } from "../utils/digits";
 import { byArabic } from "../utils/sorting";
@@ -29,6 +29,7 @@ import {
 import { ticketContext } from "./simulationData";
 import { unmetPrereq } from "../utils/curriculumRules";
 import { buildStudentNotices } from "../utils/studentNotices";
+import { studentNeedsCommitteeHelp } from "../utils/studentNeedRequest";
 import { caseRefFor } from "../db/repository";
 import { isCaseLevelNeed, studentCaseStatus } from "../utils/studentCaseDecision";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
@@ -483,6 +484,85 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         };
       });
     res.json({ cases: rows });
+  });
+
+  /* ── طلب استثنائي من مساري: فتح مقرر أو تعارض، من الملف الموثّق نفسه ── */
+  app.get("/api/public/me/request-context", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    if (profile.AdSectionId <= 0) { res.json({ ready: false, reason: "no-setup" }); return; }
+    const [terms, courses, catalog] = await Promise.all([Repository.getTerms(), Repository.getCourses(), sectionCatalog(profile.AdSectionId)]);
+    const term = pickDoorTerm(terms as any[]);
+    if (!term) { res.json({ ready: false, reason: "no-term" }); return; }
+    const phase = readStudentPhase(term.AdTermStudentPhases);
+    const termId = Number(term.AdTermId);
+    const [run, ticket] = await Promise.all([Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint)]);
+    const eligible = studentNeedsCommitteeHelp(profile, run, ticket, termId);
+    const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
+    const remaining = new Set(planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds);
+    const blocked = new Set(eligible ? ticket!.unmet.map(item => Number(item.courseId)) : []);
+    const all = (courses as AdCourse[]).filter(course => Number(course.AdCollegeId) === Number(profile.AdCollegeId)
+      && Number.isInteger(Number(course.AdCourseId)) && Number(course.AdCourseId) > 0)
+      .map(course => ({ id: Number(course.AdCourseId), code: String(course.CourseCode || ""), name: String(course.CourseName || ""),
+        own: Number(course.AdSectionId) === Number(profile.AdSectionId), remaining: remaining.has(Number(course.AdCourseId)) }))
+      .sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }) || a.name.localeCompare(b.name, "ar"));
+    res.json({ ready: true, canRequest: eligible && (phase.canEditWishes || phase.canReport), line: phase.line,
+      termId, termName: String(term.AdTermName || ""),
+      courses: eligible ? all.filter(course => course.own && course.remaining && blocked.has(course.id)) : [],
+      conflictCourses: eligible ? all : [] });
+  });
+
+  app.post("/api/public/me/request", writeLimit, requireDoor, async (req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    if (profile.AdSectionId <= 0) { fail(res, 409, "أكمل ملفّك الأكاديمي أولاً.", "no-setup"); return; }
+    if (!profile.nameCipher || !profile.civilCipher) { fail(res, 409, "حدّث بيانات هويتك في ملف مساري قبل إرسال طلب للقسم.", "identity-needed"); return; }
+    if (req.body?.consent !== true) { fail(res, 400, "وافق على إرسال بيانات هويتك للقسم لمراجعة الطلب.", "consent-needed"); return; }
+    const terms = await Repository.getTerms();
+    const term = pickDoorTerm(terms as any[]);
+    if (!term) { fail(res, 409, "لا يوجد فصل دراسي مفتوح للطلبات الآن.", "no-term"); return; }
+    const phase = readStudentPhase(term.AdTermStudentPhases);
+    if (!phase.canEditWishes && !phase.canReport) { fail(res, 409, "نافذة الطلبات غير مفتوحة الآن.", "requests-closed", { line: phase.line }); return; }
+    const termId = Number(term.AdTermId);
+    const [run, ticket] = await Promise.all([Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint)]);
+    if (!studentNeedsCommitteeHelp(profile, run, ticket, termId)) {
+      fail(res, 409, "لا توجد حالة تعثر مؤكدة في آخر محاكاة تستدعي طلباً فردياً. حدّث رغباتك وانتظر إعادة الاحتساب.", "no-proven-blocker"); return;
+    }
+    const blocked = new Set(ticket!.unmet.map(item => Number(item.courseId)));
+
+    const requestType = req.body?.requestType === "course-conflict" ? "course-conflict" : req.body?.requestType === "new-course" ? "new-course" : "";
+    if (!requestType) { fail(res, 400, "اختر فتح مقرر أو مراجعة تعارض مقررين.", "bad-request-type"); return; }
+    const [courses, catalog] = await Promise.all([Repository.getCourses(), sectionCatalog(profile.AdSectionId)]);
+    const byId = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
+    const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
+    const remaining = new Set(planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds);
+    const ids: number[] = [...new Set<number>((Array.isArray(req.body?.courseIds) ? req.body.courseIds : []).map(Number)
+      .filter(id => Number.isInteger(id) && id > 0))];
+    if (requestType === "new-course" && (ids.length !== 1 || !remaining.has(ids[0]) || !blocked.has(ids[0]))) {
+      fail(res, 400, "اختر مقرراً واحداً متبقياً ومتعذراً في محاكاة التسجيل.", "course-outside-plan"); return;
+    }
+    if (requestType === "course-conflict") {
+      if (ids.length !== 2 || ids[0] === ids[1]) { fail(res, 400, "اختر مقررين مختلفين للتعارض.", "bad-conflict-pair"); return; }
+      const rows = ids.map(id => byId.get(id));
+      if (rows.some(course => !course || Number(course.AdCollegeId) !== Number(profile.AdCollegeId))
+        || !rows.some(course => Number(course?.AdSectionId) === Number(profile.AdSectionId) && remaining.has(Number(course?.AdCourseId)) && blocked.has(Number(course?.AdCourseId)))) {
+        fail(res, 400, "يجب أن يكون أحد المقررين من مقرراتك المتبقية، وأن يكون المقرران ضمن كليتك.", "conflict-outside-scope"); return;
+      }
+    }
+    const details = String(req.body?.details || "").normalize("NFKC").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 600);
+    if (details.length < 3) { fail(res, 400, "اكتب سبباً مختصراً يساعد القسم على مراجعة الطلب.", "details-needed"); return; }
+    const existing = (await Repository.getStudentNeedsByFingerprint(fingerprint, profile.AdCollegeId, termId))
+      .find(need => Number(need.surveySectionId || need.AdSectionId) === Number(profile.AdSectionId));
+    if (existing?.requestType === "graduate" && existing.eligibility === "eligible") {
+      fail(res, 409, "لديك حالة تخرج موثّقة لهذا الفصل. تابعها من «حالاتي» أو حدّثها من مسارها الحالي.", "verified-graduate-case"); return;
+    }
+    const entry: Omit<StudentNeed, "id" | "createdAt"> = {
+      fingerprint, AdCollegeId: Number(profile.AdCollegeId), AdSectionId: Number(profile.AdSectionId),
+      studentSectionId: Number(profile.AdSectionId), surveySectionId: Number(profile.AdSectionId), AdTermId: termId,
+      curriculumPlanId: profile.curriculumPlanId, courseIds: ids, requestType,
+      nameCipher: profile.nameCipher, civilCipher: profile.civilCipher, details, eligibility: "not-checked",
+    };
+    const saved = await Repository.saveStudentNeed(entry);
+    noStore(res); res.status(201).json({ ok: true, caseRef: caseRefFor(saved), requestType, termId, courseIds: ids });
   });
 
   /* ── المطروح لي: متبقّي صحيفتي أيُّه يُطرح هذا الفصل؟ (أعدادٌ لا مواعيد) ─── */
