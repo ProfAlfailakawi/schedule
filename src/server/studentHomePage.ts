@@ -185,6 +185,30 @@ button,input{font:inherit;color:inherit}
 .ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:19px;font-variant-numeric:tabular-nums}
 .big{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 .big small{font-size:14px;font-weight:500;color:var(--muted)}
+.tk{position:relative;padding:0;overflow:hidden;gap:0}
+.tk .hd{display:flex;align-items:center;gap:14px;padding:18px;background:linear-gradient(135deg,var(--accent-soft),var(--card))}
+.tk .win{flex:none;inline-size:64px;block-size:64px;border-radius:18px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;align-content:center;line-height:1;box-shadow:0 8px 18px -10px var(--accent)}
+.tk .win b{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.tk .win small{font-size:10.5px;opacity:.85;margin-block-start:2px}
+.tk .hd .tx{display:grid;gap:3px;min-inline-size:0}
+.tk .hd .tx b{font-size:16px}
+.tk .perf{position:relative;block-size:0;border-block-start:2px dashed var(--line-strong);margin-inline:18px}
+.tk .perf:before,.tk .perf:after{content:"";position:absolute;inset-block-start:-11px;inline-size:20px;block-size:20px;border-radius:50%;background:var(--bg);border:1px solid var(--line)}
+.tk .perf:before{inset-inline-start:-29px}.tk .perf:after{inset-inline-end:-29px}
+.tk .bd{padding:18px;display:grid;gap:12px}
+.tk .ln{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;background:var(--soft)}
+.tk .ln .ic{flex:none;inline-size:34px;block-size:34px;border-radius:11px;display:grid;place-items:center;background:var(--card);color:var(--accent)}
+.tk .ln .tx{flex:1;min-inline-size:0;display:grid;gap:2px}
+.tk .ln .tx b{font-size:14px;font-weight:600;line-height:1.5}
+.tk .ln .tx small{color:var(--muted);font-size:12px;line-height:1.6}
+.tk .ln .code{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);direction:ltr;unicode-bidi:isolate}
+.tk .tt{display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
+.tk .u{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
+.tk .bar{block-size:8px;border-radius:99px;background:var(--soft);overflow:hidden}
+.tk .bar i{display:block;block-size:100%;border-radius:99px;background:var(--accent)}
+.chip.warn{background:var(--gold-soft);color:var(--gold)}
+.tk .fine{font-size:11.5px;color:var(--muted);line-height:1.7;margin:0}
+
 
 /* ── شريط سفلي لاصق ── */
 .dock{position:fixed;inset-inline:0;inset-block-end:0;z-index:20;padding:10px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--bg) 28%);pointer-events:none}
@@ -362,15 +386,34 @@ function viewHome(){
   dockEl.innerHTML="";var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
   var h='<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div></section>';
   h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
-  h+='<div id="offered"></div><div id="wishes"></div>';
+  h+='<div id="ticket"></div><div id="offered"></div><div id="wishes"></div>';
   h+='<section class="card fade"><h2><span class="b">'+ic("user")+'</span>ملفي</h2><p class="muted">'+ic("shield","")+' يُحفظ ملفّك حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn alt small" id="chg" style="inline-size:auto">'+ic("key")+'غيّر الرمز</button><button class="btn alt small" id="del" style="inline-size:auto">'+ic("trash")+'احذف ملفّي</button><button class="btn alt small" id="out" style="inline-size:auto">'+ic("out")+'اخرج</button></div></section>';
   app.innerHTML=h;animateRings();markOverflow();
   document.getElementById("edp").addEventListener("click",function(){var d=startDraft();d.step=3;viewSetup()});
   document.getElementById("out").addEventListener("click",function(){api("POST","/api/public/me/exit",{}).then(function(){S.state.signedIn=false;S.state.profile=null;S.civil="";S.remember=false;S.draft=null;S.offered=null;setView("gate")})});
   document.getElementById("chg").addEventListener("click",sheetCode);
   document.getElementById("del").addEventListener("click",sheetForget);
-  loadOffered();renderWishes();
+  loadTicket();loadOffered();renderWishes();
 }
+var DAYN=["أحد","اثنين","ثلاثاء","أربعاء","خميس"];
+function hhmm(m){var h=Math.floor(m/60),n=m%60;return (h<10?"0":"")+h+":"+(n<10?"0":"")+n}
+function slotsText(slots){var g={};slots.forEach(function(x){var k=hhmm(x.start)+"–"+hhmm(x.end);(g[k]=g[k]||[]).push(DAYN[x.day]||"")});return Object.keys(g).map(function(k){return g[k].join(" · ")+' <bdi dir="ltr">'+k+'</bdi>'}).join("، ")}
+var WHY={prereq:"ينقصك مسبقه",full:"امتلأت شعبه",conflict:"يتعارض مع غيره",units:"فوق وحداتك المطلوبة","not-offered":"لا يُطرح هذا الفصل"};
+function loadTicket(){var host=document.getElementById("ticket");if(!host)return;
+  api("GET","/api/public/me/ticket").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var t=r.d;S.ticket=t;S.tkPlan=S.tkPlan||"A";paintTicket(host)})}
+function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
+  var w=t.window,when=w.name?(w.name+(w.start?" · "+fmtShort(w.start)+(w.end?" → "+fmtShort(w.end):""):"")):"يحدّد موعدَها صاحبُ القرار";
+  var h='<section class="card tk fade"><div class="hd"><span class="win"><b>'+w.n+'</b><small>من '+w.of+'</small></span><div class="tx"><b>تذكرتي · نافذتي '+w.n+'</b><span class="muted">'+esc(when)+'</span></div></div><div class="perf"></div><div class="bd">';
+  if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد البروفة — ستتحدّث تذكرتك في المرة القادمة</div>';
+  if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
+  h+='<div class="seg fit" role="group" aria-label="الخطة">'+t.plans.map(function(p){return '<button type="button" data-l="'+p.label+'" aria-pressed="'+(p.label===cur.label?"true":"false")+'">'+({A:"الخطة أ",B:"الخطة ب",C:"الخطة ج"})[p.label]+'</button>'}).join("")+'</div>';
+  h+='<div class="row between"><span class="muted">'+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(cur.units,AR.unit)+'</span></div>';
+  if(!cur.items.length)h+='<p class="lead">لا مقرراتٍ تُناسب هذه الخطة الآن.</p>';
+  cur.items.forEach(function(i){h+='<div class="ln"><span class="ic">'+ic("book")+'</span><span class="tx"><b>'+esc(i.name)+'</b><small>'+(i.timesVisible?esc(i.section?"شعبة "+i.section+" · ":"")+slotsText(i.slots):ic("lock","")+" الموعد يظهر عند اعتماد جدول القسم")+'</small></span>'+(i.tight?'<span class="chip warn">مقاعد قليلة</span>':'')+'<span class="code">'+esc(i.code)+'</span></div>'});
+  if(t.unmet.length){h+='<details class="more"><summary>'+ic("down")+' ما لم نضعه ('+t.unmet.length+')</summary><div class="list" style="margin-block-start:6px">'+t.unmet.map(function(u){return '<div class="opt off"><span class="tx"><b>'+esc(u.name)+'</b><small>'+esc(WHY[u.reason]||"")+'</small></span></div>'}).join("")+'</div></details>'}
+  h+='<p class="fine">'+ic("shield","")+' تقديرٌ تجريبي من بياناتٍ جمعناها — لا يحجز مقعداً ولا يُغني عن التسجيل الرسمي.</p></div></section>';
+  host.innerHTML=h;
+  host.querySelectorAll(".seg button").forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");paintTicket(host)})})}
 function loadOffered(){var host=document.getElementById("offered");if(!host)return;
   host.innerHTML='<div class="skel"></div>';
   api("GET","/api/public/me/offered").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var o=r.d;S.offered=o;
