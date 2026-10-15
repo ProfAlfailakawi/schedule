@@ -71,20 +71,53 @@ check(again.every(row => row.status === "exists"), "التشغيل الثاني:
 
 /* ── حسابات المرشدين: Econoadvisor وأخواتها ─────────────────────────────── */
 const advisors = planAdvisorAccounts({
-  users: [{ SystemUserId: 1, SystemUserLogin: "Econodept", Role: "committeeChair" }, { SystemUserId: 2, SystemUserLogin: "Techdept", Role: "committeeChair" }, { SystemUserId: 3, SystemUserLogin: "TechDept", Role: "committeeChair" } as any],
+  users: [{ SystemUserId: 1, SystemUserLogin: "Techdept", Role: "committeeChair" }, { SystemUserId: 2, SystemUserLogin: "Socdept", Role: "committeeChair" }, { SystemUserId: 3, SystemUserLogin: "TechDept", Role: "committeeChair" } as any],
   assigns: [{ SystemUserId: 1, AdCollegeId: 1, AdSectionId: 10 }, { SystemUserId: 2, AdCollegeId: 1, AdSectionId: 11 }, { SystemUserId: 3, AdCollegeId: 2, AdSectionId: 20 }],
   colleges, sections,
 });
 const adv = (id: number) => advisors.find(row => row.sectionId === id)!;
-check(adv(10).proposedLogin === "Econoadvisor" && adv(10).status === "create", "Econodept ← Econoadvisor");
-check(adv(11).proposedLogin === "TechadvisorBG" && adv(20).proposedLogin === "TechadvisorBB", "البادئة المشتركة بين كليتين تأخذ رمز الكلية");
+check(adv(10).proposedLogin === "Techadvisor" && adv(10).status === "create" && adv(10).collegeIds?.length === 2, "مرشد واحد لقسم تكنولوجيا التعليم ويغطي كليتي البنين والبنات");
+check(adv(11).proposedLogin === "Socadvisor" && adv(11).status === "create", "Socdept ← Socadvisor");
 const codeBasedAdvisor = planAdvisorAccounts({ users: [], assigns: [], colleges, sections: [sections[3]] });
 check(codeBasedAdvisor[0].proposedLogin === "9advisor", "القسم ذو رمز 0109 ينتج اسماً بلا بادئة 01");
 const numericCodeAdvisor = planAdvisorAccounts({ users: [], assigns: [], colleges, sections: [{ ...sections[3], AdSectionCode: "0109" }] });
 check(numericCodeAdvisor[0].proposedLogin === "9advisor", "رمز القسم الرقمي 0109 يزيل بادئة 01 كما طلب المالك");
 check(advisors.every(row => row.proposedName.startsWith("إرشاد ")), "اسم الحساب «إرشاد <القسم>»");
 check(!advisors.some(row => /head/i.test(row.proposedLogin)), "لا تتداخل حسابات المرشدين مع حسابات الرؤساء");
-check(advisors.length === sections.length, "حسابٌ لكل قسم");
+check(advisors.length === sections.length - 1, "حساب واحد لكل قسم متمايز مع دمج القسم المتناظر بين الكليات");
+
+const duplicatedAdvisors = planAdvisorAccounts({
+  users: [
+    { SystemUserId: 71, SystemUserLogin: "Techadvisor01", Role: "advisor", IsActive: false, SystemUserPass: "" },
+    { SystemUserId: 72, SystemUserLogin: "Techadvisor02", Role: "advisor", IsActive: false, SystemUserPass: "" },
+  ],
+  assigns: [
+    { SystemUserId: 71, AdCollegeId: 1, AdSectionId: 10 },
+    { SystemUserId: 72, AdCollegeId: 2, AdSectionId: 20 },
+  ], colleges, sections,
+});
+const duplicateTech = duplicatedAdvisors.find(row => row.sectionIds?.includes(10) && row.sectionIds?.includes(20));
+check(duplicateTech?.status === "review" && duplicateTech.duplicateUserIds?.length === 2 && duplicateTech.consolidationReady, "تُكتشف الحسابات المكررة ويُسمح بتوحيدها فقط وهي موقوفة وبلا كلمة سر وبلا نطاقات أخرى");
+const activeDuplicateAdvisors = planAdvisorAccounts({
+  users: [
+    { SystemUserId: 71, SystemUserLogin: "Techadvisor01", Role: "advisor", IsActive: true, SystemUserPass: "" },
+    { SystemUserId: 72, SystemUserLogin: "Techadvisor02", Role: "advisor", IsActive: false, SystemUserPass: "" },
+  ],
+  assigns: [
+    { SystemUserId: 71, AdCollegeId: 1, AdSectionId: 10 },
+    { SystemUserId: 72, AdCollegeId: 2, AdSectionId: 20 },
+  ], colleges, sections,
+});
+check(!activeDuplicateAdvisors.find(row => row.sectionIds?.includes(10) && row.sectionIds?.includes(20))?.consolidationReady, "الحساب النشط يمنع الدمج الآلي ويحيل الحالة للمراجعة");
+const loginCollision = planAdvisorAccounts({
+  users: [], assigns: [],
+  colleges: [{ AdCollegeId: 1, AdCollegeName: "كلية أ" }, { AdCollegeId: 2, AdCollegeName: "كلية ب" }],
+  sections: [
+    { AdSectionId: 31, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم اللغة العربية" },
+    { AdSectionId: 32, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم الرياضيات" },
+  ],
+});
+check(loginCollision.every(row => row.status === "review" && /بادئة فريدة/.test(row.note || "")), "تصادم اسم الدخول لقسمين مختلفين لا ينشئ حسابات ملتبسة ويطلب بادئة فريدة");
 check(isAdvisorRole("advisor") && !isAdvisorRole("departmentHead"), "isAdvisorRole");
 const def = roleDefinition("advisor");
 check(def.readOnly && isReadOnlyRole("advisor") && def.landing === "registration" && def.scopeMode === "section" && JSON.stringify(def.formIds) === "[14]", "صفة المرشد: قراءة فقط، قسمه، شاشة واحدة، تفتح على كشف التسجيل");
@@ -102,6 +135,10 @@ const guard = (role: string, path: string, method = "DELETE") => roleWriteDecisi
 check(!guard("advisor", "/schedule-notes/5").allowed && !guard("advisor", "/student-registration/3/course-state", "POST").allowed && guard("departmentHead", "/schedule-notes/5").allowed, "المرشد لا يكتب في مسارات الاعتماد ولو كانت مفتوحة لغيره من صفات القراءة");
 const advBlock = server.slice(server.indexOf('app.post("/api/users/advisors"'), server.indexOf('app.put("/api/users/:id"'));
 check(/requirePowerAdmin/.test(advBlock) && /SystemUserPass: ""/.test(advBlock) && /IsActive: false/.test(advBlock) && !/hashPassword|randomBytes|encryptPasswordForVault/.test(advBlock), "حسابات المرشدين: لمدير النظام، موقوفة، بلا كلمة سر");
+const consolidateBlock = server.slice(server.indexOf('app.post("/api/users/advisors/consolidate"'), server.indexOf('app.put("/api/users/:id"'));
+check(/requireRootAdmin/.test(consolidateBlock) && /saveSecurityByUser\(Number\(id\), \[\]\)/.test(consolidateBlock) && /IsDeleted: true/.test(consolidateBlock), "توحيد التكرار للأدمن الجذر فقط مع سحب الشاشات والنطاقات وإخفاء الحسابات الزائدة دون حذف سجلها");
+const advisorScript = fs.readFileSync("scripts/create-department-advisors.ts", "utf8");
+check(/row\.scopeAssignments\s*\|\|/.test(advisorScript), "أداة تجهيز الحسابات تضيف جميع كليات القسم إلى الحساب الواحد");
 check(/advisorOnly: isAdvisorRole/.test(server), "الخادم يرسل advisorOnly للواجهة");
 
 console.log(`\n${passed} passed, ${failed} failed`);

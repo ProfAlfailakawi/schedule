@@ -1531,19 +1531,20 @@ export default function AdminUsers({
                 جديد {headPlan.filter(row => row.status === "create").length} · موجود {headPlan.filter(row => row.status === "exists").length}
               </span>
             </header>
-            <p>تُنشأ الحسابات موقوفةً وبلا كلمة سر، بصفة «{planKind === "advisors" ? "مرشد القسم" : "رئيس القسم العلمي"}» ونطاق قسمها. عيّن كلمة السر وفعّل الحساب من هذه الشاشة حين يُسلَّم لصاحبه.</p>
+            <p>{planKind === "advisors" ? "حساب واحد لكل قسم، ويشمل كليات البنين والبنات التي تضم القسم نفسه. يُنشأ موقوفاً وبلا كلمة سر؛ ضعها وفعّله عند التسليم." : "تُنشأ الحسابات موقوفةً وبلا كلمة سر، بصفة «رئيس القسم العلمي» ونطاق قسمها. عيّن كلمة السر وفعّل الحساب من هذه الشاشة حين يُسلَّم لصاحبه."}</p>
             {headMessage ? <p role="status">{headMessage}</p> : null}
             <table className="data-table">
               <thead><tr><th>القسم</th><th>الكلية</th><th>حساب القسم</th><th>اسم الدخول المقترح</th><th>الحالة</th></tr></thead>
               <tbody>
                 {headPlan.map(row => (
-                  <tr key={`${row.collegeId}:${row.sectionId}`}>
+                  <tr key={planKind === "advisors" ? `${row.sectionName}:${(row.sectionIds || [row.sectionId]).join(",")}` : `${row.collegeId}:${row.sectionId}`}>
                     <td>{row.sectionName}</td>
-                    <td>{row.collegeName}</td>
+                    <td>{row.collegeNames?.join("، ") || row.collegeName}</td>
                     <td dir="ltr">{row.deptLogin || "—"}</td>
                     <td dir="ltr">{row.status === "exists" ? row.existingLogin : row.proposedLogin}</td>
                     <td>
                       <Badge tone={row.status === "create" ? "info" : row.status === "review" ? "warning" : "neutral"}>{row.status === "create" ? "سيُنشأ" : row.status === "review" ? "يحتاج مراجعة" : "موجود"}</Badge>
+                      {planKind === "advisors" && row.duplicateUserIds && row.duplicateUserIds.length > 1 ? <small> حسابات مكررة؛ {row.consolidationReady ? "توحيد آمن" : "توحيد يدوي"}</small> : null}
                       {row.note ? <small> {row.note}</small> : null}
                     </td>
                   </tr>
@@ -1569,6 +1570,30 @@ export default function AdminUsers({
               >
                 إنشاء الحسابات الناقصة
               </button>
+              {planKind === "advisors" && rootAdmin && headPlan.some(row => row.consolidationReady) ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  data-guide-ignore="توحيد الحسابات غير النشطة والخالية من كلمة السر ذات نطاق القسم نفسه فقط"
+                  disabled={headBusy}
+                  onClick={async () => {
+                    const groups = headPlan.filter(row => row.consolidationReady).length;
+                    if (!window.confirm(`سيُبقى حساب مرشد واحد لكل قسم، ويُضم نطاق كليات القسم إليه. الحسابات المكررة غير النشطة وبلا كلمة سر ستُسحب صلاحياتها وتُخفى من القائمة دون حذف سجلها. الأقسام المتأثرة: ${groups}. هل تريد التوحيد؟`)) return;
+                    setHeadBusy(true); setError(null);
+                    try {
+                      const result = await api("/api/users/advisors/consolidate", { method: "POST" });
+                      setHeadPlan(result.rows || []);
+                      const done = result.consolidated?.length || 0;
+                      const skipped = result.skipped?.length || 0;
+                      setHeadMessage(`وُحّدت الحسابات في ${countOf(done, AR.department)}${skipped ? "؛ وتوجد حالات تحتاج إلى المراجعة اليدوية" : ""}.`);
+                      await load();
+                    } catch (e: any) { setError(e.message); }
+                    finally { setHeadBusy(false); }
+                  }}
+                >
+                  توحيد الحسابات المكررة الآمنة
+                </button>
+              ) : null}
               <button type="button" className="btn btn-secondary" data-guide-ignore="إغلاق المعاينة دون إنشاء" onClick={() => { setHeadPlan(null); setHeadMessage(null); }}>
                 إغلاق
               </button>

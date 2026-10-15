@@ -21,6 +21,9 @@ export interface HeadPlanUser {
   SystemUserLogin: string;
   Role?: string;
   IsDeleted?: boolean;
+  IsActive?: boolean;
+  SystemUserPass?: string;
+  SystemUserPassVault?: string;
 }
 export interface HeadPlanAssign { SystemUserId: number; AdCollegeId: number; AdSectionId: number }
 export interface HeadPlanCollege { AdCollegeId: number; AdCollegeCode?: string; AdCollegeName: string }
@@ -43,6 +46,14 @@ export interface HeadPlanRow {
   existingLogin?: string;
   /** تنبيهٌ للمدير: بادئةٌ بديلة، أو حسابٌ بالاسم نفسه صفتُه أو نطاقه غير متوقَّعين. */
   note?: string;
+  /** حساب المرشد الواحد يشمل الأقسام المتناظرة في كليات البنين والبنات. */
+  collegeIds?: number[];
+  collegeNames?: string[];
+  sectionIds?: number[];
+  scopeAssignments?: Array<{ AdCollegeId: number; AdSectionId: number }>;
+  /** حسابات قديمة مكررة للقسم نفسه؛ لا تُدمج إلا بعد تحقق الخادم من أمانها. */
+  duplicateUserIds?: number[];
+  consolidationReady?: boolean;
 }
 
 const DEPT_SUFFIX = /dept$/i;
@@ -66,7 +77,118 @@ function collegeTag(college: HeadPlanCollege | undefined, collegeId: number): st
 }
 
 export function planAdvisorAccounts(input: Parameters<typeof planDepartmentHeadAccounts>[0]): HeadPlanRow[] {
-  return planDepartmentHeadAccounts(input, ADVISOR_KIND);
+  const users = input.users.filter(user => !user.IsDeleted);
+  const userById = new Map(users.map(user => [Number(user.SystemUserId), user]));
+  const collegeById = new Map(input.colleges.map(college => [Number(college.AdCollegeId), college]));
+  const normalizeSection = (value: string) => String(value || "")
+    .normalize("NFKD").replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
+    .replace(/^\s*قسم\s+/i, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const sectionNameByKey = new Map<string, string>();
+  const grouped = new Map<string, HeadPlanSection[]>();
+  for (const section of input.sections) {
+    if (!collegeById.has(Number(section.AdCollegeId))) continue;
+    const normalized = normalizeSection(section.AdSectionName);
+    if (!normalized) continue;
+    const inCollege = `${Number(section.AdCollegeId)}:${normalized}`;
+    /* الاسم نفسه عبر الكليات هو القسم ذاته. أما تكراره داخل كلية واحدة
+       فيبقى ملتبساً، لذلك نعزله برقم القسم بدلاً من دمج غير مقصود. */
+    const key = input.sections.filter(candidate => Number(candidate.AdCollegeId) === Number(section.AdCollegeId) && normalizeSection(candidate.AdSectionName) === normalized).length > 1
+      ? `${inCollege}:${Number(section.AdSectionId)}`
+      : normalized;
+    const list = grouped.get(key) || [];
+    list.push(section); grouped.set(key, list);
+    sectionNameByKey.set(key, String(section.AdSectionName || "").trim());
+  }
+
+  const sectionGroups = Array.from(grouped.entries()).map(([key, rows]) => {
+    const sectionIds = new Set(rows.map(row => Number(row.AdSectionId)));
+    const collegeIds = new Set(rows.map(row => Number(row.AdCollegeId)));
+    const scopeAssignments = rows.map(row => ({ AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId) }));
+    const assignedAdvisors = new Set<number>();
+    for (const assign of input.assigns) {
+      if (!sectionIds.has(Number(assign.AdSectionId)) || !collegeIds.has(Number(assign.AdCollegeId))) continue;
+      const user = userById.get(Number(assign.SystemUserId));
+      if (user && user.Role === ADVISOR_ROLE) assignedAdvisors.add(Number(user.SystemUserId));
+    }
+
+    const sortedRows = [...rows].sort((a,b) => Number(a.AdCollegeId) - Number(b.AdCollegeId) || Number(a.AdSectionId) - Number(b.AdSectionId));
+    const departmentLoginCounts = new Map<string, number>();
+    for (const assign of input.assigns) {
+      if (!sectionIds.has(Number(assign.AdSectionId)) || !collegeIds.has(Number(assign.AdCollegeId))) continue;
+      const owner = userById.get(Number(assign.SystemUserId));
+      if (owner && DEPT_SUFFIX.test(String(owner.SystemUserLogin || ""))) {
+        const prefix = String(owner.SystemUserLogin).replace(DEPT_SUFFIX, "");
+        departmentLoginCounts.set(prefix, (departmentLoginCounts.get(prefix) || 0) + 1);
+      }
+    }
+    const codes = sortedRows.map(row => accountPrefix(String(row.AdSectionCode || "").replace(/[^A-Za-z0-9]/g, ""))).filter(Boolean);
+    const rankedDeptPrefixes = Array.from(departmentLoginCounts.entries()).sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const prefixConflict = rankedDeptPrefixes.length > 1 && rankedDeptPrefixes[0][1] === rankedDeptPrefixes[1][1];
+    const chosenDeptPrefix = !prefixConflict ? rankedDeptPrefixes[0]?.[0] : undefined;
+    const prefix = accountPrefix(chosenDeptPrefix || codes[0] || `s${sortedRows[0]?.AdSectionId}`)
+      .replace(/^0+(?=\d)/, "") || `s${sortedRows[0]?.AdSectionId}`;
+    const proposedLogin = `${prefix}${ADVISOR_KIND.suffix}`;
+    const scopedAdvisors = Array.from(assignedAdvisors).map(id => userById.get(id)!).filter(Boolean);
+    const accountScopeCount = (id: number) => input.assigns.filter(assign => Number(assign.SystemUserId) === id).length;
+    const duplicateUserIds = scopedAdvisors.map(user => Number(user.SystemUserId));
+    const canonical = scopedAdvisors.find(user => String(user.SystemUserLogin).toLowerCase() === proposedLogin.toLowerCase())
+      || [...scopedAdvisors].sort((a,b) => Number(a.SystemUserId) - Number(b.SystemUserId))[0];
+    const colleges = Array.from(collegeIds).sort((a,b) => a-b).map(id => collegeById.get(id)!).filter(Boolean);
+    const first = sortedRows[0];
+    const row: HeadPlanRow = {
+      collegeId: Number(first.AdCollegeId), collegeName: colleges.map(college => String(college.AdCollegeName)).join("، "),
+      sectionId: Number(first.AdSectionId), sectionName: sectionNameByKey.get(key) || String(first.AdSectionName || ""),
+      deptLogin: chosenDeptPrefix ? `${chosenDeptPrefix}dept` : null,
+      proposedLogin, proposedName: `${ADVISOR_KIND.namePrefix} ${String(first.AdSectionName || "").trim()}`.trim(),
+      status: prefixConflict ? "review" : scopedAdvisors.length ? "exists" : "create",
+      collegeIds: Array.from(collegeIds).sort((a,b) => a-b), collegeNames: colleges.map(college => String(college.AdCollegeName)),
+      sectionIds: Array.from(sectionIds).sort((a,b) => a-b), scopeAssignments, duplicateUserIds,
+    };
+    if (scopedAdvisors.length === 1) {
+      row.existingUserId = Number(canonical!.SystemUserId); row.existingLogin = String(canonical!.SystemUserLogin);
+      const currentAssignments = input.assigns.filter(assign => Number(assign.SystemUserId) === Number(canonical!.SystemUserId));
+      if (currentAssignments.length !== scopeAssignments.length) row.note = "الحساب موجود؛ سيُستكمل نطاقه ليشمل كليات القسم المتناظرة";
+      if (canonical!.SystemUserLogin.toLowerCase() !== proposedLogin.toLowerCase()) row.note = `${row.note ? `${row.note}؛ ` : ""}اسم الحساب المقترح الموحد: ${proposedLogin}`;
+      if (prefixConflict) row.note = `${row.note ? `${row.note}؛ ` : ""}تعارضت بادئات حسابات الأقسام؛ احتفظنا بالحساب الحالي دون إعادة تسميته`;
+    } else if (scopedAdvisors.length > 1) {
+      row.existingUserId = Number(canonical!.SystemUserId); row.existingLogin = String(canonical!.SystemUserLogin);
+      const targetKeys = new Set(scopeAssignments.map(assign => `${assign.AdCollegeId}:${assign.AdSectionId}`));
+      const scopesAreLocal = scopedAdvisors.every(user => input.assigns
+        .filter(assign => Number(assign.SystemUserId) === Number(user.SystemUserId))
+        .every(assign => targetKeys.has(`${Number(assign.AdCollegeId)}:${Number(assign.AdSectionId)}`)));
+      const credentialsAreBlank = scopedAdvisors.every(user => !String(user.SystemUserPass || "").trim() && !String(user.SystemUserPassVault || "").trim());
+      const loginOwner = users.find(user => String(user.SystemUserLogin).toLowerCase() === proposedLogin.toLowerCase());
+      const loginIsLocal = !loginOwner || duplicateUserIds.includes(Number(loginOwner.SystemUserId));
+      row.consolidationReady = !prefixConflict && scopesAreLocal && credentialsAreBlank && loginIsLocal && scopedAdvisors.every(user => !user.IsActive);
+      row.status = "review";
+      row.note = "توجد حسابات مرشدين مكررة لهذا القسم؛ يلزم توحيدها مع الحفاظ على سجل الحسابات";
+      if (!row.consolidationReady) row.note += loginIsLocal ? "؛ يلزم مراجعة الحسابات النشطة أو التي لها كلمة سر أو نطاق آخر يدوياً" : "؛ اسم الدخول المقترح متعارض مع حساب آخر";
+    } else {
+      if (prefixConflict) row.note = "تعارضت بادئات حسابات الأقسام بين الكليات؛ حدّد اسم الدخول الموحد قبل إنشاء الحساب";
+      const existing = users.find(user => String(user.SystemUserLogin).toLowerCase() === proposedLogin.toLowerCase());
+      if (existing && !prefixConflict) {
+        row.status = "exists"; row.existingUserId = Number(existing.SystemUserId); row.existingLogin = String(existing.SystemUserLogin);
+        row.note = "الحساب موجود بلا نطاق لهذا القسم؛ راجعه قبل الإسناد";
+      }
+    }
+    return row;
+  });
+  const loginGroups = new Map<string, HeadPlanRow[]>();
+  for (const row of sectionGroups) {
+    const key = lower(row.proposedLogin);
+    const list = loginGroups.get(key) || [];
+    list.push(row); loginGroups.set(key, list);
+  }
+  for (const [login, rows] of loginGroups) {
+    if (rows.length < 2) continue;
+    for (const row of rows) {
+      row.status = "review";
+      row.consolidationReady = false;
+      row.note = `${row.note ? `${row.note}؛ ` : ""}اسم الدخول ${login} يتكرر لقسمين مختلفين؛ يلزم تحديد بادئة فريدة`;
+    }
+  }
+  return sectionGroups;
 }
 
 export function planDepartmentHeadAccounts(input: {
