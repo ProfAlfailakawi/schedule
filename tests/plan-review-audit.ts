@@ -34,7 +34,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   const r = normalizeRule({ courseId: 5, level: "3", kind: "elective", prereq: { all: [1, "2", 2, 5, 0, "x"], anyOf: [[3, 4, 3], [6], [], [7, 5]], minUnits: "60" }, coreq: [8, 8, 5], groupId: "  g1 " })!;
   check(r.level === 3 && r.kind === "elective" && r.groupId === "g1", "R1 المستوى والنوع والمجموعة");
   check(JSON.stringify(r.prereq?.all) === "[1,2,6,7]", "R1 المسبق «الكلّ»: بلا تكرار ولا نفسه ولا صفر، ومجموعةٌ من واحدٍ (بعد استبعاد نفسه) تصير «كلّاً»", r.prereq);
-  check(JSON.stringify(r.prereq?.anyOf) === "[[3,4],[7]]".replace("[7]", "[7]") || r.prereq?.anyOf.length === 1, "R1 مجموعةٌ فارغة تسقط، وما فيها نفسُه يُستبعد", r.prereq?.anyOf);
+  check(JSON.stringify(r.prereq?.anyOf) === "[[3,4]]", "R1 مجموعةٌ فارغة تسقط، وما فيها نفسُه يُستبعد", r.prereq?.anyOf);
   check(r.prereq?.minUnits === 60 && JSON.stringify(r.coreq) === "[8]", "R1 الوحدات والمقرن");
   check(normalizeRule({ courseId: 5, level: 99 })!.level === undefined && normalizeRule({ courseId: 5, kind: "zzz" })!.kind === undefined, "R1 مستوىً خارج ١–١٢ ونوعٌ مجهول يُهملان");
   check(normalizeRule({ courseId: 5, prereq: { all: [], anyOf: [] } })!.prereq === undefined, "R1 مسبقٌ فارغ لا يُحفظ");
