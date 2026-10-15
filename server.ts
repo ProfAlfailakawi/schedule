@@ -99,6 +99,7 @@ import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduati
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
+import { registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
@@ -19740,6 +19741,15 @@ app.get("/q/:token", async (req: Request, res: Response) => {
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content=width=device-width,initial-scale=1><title>SCHEDULE</title><link rel=icon href=/schedule-icon.svg type=image/svg+xml><link rel=apple-touch-icon href=/schedule-icon-192.png></head><body><p dir=rtl>هذا الرابط ليس استبياناً.</p></body></html>"); return; }
   res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res), await demoPageHint(resolved.link, "survey")));
+});
+
+/* ── مراجعةُ الصحيفة: مسوّدةٌ للقسم، واعتمادٌ لرئيس لجنة الجدول ───────────────── */
+registerPlanReviewRoutes(app, {
+  requireAuth,
+  isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+  isPowerUser: req => isPowerUser(req),
+  hasPermission: (req, formId) => (req.permissions || []).includes(formId),
+  actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
 });
 
 /* ── بيتُ الطالب: رابطٌ دائمٌ واحدٌ للجامعة كلها ────────────────────────────
