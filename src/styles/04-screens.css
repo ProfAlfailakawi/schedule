@@ -277,6 +277,24 @@
   height:2px;border-radius:2px;background:var(--brass);
 }
 @media (prefers-reduced-motion:reduce){.daybar-hour>i{transition:none}}
+/* أعمدةُ الساعات تنمو من أرضيّة الشريط مرّةً واحدة (useMotionScope على .daybar-track):
+   hold = مطويّة قبل الرسم الأول، go = تنمو بحركة bar-grow نفسها بتتابعٍ خفيف.
+   لا fill-mode سوى backwards؛ وبعد الانتهاء تُزال السمةُ فتبقى الحالةُ النهائية. */
+.daybar-hour>i{transform-origin:bottom center}
+.daybar-track[data-motion="hold"] .daybar-hour>i{transform:scaleY(0)}
+.daybar-track[data-motion="go"] .daybar-hour>i{animation:bar-grow .6s var(--ease-out) backwards}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(2) >i{animation-delay:45ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(3) >i{animation-delay:90ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(4) >i{animation-delay:135ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(5) >i{animation-delay:180ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(6) >i{animation-delay:225ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(7) >i{animation-delay:270ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(8) >i{animation-delay:315ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(9) >i{animation-delay:360ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(10) >i{animation-delay:405ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(11) >i{animation-delay:450ms}
+.daybar-track[data-motion="go"] .daybar-hour:nth-child(12) >i{animation-delay:495ms}
+@media (prefers-reduced-motion:reduce){.daybar-track[data-motion] .daybar-hour>i{transform:none;animation:none}}
 
 .daybar-scale{position:relative;height:18px;margin-top:var(--s2)}
 .daybar-scale span{
@@ -348,6 +366,8 @@
   letter-spacing:-.03em;font-variant-numeric:tabular-nums lining-nums;
 }
 .deck-signals span{color:var(--muted);font-size:var(--t-xs);font-weight:500}
+/* الرقمُ الذي يعدّ صاعداً (Counted observe) يلفّه span؛ فلا يرث تسميةَ المؤشّر الصغيرة. */
+.deck-signals b .dna-counted{color:inherit;font:inherit;letter-spacing:inherit}
 .deck-signals .signal-danger b{color:var(--danger)}
 /* أربعة مؤشرات على الجوال: شبكة ٢×٢ بدل ثلاثة في صفّ ورابعٍ وحيد تحته. */
 @media (max-width:560px){
@@ -362,6 +382,10 @@
    إن الرقم في الطريق: «—» باهتةٌ تتنفّس، لا صفرٌ يدّعي قياساً لم يُؤخذ.
    والحركة تتوقّف تماماً لمن طلب تقليلها. */
 @keyframes deck-awaiting{50%{opacity:.42}}
+/* القيمةُ التي وصلت بعد «—»: تلاشٍ واحد، ثم تستقرّ. (opacity فقط، بلا fill-mode) */
+@keyframes deck-arrive{from{opacity:0}}
+.deck-signals article.signal-arrived b,
+.deck-signals article.signal-arrived .signal-ring-row{animation:deck-arrive .5s var(--ease-out)}
 .deck-signals article.is-awaiting b{
   color:var(--muted-2);
   animation:deck-awaiting 1.9s var(--ease-out) infinite;
@@ -398,6 +422,8 @@
 @media (prefers-reduced-motion:reduce){
   .dashboard-attention{animation:none}
   .deck-signals article.is-awaiting b,
+  .deck-signals article.signal-arrived b,
+  .deck-signals article.signal-arrived .signal-ring-row,
   .dashboard-health-ribbon.is-awaiting em,
   .dashboard-health-ribbon.is-awaiting .bar-rows i{animation:none}
   .dashboard-health-ribbon.is-awaiting .bar-rows i{background:var(--surface-3)}

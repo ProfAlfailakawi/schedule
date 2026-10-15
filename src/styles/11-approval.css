@@ -575,7 +575,8 @@
 .apb-steps li[data-turn] .apb-node{border-color:var(--apb-tone);color:var(--apb-tone);background:color-mix(in srgb,var(--apb-tone) 10%,var(--surface))}
 .apb-steps li[data-state="returned"] .apb-node{border-color:var(--warning);color:var(--warning);background:var(--warning-soft)}
 .apb-steps li[data-state="pending"] .apb-node{border-color:var(--info);color:var(--info);background:var(--info-soft)}
-.apb-steps li[data-turn] .apb-node,.apb-steps li[data-turn] .apb-stamp{animation:apb-pulse 2.6s var(--ease-out) infinite}
+/* دورُ هذه المرحلة: هالةٌ واحدة عند ظهورها أو انتقال الدور إليها، ثم حلقةٌ ساكنة — لا نبضَ دائماً. */
+.apb-steps li[data-turn] .apb-node,.apb-steps li[data-turn] .apb-stamp{animation:apb-pulse 1.8s var(--ease-out) 1}
 @keyframes apb-pulse{
   0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--apb-tone) 42%,transparent)}
   70%{box-shadow:0 0 0 7px color-mix(in srgb,var(--apb-tone) 0%,transparent)}
@@ -759,7 +760,10 @@
 .apb-event-who{grid-column:2 / -1;font-size:.76rem;color:var(--muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 @media (prefers-reduced-motion:reduce){
-  .apb-steps li[data-turn] .apb-node,.apb-steps li[data-turn] .apb-stamp{animation:none}
+  .apb-steps li[data-turn] .apb-node,.apb-steps li[data-turn] .apb-stamp,
+  .apb-expanded[data-reveal] .apb-steps li+li::before,
+  .apb-expanded[data-reveal] .apb-steps li .apb-node,
+  .apb-expanded[data-reveal] .apb-steps li .apb-stamp{animation:none}
   .apb-pop,.apb-ring-value,.apb-expand svg{transition:none}
 }
 
@@ -1419,3 +1423,41 @@
 .ad-sheet .ad-ring{width:72px;height:72px}
 .ad-courses{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
 @media (max-width:640px){.ad-courses{grid-template-columns:1fr}}
+
+
+/* ── فتحُ التفاصيل لأول مرّة: العقد تمتلئ بالتتابع ثم تظهر الأختام ──────────────
+   تعمل حين يفتح المستخدمُ الطيَّ بنفسه فقط (data-reveal)، ومرّةً لكل نطاق.
+   بلا fill-mode سوى `backwards` — حالةُ الراحة هي الحالةُ النهائية نفسُها، فلا شيءَ
+   يبقى معلّقاً بعد الانتهاء. حركةٌ مخفّضة: لا شيء (الحالةُ النهائية مباشرةً). */
+@media (prefers-reduced-motion:no-preference){
+  .apb-expanded[data-reveal] .apb-steps li{--rv:0s}
+  .apb-expanded[data-reveal] .apb-steps li[data-index="1"]{--rv:.22s}
+  .apb-expanded[data-reveal] .apb-steps li[data-index="2"]{--rv:.44s}
+  .apb-expanded[data-reveal] .apb-steps li[data-index="3"]{--rv:.66s}
+  .apb-expanded[data-reveal] .apb-steps li+li:not([data-state="returned"])::before{animation:apb-link-fill .45s var(--ease-out) var(--rv) backwards}
+  .apb-expanded[data-reveal] .apb-steps li .apb-node{animation:apb-node-fill .45s var(--ease-out) calc(var(--rv) + .12s) backwards}
+  .apb-expanded[data-reveal] .apb-steps li[data-turn] .apb-node{animation:apb-node-fill .45s var(--ease-out) calc(var(--rv) + .12s) backwards,apb-pulse 1.8s var(--ease-out) calc(var(--rv) + .6s) 1 backwards}
+  .apb-expanded[data-reveal] .apb-steps li .apb-stamp{animation:apb-stamp-in .4s var(--ease-out) calc(var(--rv) + .3s) backwards}
+}
+@keyframes apb-node-fill{from{background:var(--surface);border-color:var(--line-strong);color:var(--muted-2)}}
+@keyframes apb-link-fill{from{background-color:var(--line-strong)}}
+@keyframes apb-stamp-in{from{opacity:0;transform:rotate(-8deg) scale(1.3)}}
+
+/* ── ملف الاعتماد على الشاشة: الحلقة تُرسم والمسار يظهر بالترتيب، مرّةً واحدة ────
+   المعاينة فقط (داخل .ad-dialog) وعلى `screen` فقط: النسخةُ المطبوعة (PrintPortal) خارج
+   هذا النطاق، وأي قاعدةٍ هنا لا تنطبق على الورق — فالطباعة/PDF تُخرج الحالةَ النهائية
+   كاملةً دائماً. لا fill-mode سوى backwards؛ حالةُ الراحة هي النهاية نفسها. */
+@keyframes ad-ring-draw{from{stroke-dasharray:0 163.4}}
+@keyframes ad-step-in{from{opacity:0;transform:translateY(5px)}}
+@media screen and (prefers-reduced-motion:no-preference){
+  .ad-dialog .ad-ring-fill{animation:ad-ring-draw .9s var(--ease-out) .1s backwards}
+  .ad-dialog .ad-timeline>li{animation:ad-step-in .4s var(--ease-out) backwards}
+  .ad-dialog .ad-timeline>li:nth-child(2){animation-delay:.1s}
+  .ad-dialog .ad-timeline>li:nth-child(3){animation-delay:.2s}
+  .ad-dialog .ad-timeline>li:nth-child(4){animation-delay:.3s}
+  .ad-dialog .ad-timeline>li:nth-child(5){animation-delay:.4s}
+  .ad-dialog .ad-timeline>li:nth-child(n+6){animation-delay:.5s}
+}
+@media print{
+  .ad-ring-fill,.ad-timeline>li{animation:none!important}
+}

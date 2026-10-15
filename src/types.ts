@@ -79,6 +79,36 @@ export interface AdTerm {
    * اختياريّ: فصلٌ بلا موعد هو فصلٌ بلا قيد، وهذا هو حال كل فصل قديم.
    */
   AdTermSubmissionDeadline?: string;
+  /**
+   * ── رحلة الطلبة في الفصل ───────────────────────────────────────────────────
+   *
+   * التواريخ التي تحرّك بابَ الطالب والشاشةَ الموحدة معاً: متى تُجمع الرغبات،
+   * ومتى يُجمَّد الجدول المتوقع، وجولات التسجيل، وآخر يومٍ لطلب المتعثّر.
+   * يضعها رئيس التسجيل من لوحة «مواعيد التسليم» نفسها، ومن لا تواريخ لفصله
+   * يعمل كما كان: لا بابَ مفتوحاً ولا مرحلة. القواعد في utils/termStudentPhases.
+   */
+  AdTermStudentPhases?: TermStudentPhases;
+}
+
+/** جولةُ تسجيل واحدة: «مبكر»، «عادي»… بداية ونهاية، YYYY-MM-DD شاملتان. */
+export interface TermStudentRound {
+  id: string;
+  name: string;
+  start: string;
+  end: string;
+}
+
+export interface TermStudentPhases {
+  /** أول يومٍ يكتب فيه الطالب رغباته، وبعد موعد تسليم الجداول. */
+  wishesOpen?: string;
+  /** آخر يوم للرغبات؛ بعده يُجمَّد الجدول المتوقع للقراءة. */
+  wishesClose?: string;
+  /** جولات التسجيل بالترتيب، لا تتداخل، وكلها بعد الرغبات. */
+  rounds?: TermStudentRound[];
+  /** آخر يومٍ يستقبل فيه القسمُ طلبَ طالبٍ متعثّر. */
+  requestsClose?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface AdCollege {
@@ -682,6 +712,67 @@ export interface StudentNeed {
    * من معرّفها، وهو ما أُعطي لأصحابها فعلاً.
    */
   caseRef?: string;
+}
+
+/**
+ * ── ملفُّ الطالب: ما يحتاجه الباب ليبني له جدولاً ────────────────────────────
+ *
+ * مفتاحُه بصمةُ الرقم المدني نفسُها التي يعرفها الاستبيان (HMAC بمفتاح الخادم)،
+ * فالطالبُ نفسُه يُعرف في كل فصل دون أن يُحفظ رقمُه. **لا اسم ولا رقم مدنيّ
+ * هنا**: ما يلزم لتسجيل حالةٍ يدوياً يُكتب في الطلب نفسه (StudentNeed) عند
+ * التبليغ، لا في الملف الدائم.
+ *
+ * وله عمرٌ مكتوب (`deleteAt`): يُحسب من التخرّج المتوقّع + سنة، أو من الانقطاع
+ * عن الباب، أيهما أقرب؛ ويُحذف الملفُّ وحده بعدها.
+ */
+export interface StudentProfile {
+  /** = fingerprint. وثيقةٌ واحدة لكل طالب. */
+  id: string;
+  fingerprint: string;
+  /** قسمُه العلمي. 0 قبل أن يكمل إعداد ملفّه. */
+  AdCollegeId: number;
+  AdSectionId: number;
+  /** الصحيفة (السابقة/الجديدة) التي يدرس عليها، حين يكون للقسم أكثر من صحيفة حيّة. */
+  curriculumPlanId?: string;
+  /** المقررات التي أنجزها، من صحيفته. */
+  passedCourseIds: number[];
+  /** مجموع وحداتها وقت الحفظ — للعرض وللتخرّج المتوقَّع. */
+  passedUnits: number;
+  /** الرمزُ الشخصي: scrypt بملحٍ عشوائي. لا يُخزَّن الرمز نفسه. */
+  codeHash?: string;
+  codeSalt?: string;
+  /** محاولاتٌ خاطئة متتالية للرمز، وقفلٌ مؤقّت بعد الحدّ. */
+  codeFailures?: { count: number; lockedUntil?: number };
+  createdAt: string;
+  updatedAt: string;
+  /** آخرُ دخول (يُحدَّث مرةً في اليوم على الأكثر). */
+  lastSeenAt: string;
+  /** متى يُحذف هذا الملف، وسببه. */
+  deleteAt: string;
+  deleteReason: "initial" | "graduation" | "inactive" | "reset";
+  /** التخرّج المتوقَّع (ISO) كما قدّره النظام من المتبقّي — تقديرٌ لا وعد. */
+  expectedGraduationAt?: string;
+  /**
+   * «نسيت رمزي»: لا أحدَ يسترجع الرمز، ولا يُمحى الملفُّ بكلمةٍ من غريب. يُطلب
+   * الحذفُ فيُمحى بعد مهلة، ودخولُ صاحبه بالرمز في المهلة يُلغيه.
+   */
+  resetRequestedAt?: string;
+  /**
+   * رغبات الطالب في فصلٍ بعينه: ما يريد تسجيله ووحداته وقيوده. تُقرأ في
+   * مرحلة الرغبات وتُبنى منها تذكرتُه.
+   */
+  wishes?: StudentWishes;
+}
+
+export interface StudentWishes {
+  termId: number;
+  /** الوحدات التي يريدها هذا الفصل: 12–18. */
+  targetUnits: number;
+  /** مقرراتٌ يريدها صراحةً. */
+  courseIds: number[];
+  /** قيودُ الوقت: ما لا يستطيعه فعلاً (عمل، مواصلات). */
+  constraints: { noMorning?: boolean; noAfternoon?: boolean; freeDay?: boolean };
+  updatedAt: string;
 }
 
 /**

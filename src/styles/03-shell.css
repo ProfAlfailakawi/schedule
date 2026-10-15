@@ -204,7 +204,8 @@
   35%{box-shadow:0 0 0 7px color-mix(in srgb,var(--accent,#1f8f76) 4%,transparent)}
 }
 @media (prefers-reduced-motion:no-preference){
-  .side-nav-link .side-nav-badge{animation:side-nav-badge-breathe 3s ease-out infinite}
+  /* ساكنة في الراحة؛ نبضةٌ واحدة حين يرتفع العدد (App.tsx يضع data-bump ويعيد تركيب الشارة) */
+  .side-nav-link .side-nav-badge[data-bump]{animation:side-nav-badge-breathe 1.8s ease-out 1}
 }
 .side-nav-link:hover{background:#ffffff0a;color:var(--nav-ink)}
 .side-nav-link:hover>svg:first-child{color:#b6c1bb}

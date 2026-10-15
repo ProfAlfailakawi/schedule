@@ -635,7 +635,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   width:10px;height:10px;border-radius:50%;
   background:var(--brass);
   box-shadow:0 0 0 5px color-mix(in srgb,var(--brass) 26%,transparent);
-  animation:pulse 1.6s ease-in-out infinite;
+  /* نقطةٌ ساكنة: الوهجُ الذي يخفت في 7 ثوانٍ يكفي، والنبضُ فوقه ضجيج */
 }
 @keyframes just-changed-fade{
   0%,75%{
@@ -716,6 +716,26 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-ring .ring-unit{fill:var(--muted-2);font-size:8.5px;letter-spacing:-.02em}
 .review-title{min-width:0}
 .review-title h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
+/* فتحُ المراجعة: الحلقة تُرسم، والشريحة تتمدّد من الجهة الأولى، ومرّةً واحدة.
+   لا fill-mode — حالةُ الراحة هي النهاية نفسها. حركةٌ مخفّضة: القاعدةُ العامة تختصرها. */
+@keyframes review-ring-draw{from{stroke-dasharray:0 163.4}}
+/* to صريحةٌ: inset() مع none لا تُستكمل، فكان الشريطُ ينقلب دفعةً واحدة. */
+@keyframes review-spread-draw{from{clip-path:inset(0 0 0 100%)}to{clip-path:inset(0 0 0 0)}}
+@keyframes review-spread-draw-ltr{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes review-resolve{from{background-color:color-mix(in srgb,var(--accent) 16%,transparent)}}
+@media (prefers-reduced-motion:no-preference){
+  .review-sheet .review-ring .ring-value{animation:review-ring-draw .9s var(--ease-out)}
+  .review-sheet .spread-bar{animation:review-spread-draw .7s var(--ease-out) .1s backwards}
+  .review-sheet .spread-bar:dir(ltr){animation-name:review-spread-draw-ltr}
+  /* «أتحقق…» صار نتيجة: تظليلةٌ واحدة تخفت، والمنطقُ والتوقيتُ كما هما */
+  .review-title h2[data-resolved]{
+    /* التظليلة تلفّ الكلمات وحدها لا عرضَ الترويسة كلَّه، وتمتدّ .4em من الجهة الأولى فقط
+       (الحشوةُ تُلغي الهامشَ فيبقى النصّ على محاذاة السطرين حوله) فلا فيضَ في الجهة الأخرى. */
+    inline-size:fit-content;max-inline-size:calc(100% + .4em);
+    border-radius:var(--r-sm);padding-inline:.4em;margin-inline:-.4em 0;
+    animation:review-resolve 1.4s var(--ease-out);
+  }
+}
 .review-title p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm)}
 .review-title .review-blocker-headline{display:block;margin-top:var(--s1);color:var(--danger);font-size:var(--t-sm);font-weight:700}
 
@@ -888,7 +908,8 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 /* An appointment the review asked to look at. */
 .week-event.review-flagged,.week-chip.review-flagged{
   outline:2px solid var(--danger);outline-offset:-2px;
-  animation:review-glow 1.6s var(--ease) infinite;
+  /* ثلاث نبضات ثم تستقرّ: الإطار الأحمر يبقى هو العلامة، والنبض لا يدور في الشبكة للأبد */
+  animation:review-glow 1.6s var(--ease) 3;
 }
 @keyframes review-glow{
   0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--danger) 30%,transparent)}

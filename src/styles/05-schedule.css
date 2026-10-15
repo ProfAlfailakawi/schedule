@@ -111,7 +111,9 @@ button.schedule-radar:hover{filter:brightness(.96)}
 }
 .schedule-live-dot.on{
   background:var(--success);
-  animation:schedule-live-pulse 2.6s ease-out infinite;
+  /* «يسمع زملاءه» حالةٌ دائمة الحضور، فنبضُها الدائم لا يُخبر بشيء: نقطةٌ وهالتُها ساكنتان
+     (كما فعلت لوحةُ القيادة في 04-screens). الـkeyframes باقية. */
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 18%,transparent);
 }
 @keyframes schedule-live-pulse{
   0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--success) 42%,transparent)}
@@ -1046,7 +1048,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
 .ripple-effects span.warn{color:var(--warning)}
 .ripple-effects span.danger{color:var(--danger)}
 .ripple-pulse{display:flex;align-items:center;gap:var(--s2);color:var(--muted);font-size:var(--t-xs)}
-.ripple-pulse i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.8s ease-in-out infinite}
+.ripple-pulse i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.8s ease-in-out 3}
 
 /* --- Cinema / presentation mode ------------------------------------------- */
 
@@ -4255,7 +4257,8 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 [data-presence-hold]{
   outline:2px solid hsl(var(--presence-hue) 58% 46%);
   outline-offset:1px;
-  animation:presence-held 1.8s ease-in-out infinite;
+  /* ثلاث نبضات ثم يبقى الإطار ثابتاً بلونه الكامل (الحجزُ داخل الشبكة لا ينبض للأبد) */
+  animation:presence-held 1.8s ease-in-out 3;
 }
 /* A row open in someone's editor — quieter, because it may sit open for
    minutes and a pulsing ring for minutes is a nuisance, not a warning. */
@@ -8175,7 +8178,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   position:absolute;inset-block-start:-3px;inset-inline-end:-3px;
   width:9px;height:9px;border-radius:999px;background:var(--accent);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);
-  animation:hall-barter-inbox-pulse 2.4s ease-out infinite;
+  animation:hall-barter-inbox-pulse 2.4s ease-out 3;
 }
 @keyframes hall-barter-inbox-pulse{
   0%,60%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}

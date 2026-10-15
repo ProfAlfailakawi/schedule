@@ -393,6 +393,14 @@ function NavButton({
 }) {
   const on = active ?? activeView === view;
   const visibleText = view === "dashboard" ? "" : (visualLabel ?? label);
+  /* الشارة ساكنة، وتنبض نبضةً واحدة حين يزيد عددٌ موجودٌ فعلاً (عرضٌ لا غير).
+     وصولُ أول رقمٍ بعد التحميل (من صفر) ليس «زيادة»، فيظهر ساكناً بلا نبض. */
+  const lastBadge = useRef(badge);
+  const [bump, setBump] = useState(0);
+  useEffect(() => {
+    if (lastBadge.current > 0 && badge > lastBadge.current) setBump(count => count + 1);
+    lastBadge.current = badge;
+  }, [badge]);
   return (
     <button
       type="button"
@@ -409,7 +417,7 @@ function NavButton({
     >
       {icon}
       {visibleText ? <span>{visibleText}</span> : null}
-      {badge > 0 ? <span className="side-nav-badge" aria-hidden="true"><b>{badge > 99 ? "99+" : badge}</b></span> : null}
+      {badge > 0 ? <span className="side-nav-badge" key={bump} data-bump={bump > 0 ? "" : undefined} aria-hidden="true"><b>{badge > 99 ? "99+" : badge}</b></span> : null}
       {on ? <ChevronLeft className="nav-arrow" /> : null}
     </button>
   );

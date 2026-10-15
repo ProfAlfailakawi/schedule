@@ -97,6 +97,9 @@ import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
+import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
+import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
+import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
@@ -10704,6 +10707,43 @@ app.post("/api/approvals/deadline", requireAuth, async (req: AuthenticatedReques
 });
 
 /**
+ * تواريخ رحلة الطلبة للفصل: الرغبات، جولات التسجيل، إغلاق الطلبات.
+ *
+ * بيد رئيس التسجيل وحده كموعد التسليم، ومن اللوحة نفسها. الفحصُ هنا هو الفحصُ
+ * الذي تعرضه الواجهة (checkStudentPhases)، فلا تَعِد الشاشةُ بتاريخٍ يرفضه
+ * الخادم. وفارغٌ يرفع التواريخ كلها: رفعُ القيد قرارٌ وارد.
+ */
+app.post("/api/approvals/student-phases", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canManageDeadline(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "مواعيد الطلبة يضعها رئيس التسجيل." }); return; }
+  const termId = Number(req.body?.termId || 0);
+  if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
+  const term = await Repository.getTermById(termId);
+  if (!term) { res.status(404).json({ error: "الفصل غير موجود" }); return; }
+  const incoming = req.body?.phases;
+  if (incoming === null || incoming === undefined) {
+    await Repository.setTermStudentPhases(termId, undefined);
+    res.locals.auditChanges = "رُفعت مواعيد الطلبة";
+    res.json({ termId, phases: null });
+    return;
+  }
+  if ((term as any).AdTermClosed === true || termHasEnded(term as any)) {
+    res.status(409).json({ error: "انتهى هذا الفصل — لا تُوضع له مواعيد طلبة.", code: "term-closed" }); return;
+  }
+  const checked = checkStudentPhases(incoming, { submissionDeadline: (term as any).AdTermSubmissionDeadline });
+  if (!checked.ok) { res.status(400).json({ error: checked.issues[0].message, issues: checked.issues }); return; }
+  if (!hasStudentPhases(checked.phases)) {
+    await Repository.setTermStudentPhases(termId, undefined);
+    res.locals.auditChanges = "رُفعت مواعيد الطلبة";
+    res.json({ termId, phases: null });
+    return;
+  }
+  const phases = { ...checked.phases, updatedAt: new Date().toISOString(), updatedBy: String(req.user?.Name || req.user?.Role || "") };
+  await Repository.setTermStudentPhases(termId, phases);
+  res.locals.auditChanges = `مواعيد الطلبة: رغبات ${phases.wishesOpen || "—"} ← ${phases.wishesClose || "—"} · ${countOf((phases.rounds || []).length, AR.round)} · إغلاق ${phases.requestsClose || "—"}`;
+  res.json({ termId, phases });
+});
+
+/**
  * تمديدٌ لقسمٍ بعينه. ضغطتان من صندوق الوارد، بسببٍ يُحفظ ويُعرض.
  *
  * وفي نطاق مانحه وحده (R16)، ولا يسبق موعد الفصل: تمديدٌ يُقرّب الموعد ليس
@@ -15056,7 +15096,7 @@ const normalizeCaseRef=(value:unknown)=>toEnglishDigits(value).toUpperCase().rep
 /** The one stored request of this hand (fingerprint + term + survey department). */
 const priorNeedForHand=async(link:any,civil:string)=>{
   const fingerprint=await surveyFingerprint(civil);
-  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  const needs=await Repository.getStudentNeedsByFingerprint(fingerprint,Number(link.AdCollegeId),Number(link.AdTermId));
   return (needs as any[])
     .filter((need:any)=>String(need?.fingerprint||"")===fingerprint
       &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId))
@@ -15077,7 +15117,7 @@ const reusableGraduateVerification=async(link:any,civil:string,sectionId:number,
   /* A verified sheet is reused only for the holder of the case number too. */
   if(!caseRefMatches(await priorNeedForHand(link,civil),caseRef))return null;
   const fingerprint=await surveyFingerprint(civil);
-  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  const needs=await Repository.getStudentNeedsByFingerprint(fingerprint,Number(link.AdCollegeId),Number(link.AdTermId));
   const prior=(needs as any[]).find((need:any)=>
     String(need?.fingerprint||"")===fingerprint
     &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId)
@@ -15113,7 +15153,7 @@ const normalizeStudentIdentityName=(value:unknown)=>String(value||"").normalize(
  * a crafted request from changing the stored name or home section. */
 const reusableStudentIdentity=async(link:any,civil:string)=>{
   const fingerprint=await surveyFingerprint(civil);
-  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  const needs=await Repository.getStudentNeedsByFingerprint(fingerprint,Number(link.AdCollegeId),Number(link.AdTermId));
   const prior=(needs as any[]).find((need:any)=>
     String(need?.fingerprint||"")===fingerprint
     &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId)
@@ -19467,7 +19507,7 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
 
   const fingerprint = await surveyFingerprint(civil);
   const [needs, courses, terms] = await Promise.all([
-    Repository.getStudentNeeds(Number(resolved.link.AdCollegeId), 0, Number(resolved.link.AdTermId)),
+    Repository.getStudentNeedsByFingerprint(fingerprint, Number(resolved.link.AdCollegeId), Number(resolved.link.AdTermId)),
     Repository.getCourses(),
     Repository.getTerms(),
   ]);
@@ -19700,6 +19740,21 @@ app.get("/q/:token", async (req: Request, res: Response) => {
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content=width=device-width,initial-scale=1><title>SCHEDULE</title><link rel=icon href=/schedule-icon.svg type=image/svg+xml><link rel=apple-touch-icon href=/schedule-icon-192.png></head><body><p dir=rtl>هذا الرابط ليس استبياناً.</p></body></html>"); return; }
   res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res), await demoPageHint(resolved.link, "survey")));
+});
+
+/* ── بيتُ الطالب: رابطٌ دائمٌ واحدٌ للجامعة كلها ────────────────────────────
+ *
+ * لا يحمل قسماً ولا فصلاً ولا رمزاً: الطالبُ هو المفتاح، والفصلُ يُقرأ من
+ * التواريخ (utils/termStudentPhases). فملصقٌ يُطبع مرةً يبقى صالحاً سنين. */
+registerStudentDoorRoutes(app, {
+  surveyFingerprint,
+  identityKey: studentIdentityKey,
+  isProduction: () => process.env.NODE_ENV === "production",
+});
+app.get(["/me", "/me/"], (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(studentHomePage(publicPageNonce(res)));
 });
 
 /* ── جدولُ الطلبة برمز QR ─────────────────────────────────────────────────────
@@ -20498,6 +20553,8 @@ async function startServer() {
       { start: term.AdTermStart, weeks: term.AdTermWeeks, closed: true }),
     log: message => console.log(message),
   });
+  /* ملفّاتُ الطلبة تُحذف وحدها حين ينتهي عمرُها (التخرّج المتوقَّع + سنة، أو الانقطاع). */
+  if (!databaseFailure) scheduleStudentProfilePurge(message => console.log(message));
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {
