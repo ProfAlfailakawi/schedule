@@ -1,5 +1,6 @@
 import type { AdTerm, TermStudentPhases, TermStudentRound } from "../types";
 import { kuwaitDateISO } from "./approvalWorkflow";
+import { AR, countOf, oblique } from "./arabicCount";
 import { deadlineDateShort } from "./submissionDeadlines";
 import { previousYearSameTermName, sameTermName, termWindow } from "./termSequence";
 
@@ -79,14 +80,14 @@ export function checkStudentPhases(
 
   const rounds: TermStudentRound[] = [];
   const list = Array.isArray(raw.rounds) ? raw.rounds : [];
-  if (list.length > MAX_STUDENT_ROUNDS) issues.push({ field: "rounds", message: `أكثر ما يُسمح به ${MAX_STUDENT_ROUNDS} جولات.` });
+  if (list.length > MAX_STUDENT_ROUNDS) issues.push({ field: "rounds", message: `أكثر ما يُسمح به ${countOf(MAX_STUDENT_ROUNDS, AR.round)}.` });
   list.slice(0, MAX_STUDENT_ROUNDS).forEach((entry, index) => {
     const name = String(entry?.name ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
     const start = cleanDay(entry?.start), end = cleanDay(entry?.end);
     const field = `rounds.${index}`;
     if (!name && !start && !end) return;
     if (!name) { issues.push({ field, message: `الجولة ${index + 1}: اكتب لها اسماً (مبكر، عادي…).` }); return; }
-    if (name.length > ROUND_NAME_MAX) issues.push({ field, message: `الجولة ${index + 1}: الاسم أطول من ${ROUND_NAME_MAX} حرفاً.` });
+    if (name.length > ROUND_NAME_MAX) issues.push({ field, message: `الجولة ${index + 1}: الاسم أطول من ${countOf(ROUND_NAME_MAX, oblique(AR.character))}.` });
     if (!isRealDay(start) || !isRealDay(end)) { issues.push({ field, message: `«${name}»: حدّد بدايةً ونهايةً بتاريخٍ صالح.` }); return; }
     if (end < start) { issues.push({ field, message: `«${name}»: النهاية قبل البداية.` }); return; }
     rounds.push({ id: String(entry?.id || "").slice(0, 40) || `r${index + 1}`, name: name.slice(0, ROUND_NAME_MAX), start, end });
