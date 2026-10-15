@@ -130,3 +130,6 @@ export function ticketContext(termId: number): Promise<TicketContext> {
     return { offerings, signed };
   });
 }
+
+/** للاختبار: يمحو ذاكرةَ المواعيد والتواقيع. */
+export const resetTicketContext = (): void => contextMemo.invalidate();

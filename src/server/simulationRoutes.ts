@@ -51,12 +51,13 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
 
   app.post("/api/simulation/run", deps.requireAuth, async (req: Request, res: Response) => {
     if (!deps.isPowerUser(req)) { fail(res, 403, "تشغيل البروفة لإدارة النظام.", "not-allowed"); return; }
+    /* العلَمُ يُرفع قبل أيّ انتظار: تشغيلان متزامنان لا يمرّان معاً من فحصٍ واحد. */
     if (running) { fail(res, 409, "بروفةٌ تعمل الآن. انتظر انتهاءها.", "busy"); return; }
-    const terms = await Repository.getTerms();
-    const term = pickDoorTerm(terms as any);
-    if (!term) { fail(res, 409, "لا فصلَ جارياً أو قادماً تُبنى له البروفة.", "no-term"); return; }
     running = true;
     try {
+      const terms = await Repository.getTerms();
+      const term = pickDoorTerm(terms as any);
+      if (!term) { fail(res, 409, "لا فصلَ جارياً أو قادماً تُبنى له البروفة.", "no-term"); return; }
       const run = await runRegistrationSimulation(term, deps.actorName(req));
       res.locals.auditChanges = `بروفة تسجيل «${term.AdTermName || term.AdTermId}»: ${run.students} ملفاً`;
       res.json({ ok: true, students: run.students, ranAt: run.ranAt });
