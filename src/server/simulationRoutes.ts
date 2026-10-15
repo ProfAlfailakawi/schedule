@@ -11,7 +11,7 @@ import { Repository } from "../db/repository";
 import type { AdCourse, RegistrationOutcomeShard } from "../types";
 import { createTtlMemo } from "./notificationCache";
 import { AR, countOf } from "../utils/arabicCount";
-import { pickDoorTerm } from "../utils/termStudentPhases";
+import { pickDoorTerm, readStudentPhase } from "../utils/termStudentPhases";
 import { runRegistrationSimulation } from "./simulationData";
 
 export interface SimulationDeps {
@@ -44,6 +44,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     res.json({
       term: { id: Number(term.AdTermId), name: String(term.AdTermName || "") },
       canRun: power,
+      phase: (() => { const reading = readStudentPhase(term.AdTermStudentPhases); return { mode: reading.mode, label: reading.label, line: reading.line, namesVisible: reading.namesVisible }; })(),
       run: run ? {
         ranAt: run.ranAt, ranBy: run.ranBy, students: run.students, withoutRules: run.withoutRules, defaulted: run.defaulted,
         rounds: run.rounds, windows: run.windows, scoped: !power,

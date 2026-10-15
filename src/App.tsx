@@ -1787,7 +1787,7 @@ export default function App() {
         );
       case "simulation":
         /* القراءةُ بحدود النطاق في الخادم؛ والأيقونةُ لا تظهر إلا إن كانت هناك بروفةٌ أو من يشغّلها. */
-        return simulationVisible ? <RegistrationRehearsal /> : unauthorized();
+        return simulationVisible ? <RegistrationRehearsal onNavigate={(view) => go(view as View)} /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
         return planReviewCount > 0 ? <PlanReview /> : unauthorized();

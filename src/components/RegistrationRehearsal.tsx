@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Layers, Play, RefreshCw, Ticket, Users } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
+import MasariQrButton from "./MasariQrButton";
 
 interface Unmet { "not-offered": number; conflict: number; full: number; prereq: number; units: number }
 interface CourseRow { courseId: number; code: string; name: string; sections: number; capacity: number; taken: number; wanted: number; seated: number; unmet: Unmet }
@@ -19,6 +20,7 @@ interface Outcome { term: { id: number; name: string } | null; answered: number;
 interface Summary {
   term: { id: number; name: string } | null;
   canRun: boolean;
+  phase?: { mode: string; label: string; line: string; namesVisible: boolean };
   run: { ranAt: string; ranBy: string; students: number; withoutRules: number; defaulted: number; rounds: number; windows: number[]; scoped: boolean } | null;
   courses: CourseRow[];
 }
@@ -38,7 +40,7 @@ const WHY: Array<[keyof Unmet, string, string]> = [
 const needsDecision = (c: CourseRow) => c.unmet.full > 0 || c.unmet["not-offered"] > 0;
 const weight = (c: CourseRow) => c.unmet.full * 3 + c.unmet["not-offered"] * 2 + c.unmet.conflict;
 
-export default function RegistrationRehearsal() {
+export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
   const [data, setData] = useState<Summary | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState("");
@@ -72,12 +74,30 @@ export default function RegistrationRehearsal() {
   return (
     <div className="sm-page" dir="rtl">
       <PageTitle eyebrow="بروفة التسجيل" subtitle="لو سجّل الطلبةُ بحسب ما كتبوه: أين الزحام، وما المطلوب ولا يُطرح؟"
-        action={data?.canRun ? (
-          <PrimaryButton disabled={busy} onClick={run} data-guide-ignore="تشغيلُ البروفة داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">
-            {busy ? <RefreshCw size={16} className="sm-spin" /> : <Play size={16} />} {r ? "أعد البروفة" : "شغّل البروفة"}
-          </PrimaryButton>
-        ) : undefined}>بروفة يوم التسجيل</PageTitle>
+        action={(
+          <div className="sm-actions">
+            <MasariQrButton data-guide-ignore="زرُّ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation" />
+            {data?.canRun ? (
+              <PrimaryButton disabled={busy} onClick={run} data-guide-ignore="تشغيلُ البروفة داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">
+                {busy ? <RefreshCw size={16} className="sm-spin" /> : <Play size={16} />} {r ? "أعد البروفة" : "شغّل البروفة"}
+              </PrimaryButton>
+            ) : null}
+          </div>
+        )}>بروفة يوم التسجيل</PageTitle>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
+      {data?.phase ? (
+        <div className={`sm-phase ${data.phase.namesVisible ? "after" : "before"}`}>
+          <span className="sm-ic">{data.phase.namesVisible ? <Users /> : <Ticket />}</span>
+          <div><b>{data.phase.label}</b><small>{data.phase.line}</small>
+            <small>{data.phase.namesVisible ? "بدأ التسجيل: تصل أسماءُ المتعثّرين الأقسامَ المالكة للمقررات في «كشف التسجيل»." : "قبل التسجيل: أرقامٌ فقط — لا أسماءَ حتى تبدأ الجولة الأولى."}</small></div>
+          {onNavigate ? (
+            <div className="sm-links">
+              {data.phase.namesVisible ? <button type="button" onClick={() => onNavigate("studentRegistration")} data-guide-ignore="انتقالٌ إلى كشف التسجيل من شاشةٍ مسجّلة في المرشد باسم page.simulation">كشف التسجيل (الأسماء)</button> : null}
+              <button type="button" onClick={() => onNavigate("intelligence")} data-guide-ignore="انتقالٌ إلى مركز الذكاء من شاشةٍ مسجّلة في المرشد باسم page.simulation">مركز الذكاء</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {!data?.term ? <EmptyState title="لا فصلَ للبروفة" detail="تظهر حين يكون للفصل القادم تواريخُ طلبة." /> : !r ? (
         <EmptyState title="لم تُجرَ بروفةٌ بعد" detail={data.canRun ? "اضغط «شغّل البروفة» لتُبنى خططُ الطلبة من ملفّاتهم." : "تُجريها إدارةُ النظام حين تكتمل رغباتُ الطلبة."} />
       ) : (
