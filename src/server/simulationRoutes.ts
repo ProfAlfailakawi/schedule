@@ -78,7 +78,10 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
       if (!course || (!power && !deps.isScopeAllowed(req, Number(course.AdCollegeId), Number(course.AdSectionId)))) return [];
       return [{ courseId, code: String(course.CourseCode || ""), name: String(course.CourseName || ""), ...row }];
     }).sort((a, b) => b.stuck - a.stuck || a.code.localeCompare(b.code, "en"));
-    res.json({ term: { id: termId, name: String(term.AdTermName || "") }, answered, scoped: !power, courses });
+    /* عددُ المجيبين الكلّيُّ لا يُقال لمن يرى مقرراتِه وحدها: طلبةٌ أجابوا عن أقسامٍ أخرى لا يصفون نتائجَه.
+       يُقال له عددُ الأجوبة عن مقرراتِه (جوابٌ لكل مقرر). */
+    const answers = courses.reduce((sum, c) => sum + c.registered + c.stuck, 0);
+    res.json({ term: { id: termId, name: String(term.AdTermName || "") }, answered: power ? answered : null, answers, scoped: !power, courses });
   });
 
   app.post("/api/simulation/run", deps.requireAuth, async (req: Request, res: Response) => {
@@ -127,12 +130,12 @@ export async function radarNoticeFor(req: any, deps: Pick<SimulationDeps, "isSco
   const answered = shards.reduce((sum, shard) => sum + (Number(shard.students) || 0), 0);
   if (answered > 0) {
     const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
-    let stuck = 0;
+    let stuck = 0, answers = 0;
     for (const shard of shards) for (const [id, row] of Object.entries(shard.byCourse || {})) {
       const course = catalog.get(Number(id));
-      if (course && mine(Number(course.AdCollegeId), Number(course.AdSectionId))) stuck += Number(row.stuck) || 0;
+      if (course && mine(Number(course.AdCollegeId), Number(course.AdSectionId))) { stuck += Number(row.stuck) || 0; answers += (Number(row.stuck) || 0) + (Number(row.registered) || 0); }
     }
-    outcome = { answered, stuck, scoped: !power };
+    outcome = { answered: power ? answered : answers, stuck, scoped: !power };
   }
   return { radar, outcome, termId, termName: String(term.AdTermName || "") };
 }

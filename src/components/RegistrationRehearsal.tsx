@@ -16,7 +16,7 @@ import MasariQrButton from "./MasariQrButton";
 interface Unmet { "not-offered": number; conflict: number; full: number; prereq: number; units: number }
 interface CourseRow { courseId: number; code: string; name: string; sections: number; capacity: number; taken: number; wanted: number; seated: number; unmet: Unmet }
 interface OutcomeRow { courseId: number; code: string; name: string; registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }
-interface Outcome { term: { id: number; name: string } | null; answered: number; scoped: boolean; courses: OutcomeRow[] }
+interface Outcome { term: { id: number; name: string } | null; answered: number | null; answers: number; scoped: boolean; courses: OutcomeRow[] }
 interface Summary {
   term: { id: number; name: string } | null;
   canRun: boolean;
@@ -67,7 +67,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
     const head = ["رمز المقرر", "المقرر", "عدد الشعب", "السعة", "المقاعد المحجوزة افتراضياً", "المطلوب", "وجد مقعداً", "امتلأت الشعب", "مطلوب ولا يُطرح", "تعارض أوقات", "فوق الوحدات", "ينقصهم مسبق"];
     const body = (data.courses || []).map(c => [c.code, c.name, c.sections, c.capacity, c.taken, c.wanted, c.seated, c.unmet.full, c.unmet["not-offered"], c.unmet.conflict, c.unmet.units, c.unmet.prereq]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([head, ...body]), "رادار التسجيل");
-    if (outcome && outcome.answered > 0) {
+    if (outcome && outcome.answers > 0) {
       const oh = ["رمز المقرر", "المقرر", "سجّلوا", "تعثّروا", "امتلأت", "مسبق", "تعارض", "آخر"];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([oh, ...outcome.courses.map(c => [c.code, c.name, c.registered, c.stuck, c.full, c.prereq, c.conflict, c.other])]), "بعد التسجيل");
     }
@@ -138,7 +138,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
             {r.scoped ? " · المعروض مقرراتُ قسمك فقط" : ""}. تقديرٌ لا بياناتُ التسجيل الرسمي.
           </p>
 
-          {outcome && outcome.answered > 0 ? <OutcomeBlock outcome={outcome} predictedStudents={r.students} /> : null}
+          {outcome && outcome.answers > 0 ? <OutcomeBlock outcome={outcome} predictedStudents={r.students} /> : null}
 
           <section className="sm-list">
             <header>
@@ -177,12 +177,14 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
     ["تعارض", "info", outcome.courses.reduce((s, c) => s + c.conflict, 0)], ["سبب آخر", "soft", outcome.courses.reduce((s, c) => s + c.other, 0)],
   ];
   const worst = outcome.courses.filter(c => c.stuck > 0).slice(0, 8);
-  const share = predictedStudents ? Math.round((outcome.answered / predictedStudents) * 100) : 0;
+  const share = outcome.answered !== null && predictedStudents ? Math.round((outcome.answered / predictedStudents) * 100) : 0;
   return (
     <section className="sm-list sm-out">
       <header><h3>بعد التسجيل: ماذا قال الطلبة؟</h3></header>
       <div className="sm-kpis">
-        <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answered.toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا «هل سجلت؟»</small><em>{share}٪ ممن شملتهم الرادار</em></article>
+        {outcome.answered !== null
+          ? <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answered.toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا «هل سجلت؟»</small><em>{share}٪ ممن شملهم الرادار</em></article>
+          : <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answers.toLocaleString("ar-KW-u-nu-latn")}</b><small>من أجوبة الطلبة في مقررات قسمك</small><em>جوابٌ لكل مقرر — لا عددُ الطلبة</em></article>}
         <article className="sm-kpi"><span className="sm-ic"><Layers /></span><b>{okPct}٪</b><small>من المقرراتِ المُجاب عنها سُجّلت</small>
           <div className="sm-meter"><i style={{ inlineSize: `${okPct}%` }} /></div><em>{countOf(registered, AR.course)} سُجّلت · {countOf(stuck, AR.course)} تعثّرت</em></article>
       </div>

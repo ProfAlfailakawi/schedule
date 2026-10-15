@@ -218,6 +218,8 @@ try {
   const cs = open.courses.map((c: any) => c.courseId);
   const bad = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: 999999, state: "registered" }] } });
   check(bad.status === 400 && bad.json.code === "empty", "G2 مقررٌ ليس له: لا يُقبل");
+  const hidden = [101, 102, 103, 104, 105, 106].find(id => !cs.includes(id));
+  if (hidden) check((await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: hidden, state: "stuck", reason: "full" }] } })).json.code === "empty", "G2 مقررٌ لم يُعرض عليه لا يُقبل ولو كان من صحيفته (تُفرض مجموعةُ الواجهة نفسُها)", { hidden, cs });
   const stuckId = cs[0], okId = cs[1];
   const noHelp = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: okId, state: "registered" }, { courseId: stuckId, state: "stuck", reason: "full" }] } });
   check(noHelp.status === 200 && noHelp.json.registered === 1 && noHelp.json.stuck === 1 && noHelp.json.cases.length === 0, "G3 تعثّرٌ بلا طلب مساعدة: يُحصى ولا يُنشأ طلب", noHelp.json);
@@ -248,6 +250,7 @@ try {
   check(outcome2.answered === 1 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.stuck === 1 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.full === 0 && outcome2.courses.find((c: any) => c.courseId === stuckId)?.prereq === 1, "G6 إعادةُ الجواب تطرح القديم وتضيف الجديد: لا عدّ مزدوج", outcome2);
   const chairOut = (await http("GET", "/api/simulation/outcome", { who: "chair11" })).json;
   check(chairOut.scoped === true && chairOut.courses.every((c: any) => c.code.startsWith("ISL")), "G6 القسمُ يرى مقرراتِه وحدها");
+  check(chairOut.answered === null && chairOut.answers > 0 && outcome2.answered === 1, "G6 عددُ المجيبين الكلّيُّ للإدارة وحدها؛ والقسمُ يُقال له عددُ الأجوبة عن مقرراتِه", [chairOut.answered, chairOut.answers]);
   const arbOut = (await http("GET", "/api/simulation/outcome", { who: "chair12" })).json;
   check(arbOut.courses.length === 0, "G6 قسمٌ آخر: لا شيء من مقررات غيره");
   check((await http("GET", "/api/simulation/outcome")).status === 401, "G6 بدخولٍ فقط");

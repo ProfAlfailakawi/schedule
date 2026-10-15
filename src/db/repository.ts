@@ -5201,28 +5201,51 @@ export const Repository = {
    * كلُّ جوابٍ يطرح قديمَه ويضيف جديدَه في شظيةٍ يحدّدها اسمُ الطالب المجزّأ (٦٤ شظية)،
    * فلا تتزاحم آلافُ الكتابات على وثيقةٍ واحدة يومَ التسجيل. القراءةُ تجمع الشظايا.
    */
-  applyRegistrationOutcome: async (termId: number, fingerprint: string, before: StudentRegistrationReport["answers"] | undefined, after: StudentRegistrationReport["answers"]): Promise<void> => {
+  /**
+   * يكتب جوابَ الطالب وعدّاداتِه **معاً** (معاملةٌ واحدة على وثيقتي الملف والشظية): إن ماتت
+   * العمليةُ في المنتصف لا يبقى جوابٌ بلا عدٍّ، ولا يُحسب القديمُ مرتين عند إعادة المحاولة.
+   * `mutate` يُرجع الملفَّ الجديد (وفيه `registration` الجديد) أو undefined لترك الحال.
+   */
+  recordRegistrationAnswers: async (fingerprint: string, termId: number, mutate: (current: StudentProfile | undefined) => StudentProfile | undefined): Promise<StudentProfile | undefined> => {
+    if (!fingerprint) throw new Error("بصمة الطالب مطلوبة");
     const OUTCOME_SHARDS = 64;
     let h = 2166136261; for (let i = 0; i < fingerprint.length; i++) { h ^= fingerprint.charCodeAt(i); h = Math.imul(h, 16777619); }
-    const shard = (h >>> 0) % OUTCOME_SHARDS;
-    const delta = new Map<number, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>();
-    const bump = (answers: StudentRegistrationReport["answers"] | undefined, sign: 1 | -1) => {
-      for (const answer of answers || []) {
-        const row = delta.get(answer.courseId) || { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 };
-        if (answer.state === "registered") row.registered += sign;
-        else { row.stuck += sign; row[answer.reason || "other"] += sign; }
-        delta.set(answer.courseId, row);
-      }
+    const shard = (h >>> 0) % OUTCOME_SHARDS, id = `${termId}_${shard}`;
+    const deltaOf = (before: StudentRegistrationReport["answers"] | undefined, after: StudentRegistrationReport["answers"] | undefined) => {
+      const delta = new Map<number, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>();
+      const bump = (answers: StudentRegistrationReport["answers"] | undefined, sign: 1 | -1) => {
+        for (const answer of answers || []) {
+          const row = delta.get(answer.courseId) || { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 };
+          if (answer.state === "registered") row.registered += sign; else { row.stuck += sign; row[answer.reason || "other"] += sign; }
+          delta.set(answer.courseId, row);
+        }
+      };
+      bump(before, -1); bump(after, 1);
+      return { delta, students: (after && after.length ? 1 : 0) - (before && before.length ? 1 : 0) };
     };
-    bump(before, -1); bump(after, 1);
-    const students = (after.length ? 1 : 0) - (before && before.length ? 1 : 0);
-    const id = `${termId}_${shard}`;
+    const termAnswers = (profile: StudentProfile | undefined) => (profile?.registration && profile.registration.termId === termId ? profile.registration.answers : undefined);
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const byCourse: Record<string, any> = {};
-      for (const [courseId, row] of delta) byCourse[String(courseId)] = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, FieldValue.increment(v)]));
-      await firestoreDb.collection("registrationOutcomes").doc(id).set({ id, termId, shard, students: FieldValue.increment(students), byCourse }, { merge: true });
-      return;
+      const profileRef = firestoreDb.collection("studentProfiles").doc(fingerprint);
+      const shardRef = firestoreDb.collection("registrationOutcomes").doc(id);
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(profileRef);
+        const current = snap.exists ? (snap.data() as StudentProfile) : undefined;
+        const next = mutate(current);
+        if (!next) return current;
+        const { delta, students } = deltaOf(termAnswers(current), termAnswers(next));
+        const byCourse: Record<string, any> = {};
+        for (const [courseId, row] of delta) byCourse[String(courseId)] = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, FieldValue.increment(v)]));
+        transaction.set(profileRef, { ...next, id: fingerprint, fingerprint });
+        transaction.set(shardRef, { id, termId, shard, students: FieldValue.increment(students), byCourse }, { merge: true });
+        return next;
+      });
     }
+    if (!Array.isArray(db.studentProfiles)) db.studentProfiles = [];
+    const index = db.studentProfiles.findIndex(row => row.id === fingerprint);
+    const current = index >= 0 ? db.studentProfiles[index] : undefined;
+    const next = mutate(current);
+    if (!next) return current;
+    const { delta, students } = deltaOf(termAnswers(current), termAnswers(next));
     if (!Array.isArray(db.registrationOutcomes)) db.registrationOutcomes = [];
     let doc = db.registrationOutcomes.find(row => row.id === id);
     if (!doc) { doc = { id, termId, shard, students: 0, byCourse: {} }; db.registrationOutcomes.push(doc); }
@@ -5231,7 +5254,10 @@ export const Repository = {
       const target = doc.byCourse[String(courseId)] || (doc.byCourse[String(courseId)] = { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 });
       for (const key of Object.keys(row) as Array<keyof typeof row>) target[key] += row[key];
     }
+    const row = { ...next, id: fingerprint, fingerprint };
+    if (index >= 0) db.studentProfiles[index] = row; else db.studentProfiles.push(row);
     saveDatabase();
+    return row;
   },
   getRegistrationOutcome: async (termId: number): Promise<RegistrationOutcomeShard[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {

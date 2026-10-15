@@ -502,7 +502,8 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const planned = run && ticket && ticket.runId === run.runId ? (ticket.plans.find(plan => plan.label === "A")?.items.map(item => item.courseId) || []) : [];
     const remaining = planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds.filter(id => (index.get(id)?.sections || 0) > 0);
     const ids = [...new Set([...planned, ...(planned.length ? [] : remaining.slice(0, 12))])];
-    return { term, termId, reading, ids, info, allowed: new Set([...planned, ...remaining]) };
+    /* ما يُعرض له هو ما يُقبل منه: لا مقررَ مخفيّاً يُرسَل مباشرةً فيُفسد العدّادات أو يُنشئ حالةً لقسمٍ لم تكن في خطّته. */
+    return { term, termId, reading, ids, info, allowed: new Set(ids) };
   }
 
   app.get("/api/public/me/report", requireDoor, async (_req: Request, res: Response) => {
@@ -549,14 +550,11 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       sealed = remember = { nameCipher: await deps.sealIdentity(name), civilCipher: await deps.sealIdentity(civil) };
     }
 
-    let before: NonNullable<StudentProfile["registration"]>["answers"] | undefined;
-    const saved = await Repository.updateStudentProfile(fingerprint, current => {
+    const saved = await Repository.recordRegistrationAnswers(fingerprint, ctx.termId, current => {
       if (!current) return undefined;
-      before = current.registration && current.registration.termId === ctx.termId ? current.registration.answers : undefined;
       return { ...current, ...(remember || {}), registration: { termId: ctx.termId, at: new Date().toISOString(), answers } };
     });
     if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
-    await Repository.applyRegistrationOutcome(ctx.termId, fingerprint, before, answers);
 
     /* حالةٌ لكل قسمٍ يملك مقرراً تعثّر فيه: يصله الطلبُ على كشف التسجيل كأيّ طلب. */
     const cases: Array<{ sectionName: string; caseRef: string }> = [];

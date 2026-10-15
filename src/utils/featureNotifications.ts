@@ -65,7 +65,7 @@ export function buildFeatureNotifications(input: FeatureNotificationInput): Cent
     items.push({
       id: `outcome:${input.outcome.answered}:${input.outcome.stuck}`, tone: "alert",
       title: `تعثّر الطلبة في ${countOf(input.outcome.stuck, AR.course)} بعد التسجيل`,
-      detail: `${countOf(input.outcome.answered, AR.student)} أجابوا «هل سجلت؟»${input.outcome.scoped ? " — في مقررات قسمك" : ""}`,
+      detail: input.outcome.scoped ? `${countOf(input.outcome.answered, AR.answer)} عن مقررات قسمك` : `${countOf(input.outcome.answered, AR.student)} أجابوا «هل سجلت؟»`,
       view: "simulation",
     });
   }
