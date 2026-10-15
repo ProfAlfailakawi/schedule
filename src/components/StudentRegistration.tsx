@@ -747,6 +747,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
             sectionId={sectionId}
             emptyText="لا طالبَ يطابق البحث أو الحالة المختارة."
             print={{ scope: printScope, college: collegeOptions.find(item => item.value === collegeId)?.label || "" }}
+            activeFilterCount={statusFilter !== "all" ? 1 : 0}
+            toolbarOutside={!visible.length && (needle || statusFilter !== "all") ? (
+              <SecondaryButton type="button" onClick={() => { setAsk(""); filterChosen.current = true; setStatusFilter("all"); }} data-guide-ignore="مسح البحث — عرضٌ لا فعل">اعرض الكل</SecondaryButton>
+            ) : null}
             toolbarExtra={
               <div className="registration-filter" role="group" aria-label="تصفية حسب الحالة">
                 {([
@@ -776,9 +780,6 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                 >
                   <Download aria-hidden="true" /> تصدير Excel
                 </button>
-                {!visible.length && (needle || statusFilter !== "all") ? (
-                  <SecondaryButton type="button" onClick={() => { setAsk(""); filterChosen.current = true; setStatusFilter("all"); }} data-guide-ignore="مسح البحث — عرضٌ لا فعل">اعرض الكل</SecondaryButton>
-                ) : null}
               </div>
             }
             renderCourseDecision={(item, view) => {

@@ -170,6 +170,14 @@ import { importStageStates, noteImportPhase } from "../src/utils/importStages";
   const appr = read("src/styles/11-approval.css");
   check(/@media print\{\s*\.ad-ring-fill,\.ad-timeline>li\{animation:none!important\}/.test(appr) && /@media screen and \(prefers-reduced-motion:no-preference\)\{\s*\.ad-dialog \.ad-ring-fill/.test(appr), "ملف الاعتماد: الحركة على الشاشة فقط، والطباعة بالحالة النهائية");
   check(!/(forwards|both)/.test((appr.match(/apb-expanded\[data-reveal\][^\n]*/g) || []).join("\n")), "فتح شريط الاعتماد: لا forwards/both على حركات transform");
+
+  /* مراجعةٌ بصرية (عرضٌ فقط): لا تُترك حركةُ clip-path بلا to صريحة (inset ↔ none لا تُستكمل فتنقلب دفعةً)،
+     والرقمُ العادّ لا يرث تسميةَ المؤشّر، والتظليلةُ تلفّ الكلمات لا الترويسة، والشارةُ لا تنبض لوصول أول رقم. */
+  const kfs = [...read("src/styles/12-deadlines.css").matchAll(/@keyframes (sd-bar-draw(?:-ltr)?)\{([^@]*?)\}\}/g), ...read("src/styles/09-details.css").matchAll(/@keyframes (review-spread-draw(?:-ltr)?)\{([^@]*?)\}\}/g)];
+  check(kfs.length === 4 && kfs.every(m => /from\{clip-path:inset\([^)]*\)\}to\{clip-path:inset\(0 0 0 0\)\}/.test(m[2] + "}")), "كشفُ الشرائط (clip-path): from وto كلاهما inset فيُستكمل بينهما");
+  check(/\.deck-signals b \.dna-counted\{[^}]*font:inherit/.test(read("src/styles/04-screens.css")), "مؤشّرات اللوحة: الرقمُ العادّ يرث حجم الرقم لا تسمية المؤشّر");
+  check(/\.review-title h2\[data-resolved\]\{[^}]*inline-size:fit-content/.test(details), "تظليلة «أتحقق…»: تلفّ الكلمات وحدها بلا فيضٍ جانبي");
+  check(/lastBadge\.current > 0 && badge > lastBadge\.current/.test(read("src/App.tsx")), "شارة الشريط الجانبي: لا نبضةَ لوصول أول رقمٍ من صفر");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

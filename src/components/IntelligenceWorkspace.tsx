@@ -2277,8 +2277,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           value: "approval",
           label: "قبل الاعتماد",
           detail: "ما يمنع النشر، ومتى نُشر آخر مرة",
-          /* «—» بدل الفراغ حين لا موانع: عرضٌ فقط. */
-          metric: Number(overview.blockers ?? overview.metrics?.criticalConflicts ?? 0) ? String(overview.blockers ?? overview.metrics?.criticalConflicts) : "—",
+          /* «لا موانع» بدل شرطةٍ غامضة بعد «قبل الاعتماد»: عرضٌ فقط. */
+          metric: Number(overview.blockers ?? overview.metrics?.criticalConflicts ?? 0) ? String(overview.blockers ?? overview.metrics?.criticalConflicts) : "لا موانع",
           icon: <ShieldCheck />,
         },
         {
@@ -5263,7 +5263,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   }}
                 />
                 <FileSpreadsheet />
-                {importFile || "رفع Excel أو PDF"}
+                {importFile || "رفع جدول بيانات أو PDF"}
               </label>
             </div>
             <small>

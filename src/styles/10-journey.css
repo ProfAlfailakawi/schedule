@@ -202,7 +202,7 @@
   margin-top:clamp(22px,3.4vh,38px);
   display:inline-flex;align-items:center;gap:9px;
   color:var(--jr-ink-3);
-  font-size:11.5px;letter-spacing:.06em;
+  font-size:12px;letter-spacing:.06em;
 }
 .jr-scroll-cue>i{
   width:1px;height:26px;
@@ -230,7 +230,7 @@
   letter-spacing:var(--brand-word-track);
 }
 .jr-mark>i{flex:0 0 44px;height:1px;background:var(--jr-line)}
-.jr-mark>small{font-size:10px;letter-spacing:0;font-size:11px}
+.jr-mark>small{font-size:12px;letter-spacing:0;font-size:12px}
 
 /* ── States ────────────────────────────────────────────────────────────── */
 .jr-state{display:grid;gap:8px;justify-items:start}
@@ -277,7 +277,7 @@
   font-weight:600;
   color:var(--jr-accent);
 }
-.jr-figure>small{color:var(--jr-ink-3);font-size:11.5px;line-height:1.6}
+.jr-figure>small{color:var(--jr-ink-3);font-size:12px;line-height:1.6}
 
 /* ── ٣ · المسار ────────────────────────────────────────────────────────
       One rail, five stations. The rail is drawn on the list, so the stations
@@ -330,7 +330,7 @@
 .jr-station-node svg{width:19px;height:19px}
 .jr-station-no{
   color:var(--jr-brass);
-  font-size:11px;font-weight:700;letter-spacing:.14em;
+  font-size:12px;font-weight:700;letter-spacing:.14em;
   font-variant-numeric:tabular-nums;
   unicode-bidi:isolate;
 }
@@ -370,10 +370,10 @@
   border-top:1px solid var(--jr-line-soft);
   display:flex;align-items:end;justify-content:space-between;gap:18px;flex-wrap:wrap;
 }
-.jr-foot>div>span{display:block;color:var(--jr-brass);font-size:11px;font-weight:700;letter-spacing:.14em}
+.jr-foot>div>span{display:block;color:var(--jr-brass);font-size:12px;font-weight:700;letter-spacing:.14em}
 .jr-foot>div>strong{display:block;margin-top:7px;font-size:clamp(13px,1.15vw,15px);font-weight:600;color:var(--jr-ink)}
 .jr-foot-authors{display:block;margin-top:9px;font-style:normal;font-size:12px;font-weight:600;color:var(--jr-brass)}
-.jr-foot>small{color:var(--jr-ink-3);font-size:11px;letter-spacing:.2em}
+.jr-foot>small{color:var(--jr-ink-3);font-size:12px;letter-spacing:.2em}
 
 /* ── Arrival ───────────────────────────────────────────────────────────
       `backwards`, never `both`: an animation left in effect keeps a transform
@@ -549,9 +549,9 @@
   .jr-station>p{grid-area:body;margin-top:4px}
 
   .jr-mark{gap:10px;flex-wrap:nowrap}
-  .jr-mark>b{font-size:11px}
+  .jr-mark>b{font-size:12px}
   .jr-mark>i{flex:1 1 auto}
-  .jr-mark>small{font-size:9px;letter-spacing:.14em;white-space:nowrap}
+  .jr-mark>small{font-size:12px;letter-spacing:.14em;white-space:nowrap}
 
   .jr-creed blockquote{font-size:clamp(27px,8.6vw,40px)}
   .jr-foot{align-items:start;gap:14px}
@@ -580,7 +580,7 @@
     grid-template-columns:none;grid-template-areas:none;
     padding-block:0;row-gap:8px;
   }
-  .jr-station>p{font-size:11.5px;line-height:1.65}
+  .jr-station>p{font-size:12px;line-height:1.65}
   .jr-creed blockquote{font-size:clamp(26px,7.4vh,42px)}
 }
 
