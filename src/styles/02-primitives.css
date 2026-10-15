@@ -570,6 +570,9 @@
   line-height:1.65;
 }
 .notice>svg{width:20px;height:20px}
+/* With an action row the message is two blocks tall: icon and close stay with its first line instead of floating mid-height. */
+.notice:has(.notice-action)>svg{align-self:start;margin-top:4px}
+.notice:has(.notice-action)>.notice-close{align-self:start}
 .notice-copy{min-width:0;display:flex;flex-direction:column;gap:var(--s2)}
 .notice-copy>span{
   overflow:hidden;
