@@ -719,8 +719,9 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 /* فتحُ المراجعة: الحلقة تُرسم، والشريحة تتمدّد من الجهة الأولى، ومرّةً واحدة.
    لا fill-mode — حالةُ الراحة هي النهاية نفسها. حركةٌ مخفّضة: القاعدةُ العامة تختصرها. */
 @keyframes review-ring-draw{from{stroke-dasharray:0 163.4}}
-@keyframes review-spread-draw{from{clip-path:inset(0 0 0 100%)}}
-@keyframes review-spread-draw-ltr{from{clip-path:inset(0 100% 0 0)}}
+/* to صريحةٌ: inset() مع none لا تُستكمل، فكان الشريطُ ينقلب دفعةً واحدة. */
+@keyframes review-spread-draw{from{clip-path:inset(0 0 0 100%)}to{clip-path:inset(0 0 0 0)}}
+@keyframes review-spread-draw-ltr{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
 @keyframes review-resolve{from{background-color:color-mix(in srgb,var(--accent) 16%,transparent)}}
 @media (prefers-reduced-motion:no-preference){
   .review-sheet .review-ring .ring-value{animation:review-ring-draw .9s var(--ease-out)}
@@ -728,7 +729,10 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   .review-sheet .spread-bar:dir(ltr){animation-name:review-spread-draw-ltr}
   /* «أتحقق…» صار نتيجة: تظليلةٌ واحدة تخفت، والمنطقُ والتوقيتُ كما هما */
   .review-title h2[data-resolved]{
-    border-radius:var(--r-sm);padding-inline:.4em;margin-inline:-.4em;
+    /* التظليلة تلفّ الكلمات وحدها لا عرضَ الترويسة كلَّه، وتمتدّ .4em من الجهة الأولى فقط
+       (الحشوةُ تُلغي الهامشَ فيبقى النصّ على محاذاة السطرين حوله) فلا فيضَ في الجهة الأخرى. */
+    inline-size:fit-content;max-inline-size:calc(100% + .4em);
+    border-radius:var(--r-sm);padding-inline:.4em;margin-inline:-.4em 0;
     animation:review-resolve 1.4s var(--ease-out);
   }
 }

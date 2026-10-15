@@ -377,8 +377,9 @@
 
 /* ميزان الفصل: الشريط يتمدّد من الجهة الأولى مرّةً واحدة (useMotionScope).
    hold = مطويّ قبل الرسمة الأولى، go = يُكشف بالتدريج؛ لا fill-mode — الراحةُ هي النهاية. */
-@keyframes sd-bar-draw{from{clip-path:inset(0 0 0 100%)}}
-@keyframes sd-bar-draw-ltr{from{clip-path:inset(0 100% 0 0)}}
+/* to صريحةٌ: بدونها يُقارن inset() بـ none فلا يُستكمل بينهما، وينقلب الشريط دفعةً واحدة بدل أن يُكشف. */
+@keyframes sd-bar-draw{from{clip-path:inset(0 0 0 100%)}to{clip-path:inset(0 0 0 0)}}
+@keyframes sd-bar-draw-ltr{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
 .sd-progress[data-motion="hold"] .sd-bar{clip-path:inset(0 0 0 100%)}
 .sd-progress[data-motion="hold"] .sd-bar:dir(ltr){clip-path:inset(0 100% 0 0)}
 .sd-progress[data-motion="go"] .sd-bar{animation:sd-bar-draw .7s var(--ease-out)}

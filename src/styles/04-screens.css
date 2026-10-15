@@ -366,6 +366,8 @@
   letter-spacing:-.03em;font-variant-numeric:tabular-nums lining-nums;
 }
 .deck-signals span{color:var(--muted);font-size:var(--t-xs);font-weight:500}
+/* الرقمُ الذي يعدّ صاعداً (Counted observe) يلفّه span؛ فلا يرث تسميةَ المؤشّر الصغيرة. */
+.deck-signals b .dna-counted{color:inherit;font:inherit;letter-spacing:inherit}
 .deck-signals .signal-danger b{color:var(--danger)}
 /* أربعة مؤشرات على الجوال: شبكة ٢×٢ بدل ثلاثة في صفّ ورابعٍ وحيد تحته. */
 @media (max-width:560px){
