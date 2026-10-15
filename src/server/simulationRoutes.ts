@@ -9,6 +9,7 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import { Repository } from "../db/repository";
 import type { AdCourse } from "../types";
+import { AR, countOf } from "../utils/arabicCount";
 import { pickDoorTerm } from "../utils/termStudentPhases";
 import { runRegistrationSimulation } from "./simulationData";
 
@@ -59,7 +60,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
       const term = pickDoorTerm(terms as any);
       if (!term) { fail(res, 409, "لا فصلَ جارياً أو قادماً تُبنى له البروفة.", "no-term"); return; }
       const run = await runRegistrationSimulation(term, deps.actorName(req));
-      res.locals.auditChanges = `بروفة تسجيل «${term.AdTermName || term.AdTermId}»: ${run.students} ملفاً`;
+      res.locals.auditChanges = `بروفة تسجيل «${term.AdTermName || term.AdTermId}»: ${countOf(run.students, AR.profile)}`;
       res.json({ ok: true, students: run.students, ranAt: run.ranAt });
     } catch (error) {
       console.error("[simulation] run:", error instanceof Error ? error.message : error);

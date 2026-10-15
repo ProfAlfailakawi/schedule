@@ -491,7 +491,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
 export function scheduleStudentProfilePurge(log: (message: string) => void = console.log): void {
   const tick = () => {
     Repository.purgeExpiredStudentProfiles(new Date().toISOString())
-      .then(count => { if (count) log(`[student-door] حُذف ${count} ملف طالبٍ انتهى عمره.`); })
+      .then(count => { if (count) log(`[student-door] حُذف ${countOf(count, AR.profile)} انتهى عمرها.`); })
       .catch(error => console.error("[student-door] تعذّر حذف الملفات المنتهية:", error instanceof Error ? error.message : error));
   };
   setTimeout(tick, 60_000).unref?.();

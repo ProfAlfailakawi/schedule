@@ -25,6 +25,7 @@ import {
   UsersRound,
   ClipboardCheck,
   ListChecks,
+  Ticket,
   MailCheck,
   WandSparkles,
   Wifi,
@@ -116,6 +117,7 @@ const ScheduleChanges = safeLazy(() => import("./components/ScheduleChanges"));
 const InstructorInbox = safeLazy(() => import("./components/InstructorInbox"));
 const StudentRegistration = safeLazy(() => import("./components/StudentRegistration"));
 const PlanReview = safeLazy(() => import("./components/PlanReview"));
+const RegistrationRehearsal = safeLazy(() => import("./components/RegistrationRehearsal"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
@@ -137,6 +139,7 @@ type View =
   | "instructorRequests"
   | "studentRegistration"
   | "planReview"
+  | "simulation"
   | ReportMode
   | AdminMode
   | "about";
@@ -289,6 +292,7 @@ const pathByView: Record<View, string> = {
   instructorRequests: "/FSchedule/InstructorRequests",
   studentRegistration: "/FSchedule/StudentRegistration",
   planReview: "/FSchedule/PlanReview",
+  simulation: "/FSchedule/Rehearsal",
   about: "/Public/Aboutus",
 };
 /**
@@ -335,6 +339,7 @@ function prefetchView(view: View) {
   else if (view === "instructorRequests") void import("./components/InstructorInbox");
   else if (view === "studentRegistration") void import("./components/StudentRegistration");
   else if (view === "planReview") void import("./components/PlanReview");
+  else if (view === "simulation") void import("./components/RegistrationRehearsal");
   else if (view === "about") void loadAbout();
 }
 
@@ -629,6 +634,8 @@ export default function App() {
   const [changesBadge, setChangesBadge] = useState(0);
   /* أيقونةُ «مراجعة الصحيفة» مؤقتة: لا تظهر إلا وفي نطاق الحساب مسوّدةٌ تنتظر. */
   const [planReviewCount, setPlanReviewCount] = useState(0);
+  /* وأيقونةُ «بروفة التسجيل»: تظهر لمن يشغّلها، أو متى وُجدت بروفةٌ في نطاقه. */
+  const [simulationVisible, setSimulationVisible] = useState(false);
   useEffect(() => {
     if (!user) { setPlanReviewCount(0); return; }
     let alive = true;
@@ -636,9 +643,14 @@ export default function App() {
       .then(response => (response.ok ? response.json() : null))
       .then(data => { if (alive) setPlanReviewCount(Array.isArray(data?.pending) ? data.pending.length : 0); })
       .catch(() => undefined);
-    void read();
-    window.addEventListener("focus", read);
-    return () => { alive = false; window.removeEventListener("focus", read); };
+    const readSimulation = () => fetch("/api/simulation/summary", { credentials: "include" })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => { if (alive) setSimulationVisible(Boolean(data?.canRun || (data?.run && data?.courses?.length))); })
+      .catch(() => undefined);
+    void read(); void readSimulation();
+    const onFocus = () => { void read(); void readSimulation(); };
+    window.addEventListener("focus", onFocus);
+    return () => { alive = false; window.removeEventListener("focus", onFocus); };
   }, [user?.SystemUserId, sessionRole.id]);
   useEffect(() => {
     if (!user || !opensChangesScreen(sessionRole)) { setChangesBadge(0); return; }
@@ -1773,6 +1785,9 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "simulation":
+        /* القراءةُ بحدود النطاق في الخادم؛ والأيقونةُ لا تظهر إلا إن كانت هناك بروفةٌ أو من يشغّلها. */
+        return simulationVisible ? <RegistrationRehearsal /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
         return planReviewCount > 0 ? <PlanReview /> : unauthorized();
@@ -2520,6 +2535,16 @@ export default function App() {
                 label="مراجعة الصحيفة"
                 badge={planReviewCount}
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.planReview"
+              />
+            ) : null}
+            {simulationVisible ? (
+              <NavButton
+                activeView={activeView}
+                onGo={go}
+                view="simulation"
+                icon={<Ticket />}
+                label="بروفة التسجيل"
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.simulation"
               />
             ) : null}
             {/* ── ورشةُ الجدول لمن يبني ─────────────────────────────────────

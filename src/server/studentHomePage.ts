@@ -315,7 +315,7 @@ function viewCode(){
   setTimeout(function(){var i=document.getElementById("code");if(i)i.focus()},60);
 }
 function viewCreate(){
-  app.innerHTML='<section class="hero fade"><span class="disc">'+ic("spark")+'</span><h1>ملفٌّ جديد</h1><p>اختر رمزاً من 6 أرقام يحمي ملفّك. لا يعرفه غيرك.</p></section>'
+  app.innerHTML='<section class="hero fade"><span class="disc">'+ic("spark")+'</span><h1>ابدأ ملفّك</h1><p>اختر رمزاً من 6 أرقام يحمي ملفّك. لا يعرفه غيرك.</p></section>'
    +'<section class="card fade">'+otp("c1","رمزك الشخصي")+otp("c2","أعد كتابة الرمز")+rememberSwitch()
    +'<label class="chk"><input type="checkbox" id="agree"><span>أوافق على حفظ ملفّي: أرقام المقررات التي أنجزتها فقط. يُحذف تلقائياً بعد تخرّجي المتوقَّع بسنة أو إن انقطعت عامين، وأستطيع حذفه متى شئت.</span></label>'
    +errBox("verr")+'<button class="btn" id="mk" disabled>أنشئ ملفّي '+ic("back")+'</button><button class="link" id="other">رقم مدني آخر</button></section>';
