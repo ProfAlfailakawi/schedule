@@ -137,10 +137,10 @@
   --t-h4:15px;
   --t-body:14px;
   --t-sm:12.5px;
-  --t-xs:11.5px;
-  --t-eyebrow:11px;
+  --t-xs:12px;
+  --t-eyebrow:12px;
   /* The smallest text that still carries meaning (field captions, chips, legends). */
-  --t-micro:11px;
+  --t-micro:12px;
 
   /* Layout */
   --sidebar-w:266px;

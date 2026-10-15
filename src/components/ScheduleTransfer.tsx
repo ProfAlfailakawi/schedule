@@ -1236,11 +1236,11 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 onChange={event => { const file = event.target.files?.[0]; if (file) void readFile(file); event.target.value = ""; }}
               />
               <div className="transfer-import-actions">
-                <PrimaryButton type="button" data-guide-ignore="تنزيل نموذج محلي لا يغير بيانات الجدول" onClick={() => void downloadTemplate()} disabled={busy} title="ملف Excel جاهز بالأعمدة الصحيحة وورقة شرح">
+                <PrimaryButton type="button" data-guide-ignore="تنزيل نموذج محلي لا يغير بيانات الجدول" onClick={() => void downloadTemplate()} disabled={busy} title="ملف جدول بيانات جاهز بالأعمدة الصحيحة وورقة شرح">
                   <Download />تحميل النموذج الافتراضي
                 </PrimaryButton>
                 <SecondaryButton type="button" data-guide-ignore="يفتح منتقي ملف محلي ومعاينة الاستيراد لها بوابة نشر مستقلة" onClick={() => fileRef.current?.click()} disabled={!scopeReady || busy}>
-                  <Upload />رفع Excel أو PDF
+                  <Upload />رفع جدول بيانات أو PDF
                 </SecondaryButton>
               </div>
               {readProgress ? (

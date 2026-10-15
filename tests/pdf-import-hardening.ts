@@ -583,7 +583,7 @@ check("the refusal names each confirmed page, says nothing was imported, and nam
   assert.match(message,/الصفحة 2: طُبع فيها 28 سطراً ولم يُقرأ منها إلا 4 صفوف/);
   assert.doesNotMatch(message,/الصفحة 3/,"a page never given its deep pass is not named as confirmed");
   assert.match(message,/لم يُستورد أي صف/);
-  assert.match(message,/Excel أو PDF مُصدَّراً من النظام/);
+  assert.match(message,/جدول بيانات أو PDF مُصدَّراً من النظام/);
 });
 
 

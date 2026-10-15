@@ -1594,7 +1594,7 @@ export default function AdminUsers({
                   </span>
                   <div>
                     <strong>{u.Name}</strong>
-                    <small>@{u.SystemUserLogin}</small>
+                    <small><bdi dir="ltr">@{u.SystemUserLogin}</bdi></small>
                   </div>
                   {/* الصفة قبل الحالة: «من هو» أسبق من «أفعّالٌ هو». */}
                   <Badge tone={roleDefinition(u.Role).readOnly ? "neutral" : "info"}>
@@ -1625,7 +1625,7 @@ export default function AdminUsers({
                   <div>
                     <small>{roleDefinition(selected.Role).label}</small>
                     <h2>{selected.Name}</h2>
-                    <p>@{selected.SystemUserLogin}</p>
+                    <p><bdi dir="ltr">@{selected.SystemUserLogin}</bdi></p>
                     {roleMismatchHint(selected.Name, selected.Role) ? (
                       <p className="role-mismatch-hint">{roleMismatchHint(selected.Name, selected.Role)}</p>
                     ) : null}
