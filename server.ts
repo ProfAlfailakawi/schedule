@@ -100,6 +100,7 @@ import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
 import { registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
+import { registerSimulationRoutes } from "./src/server/simulationRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
@@ -19749,6 +19750,14 @@ registerPlanReviewRoutes(app, {
   isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
   isPowerUser: req => isPowerUser(req),
   hasPermission: (req, formId) => (req.permissions || []).includes(formId),
+  actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
+});
+
+/* ── بروفةُ التسجيل: تشغيلٌ لإدارة النظام، وقراءةٌ بحدود النطاق ──────────────── */
+registerSimulationRoutes(app, {
+  requireAuth,
+  isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+  isPowerUser: req => isPowerUser(req),
   actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
 });
 
