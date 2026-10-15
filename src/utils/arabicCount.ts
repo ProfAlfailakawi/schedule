@@ -218,6 +218,7 @@ export const AR = {
   needsVerb:     { one: "يحتاج معالجة", two: "يحتاجان معالجة", few: "تحتاج معالجة", many: "تحتاج معالجة" },
   inItPron:      { one: "فيه", two: "فيهما", few: "فيها", many: "فيها" },
   waitVerb:      { one: "ينتظر", two: "ينتظران", few: "تنتظر", many: "تنتظر" },
+  needVerb:    { one: "يحتاج", two: "يحتاجان", few: "تحتاج", many: "يحتاج" },
   waitFemVerb:   { one: "تنتظر", two: "تنتظران", few: "تنتظر", many: "تنتظر" },
   addedFemVerb:  { one: "أُضيفت", two: "أُضيفتا", few: "أُضيفت", many: "أُضيفت" },
   hasPron:       { one: "لديه", two: "لديهما", few: "لديهم", many: "لديهم" },

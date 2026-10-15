@@ -9,7 +9,7 @@
  *
  * المعرّفُ يحمل ما يجعل التغيّرَ إشعاراً جديداً (وقتَ التعديل، وقتَ تشغيل الرادار، العدد).
  */
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, nounFor } from "./arabicCount";
 import type { CenterNotification } from "./notificationCenter";
 
 export interface PlanReviewNotice { planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; updatedAt: string }
@@ -54,7 +54,7 @@ export function buildFeatureNotifications(input: FeatureNotificationInput): Cent
     const own = role === "committeeChair" || role === "departmentHead" || role === "standard";
     items.push({
       id: `radar:${input.radar.ranAt}:${n}`, tone: own ? (role === "departmentHead" ? "waiting" : "action") : "waiting",
-      title: `${countOf(n, AR.course)} ${n === 1 ? "يحتاج" : "تحتاج"} قراراً في رادار التسجيل`,
+      title: `${countOf(n, AR.course)} ${nounFor(n, AR.needVerb)} قراراً في رادار التسجيل`,
       detail: input.radar.scoped ? "في مقررات قسمك: زحامٌ أو مطلوبٌ لا يُطرح" : "زحامٌ أو مطلوبٌ لا يُطرح في الجامعة",
       view: "simulation", at: input.radar.ranAt,
     });
