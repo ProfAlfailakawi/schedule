@@ -40,7 +40,7 @@ export interface SimOffering {
   issues?: string[];
 }
 
-export type SimOfferingIssueCode = "invalid-identity" | "missing-capacity" | "invalid-capacity" | "missing-meetings" | "invalid-meetings" | "duplicate-id";
+export type SimOfferingIssueCode = "invalid-identity" | "missing-capacity" | "invalid-capacity" | "missing-meetings" | "invalid-meetings" | "overlapping-meetings" | "duplicate-id";
 export interface SimOfferingIssue { offeringId: string; code: SimOfferingIssueCode }
 export function auditSimOfferings(offerings: readonly SimOffering[]): { confirmed: SimOffering[]; issues: SimOfferingIssue[] } {
   const counts = new Map<string, number>();
@@ -56,6 +56,7 @@ export function auditSimOfferings(offerings: readonly SimOffering[]): { confirme
     if (!Array.isArray(row.slots) || row.slots.length === 0) add(row.id || "unknown", "missing-meetings");
     else if (row.slots.some(slot => !Number.isInteger(slot.day) || slot.day < 0 || slot.day > 4 || !Number.isInteger(slot.start) || !Number.isInteger(slot.end) || slot.start < 0 || slot.end > 1440 || slot.end <= slot.start))
       add(row.id || "unknown", "invalid-meetings");
+    if (Array.isArray(row.slots) && row.slots.some((slot, index) => row.slots.some((other, j) => j > index && slot.day === other.day && slot.start < other.end && other.start < slot.end))) add(row.id || "unknown", "overlapping-meetings");
     for (const code of row.issues || []) add(row.id || "unknown", code as SimOfferingIssueCode);
     if ((counts.get(row.id) || 0) > 1) add(row.id || "unknown", "duplicate-id");
     if (issues.length === before) confirmed.push(row);
@@ -103,6 +104,7 @@ export interface SimTicket {
   defaulted: boolean;
   plans: SimTicketPlan[];
   unmet: Array<{ courseId: number; reason: SimUnmetReason }>;
+  assessment?: "canReach15" | "canReach12To14" | "below12" | "graduatingBelow12" | "unknown";
 }
 
 export interface SimCourseDemand { courseId: number; wanted: number; seated: number; unmet: Record<SimUnmetReason, number> }
@@ -145,6 +147,8 @@ interface Pick { courseId: number; offeringId: string }
 
 export function simulateRegistration(input: SimInput): SimResult {
   const audited = auditSimOfferings(input.offerings);
+  const excludedIds = new Set(audited.issues.map(issue => issue.offeringId));
+  const uncertainCourses = new Set(input.offerings.filter(offering => excludedIds.has(offering.id)).map(offering => offering.courseId));
   input = { ...input, offerings: audited.confirmed };
   const planOf = new Map(input.plans.map(plan => [plan.planId, plan] as const));
   const byCourse = new Map<number, SimOffering[]>();
@@ -179,7 +183,17 @@ export function simulateRegistration(input: SimInput): SimResult {
     const candidates: Prepared["candidates"] = [];
     const rule = (id: number) => rules.find(r => r.courseId === id);
     const prereqOk = (courseId: number) => prereqMet(rule(courseId)?.prereq, passed, passedUnits);
-    const coreqNeed = (courseId: number) => (rule(courseId)?.coreq || []).filter(id => !passed.has(id));
+    const coreqNeed = (courseId: number) => {
+      const needed = new Set<number>();
+      const visit = (id: number) => {
+        for (const other of rule(id)?.coreq || []) {
+          if (other === courseId || passed.has(other) || needed.has(other)) continue;
+          needed.add(other); visit(other);
+        }
+      };
+      visit(courseId);
+      return [...needed];
+    };
     /** يُرجع هل قُبل مرشّحاً (ليُحسب في حدّ المجموعة الاختيارية). */
     const consider = (courseId: number, required: boolean): boolean => {
       const r = rule(courseId);
@@ -199,14 +213,14 @@ export function simulateRegistration(input: SimInput): SimResult {
       /* حتى يتحقّق الحدّان معاً: عددُ المقررات والوحدات (مقرراتٌ من ثلاث وحداتٍ وحدُّ ست وحداتٍ: اثنان لا واحد). */
       let taken = 0, units = 0;
       for (const id of ranked) {
-        if (taken > 0 && taken >= group.needCourses && units >= group.needUnits) break;
+        if (!input.assessCapacity && taken > 0 && taken >= group.needCourses && units >= group.needUnits) break;
         if (consider(id, true)) { taken += 1; units += credit(id); }
       }
     }
     /* رغبةٌ خارج المطلوب (اختياريٌّ حرّ ضمن صحيفته) تدخل بأولويةٍ أدنى. */
     for (const id of wished) {
       if (passed.has(id) || candidates.some(c => c.courseId === id) || !courseIds.includes(id)) continue;
-      consider(id, false);
+      if (!input.assessCapacity || !need.groups.some(group => group.done && group.candidateIds.includes(id))) consider(id, false);
     }
     candidates.sort((a, b) => b.priority - a.priority || a.courseId - b.courseId);
     const defaulted = !student.wishes;
@@ -282,13 +296,29 @@ export function simulateRegistration(input: SimInput): SimResult {
      choose an early section that blocked a later, larger valid timetable. Keep
      the seat ledger shared between students, but backtrack within each student. */
   const unresolvedBySearch = new Set<string>();
+  const incompleteData = (entry: Prepared) => entry.student.assessable === false || !entry.plan?.hasApprovedRules
+    || entry.plan.courseIds.some(id => !Number.isFinite(input.credit.get(id)) || Number(input.credit.get(id)) < 0)
+    || entry.student.passed.some(id => !input.credit.has(id));
+  const electiveAllows = (entry: Prepared, picked: readonly Pick[], bundle: number[]) => {
+    const selected = picked.map(pick => pick.courseId);
+    for (const id of bundle) {
+      const group = entry.need.groups.find(group => group.candidateIds.includes(id));
+      if (group) {
+        const mine = selected.filter(other => group.candidateIds.includes(other));
+        if (group.done || (mine.length >= group.needCourses && mine.reduce((sum, other) => sum + credit(other), 0) >= group.needUnits)) return false;
+      }
+      selected.push(id);
+    }
+    return true;
+  };
   const bestFeasiblePlan = (entry: Prepared): Pick[] => {
     const cap = entry.target;
-    if (cap <= 0) return [];
+    if (cap <= 0 || incompleteData(entry)) return [];
     let best: Pick[] = [], bestUnits = 0, visited = 0, complete = true;
     const working: Pick[] = [];
     const constraints = entry.student.wishes?.constraints;
     const search = (index: number, units: number) => {
+      if (bestUnits >= cap) return;
       if (units >= cap || index >= entry.candidates.length) {
         if (units > bestUnits) { bestUnits = units; best = [...working]; }
         return;
@@ -299,12 +329,15 @@ export function simulateRegistration(input: SimInput): SimResult {
       if (working.some(p => p.courseId === candidate.courseId)) { search(index + 1, units); return; }
       const bundle = [candidate.courseId, ...entry.coreqNeed(candidate.courseId).filter(id => id !== candidate.courseId && !working.some(p => p.courseId === id))];
       const bundleUnits = bundle.reduce((sum, id) => sum + credit(id), 0);
-      if (units + bundleUnits <= cap && bundle.every(id => id === candidate.courseId || entry.prereqOk(id))) {
+      if (units + bundleUnits <= cap && electiveAllows(entry, working, bundle) && bundle.every(id => entry.plan?.courseIds.includes(id) && entry.prereqOk(id))) {
         const placeBundle = (at: number) => {
+          if (bestUnits >= cap) return;
+          if (++visited > 2_000) { complete = false; return; }
           if (at === bundle.length) { search(index + 1, units + bundleUnits); return; }
           const id = bundle[at];
           const options = (byCourse.get(id) || []).filter(offering => free(ledger, offering.id) > working.filter(p => p.offeringId === offering.id).length
-            && fits(working, offering) && allowedByConstraints(offering, constraints));
+            && fits(working, offering) && allowedByConstraints(offering, constraints)
+            && (!constraints?.freeDay || new Set([...working.flatMap(pick => offeringOf.get(pick.offeringId)!.slots.map(slot => slot.day)), ...offering.slots.map(slot => slot.day)]).size < 5));
           for (const offering of options) {
             working.push({ courseId: id, offeringId: offering.id });
             placeBundle(at + 1);
@@ -341,7 +374,7 @@ export function simulateRegistration(input: SimInput): SimResult {
         if (pick.courseId !== c.courseId) row(pick.courseId).wanted += 1;
       } else { r.unmet[placed.reason] += 1; unmet.push({ courseId: c.courseId, reason: placed.reason }); }
     }
-    if (input.assessCapacity) for (const c of candidates) {
+    if (input.assessCapacity && !incompleteData(entry)) for (const c of candidates) {
       const r = row(c.courseId);
       r.wanted += 1;
       if (picks.some(p => p.courseId === c.courseId)) continue;
@@ -365,6 +398,7 @@ export function simulateRegistration(input: SimInput): SimResult {
 
   /* ── (ب) و(ج): احتياطٌ على الدفتر النهائي، لا يحجز مقعداً ── */
   const backup = (entry: Prepared, label: "B" | "C"): SimTicketPlan => {
+    if (input.assessCapacity && incompleteData(entry)) return { label, items: [], units: 0 };
     const a = planA.get(entry.student.fp) || [];
     const avoid = new Set(a.map(p => p.offeringId));
     const picks: Pick[] = [];
@@ -374,6 +408,7 @@ export function simulateRegistration(input: SimInput): SimResult {
     for (const c of list) {
       if (picks.some(p => p.courseId === c.courseId)) continue;
       const bundleUnits = credit(c.courseId) + entry.coreqNeed(c.courseId).filter(id => !picks.some(p => p.courseId === id)).reduce((sum, id) => sum + credit(id), 0);
+      if (input.assessCapacity && (!electiveAllows(entry, picks, [c.courseId, ...entry.coreqNeed(c.courseId).filter(id => !picks.some(p => p.courseId === id))]) || units + bundleUnits > cap)) continue;
       if (units + bundleUnits > cap && picks.length) continue;
       /* (ب): شعباً مختلفة عن (أ) كلما أمكن — إن امتلأت (أ) فهذه بديلُها. (ج): أيُّ شعبةٍ، بلا قيودٍ. */
       const placed = place(entry, c.courseId, picks, label === "B" ? entry.student.wishes?.constraints : undefined, label === "B" ? avoid : new Set(), label === "B" ? "strict" : "relaxed");
@@ -391,12 +426,16 @@ export function simulateRegistration(input: SimInput): SimResult {
   for (const ticket of tickets.values()) windows[ticket.window - 1] += 1;
   const capacity = { canReach15: 0, canReach12To14: 0, below12: 0, graduatingBelow12: 0, unknown: 0 };
   for (const entry of order) {
-    if (entry.student.assessable === false || unresolvedBySearch.has(entry.student.fp)) { capacity.unknown += 1; continue; }
     const units = tickets.get(entry.student.fp)?.plans[0]?.units || 0;
-    if (units >= 15) capacity.canReach15 += 1;
-    else if (units >= 12) capacity.canReach12To14 += 1;
-    else if (Number(entry.student.remainingUnits) > 0 && Number(entry.student.remainingUnits) < 12 && units >= Number(entry.student.remainingUnits)) capacity.graduatingBelow12 += 1;
-    else capacity.below12 += 1;
+    const incompleteOffer = units < entry.target && Boolean(entry.plan?.courseIds.some(id => !entry.passed.has(id) && uncertainCourses.has(id)));
+    let band: NonNullable<SimTicket["assessment"]>;
+    if ((input.assessCapacity && incompleteData(entry)) || entry.student.assessable === false || unresolvedBySearch.has(entry.student.fp) || incompleteOffer) band = "unknown";
+    else if (units >= 15) band = "canReach15";
+    else if (units >= 12) band = "canReach12To14";
+    else if (Number(entry.student.remainingUnits) > 0 && Number(entry.student.remainingUnits) < 12 && units >= Number(entry.student.remainingUnits)) band = "graduatingBelow12";
+    else band = "below12";
+    capacity[band] += 1;
+    tickets.get(entry.student.fp)!.assessment = band;
   }
   return {
     tickets: order.map(entry => tickets.get(entry.student.fp)!),

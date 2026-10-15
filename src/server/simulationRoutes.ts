@@ -42,20 +42,33 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
         const course = catalog.get(row.courseId);
         return { ...row, code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${row.courseId}`) };
       });
+    const visible = power ? null : (run?.scopes || []).filter(scope => deps.isScopeAllowed(req, scope.collegeId, scope.sectionId));
+    const bands = () => ({ canReach15: 0, canReach12To14: 0, below12: 0, graduatingBelow12: 0, unknown: 0 });
+    const scoped = { students: 0, population: 0, withoutRules: 0, defaulted: 0, windows: Array.from({ length: run?.rounds || 1 }, () => 0), capacity: bands(), projected: { students: 0, capacity: bands() }, dataQuality: { total: 0, ready: 0, excluded: 0, issues: {} as Record<string, number> } };
+    for (const scope of visible || []) {
+      for (const key of ["students", "population", "withoutRules", "defaulted"] as const) scoped[key] += scope[key];
+      scope.windows.forEach((count, index) => { scoped.windows[index] = (scoped.windows[index] || 0) + count; });
+      for (const key of Object.keys(scoped.capacity) as Array<keyof typeof scoped.capacity>) {
+        scoped.capacity[key] += scope.capacity[key]; scoped.projected.capacity[key] += scope.projected.capacity[key];
+      }
+      scoped.projected.students += scope.projected.students;
+      for (const key of ["total", "ready", "excluded"] as const) scoped.dataQuality[key] += scope.dataQuality[key];
+      for (const [key, count] of Object.entries(scope.dataQuality.issues)) scoped.dataQuality.issues[key] = (scoped.dataQuality.issues[key] || 0) + count;
+    }
     res.json({
       term: { id: Number(term.AdTermId), name: String(term.AdTermName || "") },
       canRun: power,
       auto: radarAutoSettings(),
       phase: (() => { const reading = readStudentPhase(term.AdTermStudentPhases); return { mode: reading.mode, label: reading.label, line: reading.line, namesVisible: reading.namesVisible }; })(),
       run: run ? {
-        ranAt: run.ranAt, ranBy: run.ranBy, students: run.students, withoutRules: run.withoutRules, defaulted: run.defaulted,
-        population: run.population ?? run.students + run.defaulted,
-        capacity: run.capacity || null,
-        projected: run.projected ? { students: run.projected.students, capacity: run.projected.capacity } : null,
-        dataQuality: run.dataQuality || null,
-        stale: Boolean(run.stale), staleAt: run.staleAt || null,
+        ranAt: run.ranAt, ranBy: run.ranBy, students: power ? run.students : scoped.students, withoutRules: power ? run.withoutRules : scoped.withoutRules, defaulted: power ? run.defaulted : scoped.defaulted,
+        population: power ? (run.population ?? run.students + run.defaulted) : scoped.population,
+        capacity: power ? (run.capacity || null) : (run.scopes ? scoped.capacity : null),
+        projected: power ? (run.projected ? { students: run.projected.students, capacity: run.projected.capacity } : null) : (run.scopes ? scoped.projected : null),
+        dataQuality: power ? (run.dataQuality || null) : (run.scopes ? scoped.dataQuality : null),
+        stale: Boolean(run.stale || (!power && !run.scopes)), staleAt: run.staleAt || null,
         sourceFingerprint: run.sourceFingerprint || null,
-        rounds: run.rounds, windows: run.windows, scoped: !power,
+        rounds: run.rounds, windows: power ? run.windows : scoped.windows, scoped: !power,
       } : null,
       courses: inScope(run?.courses),
       projectedCourses: inScope(run?.projected?.courses),

@@ -136,6 +136,7 @@ const ctx = (plan: number[]) => ({
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-plan-review-"));
   const courses = [
+    { AdCourseId: 301, AdCollegeId: 1, AdSectionId: 21, CourseCode: "105", CourseName: "أسس تكنولوجيا التعلم", CourseCredit: 3, CourseHours: 3, MaxStudent: 60 },
     { AdCourseId: 101, AdCollegeId: 1, AdSectionId: 11, CourseCode: "ISL101", CourseName: "أصول", CourseCredit: 3, CourseHours: 3, MaxStudent: 30 },
     { AdCourseId: 102, AdCollegeId: 1, AdSectionId: 11, CourseCode: "ISL102", CourseName: "فقه", CourseCredit: 3, CourseHours: 3, MaxStudent: 30 },
     { AdCourseId: 103, AdCollegeId: 1, AdSectionId: 11, CourseCode: "ISL103", CourseName: "تفسير", CourseCredit: 3, CourseHours: 3, MaxStudent: 30 },
@@ -145,7 +146,7 @@ const ctx = (plan: number[]) => ({
   fs.writeFileSync(path.join(dir, "db.json"), JSON.stringify({
     users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [],
     colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية" }],
-    sections: [{ AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }],
+    sections: [{ AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" }, { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }],
     instructors: [], courses, schedules: [], rooms: [], courseTransitions: [],
     curriculumPlans: [{ id: "p11", AdCollegeId: 1, AdSectionId: 11, name: "الجديدة", status: "active", createdAt: "2026-01-01" }],
     curriculumPlanCourses: [101, 102, 103, 104, 201].map(id => ({ id: `pc${id}`, planId: "p11", AdCollegeId: 1, AdSectionId: 11, AdCourseId: id, createdAt: "2026-01-01" })),
@@ -159,6 +160,7 @@ const ctx = (plan: number[]) => ({
 
   /* مستخدمون تجريبيون يُعرَّفون بترويسة: الدورُ والنطاقُ والإذن، كما يفعل الخادمُ الحقيقي. */
   const USERS: Record<string, any> = {
+    tech: { user: { Role: "departmentHead", Name: "رئيس تكنولوجيا التعليم" }, scopes: [{ AdCollegeId: 1, AdSectionId: 21 }], permissions: [14] },
     chair11: { user: { Role: "committeeChair", Name: "رئيس لجنة ISL" }, scopes: [{ AdCollegeId: 1, AdSectionId: 11 }], permissions: [7] },
     head11: { user: { Role: "departmentHead", Name: "رئيس قسم ISL" }, scopes: [{ AdCollegeId: 1, AdSectionId: 11 }], permissions: [14] },
     chair12: { user: { Role: "committeeChair", Name: "رئيس لجنة ARB" }, scopes: [{ AdCollegeId: 1, AdSectionId: 12 }], permissions: [7] },
@@ -185,6 +187,15 @@ const ctx = (plan: number[]) => ({
   try {
     check((await call("", "GET", "/api/plan-review/status")).status === 401, "R5 بلا دخول: ٤٠١");
     check((await call("chair11", "GET", "/api/plan-review/status")).json.pending.length === 0, "R5 لا مسوّدات: لا أيقونة");
+
+    const beforeSource = JSON.stringify(await Repository.getCourses());
+    const source = await call("tech", "GET", "/api/plan-review/reference?sectionId=21");
+    check(source.status === 200 && source.json.references.length === 2 && source.json.references[1].degreeUnits === 125, "R5 رئيس القسم يرى مرجع الصحيفتين ومجموعيهما دون صحيفة تشغيلية");
+    const foundation = source.json.references[1].groups.flatMap((group: any) => group.courses).find((course: any) => course.code === "0109105");
+    check(foundation.state === "different" && foundation.differences.includes("name") && foundation.name === "أسس تكنولوجيا التعليم", "R5 المطابقة تكشف الاسم الخطأ من رمز القسم والمقرر");
+    check(JSON.stringify(await Repository.getCourses()) === beforeSource, "R5 قراءة المقارنة لا تغيّر أي مقرر حي");
+    check((await call("chair11", "GET", "/api/plan-review/reference?sectionId=21")).status === 403, "R5 قسم آخر لا يقرأ فروقات قسم تكنولوجيا التعليم");
+    check((await call("tech", "GET", "/api/plan-review/status")).json.sections.some((section: any) => section.sectionId === 21 && section.plans.length === 0), "R5 مرجع تكنولوجيا التعليم قابل للوصول حتى قبل إنشاء الصحيفة");
 
     const imp = await call("chair11", "POST", "/api/plan-review/import", { rows: [] });
     check(imp.status === 403, "R5 الاستيراد لإدارة النظام وحدها");

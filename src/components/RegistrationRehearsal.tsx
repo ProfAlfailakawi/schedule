@@ -49,12 +49,13 @@ const qualityLabel = (key: string) => ({
   "invalid-capacity": "السعة ليست عدداً صحيحاً",
   "missing-meetings": "لا يوجد موعد مكتمل",
   "invalid-meetings": "وقت أو يوم غير صالح",
+  "overlapping-meetings": "تعارض بين محاضرات الشعبة نفسها",
   "duplicate-id": "معرّف شعبة مكرر",
 } as Record<string, string>)[key] || "بيانات تحتاج مراجعة";
 const needsDecision = (c: CourseRow) => c.unmet.full > 0 || c.unmet["not-offered"] > 0;
 const weight = (c: CourseRow) => c.unmet.full * 3 + c.unmet["not-offered"] * 2 + c.unmet.conflict;
 
-export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
+export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence = false }: { onNavigate?: (view: string) => void; canOpenIntelligence?: boolean } = {}) {
   const [data, setData] = useState<Summary | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState("");
@@ -129,7 +130,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
           {onNavigate ? (
             <div className="sm-links">
               {data.phase.namesVisible ? <button type="button" onClick={() => onNavigate("studentRegistration")} data-guide-ignore="انتقالٌ إلى كشف التسجيل من شاشةٍ مسجّلة في المرشد باسم page.simulation">كشف التسجيل (الأسماء)</button> : null}
-              <button type="button" onClick={() => onNavigate("intelligence")} data-guide-ignore="انتقالٌ إلى مركز الذكاء من شاشةٍ مسجّلة في المرشد باسم page.simulation">مركز الذكاء</button>
+              {canOpenIntelligence ? <button type="button" onClick={() => onNavigate("intelligence")} data-guide-ignore="انتقالٌ إلى مركز الذكاء من شاشةٍ مسجّلة في المرشد باسم page.simulation">مركز الذكاء</button> : null}
             </div>
           ) : null}
         </div>
@@ -166,7 +167,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
           <p className="sm-auto">{data.auto?.enabled ? `يتحدّث الرادار تلقائياً كل ${countOf(data.auto.everyHours, AR.hour)} ما دامت الرغبات مفتوحةً أو بعدها، ومرةً أخيرةً بعد إغلاق الرغبات.` : "التحديث التلقائي متوقّف: يُحدَّث الرادار يدوياً."}{data.canRun ? " «حدّث الرادار» يحدّثه الآن." : ""}</p>
           <p className="sm-base">
             أساس الرغبات الفعلية: {countOf(r.students, AR.profile)} من {countOf(r.population, AR.profile)} ملفاً مكتملاً، أُجريت {new Date(r.ranAt).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" })}
-            {r.withoutRules ? ` · ${countOf(r.withoutRules, AR.profile)} على صحيفةٍ بلا قواعد معتمدة (بُنيت بلا مسبقات)` : ""}
+            {r.withoutRules ? ` · ${countOf(r.withoutRules, AR.profile)} على صحيفةٍ بلا قواعد معتمدة (بياناته غير كافية لتأكيد القدرة)` : ""}
             {r.defaulted ? ` · ${countOf(r.defaulted, AR.profile)} غير مشارك في هذا الفصل، وتحليله منفصل كتوقع` : ""}
             {r.scoped ? " · المعروض مقرراتُ قسمك فقط" : ""}. تقديرٌ لا بياناتُ التسجيل الرسمي.
           </p>
@@ -179,7 +180,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
               <input aria-label="بحث" placeholder="ابحث بالرمز أو الاسم" value={q} onChange={e => setQ(e.target.value)} />
               <button type="button" className="sm-toggle" onClick={() => setAll(!all)} data-guide-ignore="تبديلُ عرض المقررات داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">{all ? "الزحام فقط" : `كل المقررات (${rows.length})`}</button>
             </header>
-            {!shown.length ? <p className="sm-none">{all ? "لا نتائج." : calm.length ? "لا مقررَ يحتاج قراراً — كلُّ ما طُلب وجد مقعداً." : "لا مقررات."}</p> : shown.map(c => {
+            {!shown.length ? <p className="sm-none">{all ? "لا نتائج." : calm.length ? "لا اختناق مقاعد ظاهر في المقررات المعروضة؛ راجع فئات قدرة الطلبة وجودة البيانات." : "لا مقررات."}</p> : shown.map(c => {
               const unmet = WHY.map(([key, label, tone]) => ({ key, label, tone, n: c.unmet[key] })).filter(x => x.n > 0);
               const fill = c.capacity ? Math.min(100, Math.round((c.taken / c.capacity) * 100)) : 0;
               return (

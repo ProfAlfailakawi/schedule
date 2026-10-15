@@ -16,7 +16,7 @@ const read = async (url: string) => {
   return data;
 };
 
-/** Read-only department view. The API applies the signed-in user's section scope and final-schedule policy. */
+/** Read-only department view. The API applies the signed-in user's section scope. Approval is reviewed in Schedule Changes. */
 export default function DepartmentSchedule({ scopes, onBack }: { scopes: ScopeAssignmentLike[]; onBack: () => void }) {
   const sectionId = singleDepartmentOf(scopes, 0, false);
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -63,9 +63,9 @@ export default function DepartmentSchedule({ scopes, onBack }: { scopes: ScopeAs
       <CalendarDays aria-hidden="true" /> جدول القسم
     </PageTitle>
     {error ? <Notice type="error">{error}</Notice> : null}
-    <p className="department-schedule-readonly">عرض للقراءة فقط · يعرض الجدول المعتمد المتاح لهذا الحساب.</p>
+    <p className="department-schedule-readonly">عرض للقراءة فقط · قد يكون الجدول مسودة. راجع حالة الاعتماد من «تغييرات الجدول».</p>
     {grouped.length ? <div className="department-schedule-table-wrap"><table className="department-schedule-table"><thead><tr><th>المقرر</th><th>الشعبة</th><th>الأستاذ</th><th>الأيام</th><th>الوقت</th><th>القاعة</th></tr></thead><tbody>{grouped.map(row => <tr key={row.id}><td><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode}</small></td><td>{row.section}</td><td>{row.instructor}</td><td>{row.days}</td><td><bdi dir="ltr">{row.time}</bdi></td><td>{row.room}</td></tr>)}</tbody></table>
       <div className="department-schedule-cards">{grouped.map(row => <article key={row.id} className="department-schedule-card"><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode} · {row.section}</small><span>{row.days} · <bdi dir="ltr">{row.time}</bdi></span><span>{row.instructor} · {row.room}</span></article>)}</div>
-    </div> : <EmptyState title="لا توجد شعب معتمدة لهذا الفصل" detail="تظهر هنا الشعب بعد اعتمادها ضمن صلاحية هذا القسم." />}
+    </div> : <EmptyState title="لا توجد شعب لهذا الفصل" detail="تظهر هنا الشعب المطروحة ضمن صلاحية هذا القسم." />}
   </main>;
 }

@@ -8,6 +8,7 @@
  * القسمُ يعدّل مقرراته وحدها — بطاقةُ مقررٍ من قسمٍ آخر مقفلةٌ تُرى ولا تُمَسّ،
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
+import CurriculumReferenceReview from "./CurriculumReferenceReview";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
@@ -143,6 +144,7 @@ export default function PlanReview() {
       if (!next) return;
       const first = next.pending[0] || next.sections.flatMap(s => s.plans.map(p => ({ planId: p.id, sectionId: s.sectionId })))[0];
       if (first) { setSectionId(first.sectionId); setPlanId(first.planId); }
+      else if (next.sections[0]) setSectionId(next.sections[0].sectionId);
     });
   }, [loadStatus]);
 
@@ -219,7 +221,8 @@ export default function PlanReview() {
             </div>
           </div>
 
-          {!view ? <MicroLoader /> : (
+          <CurriculumReferenceReview sectionId={sectionId} />
+          {!planId ? <EmptyState title="لم تُجهّز صحيفة تشغيلية بعد" detail="المرجع المرفق متاح للمطابقة. إنشاء الصحيفة وربط مقرراتها يسبق اعتماد قواعدها." /> : !view ? <MicroLoader /> : (
             <>
               <div className={`pr-state ${view.state.status}`}>
                 <span className="pr-state-ic">{view.state.status === "approved" ? <ShieldCheck /> : <BookOpenCheck />}</span>

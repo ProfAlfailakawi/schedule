@@ -3714,7 +3714,7 @@ async function committeeCatalogEditAllowed(req: AuthenticatedRequest, sectionId:
   const section = await Repository.getSectionById(sectionId);
   if (!section || !isScopeAllowed(req, Number(section.AdCollegeId), sectionId)) return false;
   const plans = await Repository.getCurriculumPlans(sectionId);
-  for (const plan of plans) if (await Repository.getRuleDraft(plan.id)) return true;
+  for (const plan of plans) if ((await Repository.getRuleDraft(plan.id))?.status === "review") return true;
   return false;
 }
 function refuseCommitteeCatalogEdit(res: Response): void {

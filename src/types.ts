@@ -887,6 +887,13 @@ export interface RegistrationRun {
     courses: RegistrationRun["courses"];
   };
   dataQuality?: { total: number; ready: number; excluded: number; issues: Record<string, number> };
+  /** Aggregate only; each department sees its own respondents and participation. */
+  scopes?: Array<{
+    collegeId: number; sectionId: number; students: number; population: number; withoutRules: number; defaulted: number; windows: number[];
+    capacity: NonNullable<RegistrationRun["capacity"]>;
+    projected: { students: number; capacity: NonNullable<RegistrationRun["capacity"]> };
+    dataQuality: NonNullable<RegistrationRun["dataQuality"]>;
+  }>;
   sourceFingerprint?: string;
   /** Set by source mutations; false means the saved result is no longer current. */
   stale?: boolean;

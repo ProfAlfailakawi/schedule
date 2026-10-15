@@ -197,6 +197,7 @@ try {
   check(adminSum.canRun === true && chairSum.canRun === false, "F4 التشغيلُ ظاهرٌ للإدارة وحدها");
   check(adminSum.run.students === 23 && adminSum.run.population === 24 && adminSum.run.defaulted === 1 && adminSum.run.projected.students === 1 && adminSum.run.windows.reduce((a: number, b: number) => a + b, 0) === 23, "F4 يفصل الرغبات الفعلية عن غير المشاركين والتوقع", adminSum.run);
   check(adminSum.courses.length === 9 && chairSum.courses.length === 6 && chairSum.courses.every((c: any) => c.sectionId === 11), "F4 القسمُ يرى مقرراتِه الستة، والإدارةُ التسعة", [adminSum.courses.length, chairSum.courses.length]);
+  check(chairSum.run.students < adminSum.run.students && chairSum.run.population < adminSum.run.population && Object.values(chairSum.run.capacity).reduce((sum: number, n: any) => sum + Number(n), 0) === chairSum.run.students, "F4 أعداد الطلبة وفئات القدرة محصورة بقسم الحساب لا الجامعة كلها", chairSum.run);
   check(chairSum.run.scoped === true && adminSum.run.scoped === false, "F4 الملخّصُ يقول إن عرضه محدودٌ بالنطاق");
   const dump = JSON.stringify(adminSum);
   check(!/fingerprint|"fp"|civil|codeHash/.test(dump) && !rookies.some(r => dump.includes(r.ID)), "F4 لا أسماءَ ولا بصماتٍ ولا أرقامَ مدنية في الملخّص");

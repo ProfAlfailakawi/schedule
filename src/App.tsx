@@ -638,12 +638,12 @@ export default function App() {
    * لا بريدٌ ولا إشعارُ دفع، لأن من يدخل النظام يومياً يكفيه رقمٌ يراه.
    */
   const [changesBadge, setChangesBadge] = useState(0);
-  /* أيقونةُ «مراجعة الصحيفة» مؤقتة: لا تظهر إلا وفي نطاق الحساب مسوّدةٌ تنتظر. */
+  /* مراجعة الصحيفة متاحة لأصحاب الصلاحية؛ الشارة للمسودات المعلقة فقط. */
   const [planReviewCount, setPlanReviewCount] = useState(0);
-  /* وأيقونةُ «رادار التسجيل»: تظهر لمن يشغّلها، أو متى وُجدت تحديثٌ في نطاقه. */
+  /* رادار التسجيل متاح لصاحب الصلاحية حتى قبل أول احتساب. */
   const [simulationVisible, setSimulationVisible] = useState(false);
   useEffect(() => {
-    if (!user) { setPlanReviewCount(0); return; }
+    if (!user) { setPlanReviewCount(0); setSimulationVisible(false); return; }
     let alive = true;
     const read = () => fetch("/api/plan-review/status", { credentials: "include" })
       .then(response => (response.ok ? response.json() : null))
@@ -651,13 +651,13 @@ export default function App() {
       .catch(() => undefined);
     const readSimulation = () => fetch("/api/simulation/summary", { credentials: "include" })
       .then(response => (response.ok ? response.json() : null))
-      .then(data => { if (alive) setSimulationVisible(Boolean(data?.canRun || (data?.run && data?.courses?.length))); })
+      .then(data => { if (alive) setSimulationVisible(Boolean(data && (data.canRun || ((hasPerm(7) || hasPerm(14)) && !sessionRole.viewerOnly)))); })
       .catch(() => undefined);
     void read(); void readSimulation();
     const onFocus = () => { void read(); void readSimulation(); };
     window.addEventListener("focus", onFocus);
     return () => { alive = false; window.removeEventListener("focus", onFocus); };
-  }, [user?.SystemUserId, sessionRole.id]);
+  }, [user?.SystemUserId, sessionRole.id, permissions]);
   useEffect(() => {
     if (!user || !opensChangesScreen(sessionRole)) { setChangesBadge(0); return; }
     let alive = true;
@@ -1487,6 +1487,8 @@ export default function App() {
     [permissions],
   );
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.IsRootAdmin);
+  const planReviewVisible = Boolean(user && (user.IsAdminUser || ["committeeChair", "departmentHead", "standard"].includes(sessionRole.id)) && (hasPerm(7) || hasPerm(14)));
+
   const availableSearchModes = searchViews.filter((v) =>
     v === "searchAdvanced"
       ? hasPerm(17)
@@ -1804,10 +1806,10 @@ export default function App() {
         );
       case "simulation":
         /* القراءةُ بحدود النطاق في الخادم؛ والأيقونةُ لا تظهر إلا إن كانت هناك تحديثٌ أو من يشغّلها. */
-        return simulationVisible ? <RegistrationRehearsal onNavigate={(view) => go(view as View)} /> : unauthorized();
+        return simulationVisible ? <RegistrationRehearsal canOpenIntelligence={hasPerm(7)} onNavigate={(view) => go(view as View)} /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
-        return planReviewCount > 0 ? <PlanReview /> : unauthorized();
+        return planReviewVisible ? <PlanReview /> : unauthorized();
       case "studentRegistration":
         /* الكشفُ يُقرأ من الطرفين ويُكتب من طرفين: التسجيلُ صاحبُ القرار، ومن
            يبني الجدول يسلّم ويتابع. وصفةُ العرض الصرف لا تفتحه أصلاً — الخادمُ
@@ -2544,7 +2546,7 @@ export default function App() {
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.studentRegistration"
               />
             ) : null}
-            {planReviewCount > 0 ? (
+            {planReviewVisible ? (
               <NavButton
                 activeView={activeView}
                 onGo={go}

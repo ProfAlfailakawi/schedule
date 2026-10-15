@@ -15,14 +15,18 @@ import { auditSimOfferings, parseClock, simulateRegistration, type SimInput, typ
 const DAYS: Array<[keyof import("../types").FSchedule, number]> = [["fsunday", 0], ["fmonday", 1], ["ftuesday", 2], ["fwednesday", 3], ["fthursday", 4]];
 
 export function buildSimulationOfferings(termId: number, schedules: import("../types").FSchedule[], courseById: Map<number, AdCourse>): { offerings: SimOffering[]; duplicateRows: number } {
-  const grouped = new Map<string, SimOffering>(), seenRows = new Set<string>();
+  const grouped = new Map<string, SimOffering>(), seenRows = new Map<string, { key: string; signature: string }>();
   let duplicateRows = 0;
   for (const row of schedules) {
+    if (Number(row.AdTermId) !== termId) continue;
     const courseId = Number(row.AdCourseId), collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
     const sectionCode = String(row.SCode || "").trim(), rowId = String(row.id ?? "");
     const key = `${termId}|${collegeId}|${sectionId}|${courseId}|${sectionCode}`;
-    if (rowId && seenRows.has(rowId)) { duplicateRows += 1; continue; }
-    if (rowId) seenRows.add(rowId);
+    const signature = JSON.stringify([key, row.fsunday, row.fmonday, row.ftuesday, row.fwednesday, row.fthursday, row.fstarttime, row.fendtime, row.AdInstructorId, row.AdRoomCode, row.AdRoomHall]);
+    const prior = seenRows.get(rowId);
+    if (rowId && prior?.signature === signature) { duplicateRows += 1; continue; }
+    if (rowId && prior) grouped.get(prior.key)?.issues?.push("invalid-identity");
+    if (rowId) seenRows.set(rowId, { key, signature });
     const start = parseClock(row.fstarttime), end = parseClock(row.fendtime);
     let offering = grouped.get(key);
     if (!offering) {
@@ -30,6 +34,7 @@ export function buildSimulationOfferings(termId: number, schedules: import("../t
       offering = { id: key, courseId, code: sectionCode, collegeId, sectionId, capacity: Number(course?.MaxStudent) || 0, slots: [], issues: [] };
       grouped.set(key, offering);
     }
+    if (prior || !Number.isInteger(Number(row.id)) || Number(row.id) <= 0) offering.issues!.push("invalid-identity");
     const course = courseById.get(courseId);
     if (!course || !Number.isInteger(courseId) || courseId <= 0 || !sectionCode || collegeId <= 0 || sectionId <= 0
       || (course && (Number(course.AdCollegeId) !== collegeId || Number(course.AdSectionId) !== sectionId))) offering.issues!.push("invalid-identity");
@@ -54,7 +59,7 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
     Repository.getCourses(), Repository.getSections(), Repository.listRuleSets(),
   ]);
   const courseById = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
-  const credit = new Map([...courseById].map(([id, course]) => [id, Number(course.CourseCredit) || 0] as const));
+  const credit = new Map([...courseById].map(([id, course]) => [id, Number.isFinite(Number(course.CourseCredit)) && course.CourseCredit !== null && String(course.CourseCredit).trim() !== "" ? Number(course.CourseCredit) : Number.NaN] as const));
   const approved = new Map(ruleSets.map(set => [set.planId, set] as const));
   const referenced = new Set(profiles.map(profile => profile.curriculumPlanId).filter((id): id is string => Boolean(id)));
 
@@ -91,8 +96,8 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
       fp: profile.id, collegeId: Number(profile.AdCollegeId), sectionId: Number(profile.AdSectionId), planId: profile.curriculumPlanId || sectionPlanId(profile.AdSectionId), passed: profile.passedCourseIds || [],
       assessable: (() => {
         const plan = planById.get(profile.curriculumPlanId || sectionPlanId(profile.AdSectionId));
-        return Boolean(plan?.hasApprovedRules && plan.courseIds.length > 0 && plan.courseIds.every(id => courseById.has(Number(id)) && Number(credit.get(Number(id))) > 0)
-          && Array.isArray(profile.passedCourseIds) && profile.passedCourseIds.every(id => courseById.has(Number(id)) && Number(credit.get(Number(id))) > 0));
+        return Boolean(plan?.hasApprovedRules && plan.courseIds.length > 0 && plan.courseIds.every(id => courseById.has(Number(id)) && Number.isFinite(credit.get(Number(id))) && Number(credit.get(Number(id))) >= 0)
+          && Array.isArray(profile.passedCourseIds) && profile.passedCourseIds.every(id => courseById.has(Number(id)) && Number.isFinite(credit.get(Number(id))) && Number(credit.get(Number(id))) >= 0));
       })(),
       wishes: profile.wishes && Number(profile.wishes.termId) === termId
         ? { targetUnits: profile.wishes.targetUnits, courseIds: profile.wishes.courseIds, constraints: profile.wishes.constraints || {} } : undefined,
@@ -106,7 +111,7 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
   }
   const fingerprintPayload = {
     termId,
-    profiles: profiles.map(profile => [profile.id, profile.updatedAt, profile.wishes?.termId, profile.wishes?.updatedAt, profile.wishes?.courseIds, profile.wishes?.targetUnits, profile.passedCourseIds, profile.curriculumPlanId]),
+    profiles: profiles.map(profile => [profile.id, profile.updatedAt, profile.wishes?.termId, profile.wishes?.updatedAt, profile.wishes?.courseIds, profile.wishes?.targetUnits, profile.wishes?.constraints, profile.passedCourseIds, profile.curriculumPlanId]),
     schedules: schedules.map(row => [row.id, row.rev, row.AdCollegeId, row.AdSectionId, row.AdCourseId, row.SCode, row.fsunday, row.fmonday, row.ftuesday, row.fwednesday, row.fthursday, row.fstarttime, row.fendtime, row.AdInstructorId, row.AdRoomCode, row.AdRoomHall]),
     courses: [...courseById.values()].map(row => [row.AdCourseId, row.CourseCode, row.CourseName, row.CourseCredit, row.MaxStudent]),
     plans: plans.map(plan => [plan.planId, plan.courseIds, plan.rules, plan.groups, plan.hasApprovedRules]),
@@ -146,13 +151,39 @@ export async function runRegistrationSimulation(term: AdTerm, by: string): Promi
   const allAudit = auditSimOfferings(input.offerings);
   const issueCounts: Record<string, number> = {};
   for (const issue of allAudit.issues) issueCounts[issue.code] = (issueCounts[issue.code] || 0) + 1;
+  const scopes: NonNullable<RegistrationRun["scopes"]> = [];
+  const scopeKeys = new Set(input.students.map(student => `${student.collegeId}:${student.sectionId}`));
+  const sumScenario = (scenario: ReturnType<typeof simulateRegistration>, students: SimStudent[]) => {
+    const fps = new Set(students.map(student => student.fp));
+    const capacity = { canReach15: 0, canReach12To14: 0, below12: 0, graduatingBelow12: 0, unknown: 0 };
+    const windows = Array.from({ length: rounds }, () => 0);
+    for (const ticket of scenario.tickets) if (fps.has(ticket.fp)) {
+      capacity[ticket.assessment || "unknown"] += 1;
+      windows[ticket.window - 1] += 1;
+    }
+    return { students: students.length, capacity, windows };
+  };
+  for (const key of scopeKeys) {
+    const [collegeId, sectionId] = key.split(":").map(Number);
+    const mine = (student: SimStudent) => student.collegeId === collegeId && student.sectionId === sectionId;
+    const actualStudents = participants.filter(mine), predicted = nonParticipants.filter(mine);
+    const actual = sumScenario(result, actualStudents), projected = sumScenario(projection, predicted);
+    const offerings = input.offerings.filter(offering => offering.collegeId === collegeId && offering.sectionId === sectionId);
+    const audit = auditSimOfferings(offerings), issues: Record<string, number> = {};
+    for (const issue of audit.issues) issues[issue.code] = (issues[issue.code] || 0) + 1;
+    scopes.push({ collegeId, sectionId, students: actual.students, capacity: actual.capacity, windows: actual.windows,
+      projected: { students: projected.students, capacity: projected.capacity }, population: actualStudents.length + predicted.length, defaulted: predicted.length,
+      withoutRules: actualStudents.filter(student => !input.plans.find(plan => plan.planId === student.planId)?.hasApprovedRules).length,
+      dataQuality: { total: offerings.length, ready: audit.confirmed.length, excluded: offerings.length - audit.confirmed.length, issues },
+    });
+  }
   const run: RegistrationRun = {
     id: String(termId), termId, runId, ranAt: new Date().toISOString(), ranBy: by, students: participants.length, population,
     withoutRules: result.withoutRules, defaulted: nonParticipants.length, rounds, windows: result.windows,
     courses: makeCourseRows(result), capacity: result.capacity,
     projected: { students: nonParticipants.length, capacity: projection.capacity, courses: makeCourseRows(projection) },
     dataQuality: { total: input.offerings.length, ready: allAudit.confirmed.length, excluded: Math.max(0, input.offerings.length - allAudit.confirmed.length), issues: { ...issueCounts, ...(duplicateRows ? { duplicateRows } : {}) } },
-    sourceFingerprint: fingerprint, stale: false,
+    scopes, sourceFingerprint: fingerprint, stale: false,
   };
   /* Only an actual current-term response can generate a private ticket. */
   const tickets: RegistrationTicket[] = result.tickets.map(ticket => ({ ...ticket, id: `${termId}_${ticket.fp}`, termId, runId }));

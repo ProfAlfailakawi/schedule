@@ -541,3 +541,17 @@
 .pr-import-actions label{cursor:pointer;display:inline-flex;align-items:center}
 .pr-import-result{display:grid;gap:8px}
 .sm-auto{margin:0;color:var(--muted);font-size:.84rem;line-height:1.8}
+
+/* Source-sheet comparison stays inside the existing curriculum review. */
+.curriculum-reference{display:grid;gap:12px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);min-inline-size:0}
+.curriculum-reference header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.curriculum-reference h2{font-size:1rem;margin:0}.curriculum-reference p{margin:4px 0;font-size:.85rem;color:var(--muted);line-height:1.7}
+.curriculum-reference [role=tablist]{display:flex;gap:4px;flex-wrap:wrap}.curriculum-reference [role=tab]{font:inherit;font-size:.85rem;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:var(--ink);cursor:pointer}
+.curriculum-reference [aria-selected=true]{background:var(--accent-softer);color:var(--accent-ink);border-color:var(--accent)}
+.curriculum-reference summary{display:flex;justify-content:space-between;gap:12px;cursor:pointer;padding:12px 0;font-size:.9rem;border-block-start:1px solid var(--line)}
+.curriculum-reference summary b{font-size:.8rem;color:var(--muted);white-space:nowrap}
+.curriculum-reference-group h3{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.88rem}.curriculum-reference-group h3 small{color:var(--muted);font-weight:400}
+.reference-course{display:grid;gap:4px;padding:12px 0;border-block-start:1px solid var(--line);overflow-wrap:anywhere}
+.reference-course>div{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap}.reference-course strong{font-size:.88rem}.reference-course span,.reference-course small,.reference-course bdi{font-size:.8rem;color:var(--muted);line-height:1.7}
+.reference-course.is-different>div strong{color:var(--brass)}
+@media(max-width:640px){.curriculum-reference{padding:12px}.reference-course>div{display:grid;grid-template-columns:minmax(0,1fr) auto}.reference-course strong{grid-column:1/-1}.curriculum-reference summary{align-items:baseline}}

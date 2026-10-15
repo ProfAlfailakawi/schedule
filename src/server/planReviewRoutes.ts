@@ -13,6 +13,8 @@
  *     في القواعد (دورة، مجموعةٌ لا تتّسع لحدّها…)، أو تغيّرت المسوّدةُ بعد أن رآها.
  *   · كلُّ تعديلٍ في سجلّ التدقيق.
  */
+import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurricula";
+import { compareCurriculumReference, isTechnologyEducation, referenceCodeKey } from "../utils/curriculumReference";
 import { AR, countOf } from "../utils/arabicCount";
 import type { Express, Request, RequestHandler, Response } from "express";
 import { RuleDraftConflict, Repository } from "../db/repository";
@@ -159,9 +161,33 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const collegeId = Number(section.AdCollegeId), sectionId = Number(section.AdSectionId);
       if (!canSee(req, { id: "", AdCollegeId: collegeId, AdSectionId: sectionId, name: "", status: "" })) continue;
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => plan.status !== "archived" && !plan.virtual);
-      if (plans.length) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: [...plans].sort((x, y) => Number(pendingIds.has(y.id)) - Number(pendingIds.has(x.id)) || Number(y.status === "active") - Number(x.status === "active")).map(plan => ({ id: plan.id, name: plan.name, status: plan.status, pending: pendingIds.has(plan.id) })) });
+      if (plans.length || isTechnologyEducation(section.AdSectionName)) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: [...plans].sort((x, y) => Number(pendingIds.has(y.id)) - Number(pendingIds.has(x.id)) || Number(y.status === "active") - Number(x.status === "active")).map(plan => ({ id: plan.id, name: plan.name, status: plan.status, pending: pendingIds.has(plan.id) })) });
     }
     res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isPowerUser(req) });
+  });
+
+  /* The supplied source sheets are a read-only comparison, available to both
+     reviewers. Reading this endpoint never edits a catalog, membership or rule. */
+  app.get("/api/plan-review/reference", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const sectionId = Number(req.query.sectionId);
+    const section = (await Repository.getSections()).find(row => Number(row.AdSectionId) === sectionId);
+    if (!section || !canSee(req, { id: "", name: "", status: "", AdCollegeId: Number(section.AdCollegeId), AdSectionId: sectionId })) {
+      fail(res, 403, "خارج نطاق هذه الصحيفة."); return;
+    }
+    if (!isTechnologyEducation(section.AdSectionName)) { res.json({ references: [] }); return; }
+    const [courses, sections, plans, links] = await Promise.all([Repository.getCourses(), Repository.getSections(), Repository.getCurriculumPlans(sectionId), Repository.getCurriculumPlanCourses(sectionId)]);
+    const sectionCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
+    const collegeCourses = courses.filter(row => Number(row.AdCollegeId) === Number(section.AdCollegeId)).map(row => {
+      const code = referenceCodeKey(row.CourseCode), ownerCode = sectionCodes.get(Number(row.AdSectionId));
+      return { ...row, CourseCode: /^\d{1,3}$/.test(code) && /^\d{2}$/.test(ownerCode || "") ? `01${ownerCode}${code.padStart(3, "0")}` : code };
+    });
+    res.json({ sectionId, references: TECHNOLOGY_EDUCATION_CURRICULA.map(reference => {
+      const matchingPlans = plans.filter(plan => !plan.virtual && plan.status === (reference.id === "new" ? "active" : "transition"));
+      const plan = matchingPlans.length === 1 ? matchingPlans[0] : undefined;
+      const members = new Set(links.filter(link => link.planId === plan?.id).map(link => Number(link.AdCourseId)));
+      return { ...reference, planId: plan?.id || null, groups: compareCurriculumReference(reference, collegeCourses, members) };
+    }) });
   });
 
   app.get("/api/plan-review/plan", deps.requireAuth, async (req: Request, res: Response) => {
