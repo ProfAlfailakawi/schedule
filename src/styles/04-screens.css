@@ -301,6 +301,9 @@
   position:absolute;top:0;transform:translateX(50%);
   color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono);
 }
+/* The first and last hour sit on the card's own edges: centred on them, half the figure would hang outside the track (and be clipped on a phone). */
+.daybar-scale span:first-child{transform:none}
+.daybar-scale span:last-child{right:auto!important;left:0;transform:none}
 .deck-clear{
   display:inline-flex;align-items:center;gap:var(--s2);
   color:var(--success);font-size:var(--t-sm);
@@ -374,6 +377,9 @@
   .deck-signals:has(>article:nth-child(4):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}
   .deck-signals:has(>article:nth-child(4):last-child)>article:nth-child(3){border-inline-start:0}
   .deck-signals:has(>article:nth-child(4):last-child)>article:nth-child(n+3){border-top:1px solid var(--line)}
+  /* Three: two figures over one full-width row — the odd one out must not wrap into a half-empty row with a stray divider on the card's edge. */
+  .deck-signals:has(>article:nth-child(3):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}
+  .deck-signals:has(>article:nth-child(3):last-child)>article:nth-child(3){grid-column:1/-1;border-inline-start:0;border-top:1px solid var(--line)}
 }
 
 /* ── انتظارٌ يُقرأ انتظاراً، لا عطلاً ────────────────────────────────────────
