@@ -79,8 +79,13 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
   const load = async () => {
     setLoading(true);
     try {
+      let correction: any = null;
+      try { correction = JSON.parse(sessionStorage.getItem("schedule-reference-course-action") || "null"); } catch { /* discard malformed local intent */ }
+      const courseUrl = correction && Number(correction.sectionId) > 0
+        ? `/api/courses?sectionId=${Number(correction.sectionId)}&plans=1`
+        : "/api/courses?operational=1&plans=1";
       const [a, b, c] = await Promise.all([
-        fetch("/api/courses?operational=1&plans=1"),
+        fetch(courseUrl),
         fetch("/api/colleges"),
         fetch("/api/sections"),
       ]);
@@ -206,6 +211,35 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       setCurriculumTarget(null);
       setMode("edit");
     };
+
+  useEffect(() => {
+    let intent: any = null;
+    try { intent = JSON.parse(sessionStorage.getItem("schedule-reference-course-action") || "null"); } catch { return; }
+    if (!intent || !["edit", "create"].includes(intent.kind)) return;
+    const section = sections.find((row: any) => Number(row.AdSectionId) === Number(intent.sectionId));
+    const college = colleges.find((row: any) => Number(row.AdCollegeId) === Number(intent.collegeId));
+    if (!section || !college) return;
+    if (intent.kind === "edit") {
+      const existing = items.find(row => Number(row.AdCourseId) === Number(intent.courseId));
+      if (!existing) return;
+      sessionStorage.removeItem("schedule-reference-course-action");
+      setListSection(Number(intent.sectionId));
+      setSelectedId(Number(existing.AdCourseId));
+      edit(existing);
+      return;
+    }
+    sessionStorage.removeItem("schedule-reference-course-action");
+    reset();
+    setReceipt(null);
+    setCollegeId(String(intent.collegeId));
+    setSectionId(String(intent.sectionId));
+    setCode(String(intent.code || ""));
+    setName(String(intent.name || ""));
+    setCredit(String(intent.credit ?? ""));
+    setHours(String(intent.hours ?? ""));
+    setCapacity("");
+    setMode("create");
+  }, [items, sections, colleges]);
 
   const numeric = (v: string, setter: (x: string) => void) => {
       setter(numericText(v));

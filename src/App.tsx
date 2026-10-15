@@ -1474,6 +1474,9 @@ export default function App() {
    * function only changes when the permissions themselves do.
    */
   const hasPerm = useCallback((id: number) => permissions.includes(id), [permissions]);
+  const hasAcademicPerm = useCallback((id: number) =>
+    hasPerm(id) && (sessionRole.id !== "departmentHead" || id === ACADEMIC_PERM.courses),
+  [hasPerm, sessionRole.id]);
   const hasAny = useCallback((...ids: number[]) => ids.some(hasPerm), [hasPerm]);
   const allowed = useMemo(
     () => ({
@@ -1728,11 +1731,11 @@ export default function App() {
       case "sections":
       case "instructors":
       case "courses":
-        return (isPowerAdmin || (sessionRole.id === "committeeChair" && singleDepartmentOf(scopes, 0, false) !== null)) && hasPerm(ACADEMIC_PERM[activeView]) ? (
+        return (isPowerAdmin || ((sessionRole.id === "committeeChair" || sessionRole.id === "departmentHead") && singleDepartmentOf(scopes, 0, false) !== null)) && hasAcademicPerm(ACADEMIC_PERM[activeView]) ? (
           <AcademicConsole
             tab={activeView}
             onTab={(next) => go(next)}
-            hasPerm={hasPerm}
+            hasPerm={hasAcademicPerm}
           />
         ) : (
           unauthorized()
@@ -1809,7 +1812,7 @@ export default function App() {
         return simulationVisible ? <RegistrationRehearsal canOpenIntelligence={hasPerm(7)} onNavigate={(view) => go(view as View)} /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
-        return planReviewVisible ? <PlanReview /> : unauthorized();
+        return planReviewVisible ? <PlanReview onNavigate={hasPerm(6) ? go : undefined} /> : unauthorized();
       case "studentRegistration":
         /* الكشفُ يُقرأ من الطرفين ويُكتب من طرفين: التسجيلُ صاحبُ القرار، ومن
            يبني الجدول يسلّم ويتابع. وصفةُ العرض الصرف لا تفتحه أصلاً — الخادمُ
@@ -2058,8 +2061,9 @@ export default function App() {
 
   // The academic console opens on the first catalogue this account can reach,
   // so a coordinator without "terms" still lands somewhere useful.
-  const academicEntry = academicViews.find((view) => hasPerm(ACADEMIC_PERM[view]));
-  const canOpenAcademicCatalog = isPowerAdmin || (sessionRole.id === "committeeChair" && singleDepartmentOf(scopes, 0, false) !== null);
+  const academicEntry = academicViews.find((view) => hasAcademicPerm(ACADEMIC_PERM[view]));
+  const canOpenAcademicCatalog = isPowerAdmin || ((sessionRole.id === "committeeChair" || sessionRole.id === "departmentHead")
+    && singleDepartmentOf(scopes, 0, false) !== null && (sessionRole.id !== "departmentHead" || hasPerm(ACADEMIC_PERM.courses)));
   const viewLabels: Partial<Record<View, string>> = {
     dashboard: "لوحة العمل",
     schedules: "إدارة الجدول",

@@ -1364,13 +1364,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setScenarioId(fix.rowId);
     setTab("twin");
     showTwinCard("editor");
-    /* Said out loud because the number beside it will not say it: درجة الجودة
-       counts rooms, teachers, gaps and balance — it has never counted student
-       clashes, so a move that removes one can read «+0» and look pointless. */
     setMessage(
       `طُبِّقت النقلة داخل النسخة التجريبية فقط: «${fix.courseName}» إلى ${fix.to.dayLabel} ${scheduleClockForDisplay(fix.to.start)}. ` +
-      `يزول تقاطع ${countOf(fix.shared, AR.student)}. ` +
-      "درجة الجودة لا تحسب تقاطع الطلاب بعد، فقد تبقى كما هي — لا شيء منشور حتى تحفظها كمسودة وتنشرها.",
+      `أُعيد حساب جداول ${countOf(demand?.respondents || 0, AR.student)} مشاركاً. هذه معاينة محلية؛ لا تحفظ المسودة الأصلية ولا تنشر التغيير.`,
     );
     await evaluateScenario(applied);
   };
@@ -3511,17 +3507,22 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         </span>
                       </div>
                       <p className="demand-why">
-                        يزول تقاطعه مع <b>{fix.againstCourseName}</b> عند{" "}
-                        <b>{countOf(fix.shared, AR.student)}</b> — ولا ينشأ تعارض جديد.
+                        بعد إعادة المحاكاة، يرتفع القادرون على بلوغ 12 وحدة من <b>{countOf((fix.simulationImpact?.before.canReach15 || 0) + (fix.simulationImpact?.before.canReach12To14 || 0), AR.student)}</b> إلى{" "}
+                        <b>{countOf((fix.simulationImpact?.after.canReach15 || 0) + (fix.simulationImpact?.after.canReach12To14 || 0), AR.student)}</b> من أصل {countOf(fix.simulationImpact?.respondents || 0, AR.student)} مشاركاً؛ وبلوغ 15 وحدة يتحسن بمقدار{" "}
+                        <b>{countOf(fix.simulationImpact?.delta15 || 0, AR.student)}</b>. المقاعد افتراضية، والنتيجة للرغبات المرسلة فقط.
                       </p>
                       <div className="demand-actions">
-                        <SecondaryButton onClick={() => openRepair(fix)}>
-                          <WandSparkles /> جرّبها في النسخة التجريبية
+                        <SecondaryButton onClick={() => openRepair(fix)} data-guide-ignore="معاينة نقل الجدول داخل نسخة محلية لا تحفظ التعديل">
+                          <WandSparkles /> معاينة التأثير
                         </SecondaryButton>
                       </div>
                     </article>
                   ))}
                 </div>
+              ) : demand.repairSimulationReady && demand.repairCandidates ? (
+                <p className="demand-headline">
+                  اختُبر <Num value={demand.repairCandidates} /> اقتراح نقل في محاكاة التسجيل، ولم تثبت نقلةٌ تحسّن بلوغ 12 أو 15 وحدة دون الإضرار بالنتيجة الحالية.
+                </p>
               ) : demand.unsolved?.length ? (
                 <p className="demand-headline">{demand.headline}</p>
               ) : demand.pairs?.length ? (

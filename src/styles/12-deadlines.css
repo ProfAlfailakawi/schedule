@@ -554,4 +554,6 @@
 .reference-course{display:grid;gap:4px;padding:12px 0;border-block-start:1px solid var(--line);overflow-wrap:anywhere}
 .reference-course>div{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap}.reference-course strong{font-size:.88rem}.reference-course span,.reference-course small,.reference-course bdi{font-size:.8rem;color:var(--muted);line-height:1.7}
 .reference-course.is-different>div strong{color:var(--brass)}
+.reference-fix{justify-self:start;border:0;padding:6px 0;background:transparent;color:var(--accent-ink);font:inherit;font-size:.8rem;font-weight:650;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.reference-fix:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 @media(max-width:640px){.curriculum-reference{padding:12px}.reference-course>div{display:grid;grid-template-columns:minmax(0,1fr) auto}.reference-course strong{grid-column:1/-1}.curriculum-reference summary{align-items:baseline}}
