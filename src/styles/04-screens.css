@@ -1836,7 +1836,7 @@
 .visual-minimal .record-card small{display:inline}
 .visual-minimal .record-card .meta-pill small{display:none}
 .visual-minimal.catalog-inspector-page .record-card-copy>span{
-  display:flex;align-items:center;gap:7px;color:var(--muted);font-size:.74rem;line-height:1.45;
+  display:flex;align-items:center;gap:7px;color:var(--muted);font-size:.75rem;line-height:1.45;
   /* السطر الوصفي يلتفّ بدل أن يُقصّ من منتصف رقم الهاتف. */
   flex-wrap:wrap;white-space:normal;overflow:visible;
 }
@@ -1873,7 +1873,7 @@
 }
 .visual-minimal.catalog-inspector-page .meta-pill-glyph{display:grid;place-items:center;color:var(--muted)}
 .visual-minimal.catalog-inspector-page .meta-pill-glyph svg{inline-size:13px;block-size:13px}
-.visual-minimal.catalog-inspector-page .meta-pill b{font-size:.72rem;font-weight:700}
+.visual-minimal.catalog-inspector-page .meta-pill b{font-size:.75rem;font-weight:700}
 
 /* Academic mobility becomes an infographic rather than a text separator. */
 .travel-matrix{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:var(--s2);margin-block:var(--s3)}
@@ -1962,7 +1962,7 @@
 .academic-console.visual-minimal .console-head{border-radius:20px}
 .academic-console.visual-minimal .console-tab{min-block-size:56px}
 .academic-console.visual-minimal .console-tab-icon{inline-size:38px;block-size:38px;border-radius:13px}
-.academic-console.visual-minimal .console-tab-label{font-size:.72rem}
+.academic-console.visual-minimal .console-tab-label{font-size:.75rem}
 .visual-minimal .term-deck .record-card{border-radius:20px}
 .visual-minimal .academic-inspector{border-radius:var(--radius-card);overflow:hidden}
 .visual-minimal .academic-inspector-icon{inline-size:56px;block-size:56px;border-radius:18px;background:var(--accent-softer);color:var(--accent)}

@@ -61,7 +61,7 @@
 }
 .sd-tile-month{
   inline-size:100%;text-align:center;padding:4px 6px;
-  background:var(--sd-tone);color:var(--accent-contrast);font-size:.74rem;font-weight:700;
+  background:var(--sd-tone);color:var(--accent-contrast);font-size:.75rem;font-weight:700;
 }
 .sd-tile b{font-size:2.1rem;line-height:1.15;font-weight:700;color:var(--ink);padding-block-start:4px;font-variant-numeric:tabular-nums}
 .sd-tile-weekday{font-size:.74rem;color:var(--muted);padding-block-end:6px}
@@ -203,7 +203,7 @@
 .sd-step legend{display:inline-flex;align-items:center;gap:8px;padding:0;margin-block-end:8px;font-size:.88rem;font-weight:700;color:var(--ink)}
 .sd-step legend b{
   display:inline-grid;place-items:center;inline-size:22px;block-size:22px;border-radius:50%;
-  background:var(--accent);color:var(--accent-contrast);font-size:.74rem;
+  background:var(--accent);color:var(--accent-contrast);font-size:.75rem;
 }
 .sd-seg{display:flex;gap:4px;padding:4px;border-radius:var(--r-full);background:var(--surface-3);inline-size:max-content;max-inline-size:100%;flex-wrap:wrap}
 .sd-seg button{
@@ -244,7 +244,7 @@
 .sd-picker-row,.changes-extend-card .sd-picker-row{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 6px;padding-inline-start:28px;border-radius:var(--r-xs);cursor:pointer;font-size:.86rem;color:var(--ink)}
 .sd-picker-row:hover{background:var(--surface)}
 .sd-picker-row input{accent-color:var(--accent);inline-size:16px;block-size:16px}
-.sd-picker-row small{margin-inline-start:auto;color:var(--brass);font-size:.74rem}
+.sd-picker-row small{margin-inline-start:auto;color:var(--brass);font-size:.75rem}
 
 .sd-preview{
   display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--r-md);
@@ -332,7 +332,7 @@
 .sp-step[data-state="next"] .sp-dot{border-color:color-mix(in srgb,var(--accent) 40%,var(--line-strong));color:var(--accent-ink)}
 .sp-step[data-state="unset"] .sp-dot{border-style:dashed;background:transparent}
 .sp-step b{font-size:.84rem;font-weight:700;color:var(--ink);line-height:1.4;overflow-wrap:anywhere}
-.sp-step small{font-size:.72rem;color:var(--muted);line-height:1.5;font-variant-numeric:tabular-nums}
+.sp-step small{font-size:.75rem;color:var(--muted);line-height:1.5;font-variant-numeric:tabular-nums}
 .sp-step[data-state="now"] b{color:var(--brass)}
 .sp-step[data-state="unset"] b{color:var(--muted);font-weight:600}
 .sp-line{margin-block-start:2px}

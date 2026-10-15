@@ -1455,7 +1455,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .genesis-preview tr.genesis-row-issue>td:first-child{box-shadow:inset 3px 0 #aa3934}
 .genesis-fix{margin-inline-start:8px;border:1px solid color-mix(in srgb,#a73b36 28%,var(--line));background:var(--surface);color:#96352f;border-radius:10px;padding:5px 8px;font:inherit;font-size:.78rem;font-weight:700;cursor:pointer}
 .genesis-inline-editor td{padding:0!important}.genesis-inline-editor td>div{display:grid;grid-template-columns:1.4fr repeat(4,minmax(105px,.8fr)) auto auto;gap:9px;align-items:end;padding:14px;background:color-mix(in srgb,var(--primary) 5%,var(--surface))}
-.genesis-inline-editor label{display:grid;gap:5px}.genesis-inline-editor label span{font-size:.72rem;color:var(--muted);font-weight:700}.genesis-inline-editor input,.genesis-inline-editor select{min-width:0}
+.genesis-inline-editor label{display:grid;gap:5px}.genesis-inline-editor label span{font-size:.75rem;color:var(--muted);font-weight:700}.genesis-inline-editor input,.genesis-inline-editor select{min-width:0}
 
 /* Genesis repair: the blocking reason sits directly under the row that causes
    it, and the inline editor can fix teacher, time, room or days without leaving
