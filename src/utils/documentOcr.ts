@@ -2614,7 +2614,7 @@ export function scanRefusalMessage(pages:OcrPageDiagnostic[]):string{
   const suspicious=pages.filter(page=>page.suspicious);
   const confirmed=suspicious.filter(page=>!page.unverified);
   const named=(confirmed.length?confirmed:suspicious).map(page=>`الصفحة ${page.page}: ${page.reason||"لم تثبت هندسة الجدول"}`).join(" · ");
-  return `أوقفت الاستيراد لأن جزءاً من الجدول لم يُقرأ. ${named}. لم يُستورد أي صف. ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)، أو اطلب ملف Excel أو PDF مُصدَّراً من النظام، فهو يُقرأ كاملاً في ثوانٍ.`;
+  return `أوقفت الاستيراد لأن جزءاً من الجدول لم يُقرأ. ${named}. لم يُستورد أي صف. ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)، أو اطلب ملف جدول بيانات أو PDF مُصدَّراً من النظام، فهو يُقرأ كاملاً في ثوانٍ.`;
 }
 /* ── خانة أيامٍ لا تطبعها الجهة لا تدخل الجدول ───────────────────────────────
  *
@@ -4537,7 +4537,7 @@ export const greyPhotoVerdict=(tones:{greyPhoto:boolean}[]):number[]=>{
   const pages=tones.map((tone,index)=>tone.greyPhoto?index+1:0).filter(Boolean);
   return tones.length&&pages.length*2>=tones.length?pages:[];
 };
-export const GREY_PHOTO_REFUSAL="المستند صورة رمادية باهتة لا مسح واضح، فلن تكتمل قراءته. لم يُستورد أي صف. صوّره ماسحاً ضوئياً بالأبيض والأسود (300 نقطة)، أو اختر «أبيض وأسود» في تطبيق المسح، أو اطلب ملف Excel أو PDF مُصدَّراً من النظام فيُقرأ كاملاً في ثوانٍ.";
+export const GREY_PHOTO_REFUSAL="المستند صورة رمادية باهتة لا مسح واضح، فلن تكتمل قراءته. لم يُستورد أي صف. صوّره ماسحاً ضوئياً بالأبيض والأسود (300 نقطة)، أو اختر «أبيض وأسود» في تطبيق المسح، أو اطلب ملف جدول بيانات أو PDF مُصدَّراً من النظام فيُقرأ كاملاً في ثوانٍ.";
 const TONE_LONG_EDGE=480;
 const canvasTone=(ground:any,width:number,height:number)=>{
   const rgba=ground.getImageData(0,0,width,height).data;
