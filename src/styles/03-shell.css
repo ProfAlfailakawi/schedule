@@ -1911,7 +1911,8 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
 .notify-bell svg{width:20px;height:20px}
 .notify-bell[data-fresh="true"] svg{animation:notify-ring 1.2s ease 1}
 .notify-count{
-  position:absolute;top:-4px;inset-inline-start:-4px;
+  /* "99+" is wider than the bell's corner: lifted so it sits on the rim, not across the glyph. */
+  position:absolute;top:-8px;inset-inline-start:-4px;
   min-width:20px;height:20px;padding:0 5px;border-radius:10px;
   display:grid;place-items:center;
   background:var(--danger);color:#fff;font-size:12px;font-weight:700;line-height:1;
