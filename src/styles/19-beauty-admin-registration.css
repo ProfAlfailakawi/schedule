@@ -66,6 +66,16 @@
   .student-cases-register--decisions .student-cases-table td.student-case-detail-cell{min-width:130px}
   .student-cases-table td code{padding-inline:6px}
 }
+/* Below ≈ 960px the eight columns cannot fit and the card scrolls sideways (RTL: the
+   rest of the row is to the left). A soft shadow on that edge says there is more,
+   instead of a column simply ending at the card's rim. */
+@media screen and (min-width:761px) and (max-width:960px){
+  .student-cases-table-wrap{
+    background:
+      radial-gradient(farthest-side at 0 50%,color-mix(in srgb,var(--ink) 16%,transparent),transparent) left center/10px 100% no-repeat scroll,
+      var(--surface);
+  }
+}
 @media (prefers-reduced-motion:reduce){
   .admin-quiet-summary>span,.admin-quiet-summary>article,.student-cases-table tbody tr{transition:none}
   .admin-quiet-summary>span:hover,.admin-quiet-summary>article:hover{transform:none}
