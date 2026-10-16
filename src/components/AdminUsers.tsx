@@ -1489,38 +1489,6 @@ export default function AdminUsers({
           >
             مستخدم جديد
           </AddButton>
-          {!demoReadOnly ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              data-guide-ignore="معاينة حسابات رؤساء الأقسام قبل إنشائها؛ الإنشاء يحتاج تأكيداً ثانياً"
-              disabled={headBusy}
-              onClick={async () => {
-                setHeadBusy(true); setError(null); setHeadMessage(null); setHeadPlan(null);
-                try { const rows = (await api("/api/users/department-heads/preview")).rows || []; setPlanKind("department-heads"); setHeadPlan(rows); }
-                catch (e: any) { setError(e.message); }
-                finally { setHeadBusy(false); }
-              }}
-            >
-              <UsersRound aria-hidden="true" /> إنشاء حسابات رؤساء الأقسام
-            </button>
-          ) : null}
-          {!demoReadOnly ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              data-guide-ignore="معاينة حسابات مرشدي الأقسام قبل إنشائها؛ الإنشاء يحتاج تأكيداً ثانياً"
-              disabled={headBusy}
-              onClick={async () => {
-                setHeadBusy(true); setError(null); setHeadMessage(null); setHeadPlan(null);
-                try { const rows = (await api("/api/users/advisors/preview")).rows || []; setPlanKind("advisors"); setHeadPlan(rows); }
-                catch (e: any) { setError(e.message); }
-                finally { setHeadBusy(false); }
-              }}
-            >
-              <UsersRound aria-hidden="true" /> إنشاء حسابات المرشدين
-            </button>
-          ) : null}
           </>,
         )}
         {headPlan ? (
