@@ -55,9 +55,9 @@ export interface StudentDoorDeps {
   isProduction: () => boolean;
 }
 
-/** أقصى وحداتٍ يطلبها الطالبُ لفصله، وأدناها: الهدفُ ١٢–١٥ والسقفُ ١٨. */
+/** وحداتُ الطالب في فصله: بين ١٢ و١٥. */
 export const WISH_UNITS_MIN = 12;
-export const WISH_UNITS_MAX = 18;
+export const WISH_UNITS_MAX = 15;
 const SESSION_HOURS = 12;
 
 type Door = { fingerprint: string; profile: StudentProfile };
