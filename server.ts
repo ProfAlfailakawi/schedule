@@ -2876,6 +2876,8 @@ app.get("/api/journey", async (req: AuthenticatedRequest, res: Response) => {
       instructors: instructors.length,
       sections: sections.length,
       colleges: colleges.length,
+      /* The first academic year on record, so «since» moves with the data and never needs editing. */
+      since: terms.map(term => academicStartYear(term.AdTermName)).filter((year): year is number => Number.isFinite(year)).reduce<number | null>((min, year) => min === null || year < min ? year : min, null),
     },
     current: {
       termId: currentTermId || null,
