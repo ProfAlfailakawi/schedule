@@ -1,0 +1,27 @@
+/* ── تخطيط الشعب: جدولٌ مرتّب ولوحة «لماذا؟» برسمٍ لا بنثر ── */
+@media (min-width:761px){
+  .section-plan-row{grid-template-columns:minmax(0,1fr) 112px 84px 112px 92px;gap:var(--s3);padding:10px 14px}
+  .section-plan-row.head>span:not(:first-child){text-align:center}
+  .section-plan-row>span:not(.section-plan-course){display:grid;justify-items:center;align-items:center}
+  .section-plan-row input{inline-size:100%;block-size:40px;padding:0 6px;text-align:center;border-radius:10px;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+  .section-plan-row input::-webkit-outer-spin-button,.section-plan-row input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .section-plan-count{display:inline-grid;place-items:center;min-inline-size:44px;block-size:32px;padding:0 10px;border-radius:999px;background:var(--accent-softer);color:var(--accent-ink);font-size:16px}
+  .section-plan-pick input:not(:placeholder-shown){border-color:var(--accent);background:var(--accent-soft)}
+  .section-plan-pick input:placeholder-shown{border-style:dashed}
+  .section-plan-pick{justify-items:center}
+}
+.section-plan-why-toggle{justify-content:center;min-inline-size:76px}
+/* لوحة «لماذا؟» */
+.section-plan-why{padding:12px 14px}
+.spw-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.spw-tile{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"i n" "i l";align-items:center;column-gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.spw-tile>svg{grid-area:i;inline-size:22px;block-size:22px;color:var(--accent-ink)}
+.spw-tile>b{grid-area:n;font-size:1.35rem;line-height:1.1;color:var(--ink);font-variant-numeric:tabular-nums}
+.spw-tile>small{grid-area:l;color:var(--muted);font-size:var(--t-xs)}
+.spw-tile.is-ok>b,.spw-tile.is-ok>svg{color:var(--accent-ink)}
+.spw-chips{grid-area:n;display:flex;gap:6px;flex-wrap:wrap}
+.spw-chips i{display:inline-grid;justify-items:center;padding:2px 8px;border-radius:8px;background:var(--accent-softer);font-style:normal;line-height:1.2}
+.spw-chips b{font-size:1.05rem;color:var(--ink)}.spw-chips em{font-style:normal;font-size:.66rem;color:var(--muted)}
+.spw-verdict{display:flex;align-items:center;gap:8px;margin:0;padding:8px 12px;border-radius:10px;background:var(--accent-softer);color:var(--ink);font-weight:650}
+.spw-verdict svg{flex:none;inline-size:18px;block-size:18px;color:var(--accent-ink)}
+@media (max-width:760px){.spw-tiles{grid-template-columns:1fr}}

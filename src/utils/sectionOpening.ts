@@ -133,8 +133,11 @@ const draft = (
   room: { key: string; buildingId: string; roomId: string; code: string; hall: string },
   instructorId: number,
   id: number,
+  termId?: number,
 ): FSchedule => {
   const next: any = { ...seed, id };
+  /* القالب قد يكون من فصلٍ سابق: الصفّ الجديد يُحكم عليه في الفصل المخطَّط. */
+  if (termId) next.AdTermId = termId;
   for (const key of DAY_KEYS) next[key] = false;
   next[day] = true;
   next.fstarttime = minutesToTime(start);
@@ -207,6 +210,7 @@ export function readSectionOpenings(
   doorway: number,
   limit = 6,
   verifiedRooms: readonly MasterRoom[] = [],
+  termId?: number,
 ): OpeningReading {
   const wanted = demand.respondents
     ? demand.courses.map(course => ({ id: course.courseId, students: course.students, predicted: false }))
@@ -265,12 +269,14 @@ export function readSectionOpenings(
     /* Shape the new section on the existing one: same length, same kind of
        hall, and a teacher who has actually taught this course. With no section
        open at all, the department's learned lecture length is used instead. */
-    const seed = mine[0] || week[0];
+    /* فصلٌ لم يُفتح فيه شيء بعد: القالب والمدة من آخر فصلٍ درّس فيه القسم هذا المقرر (ثم أي مقرر للقسم)، لا من موعدٍ يُطلب من القسم أن يبدأ به. */
+    const past = history.filter(row => Number(row.AdCourseId) === item.id).sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId));
+    const seed = mine[0] || week[0] || past[0] || history[0];
     if (!seed) continue;
-    const lengths = mine
-      .map(row => timeToMinutes(row.fendtime) - timeToMinutes(row.fstarttime))
-      .filter(minutes => minutes > 0);
+    const spanOf = (rows: FSchedule[]) => rows.map(row => timeToMinutes(row.fendtime) - timeToMinutes(row.fstarttime)).filter(minutes => minutes > 0);
+    const lengths = spanOf(mine);
     const length = mode(lengths)
+      || (!week.length ? mode(spanOf(past.filter(row => Number(row.AdTermId) === Number(past[0]?.AdTermId)))) : 0)
       || rhythm?.patterns.find(pattern => Number(pattern.durationMinutes) > 0)?.durationMinutes
       || 0;
     /* لا نخترع مدة للمحاضرة. من دون شعبة قائمة أو مدة تعلّمها القسم، لا توجد
@@ -319,7 +325,7 @@ export function readSectionOpenings(
                 && limit > 0 && (currentLoads.get(id) || 0) + courseHours <= limit;
             });
             for (const teacherId of candidates) {
-              const candidate = draft(seed, day, at, length, room, teacherId, draftId);
+              const candidate = draft(seed, day, at, length, room, teacherId, draftId, termId);
               if (!physicallyFree(candidate, working)) continue;
               if (!clean([candidate], [...working, candidate], pairs, doorway)) continue;
               draftId -= 1;

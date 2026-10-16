@@ -68,4 +68,16 @@ const fp = weekFingerprint(week);
 check(fp === weekFingerprint([...week].reverse()), "البصمة لا تتأثر بترتيب الصفوف");
 check(fp !== weekFingerprint([...week, added[0]]), "صفٌّ جديد يغيّر البصمة");
 check(fp !== weekFingerprint(week.map((r, i) => i === 0 ? { ...r, fstarttime: "09:30" } : r)), "تغيّر موعد يغيّر البصمة");
+// ⑥ فصلٌ فارغ تماماً: يُبنى من تاريخ القسم (فصلٌ سابق رقمه 6) دون موعدٍ أول
+const oldTerm = hist.map(r => ({ ...r, id: r.id + 500, AdTermId: 6 }));
+const emptyGaps = gapRows(courses, new Map([[1, 2], [2, 1], [3, 1]]), []);
+check(emptyGaps.every(g => g.existing === 0) && emptyGaps.find(g => g.courseId === 1)!.remaining === 2, "فصلٌ بلا أي شعبة: كل المختار باقٍ");
+const emptyReading = readSectionOpenings([], [], courses, people, oldTerm, demandFromTargets(emptyGaps, () => 30, levelOf), null, rhythm, 0, 999, rooms, 7);
+const built0 = emptyReading.proposals.flatMap(p => p.placements);
+check(built0.length === 4, "فصلٌ فارغ: تُبنى الشعب كلها من تاريخ القسم بلا موعدٍ أول");
+const asRows: FSchedule[] = emptyReading.proposals.flatMap(p => p.placements.map((pl, i) => ({
+  ...row(900 + p.courseId * 10 + i, p.courseId, pl.sectionCode, pl.roomId, pl.start, pl.instructorId), AdTermId: 7,
+  fsunday: pl.day === "fsunday", fmonday: pl.day === "fmonday", ftuesday: pl.day === "ftuesday", fwednesday: pl.day === "fwednesday", fthursday: pl.day === "fthursday", fendtime: pl.end,
+})));
+check(asRows.every(a => asRows.every(b => !physical(a, b))), "ولا تعارض بين الشعب المبنية في الفصل الفارغ");
 console.log("section-build ✓");

@@ -16,6 +16,13 @@ interface Placement { index: number; day: string; dayLabel: string; start: strin
 interface BuildRow { courseId: number; name: string; code: string; target: number | null; existing: number; remaining: number; state: "done" | "missing" | "over" | "unset"; placements: Placement[]; unplaced: number; reason: string }
 interface Built { rows: BuildRow[]; started: boolean; fingerprint: string; totals: { target: number; existing: number; remaining: number; placeable: number } }
 
+/** ما يفعله القسم لكل سببٍ يمنع البناء: يُستخرج من نصّ السبب القادم من الخادم. */
+const FIX_FOR = (reason: string) => /قاعة/.test(reason) ? "أضِف سعة القاعات في سجلّ القاعات"
+  : /أحمال|نصاب/.test(reason) ? "سجّل نصاب الأساتذة أو خفّف أحمالهم"
+  : /أستاذ/.test(reason) ? "اختر أستاذاً من ورشة الجدول"
+  : /وقت/.test(reason) ? "حرّر قاعةً أو أستاذاً في وقتٍ آخر"
+  : /تاريخ|مدة/.test(reason) ? "أضِف أول موعدٍ للمقرر ليُعرف طوله" : "";
+
 const call = async (url: string, body: unknown) => {
   const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const text = await response.text();
@@ -97,17 +104,25 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
       ) : null}
       {built && totals ? (
         <div className="sb-body">
-          {!built.started ? <Notice type="info" inline>هذا القسم لم يبدأ جدول الفصل بعد. ابدأ بموعدٍ واحد ثم يُكمل التنزيل الباقي.</Notice> : null}
           <p className="sb-totals" role="status">
             <span><b>{totals.target}</b> مطلوبة</span><span><b>{totals.existing}</b> موجودة</span><span className={totals.remaining ? "is-gap" : "is-ok"}><b>{totals.remaining}</b> باقية</span>
           </p>
+          {built.rows.some(row => row.unplaced > 0) ? (
+            <ul className="sb-why" aria-label="لماذا لم تُبنَ بعض الشعب">
+              {[...built.rows.filter(row => row.unplaced > 0).reduce((map, row) => map.set(row.reason, (map.get(row.reason) || 0) + row.unplaced), new Map<string, number>()).entries()].map(([reason, n]) => (
+                <li key={reason}><UserRoundX aria-hidden="true" /><span><b>{countOf(n, AR.section)}</b> {reason}{FIX_FOR(reason) ? <small>{FIX_FOR(reason)}</small> : null}</span></li>
+              ))}
+            </ul>
+          ) : null}
           <ul className="sb-rows">
             {built.rows.filter(row => row.state !== "unset").map(row => (
               <li key={row.courseId} className={`sb-row s-${row.state}`}>
-                <div className="sb-row-top">
-                  <span className="sb-name"><b>{row.name}</b><small dir="ltr">{row.code}</small></span>
+                <div className="sb-name"><b>{row.name}</b><small dir="ltr">{row.code}</small></div>
+                <div className="sb-gap" aria-label={`مطلوب ${row.target}، موجود ${row.existing}، باقٍ ${row.remaining}`}>
+                  <span><b>{row.target}</b><small>مطلوبة</small></span>
+                  <span><b>{row.existing}</b><small>في الجدول</small></span>
+                  <span className={row.remaining ? "is-gap" : "is-ok"}>{row.state === "done" ? <CheckCircle2 aria-hidden="true" /> : <b>{row.remaining}</b>}<small>{row.state === "done" ? "مكتمل" : row.state === "over" ? "زائدة" : "باقية"}</small></span>
                   <Dots row={row} picked={picked} />
-                  <span className="sb-count">{row.state === "done" ? <><CheckCircle2 aria-hidden="true" /> مكتمل</> : row.state === "over" ? `${row.existing} من ${row.target}` : `${row.existing} من ${row.target} · باقٍ ${row.remaining}`}</span>
                 </div>
                 {row.placements.map(p => {
                   const key = `${row.courseId}:${p.sectionCode}`;

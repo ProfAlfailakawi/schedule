@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Building2, CheckCircle2, ChevronDown, FileQuestion, FileText, FileUp, Hash, History, Layers, MinusCircle, MousePointerClick, PencilLine, Printer, RotateCcw, ScanLine, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, ChevronDown, FileQuestion, FileText, FileUp, Hash, History, Layers, Lightbulb, MinusCircle, MousePointerClick, PencilLine, Printer, RotateCcw, ScanLine, Trash2, Users, X } from "lucide-react";
 import { PrimaryButton, PrintPortal, SecondaryButton, useDialogDismiss } from "./ui";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import {
@@ -477,12 +477,26 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             </div>
             {openWhy[key] ? (
               <div className="section-plan-why" role="row">
-                <dl role="cell">
-                  <div><dt>المتبقي (لم يسجلوا)</dt><dd>{remaining[key] !== undefined && remaining[key] !== "" ? (Number(remaining[key]) <= 0 ? <>0 — لا متأخرين على المقرر</> : remaining[key]) : "لم تُستورد"}</dd></div>
-                  <div><dt>سعة الشعبة</dt><dd>{course.capacity || "—"}{course.capacity && Number(remaining[key]) > 0 ? ` · تكفي المقاعدَ ${countOf(Math.max(1, Math.ceil(Number(remaining[key]) / course.capacity)), AR.section)}` : ""}</dd></div>
-                  <div><dt>آخر الفصول</dt><dd>{lastTerms(history)}{lineage ? ` · من رقمه السابق ${lineage}` : ""}</dd></div>
-                </dl>
-                <p>{suggestion.headline} — {suggestion.reason}</p>
+                <div role="cell" className="spw-tiles">
+                  <div className={`spw-tile${remaining[key] !== undefined && remaining[key] !== "" && Number(remaining[key]) <= 0 ? " is-ok" : ""}`}>
+                    <Users aria-hidden="true" />
+                    <b>{remaining[key] !== undefined && remaining[key] !== "" ? Number(remaining[key]) : "—"}</b>
+                    <small>{remaining[key] !== undefined && remaining[key] !== "" ? (Number(remaining[key]) <= 0 ? "لا متأخرين" : "لم يسجلوا") : "لم تُستورد"}</small>
+                  </div>
+                  <div className="spw-tile">
+                    <Building2 aria-hidden="true" />
+                    <b>{course.capacity || "—"}</b>
+                    <small>{course.capacity && Number(remaining[key]) > 0 ? `سعة الشعبة · تكفي ${countOf(Math.max(1, Math.ceil(Number(remaining[key]) / course.capacity)), AR.section)}` : "سعة الشعبة"}</small>
+                  </div>
+                  <div className="spw-tile spw-history">
+                    <History aria-hidden="true" />
+                    {history.filter(item => item.sections > 0).slice(0, 3).length
+                      ? <span className="spw-chips">{history.filter(item => item.sections > 0).slice(0, 3).map(item => <i key={item.termName}><b>{item.sections}</b><em>{item.termName.replace("الفصل ", "")}</em></i>)}</span>
+                      : <b>—</b>}
+                    <small>آخر الفصول{lineage ? ` · من ${lineage}` : ""}</small>
+                  </div>
+                </div>
+                <p className="spw-verdict" title={suggestion.reason}><Lightbulb aria-hidden="true" /><span>{suggestion.headline}</span><span className="sr-only"> — {suggestion.reason}</span></p>
                 {suggestion.backlog ? <p className="section-plan-backlog-note"><AlertTriangle aria-hidden="true" /> {suggestion.backlog}</p> : null}
               </div>
             ) : null}
