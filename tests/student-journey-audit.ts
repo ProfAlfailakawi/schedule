@@ -162,7 +162,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(server.includes("const degreeRuleFromName=suggestedDegreeRule;") && sections.includes("suggestedDegreeRule("), "S7 الخادم والشاشة يقرآن التخمين نفسه");
   check(suggestedDegreeRule("اللغة الفرنسية").degreeUnits === 132 && suggestedDegreeRule("تربية خاصة").degreeUnits === 134
     && suggestedDegreeRule("قسم آخر").degreeUnits === 130, "S7 الاقتراح نفسه قيمةً");
-  const proof = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
+  const proof = between(server, "async function graduateProofCore(", "async function graduateSubmitCheck(");
   /* Since the curriculum transition the saved rules are asked per live plan
      (graduationCandidatesForSection), still once and still before OCR. */
   const ruleAt = proof.indexOf("graduationCandidatesForSection(sectionId)"), ocrAt = proof.indexOf("ocrGraduationSheetDocument(");
@@ -186,7 +186,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const statusRoute = between(server, 'app.get("/m/:token"', 'app.get("/q/:token"');
   check(myCase.includes("resolveSurveyStatusToken(token)") && !myCase.includes("resolveShareToken("), "S3 my-case يقرأ بمهلة الحالة");
   check(statusRoute.includes("resolveSurveyStatusToken(") && !statusRoute.includes("resolveShareToken("), "S3 /m/ يفتح بمهلة الحالة");
-  const submit = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  const submit = between(server, "async function graduateSubmitCheck(", "/** What the students said");
   check(submit.includes("resolveShareToken(token)") && !submit.includes("resolveSurveyStatusToken"), "S3 الإرسال يبقى مغلقاً بإغلاق الرابط");
   const workspace = read("src/components/IntelligenceWorkspace.tsx");
   check(workspace.includes("حتى 30 يوماً بعد نهاية الفصل") && !workspace.includes("سيتوقف الرابط فوراً ولن يفتح لأي طالب بعد الآن"),
@@ -230,7 +230,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
     "S5 بلا رقم الحالة: «يوجد طلب» وحرفٌ مقنّع فقط، لا اسم ولا قسم");
   check(identityRoute.indexOf("caseRefMatches(priorNeed,suppliedRef)") < identityRoute.indexOf("name:String(prior?.name"),
     "S5 الاسم والقسم وملخّص الطلب بعد إثبات رقم الحالة فقط");
-  const submitRoute = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  const submitRoute = between(server, "async function graduateSubmitCheck(", "/** What the students said");
   check(submitRoute.includes('if(priorNeed&&!caseRefMatches(priorNeed,body.caseRef))') && submitRoute.includes('code:"case-ref-required"'),
     "S5 استبدال طلبٍ قائم يتطلب رقم الحالة");
   check(submitRoute.indexOf("caseRefMatches(priorNeed,body.caseRef)") < submitRoute.indexOf("Repository.saveStudentNeed("),
@@ -258,17 +258,18 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const get = between(server, 'app.get("/api/public/survey/:token"', 'app.post("/api/public/survey/:token/identity-status"');
   check(get.indexOf("surveyTermEnded(linkTerm)") > 0 && get.indexOf("surveyTermEnded(linkTerm)") < get.indexOf("surveyPayloadCache.get(cacheKey)"),
     "S8 القراءة تقول «انتهى هذا الفصل» قبل النسخة المؤقتة");
-  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  const post = between(server, "async function graduateSubmitCheck(", "/** What the students said");
   check(post.includes('code: "term-ended"') && post.indexOf("surveyTermEnded(") < post.indexOf("Repository.saveStudentNeed("), "S8 الإرسال بعد نهاية الفصل يُرفض");
-  const proof = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
-  check(proof.indexOf("surveyTermEnded(") > 0 && proof.indexOf("surveyTermEnded(") < proof.indexOf("ocrGraduationSheetDocument("), "S8 ولا تُقرأ صحيفة لفصلٍ منتهٍ");
+  const proof = between(server, "async function graduateProofCore(", "async function graduateSubmitCheck(");
+  const proofRoute = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
+  check(proofRoute.indexOf("surveyTermEnded(") > 0 && proofRoute.indexOf("surveyTermEnded(") < proofRoute.indexOf("graduateProofCore(") && proof.includes("ocrGraduationSheetDocument("), "S8 ولا تُقرأ صحيفة لفصلٍ منتهٍ");
   check(surveyPageSource.includes("x.d.termEnded") && surveyPageSource.includes("انتهى هذا الفصل"), "S8 الصفحة تعرض «انتهى هذا الفصل»");
 }
 
 /* ── S9 مجموعة المقررات الفعّالة واحدة للقراءة والإرسال والقراءة عند القسم ── */
 {
   const get = between(server, 'app.get("/api/public/survey/:token"', 'app.post("/api/public/survey/:token/identity-status"');
-  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  const post = between(server, "async function graduateSubmitCheck(", "/** What the students said");
   const demand = between(server, 'app.get("/api/schedules/demand"', "كشفُ التسجيل — الطرفان على ورقةٍ واحدة");
   check(get.includes("surveyActiveCourseIds(sid)") && !get.includes("curriculumOverview("), "S9 صفحة الاستبيان تعرض المجموعة الفعّالة نفسها");
   check((post.match(/surveyActiveCourseIds\(/g) || []).length === 2 && !post.includes("getOperationalCourseIds("), "S9 والإرسال يتحقق بها");
@@ -284,7 +285,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
 
 /* ── S10 مهلة العشرين دقيقة لا تُسقط الطالب ─────────────────────────────── */
 {
-  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  const post = between(server, "async function graduateSubmitCheck(", "/** What the students said");
   check(post.includes('code:"proof-expired"') && post.includes("studentProofExpired("), "S10 الخادم يميّز انتهاء مهلة الإثبات برمز خاص");
   check(server.includes("const STUDENT_PROOF_TTL_MS=20*60_000;") && server.includes("exp:Date.now()+STUDENT_PROOF_TTL_MS"), "S10 المهلة ثابتٌ واحد");
   check(surveyPageSource.includes("PROOF_TTL") && surveyPageSource.includes("proofAt=proofToken?Date.now():0"), "S10 الصفحة تعرف متى تنتهي المهلة");
@@ -317,7 +318,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(graduationSheetFacts(sheet).programmeText === "رياضيات", "S12 الحقائق تحمل نص البرنامج");
   check(graduationProgrammeText("البرنامج: لغة انجليزية الوحدات المطلوبة 134") === "لغه انجليزيه", "S12 يقف عند الحقل التالي في السطر نفسه");
   check(graduationProgrammeText("الخطة الدراسية\nالتربية الإسلامية\nالوحدات المجتازة 114") === "", "S12 بلا سطر برنامج: فارغ (يفشل مغلقاً)");
-  const proof = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
+  const proof = between(server, "async function graduateProofCore(", "async function graduateSubmitCheck(");
   check(proof.includes("academicSectionNameMatches(programmeText,") && !proof.includes("academicSectionNameMatches(facts.normalizedText"),
     "S12 مطابقة القسم على سطر البرنامج لا على النص كله");
   check(proof.includes('code:"programme-unreadable"'), "S12 سطر برنامج غير مقروء يُرفض بسببه");
@@ -470,7 +471,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(bell.includes("await studentQueueForTerm(termId)") && !bell.includes("getStudentNeedsForTerm"), "R2 الجرس يقرأ المجموع المحفوظ لا الفصل");
   check((server.match(/getStudentNeedsForTerm\(/g) || []).length === 1 && server.includes("return studentQueueMemo.get(key,"), "R2 قراءةُ الفصل كلّه في مكانٍ واحد، خلف الذاكرة");
   check(server.includes("const key = dataContextCacheKey(termId);"), "R2 مفتاح الذاكرة يحمل جلسة العرض (dataContextCacheKey)");
-  const survey = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  const survey = between(server, "async function graduateSubmitCheck(", "/** What the students said");
   check(survey.indexOf("studentQueueMemo.invalidate()") > survey.indexOf("await Repository.saveStudentNeed("), "R2 الاستبيان يمحو المحفوظ بعد الحفظ");
   check(between(server, "const broadcastStudentNotifySoon", "/* A mark older than this").includes("studentQueueMemo.invalidate();"), "R2 كتابة الكشف تمحو المحفوظ");
   const beacon = between(server, "function listenForScheduleChangesAcrossInstances", "broadcastScheduleChange();");
@@ -531,10 +532,10 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
 
 /* ── S22 حدّ الخريج يُحسب لفصل الرابط لا يُؤخذ من الرمز ──────────────────── */
 {
-  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
-  check(post.includes("requiredUnits=graduateThreshold(currentRule,linkTermName)") && !post.includes("requiredUnits=Number(proof.requiredUnits"),
+  const post = between(server, "async function graduateSubmitCheck(", "/** What the students said");
+  check(post.includes("requiredUnits=graduateThreshold(currentRule,termName)") && !post.includes("requiredUnits=Number(proof.requiredUnits"),
     "S22 الحدّ من القاعدة المحفوظة لفصل الرابط");
-  check(post.includes("Number(row.AdTermId)===Number(resolved.link.AdTermId)"), "S22 وفصلُ الرابط هو المرجع");
+  check(post.includes("Number(row.AdTermId)===Number(a.termId)"), "S22 وفصلُ الرابط هو المرجع");
 }
 
 export function finish() {

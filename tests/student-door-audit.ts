@@ -318,6 +318,14 @@ check(studentHomeSource.includes("/api/public/me/request-context") && studentHom
       check(advice.ready === true && Array.isArray(advice.picks) && advice.picks.length > 0 && typeof advice.line === "string" && advice.hasRules === false && advice.picks.every((p: any) => typeof p.why === "string" && p.why.length > 0), "D6 مقترحي: مقرراتٌ مطروحة بسببٍ لكلٍّ منها، وتُعلَن غيبةُ القواعد المعتمدة", advice);
       const wishCount = (await http("GET", "/api/public/me/wishes-count")).json;
       check(wishCount.ready === true && wishCount.n >= 1 && wishCount.show === false, "D6 «أنت واحدٌ من…»: عددٌ فقط، ولا يظهر في قسمٍ صغير (لا يُستدلّ منه على أحد)", wishCount);
+      const grad = (await http("GET", "/api/public/me/graduate")).json;
+      check(grad.ready === true && grad.ruleSaved === false && grad.enough === false && Array.isArray(grad.reasons) && grad.reasons.length === 2, "D6 الخريج في مساري: يعرف وحداته وحدَّه، وبلا قاعدةٍ محفوظة لا يُدّعى استيفاء", grad);
+      const noProof = await http("POST", "/api/public/me/request", { requestType: "graduate", graduateReason: "field-conflict", details: "ميداني يتعارض", consent: true });
+      check(noProof.status >= 400 && noProof.status < 500 && typeof noProof.json.error === "string" && noProof.json.error.length > 0, "D6 طلبُ خريجٍ بلا إثباتٍ موثَّق مرفوض (لا يُصدَّق ما يكتبه الطالب)", noProof.json);
+      const badReason = await http("POST", "/api/public/me/request", { requestType: "graduate", graduateReason: "other", details: "x", consent: true });
+      check(badReason.status === 400 && badReason.json.code === "bad-reason", "D6 نوعُ طلب الميداني من القائمة المعتمدة وحدها", badReason.json);
+      const emptyUpload = await fetch(BASE + "/api/public/me/graduate/proof", { method: "POST", headers: { "content-type": "application/octet-stream", cookie: jar }, body: new Uint8Array(0) });
+      check(emptyUpload.status === 400, "D6 رفعٌ فارغ: ٤٠٠ قبل أي قراءة");
       const requestContext = await http("GET", "/api/public/me/request-context");
       const requestCourse = oldPlan.courses.find((c: any) => !saved.json.passedCourseIds.includes(c.id));
       const otherCollegeCourse = requestContext.json.conflictCourses.find((c: any) => !c.own);

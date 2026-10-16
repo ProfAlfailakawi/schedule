@@ -106,12 +106,12 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
 {
   const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
   const between = (start: string, end: string) => { const from = server.indexOf(start); const to = server.indexOf(end, from + start.length); return from < 0 ? "" : server.slice(from, to < 0 ? undefined : to); };
-  const proof = between('app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
+  const proof = between("async function graduateProofCore(", "async function graduateSubmitCheck(");
   check(proof.includes("choosePlanForSheet(ruleCandidates") && proof.includes("curriculumPlanId,nameMatched"),
     "التحقق يختار صحيفة الطالب ويضعها في رمز التحقق");
   check(proof.indexOf("choosePlanForSheet(") < proof.indexOf("resolvePassedUnits=()"),
     "الصحيفة تُختار قبل قراءة الوحدات المجتازة، فيُقرأ المجتاز بمجموع صحيفته");
-  const submit = between('app.post("/api/public/survey/:token", async', "/** What the students said");
+  const submit = between("async function graduateSubmitCheck(", "/** What the students said");
   check(submit.includes("graduationRuleFor(ruleCandidates,proof.curriculumPlanId)"), "الإرسال يعيد قراءة شروط صحيفة الطالب الآن، لا من الرمز");
   check(submit.includes("let curriculumPlanId:string|undefined=provenPlanId;"), "صحيفة الطالب المثبتة تُحفظ مع طلبه");
   const reuse = between("const reusableGraduateVerification=", "const normalizeStudentIdentityName=");

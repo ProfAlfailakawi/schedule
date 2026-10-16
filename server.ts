@@ -15831,26 +15831,24 @@ const readStudentProofBody=(req:Request,res:Response,next:NextFunction)=>{
     next(error);
   });
 };
-app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Request,res:Response)=>{
-  const token=String(req.params.token||""),resolved=await resolveShareToken(token);
-  if("error"in resolved){res.status(resolved.status).json({error:resolved.error});return;}
-  if(resolved.link.kind!=="survey"){res.status(404).json({error:"هذا الرابط ليس استبياناً"});return;}
-  if(!staffLookupAllowed(`${token}:proof`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة."});return;}
-  if(surveyTermEnded((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId)))){res.status(409).json({error:SURVEY_TERM_ENDED,code:"term-ended"});return;}
-  const civil=asciiDigits(decodeURIComponent(String(req.get("x-student-civil")||""))).replace(/\D/g,""),name=decodeURIComponent(String(req.get("x-student-name")||"")).trim(),sectionId=Number(req.get("x-student-section")||0);
-  if(!validateCivilId(civil).isValid||name.length<3){res.status(400).json({error:"أكمل الاسم والرقم المدني الصحيح أولاً"});return;}
-  const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+/* التحقّق من صحيفة التخرّج: واحدٌ للاستبيان القديم ولبابِ «مساري» — القاعدة في موضعٍ واحد. تكتب ردَّها في `res` (أي كائنٍ بـ status().json()). */
+type GraduateProofSink={status:(code:number)=>{json:(body:any)=>void};json:(body:any)=>void};
+async function graduateProofCore(a:{collegeId:number;termId:number;civil:string;name:string;sectionId:number;bytes:Buffer;mime:string},res:GraduateProofSink):Promise<void>{
+  const{civil,name,sectionId}=a;
+  const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===a.collegeId);
   if(!section){res.status(400).json({error:"القسم العلمي غير صالح"});return;}
   /* The saved academic rule is a precondition, checked BEFORE the expensive
      OCR: without it no sheet can be judged, so reading one only burned the
      student's upload and the server's memory to say «no rule» afterwards. */
   const ruleCandidates=await graduationCandidatesForSection(sectionId);
   if(!ruleCandidates.some(row=>row.rule)){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم.",code:"no-degree-rule"});return;}
-  const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!bytes.length){res.status(400).json({error:"ارفع صحيفة التخرج PDF أو صورة واضحة"});return;}
-  const mime=String(req.get("x-file-type")||"application/pdf").slice(0,80);
+  const bytes=a.bytes;if(!bytes.length){res.status(400).json({error:"ارفع صحيفة التخرج PDF أو صورة واضحة"});return;}
+  const mime=a.mime;
   let ocr;
   try{ocr=await ocrGraduationSheetDocument(bytes,mime);}
-  catch(error:any){res.status(422).json({error:String(error?.message||"تعذّرت قراءة الإثبات. ارفع صورة أوضح أو ملف PDF.")});return;}
+  catch(error:any){/* رسالةُ مكتبةٍ إنجليزية («Invalid PDF structure») لا تُقال للطالب: نصٌّ عربيٌّ واحد. */
+    const why=String(error?.message||"");
+    res.status(422).json({error:/[\u0621-\u064A]/.test(why)?why:"تعذّرت قراءة الإثبات. ارفع صورة أوضح أو ملف PDF."});return;}
   const facts=graduationSheetFacts(ocr.text);
   const civilCandidates=(Array.isArray(facts.civilCandidates)?facts.civilCandidates:[])
     .map((value:any)=>asciiDigits(value).replace(/\D/g,""))
@@ -15915,7 +15913,7 @@ app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Req
   const passedUnits=resolvePassedUnits();
   if(!passedUnits){res.status(422).json({error:"لم أتعرف على مجموع الوحدات المجتازة في صحيفة التخرج. ارفع الصفحة الرسمية كاملة وبوضوح."});return;}
   const terms=await Repository.getTerms();
-  const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
+  const termName=String(terms.find((row:any)=>Number(row.AdTermId)===a.termId)?.AdTermName||"");
   const required=graduateThreshold(rule,termName),summer=isSummerTerm(termName);
   const eligible=passedUnits>=required;
   if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر اجتياز ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}${ruleCandidates.length>1?` حسب «${planChoice.candidate.planName}»`:""}.`});return;}
@@ -15924,7 +15922,47 @@ app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Req
   res.json({eligible:true,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),termName,summer,planName:ruleCandidates.length>1?planChoice.candidate.planName:undefined,
     message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required}${planNote}. يمكنك متابعة الطلب.`,
     proofToken,confidence:ocr.confidence});
+
+}
+app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Request,res:Response)=>{
+  const token=String(req.params.token||""),resolved=await resolveShareToken(token);
+  if("error"in resolved){res.status(resolved.status).json({error:resolved.error});return;}
+  if(resolved.link.kind!=="survey"){res.status(404).json({error:"هذا الرابط ليس استبياناً"});return;}
+  if(!staffLookupAllowed(`${token}:proof`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة."});return;}
+  if(surveyTermEnded((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId)))){res.status(409).json({error:SURVEY_TERM_ENDED,code:"term-ended"});return;}
+  const civil=asciiDigits(decodeURIComponent(String(req.get("x-student-civil")||""))).replace(/\D/g,""),name=decodeURIComponent(String(req.get("x-student-name")||"")).trim(),sectionId=Number(req.get("x-student-section")||0);
+  if(!validateCivilId(civil).isValid||name.length<3){res.status(400).json({error:"أكمل الاسم والرقم المدني الصحيح أولاً"});return;}
+  await graduateProofCore({collegeId:Number(resolved.link.AdCollegeId),termId:Number(resolved.link.AdTermId),civil,name,sectionId,
+    bytes:Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0),mime:String(req.get("x-file-type")||"application/pdf").slice(0,80)},res);
 });
+
+/* ما يُتحقَّق منه عند إرسال طلب الخريج: رمزُ الإثبات حيّ، ولهذا الطالب والقسم، والعتبةُ من القاعدة الحالية لفصل الطلب. واحدةٌ للاستبيان القديم ولـ«مساري». */
+async function graduateSubmitCheck(a:{civil:string;sectionId:number;termId:number;proofToken:string;reusableProofToken?:string}):Promise<
+  {error:{status:number;body:any}}|{passedUnits:number;requiredUnits:number;degreeUnits:number;provenPlanId?:string;nameMatched:boolean;eligibility:"eligible"|"ineligible"}>{
+  const{civil,sectionId}=a;
+  let proof=await verifyStudentProof(a.proofToken);
+  if(!proof&&a.reusableProofToken){
+    proof=await verifyStudentProof(a.reusableProofToken);
+  }
+  const ruleCandidates=await graduationCandidatesForSection(sectionId);
+  if(!ruleCandidates.some(row=>row.rule))return{error:{status:400,body:{error:"قواعد التخرج الأكاديمية لهذا القسم غير معتمدة في النظام"}}};
+  const provenPlan=proof?graduationRuleFor(ruleCandidates,proof.curriculumPlanId):null;
+  const currentRule=provenPlan?.rule;
+  if(!proof&&await studentProofExpired(a.proofToken)){
+    return{error:{status:400,body:{code:"proof-expired",error:"انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان في الصفحة."}}};
+  }
+  if(!proof||!currentRule||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
+    return{error:{status:400,body:{code:"proof-required",error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"}}};
+  }
+  /* The threshold is the CURRENT saved rule for the request's term — never the
+     figure carried inside the proof token, which was computed for whatever
+     term and rule applied when the sheet was read. */
+  const termName=String((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(a.termId))?.AdTermName||"");
+  const passedUnits=Number(proof.passedUnits||0),requiredUnits=graduateThreshold(currentRule,termName);
+  const eligibility=requiredUnits>0&&passedUnits>=requiredUnits?"eligible" as const:"ineligible" as const;
+  if(eligibility!=="eligible")return{error:{status:400,body:{error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`}}};
+  return{passedUnits,requiredUnits,degreeUnits:Number(currentRule.degreeUnits),provenPlanId:provenPlan?.planId,nameMatched:Boolean(proof.nameMatched),eligibility};
+}
 
 app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   const token = String(req.params.token || "");
@@ -16017,26 +16055,9 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     graduateNameMatched=reusableVerification.proofNameMatched;eligibility="eligible";
   }
   if(requestType==="graduate"){
-    let proof=await verifyStudentProof(String(body.proofToken||""));
-    if(!proof&&reusableVerification){
-      proof=await verifyStudentProof(reusableVerification.proofToken);
-    }
-    const ruleCandidates=await graduationCandidatesForSection(sectionId);
-    if(!ruleCandidates.some(row=>row.rule)){res.status(400).json({error:"قواعد التخرج الأكاديمية لهذا القسم غير معتمدة في النظام"});return;}
-    const provenPlan=proof?graduationRuleFor(ruleCandidates,proof.curriculumPlanId):null;
-    const currentRule=provenPlan?.rule;
-    if(!proof&&await studentProofExpired(String(body.proofToken||""))){
-      res.status(400).json({code:"proof-expired",error:"انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان في الصفحة."});return;
-    }
-    if(!proof||!currentRule||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
-      res.status(400).json({code:"proof-required",error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
-    }
-    /* The threshold is the CURRENT saved rule for THIS link's term — never the
-       figure carried inside the proof token, which was computed for whatever
-       term and rule applied when the sheet was read. */
-    const linkTermName=String((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
-    passedUnits=Number(proof.passedUnits||0);requiredUnits=graduateThreshold(currentRule,linkTermName);degreeUnits=Number(currentRule.degreeUnits);provenPlanId=provenPlan?.planId;graduateNameMatched=Boolean(proof.nameMatched);eligibility=requiredUnits>0&&passedUnits>=requiredUnits?"eligible":"ineligible";
-    if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
+    const checked=await graduateSubmitCheck({civil,sectionId,termId:Number(resolved.link.AdTermId),proofToken:String(body.proofToken||""),reusableProofToken:reusableVerification?.proofToken});
+    if("error"in checked){res.status(checked.error.status).json(checked.error.body);return;}
+    passedUnits=checked.passedUnits;requiredUnits=checked.requiredUnits;degreeUnits=checked.degreeUnits;provenPlanId=checked.provenPlanId;graduateNameMatched=checked.nameMatched;eligibility=checked.eligibility;
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
     /* Graduate notes are mandatory, not an optional comment. The approved
        reason is the sortable machine field; these notes are the human reason
@@ -20270,6 +20291,8 @@ app.get("/q/:token", async (req: Request, res: Response) => {
     return;
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content=width=device-width,initial-scale=1><title>SCHEDULE</title><link rel=icon href=/schedule-icon.svg type=image/svg+xml><link rel=apple-touch-icon href=/schedule-icon-192.png></head><body><p dir=rtl>هذا الرابط ليس استبياناً.</p></body></html>"); return; }
+  /* الاستبيانُ صار «مساري»: الرابطُ القديم (المطبوعُ على لوحاتٍ) يفتح البابَ نفسَه. والتجريبيُّ يبقى على صفحته لأن صندوقه لا يُقرأ من /me. */
+  if (!isDemoLinkToken(String(req.params.token))) { res.redirect(302, "/me"); return; }
   res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res), await demoPageHint(resolved.link, "survey")));
 });
 
@@ -20306,6 +20329,24 @@ registerStudentDoorRoutes(app, {
   openIdentity: value => openStudentIdentity(value),
   identityKey: studentIdentityKey,
   isProduction: () => process.env.NODE_ENV === "production",
+  /* طلبُ الخريج في «مساري»: القواعدُ نفسُها التي يقرؤها الاستبيان القديم (واحدةٌ في الخادم). */
+  graduate: {
+    rule: async (sectionId: number, planId: string | undefined, termName: string) => {
+      const candidates = await graduationCandidatesForSection(sectionId);
+      const ruled = candidates.filter((row): row is PlanRuleCandidate & { rule: DegreeRule } => Boolean(row.rule));
+      if (!ruled.length) return { saved: false, summer: isSummerTerm(termName) };
+      const own = planId ? ruled.find(row => row.planId === planId) : undefined;
+      const thresholds = ruled.map(row => graduateThreshold(row.rule, termName)).filter(n => n > 0);
+      const picked = own || (ruled.length === 1 ? ruled[0] : undefined);
+      return { saved: true, summer: isSummerTerm(termName), threshold: picked ? graduateThreshold(picked.rule, termName) : undefined,
+        minThreshold: thresholds.length ? Math.min(...thresholds) : undefined, degreeUnits: picked ? Number(picked.rule.degreeUnits) : undefined };
+    },
+    proof: (input) => new Promise<{ status: number; body: any }>(resolve => {
+      const sink = { status: (code: number) => ({ json: (body: any) => resolve({ status: code, body }) }), json: (body: any) => resolve({ status: 200, body }) };
+      graduateProofCore(input, sink).catch((error: any) => resolve({ status: 500, body: { error: String(error?.message || "تعذّر التحقق من الصحيفة الآن. أعد المحاولة.") } }));
+    }),
+    submit: graduateSubmitCheck,
+  },
 });
 app.get(["/me", "/me/"], (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
