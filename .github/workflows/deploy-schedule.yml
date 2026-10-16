@@ -18,7 +18,7 @@ concurrency:
 jobs:
   deploy:
     name: Verify and deploy to schedule-863eb
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success')
     steps:
@@ -29,14 +29,14 @@ jobs:
 
       - name: Authenticate to Google Cloud with workload identity federation
         id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           project_id: schedule-863eb
           workload_identity_provider: projects/929900395059/locations/global/workloadIdentityPools/github/providers/schedule
           service_account: schedule-deployer@schedule-863eb.iam.gserviceaccount.com
 
       - name: Set up Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Build and publish one immutable image
         env:
