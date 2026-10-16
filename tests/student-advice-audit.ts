@@ -57,6 +57,7 @@ const base = (over: Partial<AdviceInput> = {}): AdviceInput => ({
 }
 {
   const chain = adviseStudent(base({ planCourseIds: [1, 2, 3, 4, 5], groups: [], rules: base().rules.filter(r => r.courseId <= 5), targetUnits: 6 }));
+  check(chain.path.length === chain.termsAfter && chain.path.every(u => u > 0 && u <= 6), "A5 مسارُ الرسم: وحداتُ كل فصلٍ لاحق", chain.path);
   check(chain.units <= 6 && chain.termsAfter !== null && chain.termsAfter >= 2, "A5 المحاكاةُ تعدّ الفصولَ التالية (٣ مستويات)", { units: chain.units, after: chain.termsAfter });
 }
 {

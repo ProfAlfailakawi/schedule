@@ -158,8 +158,16 @@
 .sm-none b{color:var(--ink);font-size:1rem}
 
 /* ── الرادار: أثر فتح الشعبة قبل اعتمادها ── */
-.sm-impact{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border-radius:12px;background:var(--success-soft,#e2f0e8)}
-.sm-impact b{font-size:.82rem;color:var(--success,#25684a)}
+.sm-impact{display:grid;gap:6px;padding:10px 12px;border-radius:14px;background:var(--success-soft,#e2f0e8)}
+.sm-impact b{display:inline-flex;align-items:center;gap:6px;font-size:.84rem;color:var(--success,#25684a)}
+.sm-impact b svg{width:15px;height:15px}
+.sm-impact small{color:var(--muted);font-size:.78rem}
+.sm-ba{display:grid;grid-template-columns:34px 1fr 38px;align-items:center;gap:8px;font-size:.8rem}
+.sm-ba span{color:var(--muted)}
+.sm-ba em{font-style:normal;font-weight:700;font-variant-numeric:tabular-nums;text-align:end}
+.sm-ba-bar{block-size:9px;border-radius:99px;background:#ffffffa6;overflow:hidden}
+.sm-ba-bar i{display:block;block-size:100%;border-radius:99px;background:var(--line-strong,#bbb);transition:inline-size .6s}
+.sm-ba-bar i.now{background:var(--success,#25684a)}
 
 /* ── قرارٌ سريع: بطاقةٌ واحدة ── */
 .qd-open{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--accent);color:var(--on-accent,#fff);font:inherit;font-weight:700;cursor:pointer;box-shadow:0 10px 22px -14px var(--accent);justify-self:start}
