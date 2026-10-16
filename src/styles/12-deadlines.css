@@ -456,6 +456,25 @@
 .pr-course-facts .pr-sum{font-size:.9rem}
 .pr-course-facts input{min-inline-size:0;inline-size:100%;min-block-size:42px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit}
 .pr-course-facts input:disabled{opacity:.72}
+/* The plan-review selects were left as the browser's bare control (square, black hairline,
+   no chevron). They take the same field skin as every other select in the program. */
+.pr-pickers select,.pr-grid select,.pr-course-facts select,.pr-field select,.pr-any select{
+  appearance:none;min-block-size:42px;max-inline-size:100%;padding:8px 12px;padding-inline-end:36px;
+  border:1px solid var(--line);border-radius:12px;background-color:var(--surface);color:var(--ink);font:inherit;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236d7873' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:left 12px center;background-size:14px 14px;text-overflow:ellipsis;
+}
+:root[data-theme="dark"] .pr-pickers select,:root[data-theme="dark"] .pr-grid select,:root[data-theme="dark"] .pr-course-facts select,:root[data-theme="dark"] .pr-field select,:root[data-theme="dark"] .pr-any select{
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2393a09a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+.pr-pickers select:hover:not(:disabled),.pr-grid select:hover:not(:disabled){border-color:var(--line-strong)}
+.pr-pickers select:focus-visible,.pr-grid select:focus-visible,.pr-course-facts select:focus-visible{border-color:var(--accent);box-shadow:var(--ring);outline:0}
+.pr-pickers select:disabled,.pr-grid select:disabled{opacity:.72}
+.pr-grid input:not([type="checkbox"]),.pr-field input:not([type="checkbox"]){
+  min-inline-size:0;inline-size:100%;min-block-size:42px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--ink);font:inherit;
+}
+.pr-grid input:not([type="checkbox"]):focus-visible,.pr-field input:not([type="checkbox"]):focus-visible{border-color:var(--accent);box-shadow:var(--ring);outline:0}
 @keyframes pr-modal-in{from{opacity:0}to{opacity:1}}
 @media(max-width:600px){.pr-modal-backdrop{align-items:end;padding:8px}.pr-course-dialog{inline-size:100%;max-block-size:92dvh;padding:16px;border-radius:22px 22px 12px 12px}.pr-course-dialog>header{margin:-16px -16px 0;padding:14px 16px;border-radius:22px 22px 0 0}}
 @media(prefers-reduced-motion:reduce){.pr-modal-backdrop{animation:none}}

@@ -56,3 +56,7 @@
   .stat-tiles .stat-tone>.stat-card,.changes-chip{transition:none}
   .stat-tiles .stat-tone>.stat-card:hover,.changes-chip:hover:not(:disabled){transform:none}
 }
+
+/* Occupancy map: the own-room tick is a straight brass line, not a curved bracket (the
+   name button carries a small radius for its hover that bent the edge into a ")"). */
+.occupancy-row.mine .occupancy-name{border-radius:0}

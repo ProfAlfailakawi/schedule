@@ -93,3 +93,13 @@
 /* ── Login: dark signature caption reaches 4.5:1 ────────────────────────── */
 :root[data-theme="dark"] .apex-login-signature,
 :root[data-theme="dark"] .apex-login-signature small{color:#b3beb8}
+
+/* ── System-administration tab rail (desktop) ─────────────────────────────────
+   Six plain tabs plus the page's action button were ≈ 80px wider than the rail, so the
+   last tab («النسخة الاحتياطية») was cut off at rest. Slightly closer gaps, padding and a
+   28px icon let all six sit in view; narrower rails still scroll as before. */
+@media screen and (min-width:769px){
+  .console-rail:has(.console-tab-plain){gap:4px;padding:6px}
+  .console-rail .console-tab-plain{flex:1 1 auto;min-width:auto;padding-inline:8px;gap:0 6px}
+  .console-rail .console-tab-plain .console-tab-icon{width:28px;height:28px;border-radius:10px}
+}
