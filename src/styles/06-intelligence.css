@@ -1716,6 +1716,10 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
   grid-template-columns:minmax(0,1fr) auto auto;
   align-items:center;
   gap:var(--s4) var(--s5);
+  /* The deck wears a background (17-beauty-schedule) but had no padding at
+     wide widths, so its last text line sat exactly on the frame's edge. */
+  padding:var(--s4) var(--s5);
+  border-radius:var(--r-lg);
 }
 .living-health-strip{
   display:flex;
