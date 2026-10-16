@@ -1919,7 +1919,19 @@ html[data-demo-admin-readonly="true"] .app-main::before{
     overflow-x:hidden!important;overflow-y:auto!important;
     -webkit-overflow-scrolling:touch;
   }
-  .apex-login-stage{overflow:visible!important;flex:1 0 auto!important}
+  /* Root cause of the heading hidden under the card on Chrome iPhone: the
+     heading is placed in the stage's minmax(0,1fr) row, which may shrink to
+     zero. With iPhone's taller card and shorter visible screen that row was
+     squeezed and the card slid over «يبدأ من قرار». Every row now sizes to
+     its content; if the whole screen is taller than what is visible, the
+     login scrolls (above) instead of overlapping. */
+  .apex-login-stage{
+    overflow:visible!important;flex:1 0 auto!important;
+    height:auto!important;min-height:0!important;
+    grid-template-rows:none!important;grid-auto-rows:auto!important;
+  }
+  /* Arabic glyphs overflow a line-height under 1 (measured 10px below the box). */
+  .apex-login-story h1{line-height:1.15!important}
   .apex-login[data-short="true"] .apex-login-stage{gap:7px!important;padding:3px 0!important}
   .apex-login[data-short="true"] .apex-login-kicker,
   .apex-login[data-short="true"] .apex-login-principles,
