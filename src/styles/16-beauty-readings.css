@@ -60,3 +60,9 @@
 /* Occupancy map: the own-room tick is a straight brass line, not a curved bracket (the
    name button carries a small radius for its hover that bent the edge into a ")"). */
 .occupancy-row.mine .occupancy-name{border-radius:0}
+
+/* Registry summary on a phone is two columns; with an odd count the last tile sat alone in the left
+   half with an empty hole beside it. It now takes the full row. */
+@media screen and (max-width:640px){
+  .stat-tiles[aria-label="ملخّص الكشف"]>.stat-tone:last-child:nth-child(odd){grid-column:1/-1}
+}
