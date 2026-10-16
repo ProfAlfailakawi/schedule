@@ -148,13 +148,6 @@ button,input{font:inherit;color:inherit}
 .opt.off{opacity:.55}
 .grp{margin:10px 2px 2px;font-size:12.5px;font-weight:700;color:var(--brass);letter-spacing:.02em}
 .track-picks{display:grid;gap:9px;margin-block-start:14px}
-.section-campus{margin-block-start:10px;border:1px solid var(--line);border-radius:16px;background:var(--card);overflow:hidden}
-.section-campus>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-block-size:54px;padding:10px 14px;cursor:pointer;font-weight:700;list-style:none}
-.section-campus>summary::-webkit-details-marker{display:none}
-.section-campus>summary::after{content:"＋";color:var(--accent);font-size:18px}
-.section-campus[open]>summary::after{content:"−"}
-.section-campus>summary small{margin-inline-start:auto;color:var(--muted);font-size:12px;font-weight:500}
-.section-campus>.list{padding:0 10px 10px}
 .grad-estimate{padding-block-start:8px;border-block-start:1px solid var(--line)}
 .srch{position:relative}
 .srch .i{position:absolute;inset-inline-start:14px;inset-block-start:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
@@ -377,7 +370,7 @@ function viewCreate(){
 function afterSignIn(){S.civil="";api("GET","/api/public/me/state").then(function(r){if(r.ok){S.state=r.d;setTop()}S.draft=null;S.offered=null;setView(S.state&&S.state.profile&&S.state.profile.setupDone?"home":"setup")})}
 
 /* ── إعداد الملف: القسم ← الصحيفة ← ما أنجزت ── */
-function ensureCatalog(cb){if(!S.track)return cb();if(S.catalog)return cb();api("GET","/api/public/me/catalog?track="+encodeURIComponent(S.track)).then(function(r){S.catalog=r.ok?r.d.colleges:[];cb()})}
+function ensureCatalog(cb){if(!S.track)return cb();if(S.catalog)return cb();api("GET","/api/public/me/catalog?track="+encodeURIComponent(S.track)).then(function(r){S.catalog=r.ok?r.d.specializations:[];cb()})}
 function startDraft(){var p=S.state.profile||{};S.draft={sectionId:p.sectionId||0,sectionName:p.sectionName||"",planId:p.planId||"",passed:(p.passedCourseIds||[]).slice(),step:1,q:"",filter:"all"};return S.draft}
 function viewSetup(){var d=S.draft||startDraft();ensureCatalog(function(){if(d.step===1)setupSection();else if(d.step===2)setupPlan();else setupPassed()})}
 function stepsBar(n,total){var h='<div class="steps" aria-hidden="true">';for(var i=1;i<=total;i++)h+='<i class="'+(i<n?"on":i===n?"now":"")+'"></i>';return h+'</div>'}
@@ -386,9 +379,9 @@ function setupSection(){var d=S.draft;
     app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">اختر مسار الدراسة</h1><p class="muted">اختر البنين أو البنات، ثم يظهر لك دليل الأقسام المناسب فقط.</p><div class="track-picks"><button type="button" class="opt" data-track="boys"><span class="tx"><b>مسار البنين</b><small>أقسام كلية التربية الأساسية</small></span>'+ic("back")+'</button><button type="button" class="opt" data-track="girls"><span class="tx"><b>مسار البنات</b><small>أقسام كلية التربية الأساسية</small></span>'+ic("back")+'</button></div>';
     app.querySelectorAll("[data-track]").forEach(function(b){b.addEventListener("click",function(){S.track=b.getAttribute("data-track");history.replaceState(null,"","/me?track="+encodeURIComponent(S.track));S.catalog=null;viewSetup()})});return;
   }
-  app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">ما قسمك العلمي؟</h1><p class="muted">اختر القسم الذي تدرس فيه.</p><div class="srch" style="margin-block-start:12px">'+ic("search")+'<input class="inp" id="q" type="search" placeholder="ابحث باسم القسم" aria-label="ابحث باسم القسم" autocomplete="off"></div><div id="lst" class="list" style="margin-block-start:12px"></div>';
+  app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">ما تخصصك؟</h1><p class="muted">اختر تخصصك العلمي للمتابعة.</p><div class="srch" style="margin-block-start:12px">'+ic("search")+'<input class="inp" id="q" type="search" placeholder="ابحث باسم التخصص" aria-label="ابحث باسم التخصص" autocomplete="off"></div><div id="lst" class="list" style="margin-block-start:12px"></div>';
   var lst=document.getElementById("lst"),q=document.getElementById("q");
-  function paint(){var t=q.value.trim(),h="",any=false;(S.catalog||[]).forEach(function(c){var items=c.sections.filter(function(s){return!t||(s.name+" "+c.campus).indexOf(t)>=0});if(!items.length)return;any=true;h+='<details class="section-campus"'+(t?' open':'')+'><summary>'+esc(c.campus)+'<small>'+countOf(items.length,AR.section)+'</small></summary><div class="list">';items.forEach(function(s){h+='<button type="button" class="opt" data-id="'+s.id+'" data-n="'+esc(s.name)+'" aria-pressed="'+(d.sectionId===s.id?"true":"false")+'"><span class="tx"><b>'+esc(s.name)+'</b></span>'+ic("back")+'</button>'});h+='</div></details>'});lst.innerHTML=any?h:'<p class="muted">لا قسم بهذا الاسم في هذا المسار.</p>'}
+  function paint(){var t=q.value.trim(),h="",items=(S.catalog||[]).filter(function(s){return!t||s.name.indexOf(t)>=0});items.forEach(function(s){h+='<button type="button" class="opt" data-id="'+s.id+'" data-n="'+esc(s.name)+'" aria-pressed="'+(d.sectionId===s.id?"true":"false")+'"><span class="tx"><b>'+esc(s.name)+'</b></span>'+ic("back")+'</button>'});lst.innerHTML=h||'<p class="muted">لا تخصص بهذا الاسم في هذا المسار.</p>'}
   q.addEventListener("input",paint);paint();
   lst.addEventListener("click",function(e){var b=e.target.closest(".opt");if(!b)return;var id=Number(b.getAttribute("data-id"));if(id!==d.sectionId){d.passed=[];d.planId=""}d.sectionId=id;d.sectionName=b.getAttribute("data-n");d.plans=null;
     api("GET","/api/public/me/plan?sectionId="+id).then(function(r){if(!r.ok){toast(r.d.error||"تعذّر تحميل القسم",true);return}S.plans=r.d.plans;S.planSource=r.d.source;

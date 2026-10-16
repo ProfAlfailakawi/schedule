@@ -361,7 +361,17 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       })).filter(college => college.sections.length).sort((a, b) => byArabic(a.name, b.name));
     });
     const basicEducation = data.filter(college => college.name.includes("التربية الأساسية") && (!track || (track === "boys" ? college.name.includes("بنين") : college.name.includes("بنات"))));
-    res.setHeader("Cache-Control", "public, max-age=300"); res.json({ track: track || null, colleges: track ? basicEducation : [], tracks: ["boys", "girls"] });
+    const campusOrder = (campus: string) => campus === "المقر الرئيسي" ? 0 : campus === "الجهراء" ? 1 : 2;
+    const bySpecialty = new Map<string, { id: number; name: string }>();
+    basicEducation.slice().sort((a, b) => campusOrder(a.campus) - campusOrder(b.campus) || byArabic(a.name, b.name)).forEach(college => {
+      college.sections.forEach(section => {
+        const name = section.name.normalize("NFKC").replace(/\s+/g, " ").trim();
+        const key = name.toLocaleLowerCase("ar");
+        if (name && !bySpecialty.has(key)) bySpecialty.set(key, { id: section.id, name });
+      });
+    });
+    const specializations = [...bySpecialty.values()].sort((a, b) => byArabic(a.name, b.name));
+    res.setHeader("Cache-Control", "public, max-age=300"); res.json({ track: track || null, specializations: track ? specializations : [], tracks: ["boys", "girls"] });
   });
 
   /* ── صحيفةُ قسمٍ: الصحائف ومقرراتها ─────────────────────────────────────── */

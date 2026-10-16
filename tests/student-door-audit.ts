@@ -232,8 +232,8 @@ check(studentHomeSource.includes("/api/public/me/request-context") && studentHom
     users: [], formNames: [], formSecurity: [], collegeUserAssign: [],
     terms: [{ AdTermId: 1, AdTermName: MARK, AdTermStart: "2026-09-13", AdTermWeeks: 14, AdTermClosed: false, AdTermSubmissionDeadline: add(today, -8),
       AdTermStudentPhases: { wishesOpen: add(today, -3), wishesClose: add(today, 10), rounds: [{ id: "r1", name: "مبكر", start: add(today, 16), end: add(today, 22) }], requestsClose: add(today, 60) } }],
-    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية التربية الأساسية — بنين" }, { AdCollegeId: 2, AdCollegeCode: "EDUG", AdCollegeName: "كلية التربية الأساسية — بنات" }],
-    sections: [{ AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }, { AdSectionId: 21, AdCollegeId: 2, AdSectionCode: "PSY", AdSectionName: "قسم علم النفس" }],
+    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية التربية الأساسية — بنين" }, { AdCollegeId: 2, AdCollegeCode: "EDUG", AdCollegeName: "كلية التربية الأساسية — بنات" }, { AdCollegeId: 3, AdCollegeCode: "EDUJ", AdCollegeName: "كلية التربية الأساسية — بنات — الجهراء" }],
+    sections: [{ AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }, { AdSectionId: 21, AdCollegeId: 2, AdSectionCode: "PSY", AdSectionName: "قسم علم النفس" }, { AdSectionId: 22, AdCollegeId: 3, AdSectionCode: "PSY", AdSectionName: "قسم علم النفس" }],
     instructors: [{ AdInstructorId: 1, AdInstructorName: "د. تجريبي", AdInstructorCivil: "", AdInstructorMobile: "" }],
     courses, curriculumPlans: [
       { id: "p-11-new", AdCollegeId: 1, AdSectionId: 11, name: "الجديدة", status: "active", createdAt: "2026-02-01" },
@@ -291,9 +291,10 @@ check(studentHomeSource.includes("/api/public/me/request-context") && studentHom
       const cat = (await http("GET", "/api/public/me/catalog")).json;
       const boys = (await http("GET", "/api/public/me/catalog?track=boys")).json;
       const girls = (await http("GET", "/api/public/me/catalog?track=girls")).json;
-      check(cat.colleges.length === 0 && cat.tracks.join() === "boys,girls", "D6 لا تظهر كل الكليات قبل اختيار المسار");
-      check(boys.colleges.length === 1 && boys.colleges[0].sections.length === 2 && boys.colleges[0].name.includes("بنين"), "D6 مسار البنين يعرض أقسامه فقط");
-      check(girls.colleges.length === 1 && girls.colleges[0].sections.length === 1 && girls.colleges[0].sections[0].name === "قسم علم النفس", "D6 مسار البنات يعرض أقسامه فقط");
+      check(cat.specializations.length === 0 && cat.tracks.join() === "boys,girls", "D6 لا تظهر كل الكليات قبل اختيار المسار");
+      check(boys.specializations.length === 2 && boys.specializations.some((item: any) => item.name === "قسم التربية الإسلامية"), "D6 مسار البنين يعرض التخصصات فقط");
+      check(girls.specializations.length === 1 && girls.specializations[0].name === "قسم علم النفس" && girls.specializations[0].id === 21, "D6 تخصص واحد بلا تكرار بين المواقع، ومعرّف القسم الداخلي محفوظ");
+      check(!JSON.stringify(girls).includes("الجهراء") && !JSON.stringify(girls).includes("المقر الرئيسي"), "D6 الطالب لا يرى اسم المقر أو الموقع في قائمة التخصصات");
       const plan = (await http("GET", "/api/public/me/plan?sectionId=11")).json;
       check(plan.source === "plan" && plan.plans.length === 2 && plan.plans[0].courses.length > 0, "D6 صحيفتان لقسمٍ انتقاليّ", plan.plans?.map((p: any) => p.courses.length));
       check((await http("PUT", "/api/public/me/profile", { sectionId: 999, passedCourseIds: [] })).json.code === "bad-section", "D6 قسمٌ غير موجود");
@@ -415,8 +416,9 @@ check(studentHomeSource.includes("/api/public/me/request-context") && studentHom
     "طلب التعارض يُرفض إن لم تثبت جداول منشورة مكتملة وجود تعارض غير قابل للحل");
   check(routes.includes("alternativesFor(item.courseId, item.offeringId)") && routes.includes("context.signed.has"),
     "بدائل خطة الطالب تقتصر على شعب من خططه المحاكاة وجداول أقسامها الموقعة");
-  check(page.includes('name="crcourse"') && page.includes("conflictPairs") && page.includes("للأقسام المعنية"),
-    "واجهة مساري تسمح باختيار عدة مقررات وتوضح إرسال أجزاء الحالة لمالكيها");
+  check(page.includes("ما تخصصك؟") && page.includes("ابحث باسم التخصص") && page.includes("r.d.specializations")
+    && !page.includes("section-campus") && page.includes('name="crcourse"') && page.includes("conflictPairs") && page.includes("للأقسام المعنية"),
+    "واجهة مساري تختار التخصص فقط بلا مواقع، وتدعم الطلبات والمعاينة الشخصية");
   check(page.includes("ticket-alt-select") && page.includes("S.tkOverrides") && page.includes("هذه الشعبة تتعارض مع مقرر آخر")
     && page.includes("التعديل معاينة شخصية لا تغيّر جدول القسم"),
     "الطالب يجرب شعبة بديلة ويتلقى منع التعارض دون حفظ مسودة القسم");
