@@ -36,6 +36,8 @@ export interface Advice {
   target: number;
   /** فصولٌ بعد هذا الفصل لإكمال الصحيفة بهذا النسق، أو null إن لم تكتمل بالقواعد الحالية. */
   termsAfter: number | null;
+  /** وحداتُ كل فصلٍ بعد هذا الفصل (للرسم: خطُّ الطريق إلى التخرّج). */
+  path: number[];
   waiting: AdviceWait[];
   notOffered: string[];
   line: string;
@@ -140,12 +142,14 @@ export function adviseStudent(input: AdviceInput): Advice {
 
   /* فصولٌ بعد هذا: يُفترض أن المطروح يتّسع (لا نعرف جداول المستقبل). */
   let termsAfter: number | null = 0;
+  const path: number[] = [];
   while (stillNeeded(have)) {
     if ((termsAfter as number) >= MAX_TERMS) { termsAfter = null; break; }
     const next = pickTerm(have, units, false);
     if (!next.length) { termsAfter = null; break; }
     commit(next, have);
-    units += next.reduce((sum, id) => sum + credit(id), 0);
+    const termUnits = next.reduce((sum, id) => sum + credit(id), 0);
+    units += termUnits; path.push(termUnits);
     termsAfter = (termsAfter as number) + 1;
   }
 
@@ -179,5 +183,5 @@ export function adviseStudent(input: AdviceInput): Advice {
       : termsAfter === null ? "ولا تكتمل صحيفتك من هذه الخطوات وحدها — راجع مرشدك."
       : `وإن واصلت بهذا النسق تتخرّج بعد نحو ${countOf(termsAfter, AR.term)} أخرى.`;
   }
-  return { hasRules: input.rules.length > 0, done, picks, units: pickUnits, target, termsAfter, waiting, notOffered, line, tail };
+  return { hasRules: input.rules.length > 0, done, picks, units: pickUnits, target, termsAfter, path: termsAfter === null ? [] : path, waiting, notOffered, line, tail };
 }
