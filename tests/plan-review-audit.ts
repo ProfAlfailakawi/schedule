@@ -113,10 +113,12 @@ const ctx = (plan: number[]) => ({
     "R6 المقارنة تعرض المستويات وتتيح البحث والفلاتر داخل الصفحة نفسها");
   check(source.includes("ancestry.up") && source.includes("ancestry.down") && source.includes("reference-selected-links"),
     "R6 اختيار مقرر يبرز المتطلبات السابقة والمقررات التي تعتمد عليه");
-  check(source.includes('aria-label="نوع المقرر"') && source.includes('aria-label="المجموعة"') && source.includes('aria-label="حالة المطابقة"'),
-    "R6 فلاتر التصنيف والمجموعة وحالة المطابقة قابلة للوصول");
+  check(source.includes('aria-label="أقسام الصحيفة"') && source.includes('role="tab"') && source.includes('aria-label="المجموعة"') && source.includes('aria-label="حالة المطابقة"'),
+    "R6 تبويب أقسام الصحيفة (ثقافة عامة/تخصصية/مهنية/تدريب) والمجموعة وحالة المطابقة قابلة للوصول");
   check(source.includes("reference-guide") && source.includes("reference-level-toggle") && source.includes("reference-course-group-block"),
     "R6 القراءة البصرية مختصرة: دليل الربط مطوي والمستويات ومجموعاتها قابلة للفتح");
+  const approveUi = read("src/components/PlanReview.tsx");
+  check(approveUi.includes("setConfirmApprove(true)") && approveUi.includes("تأكيد اعتماد الصحيفة") && approveUi.includes("تختفي أيقونةُ «مراجعة الصحيفة»") && !/PrimaryButton[^>]*onClick=\{\(\) => act\("\/api\/plan-review\/approve"/.test(approveUi), "R6 «اعتماد الصحيفة» يمرّ بتأكيدٍ يقول إن الأيقونة تختفي وتعود إن عُدّلت");
   const reviewUi = read("src/components/PlanReview.tsx");
   check(reviewUi.includes("pr-level-chip") && reviewUi.includes("pr-level-head") && reviewUi.includes("aria-expanded={expandedLevels.includes(level)}"),
     "R6 صحيفة المراجعة تعرض توزيعًا مصورًا وتفتح مقررات المستوى عند الحاجة");

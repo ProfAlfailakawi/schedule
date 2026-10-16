@@ -9,6 +9,9 @@
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
+import { arabicMatchKey } from "../utils/arabicText";
+/* اسمُ القسم في القائمة يحمل كليته («قسم تكنولوجيا التعليم · التربية الأساسية - بنات»): يُطابَق بالاحتواء. */
+const isTechnologyEducation = (label: string) => arabicMatchKey(label).includes(arabicMatchKey("تكنولوجيا التعليم"));
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, BookOpenCheck, CheckCircle2, ChevronDown, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
@@ -24,7 +27,7 @@ interface Status {
   canApprove: boolean;
   canImport?: boolean;
 }
-interface CourseRow { id: number; code: string; name: string; credit: number; hours: number; capacity: number; collegeId: number; sectionId: number; ownerSectionName: string; owned: boolean }
+interface CourseRow { id: number; code: string; name: string; credit: number; hours: number; capacity: number; collegeId: number; sectionId: number; ownerSectionName: string; owned: boolean; external?: boolean }
 interface View {
   plan: { id: string; name: string; sectionId: number; sectionName: string };
   courses: CourseRow[];
@@ -131,6 +134,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
+  const [confirmApprove, setConfirmApprove] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -220,6 +224,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
+  const isTechSection = isTechnologyEducation(status?.sections.find(s => s.sectionId === sectionId)?.sectionName || "");
   const sel = view?.courses.find(c => c.id === selected);
 
   return (
@@ -229,20 +234,25 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
       {status?.canImport ? <ImportPanel onDone={() => { void loadStatus().then(() => window.dispatchEvent(new Event("schedule:plan-review-updated"))); }} /> : null}
       {!status?.sections.length ? <EmptyState title="لا صحائف في نطاقك" detail="تظهر هنا صحائف الأقسام التي تملك نطاقها." /> : (
         <>
-          <div className="pr-pickers">
-            {status.sections.length > 1 ? (
-              <select aria-label="القسم" value={sectionId} onChange={e => { const s = status.sections.find(x => x.sectionId === Number(e.target.value)); setSectionId(Number(e.target.value)); setPlanId(s?.plans[0]?.id || ""); }}>
-                {status.sections.map(s => <option key={s.sectionId} value={s.sectionId}>{s.sectionName}{status.pending.some(p => p.sectionId === s.sectionId) ? " • بانتظار المراجعة" : ""}</option>)}
-              </select>
-            ) : <strong className="pr-sec">{status.sections[0].sectionName}</strong>}
-            <div className="pr-plans" role="tablist">
-              {sectionPlans.map(p => (
-                <button key={p.id} type="button" role="tab" aria-selected={p.id === planId} className={`pr-plan${p.id === planId ? " on" : ""}`} onClick={() => setPlanId(p.id)} data-guide-ignore="تبديلُ الصحيفة داخل شاشةٍ مسجّلة في المرشد باسم page.planReview">{p.name}</button>
-              ))}
+          {!isTechSection ? (
+            <div className="pr-pickers">
+              {status.sections.length > 1 ? (
+                <select aria-label="القسم" value={sectionId} onChange={e => { const s = status.sections.find(x => x.sectionId === Number(e.target.value)); setSectionId(Number(e.target.value)); setPlanId(s?.plans[0]?.id || ""); setSelected(0); }}>
+                  {status.sections.map(s => <option key={s.sectionId} value={s.sectionId}>{s.sectionName}{status.pending.some(p => p.sectionId === s.sectionId) ? " • بانتظار المراجعة" : ""}</option>)}
+                </select>
+              ) : <strong className="pr-sec">{status.sections[0].sectionName}</strong>}
+              <div className="pr-plans" role="tablist">
+                {sectionPlans.map(p => (
+                  <button key={p.id} type="button" role="tab" aria-selected={p.id === planId} className={`pr-plan${p.id === planId ? " on" : ""}`} onClick={() => setPlanId(p.id)} data-guide-ignore="تبديلُ الصحيفة داخل شاشة مراجعة الصحيفة؛ لا يكتب شيئاً">{p.name}{p.pending ? " • قيد المراجعة" : ""}</button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
-          <CurriculumReferenceReview sectionId={sectionId} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
+          <CurriculumReferenceReview sectionId={sectionId} canApply={Boolean(status?.canImport)}
+            onPick={(id, _ref, plan) => { setSectionId(id); const own = status.sections.find(x => x.sectionId === id); setPlanId(plan || own?.plans[0]?.id || ""); setSelected(0); }}
+            others={status.sections.filter(x => !isTechnologyEducation(x.sectionName)).map(x => ({ sectionId: x.sectionId, label: x.sectionName }))}
+            onPickOther={id => { const own = status.sections.find(x => x.sectionId === id); setSectionId(id); setPlanId(own?.plans[0]?.id || ""); setSelected(0); }} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
           {!planId ? <EmptyState title="لم تُجهّز صحيفة تشغيلية بعد" detail="المرجع المرفق متاح للمطابقة. إنشاء الصحيفة وربط مقرراتها يسبق اعتماد قواعدها." /> : !view ? <MicroLoader /> : (
             <>
               <div className={`pr-state ${view.state.status}`}>
@@ -252,11 +262,32 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                   <small>{view.state.status === "approved" ? `${view.state.approvedBy || ""}` : view.state.updatedBy ? `آخر تعديل: ${view.state.updatedBy}` : "لم تُعدَّل بعد"}</small>
                 </div>
                 {view.can.approve && view.state.status === "review" ? (
-                  <PrimaryButton disabled={busy || view.blockers > 0} onClick={() => act("/api/plan-review/approve", "POST", { updatedAt: view.state.updatedAt })} data-guide-ignore="اعتمادُ الصحيفة داخل شاشةٍ مسجّلة في المرشد باسم page.planReview">
+                  <PrimaryButton disabled={busy || view.blockers > 0} onClick={() => setConfirmApprove(true)} data-guide-ignore="اعتمادُ الصحيفة داخل شاشةٍ مسجّلة في المرشد باسم page.planReview">
                     <CheckCircle2 size={16} /> اعتماد الصحيفة
                   </PrimaryButton>
                 ) : null}
               </div>
+
+              {view.courses.some(c => c.external) ? (
+                <p className="pr-ext-note" role="status"><Lock size={14} aria-hidden="true" /> {countOf(view.courses.filter(c => c.external).length, AR.course)} عامّاً ({countOf(view.courses.filter(c => c.external).reduce((sum, c) => sum + c.credit, 0), AR.unit)}) تُحتسب في صحيفتك وتبقى لأقسامها: تراها ولا تعدّلها.</p>
+              ) : null}
+              {confirmApprove ? (
+                <div className="pr-confirm" role="alertdialog" aria-modal="false" aria-labelledby="pr-confirm-title">
+                  <span className="pr-confirm-ic" aria-hidden="true"><ShieldCheck /></span>
+                  <div>
+                    <b id="pr-confirm-title">تأكيد اعتماد الصحيفة</b>
+                    <ul>
+                      <li>تصير الصحيفة معتمدة (إصدار {view.state.version + 1}) وتصل المحرّك وبابَ الطالب.</li>
+                      <li>تختفي أيقونةُ «مراجعة الصحيفة» من القسم إن لم تبقَ صحيفةٌ أخرى قيد المراجعة.</li>
+                      <li>وتعود الأيقونةُ إن عُدّلت الصحيفةُ لاحقاً (تعود قيد المراجعة).</li>
+                    </ul>
+                  </div>
+                  <div className="pr-confirm-actions">
+                    <PrimaryButton disabled={busy} onClick={async () => { await act("/api/plan-review/approve", "POST", { updatedAt: view.state.updatedAt }); setConfirmApprove(false); }} data-guide-ignore="تأكيدُ اعتماد الصحيفة داخل شاشة مراجعة الصحيفة">نعم، اعتمد</PrimaryButton>
+                    <SecondaryButton disabled={busy} onClick={() => setConfirmApprove(false)} data-guide-ignore="تراجعٌ عن اعتماد الصحيفة دون أي تغيير">تراجع</SecondaryButton>
+                  </div>
+                </div>
+              ) : null}
 
               {view.issues.length ? (
                 <ul className="pr-issues">
@@ -292,6 +323,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                       return (
                         <button key={id} type="button" className={cls} onClick={() => setSelected(selected === id ? 0 : id)} data-guide-ignore="بطاقةُ مقررٍ داخل خريطة شاشةٍ مسجّلة في المرشد باسم page.planReview">
                           <b>{c.code}</b><span>{c.name}</span>
+                          {c.external ? <em className="pr-ext" title={`مقرر عام يملكه ${c.ownerSectionName || "قسمٌ آخر"}`}>عام</em> : null}
                           <i>{countOf(c.credit, AR.unit)}{rule?.prereq ? " · " : ""}{rule?.prereq ? <Link2 size={11} /> : null}{c.owned ? null : <Lock size={11} />}</i>
                         </button>
                       );
@@ -366,7 +398,7 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave, onSav
         <div id="pr-course-dialog-title"><bdi dir="ltr">{course.code}</bdi> · {course.name}</div>
         <button type="button" aria-label="إغلاق" onClick={onClose} data-guide-ignore="إغلاقُ محرّر المقرر داخل شاشةٍ مسجّلة في المرشد باسم page.planReview"><X size={16} /></button>
       </header>
-      {!course.owned ? <Notice type="info" inline><Lock size={14} /> هذا المقرر من {course.ownerSectionName || "قسمٍ آخر"} — يعدّل قواعده قسمُه.</Notice> : null}
+      {!course.owned ? <Notice type="info" inline><Lock size={14} /> {course.external ? "متطلبٌ عام: " : "هذا المقرر من "}{course.ownerSectionName || "قسمٍ آخر"} — {course.external ? "يُحتسب في صحيفتك ويعدّله قسمُه." : "يعدّل قواعده قسمُه."}</Notice> : null}
       <section className="pr-course-facts" aria-label="بيانات المقرر الأكاديمية">
         <p className="pr-sum">بيانات المقرر · تظهر في الصحيفة القديمة والجديدة إذا كان السجل مشتركًا</p>
         <div className="pr-grid">

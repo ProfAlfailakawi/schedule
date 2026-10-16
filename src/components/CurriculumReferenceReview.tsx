@@ -1,10 +1,11 @@
 import { AR, countOf } from "../utils/arabicCount";
-import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, BookOpen, Check, ChevronDown, GraduationCap, Layers3, Link2, Search, SlidersHorizontal } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, BookOpen, Check, ChevronDown, GraduationCap, Layers3, Link2, Search } from "lucide-react";
 import type { compareCurriculumReference } from "../utils/curriculumReference";
 import type { CurriculumReference } from "../data/technologyEducationCurricula";
 import { courseLevelFromCode } from "../utils/curriculumRules";
 import { Notice } from "./ui";
+import ReferenceApplyPanel from "./ReferenceApplyPanel";
 
 type Reference = Omit<CurriculumReference, "groups"> & { planId: string | null; groups: Array<Omit<ReturnType<typeof compareCurriculumReference>[number], "courses"> & { courses: Array<ReturnType<typeof compareCurriculumReference>[number]["courses"][number] & { ownerSectionId: number; ownerSectionName: string; ownerCollegeId: number }> }> };
 type SectionResult = { sectionId: number; collegeId: number; collegeName: string; sectionName: string; references: Reference[] };
@@ -16,7 +17,13 @@ const statusLabels: Record<string, string> = { matched: "مطابق", different:
 const statusIcon = (state: string) => state === "matched" ? <Check size={14} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />;
 const plainCode = (value: string) => String(value || "").replace(/\s+/g, "").toUpperCase();
 
-export default function CurriculumReferenceReview({ sectionId, onCatalogAction }: { sectionId: number; onCatalogAction?: (action: CatalogAction) => void }) {
+export default function CurriculumReferenceReview({ sectionId, onCatalogAction, canApply, onPick, others, onPickOther }: {
+  sectionId: number; onCatalogAction?: (action: CatalogAction) => void; canApply?: boolean;
+  /** اختيارُ موقعٍ أو نسخةٍ هنا يقود الصفحةَ كلَّها: لا منتقيَ ثانياً فوقها. */
+  onPick?: (sectionId: number, referenceId: string, planId: string | null) => void;
+  /** أقسامٌ ليس لها مرجع (للانتقال إليها من القائمة نفسها). */
+  others?: Array<{ sectionId: number; label: string }>; onPickOther?: (sectionId: number) => void;
+}) {
   const [sections, setSections] = useState<SectionResult[]>([]);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("new");
@@ -28,16 +35,22 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
   const [query, setQuery] = useState("");
   const [focusedCode, setFocusedCode] = useState("");
   const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
+  const [reload, setReload] = useState(0);
 
+  const loadedAt = useRef(-1);
   useEffect(() => {
-    let active = true; setSections([]); setSelectedSectionId(sectionId); setError(""); setFocusedCode("");
+    let active = true; setError(""); setFocusedCode("");
+    /* الموقعُ المطلوب ضمن ما حُمّل: لا إعادة جلب (يقود المنتقي الواحد الصفحةَ). */
+    if (sections.some(row => row.sectionId === sectionId) && loadedAt.current === reload) { setSelectedSectionId(sectionId); return; }
+    loadedAt.current = reload;
+    setSections([]); setSelectedSectionId(sectionId);
     if (!sectionId) return;
     fetch(`/api/plan-review/reference?sectionId=${sectionId}`, { cache: "no-store" }).then(async response => {
       const body = await response.json(); if (!response.ok) throw new Error(body.error || "تعذرت مقارنة الصحيفة");
       if (active) setSections([...new Map((body.sections || []).map((row: SectionResult) => [Number(row.sectionId), row])).values()]);
     }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
-  }, [sectionId]);
+  }, [sectionId, reload]);
 
   const references = sections.find(row => row.sectionId === selectedSectionId)?.references || [];
   const reference = references.find(row => row.id === selected);
@@ -101,11 +114,19 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
         <h2>صحيفة التخرج</h2><p>{reference.program} · مقارنة مرجعية لا تغيّر البيانات أو تعتمدها.</p>
       </div></div>
       <div className="curriculum-reference-controls">
-        {sections.length > 1 ? <label>القسم والكلية <select aria-label="القسم والكلية" value={selectedSectionId} onChange={event => { setSelectedSectionId(Number(event.target.value)); setFocusedCode(""); }}>
+        {sections.length > 1 || others?.length ? <label>القسم والكلية <select aria-label="القسم والكلية" value={selectedSectionId} onChange={event => {
+          const value = event.target.value;
+          if (value.startsWith("other:")) { onPickOther?.(Number(value.slice(6))); return; }
+          const id = Number(value);
+          setSelectedSectionId(id); setFocusedCode("");
+          const next = sections.find(row => row.sectionId === id)?.references.find(row => row.id === selected) || sections.find(row => row.sectionId === id)?.references[0];
+          onPick?.(id, selected, next?.planId || null);
+        }}>
           {sections.map(row => <option key={row.sectionId} value={row.sectionId}>{row.collegeName} · {row.sectionName}</option>)}
+          {others?.length ? <optgroup label="أقسام أخرى">{others.map(row => <option key={row.sectionId} value={`other:${row.sectionId}`}>{row.label}</option>)}</optgroup> : null}
         </select></label> : null}
         <div className="curriculum-reference-tabs" role="tablist" aria-label="نسخة الصحيفة">
-          {references.map(row => <button key={row.id} type="button" role="tab" aria-selected={row.id === selected} onClick={() => { setSelected(row.id); setFocusedCode(""); }} data-guide-ignore="اختيار الصحيفة المصدرية داخل مراجعة الصحيفة">{row.name}</button>)}
+          {references.map(row => <button key={row.id} type="button" role="tab" aria-selected={row.id === selected} onClick={() => { setSelected(row.id); setFocusedCode(""); onPick?.(selectedSectionId, row.id, row.planId); }} data-guide-ignore="اختيار الصحيفة المصدرية داخل مراجعة الصحيفة">{row.name}</button>)}
         </div>
       </div>
     </header>
@@ -117,9 +138,19 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
       <div className={`reference-summary-item${missing ? " is-missing" : ""}`}><span className="reference-summary-icon"><AlertCircle size={17} /></span><span><small>تحتاج متابعة</small><b>{countOf(missing + review, AR.course)}</b></span></div>
     </div>
 
+    <div className="reference-sections" role="tablist" aria-label="أقسام الصحيفة">
+      {["all", ...categoryOptions].map(option => {
+        const rows = option === "all" ? entries : entries.filter(row => row.category === option);
+        return <button key={option} type="button" role="tab" aria-selected={category === option} className={category === option ? "on" : ""} onClick={() => setCategory(option)} data-guide-ignore="تصفية مقررات الصحيفة بحسب قسمها: ثقافة عامة وتخصصية ومهنية وتدريب ميداني">
+          <b>{option === "all" ? "كل الأقسام" : option}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small>
+        </button>;
+      })}
+    </div>
+
+    {canApply ? <ReferenceApplyPanel key={`${selectedSectionId}:${reference.id}`} referenceId={reference.id} referenceName={reference.name} onApplied={() => setReload(n => n + 1)} /> : null}
+
     <div className="reference-filterbar" aria-label="تصفية المقررات">
       <label className="reference-search"><Search size={16} aria-hidden="true" /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="ابحث باسم المقرر أو رمزه" aria-label="ابحث باسم المقرر أو رمزه" /></label>
-      <label><SlidersHorizontal size={15} aria-hidden="true" /><select aria-label="نوع المقرر" value={category} onChange={event => setCategory(event.target.value)}><option value="all">كل التصنيفات</option>{categoryOptions.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
       <label><Layers3 size={15} aria-hidden="true" /><select aria-label="المجموعة" value={groupKind} onChange={event => setGroupKind(event.target.value)}><option value="all">كل المجموعات</option>{groupOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
       <label><span className="reference-level-mark" aria-hidden="true">١٠٠</span><select aria-label="المستوى" value={levelFilter} onChange={event => setLevelFilter(event.target.value)}><option value="all">كل المستويات</option>{levelOptions.map(value => <option key={value} value={String(value)}>{value ? `المستوى ${value}` : "تمهيدي / غير مصنف"}</option>)}</select></label>
       <label><AlertCircle size={15} aria-hidden="true" /><select aria-label="حالة المطابقة" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">كل الحالات</option><option value="attention">تحتاج متابعة</option><option value="matched">مطابقة</option><option value="different">تحتاج تصحيحًا</option><option value="missing">غير مضافة</option><option value="ambiguous">هوية غير محسومة</option></select></label>

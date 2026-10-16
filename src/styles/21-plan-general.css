@@ -1,0 +1,8 @@
+
+/* ── مراجعة الصحيفة: المتطلبات العامة وتأكيد الاعتماد ── */
+.pr-ext{display:inline-block;margin-inline-start:6px;padding:1px 7px;border-radius:99px;background:var(--brass-soft);color:var(--warning);font-style:normal;font-size:.66rem;font-weight:650}
+.pr-ext-note{display:flex;align-items:center;gap:7px;margin:0;font-size:.78rem;color:var(--muted)}.pr-ext-note svg{flex:none;color:var(--warning)}
+.pr-confirm{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:start;padding:14px 16px;border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--accent-softer)}
+.pr-confirm-ic{display:grid;place-items:center;inline-size:38px;block-size:38px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink)}.pr-confirm-ic svg{inline-size:20px;block-size:20px}
+.pr-confirm ul{margin:6px 0 0;padding-inline-start:18px;display:grid;gap:3px;font-size:.82rem;line-height:1.6}
+.pr-confirm-actions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
