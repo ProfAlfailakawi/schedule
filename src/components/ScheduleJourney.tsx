@@ -84,8 +84,10 @@ function useRevealOnce<T extends HTMLElement>(
       if (!node.isConnected) return false;
       const rect = node.getBoundingClientRect();
       const bounds = root?.getBoundingClientRect();
-      const top = bounds ? bounds.top : 0;
-      const bottom = bounds ? bounds.bottom : window.innerHeight;
+      /* Clamp to the window too: before the sheet's styles apply it is not yet a
+         scroller, and its own bounds would reach far below the screen. */
+      const top = Math.max(bounds ? bounds.top : 0, 0);
+      const bottom = Math.min(bounds ? bounds.bottom : window.innerHeight, window.innerHeight);
       return Math.min(rect.bottom, bottom) - Math.max(rect.top, top) > 40;
     };
 
@@ -94,27 +96,32 @@ function useRevealOnce<T extends HTMLElement>(
       frame = window.requestAnimationFrame(() => { if (visible()) setRevealed(true); });
     };
 
-    if (visible()) { setRevealed(true); return; }
-
+    /* Measure only once the sheet has settled: on the first frames the hero has not
+       taken its full height yet, so sections that will sit far below the fold read
+       as "visible" and their animation plays unseen (phones, where the figures are
+       several screens down). */
     let observer: IntersectionObserver | null = null;
-    if (typeof IntersectionObserver !== "undefined") {
-      observer = new IntersectionObserver(
-        entries => {
-          if (entries.some(entry => entry.isIntersecting)) { setRevealed(true); observer?.disconnect(); }
-        },
-        { root: root || null, threshold: 0, rootMargin: "0px 0px -8% 0px" },
-      );
-      observer.observe(node);
-    }
+    let failsafe = 0;
     const target: EventTarget = root || window;
-    target.addEventListener("scroll", check, { passive: true });
-    window.addEventListener("resize", check, { passive: true });
-    /* Last resort, only where nothing can watch the scroll: a timer that fires while
-       the section is still below the fold plays its animation where no one sees it
-       (on phones the figures sit several screens down, so they arrived already counted). */
-    const failsafe = observer ? 0 : window.setTimeout(() => setRevealed(true), 2500);
+    const start = window.setTimeout(() => {
+      if (visible()) { setRevealed(true); return; }
+      if (typeof IntersectionObserver !== "undefined") {
+        observer = new IntersectionObserver(
+          entries => {
+            if (entries.some(entry => entry.isIntersecting)) { setRevealed(true); observer?.disconnect(); }
+          },
+          { root: root || null, threshold: 0, rootMargin: "0px 0px -8% 0px" },
+        );
+        observer.observe(node);
+      }
+      target.addEventListener("scroll", check, { passive: true });
+      window.addEventListener("resize", check, { passive: true });
+      /* Last resort, only where nothing can watch the scroll. */
+      if (!observer) failsafe = window.setTimeout(() => setRevealed(true), 2500);
+    }, 450);
 
     return () => {
+      window.clearTimeout(start);
       observer?.disconnect();
       target.removeEventListener("scroll", check as EventListener);
       window.removeEventListener("resize", check as EventListener);
