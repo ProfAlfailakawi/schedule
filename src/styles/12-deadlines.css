@@ -493,9 +493,15 @@
 .pr-group-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:10px}
 .pr-group{border:1px solid var(--line);border-radius:var(--r-md);padding:12px;display:grid;gap:6px;background:var(--surface)}
 .pr-group small,.pr-none{color:var(--muted)}
+.pr-group>div:not(.pr-group-actions){display:flex;flex-wrap:wrap;gap:6px;min-inline-size:0}
+.pr-group .pr-chip{max-inline-size:100%;overflow-wrap:anywhere}
 .pr-group-actions{display:flex;gap:6px}
 .pr-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:6px}
-.pr-opt{display:flex;gap:6px;align-items:center;font-size:.88rem}
+.pr-opt{display:flex;gap:8px;align-items:center;min-inline-size:0;min-block-size:42px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:.88rem;line-height:1.45;overflow-wrap:anywhere;cursor:pointer}
+.pr-opt input{flex:none;inline-size:18px;block-size:18px;margin:0;accent-color:var(--accent)}
+.pr-opt:hover{border-color:var(--line-strong)}
+.pr-opt:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.pr-opt:has(input:focus-visible){border-color:var(--accent);box-shadow:var(--ring)}
 
 /* ── رادارُ التسجيل (sm-*) ───────────────────────────────────────────────── */
 .sm-page{display:grid;gap:16px;min-inline-size:0}
