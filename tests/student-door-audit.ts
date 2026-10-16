@@ -308,7 +308,7 @@ check(studentHomeSource.includes("/api/public/me/request-context") && studentHom
       check(new Date(saved.json.keepsUntil).getTime() > Date.now() && ["graduation", "inactive"].includes(saved.json.keepsReason), "D6 للملف عمرٌ مكتوب", saved.json.keepsUntil);
 
       check((await http("PUT", "/api/public/me/wishes", { targetUnits: 9, courseIds: [] })).json.code === "bad-units", "D6 وحداتٌ دون ١٢ مرفوضة");
-      check((await http("PUT", "/api/public/me/wishes", { targetUnits: 19, courseIds: [] })).json.code === "bad-units", "D6 وفوق ١٨ مرفوضة");
+      check((await http("PUT", "/api/public/me/wishes", { targetUnits: 16, courseIds: [] })).json.code === "bad-units", "D6 وفوق ١٥ مرفوضة");
       const offered = (await http("GET", "/api/public/me/offered")).json;
       check(offered.ready === true && offered.remainingCount > 0 && offered.offeredCount >= 1, "D6 المطروح لي: أعدادٌ من الجدول", offered);
       const wantId = offered.courses.find((c: any) => c.sections > 0).id;
