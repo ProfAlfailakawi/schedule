@@ -23,7 +23,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     [password, setPassword] = useState(""),
     [loading, setLoading] = useState(false),
     [error, setError] = useState<string | null>(null),
-    [identityOpen, setIdentityOpen] = useState(false),
+    [identityOpen, setIdentityOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("journey") === "1"),
     [demoLoading, setDemoLoading] = useState(false),
     [demoEnabled, setDemoEnabled] = useState(false);
 
@@ -213,7 +213,12 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           </footer>
         </div>
       </section>
-      {identityOpen ? <ScheduleJourney onClose={() => setIdentityOpen(false)} /> : null}
+      {identityOpen ? <ScheduleJourney onClose={() => {
+        /* Students arrive from مساري (/me?…→/?journey=1&back=/me); closing returns them there. */
+        const back = new URLSearchParams(window.location.search).get("back");
+        if (back === "/me") { window.location.href = "/me"; return; }
+        setIdentityOpen(false);
+      }} /> : null}
     </main>
   );
 }

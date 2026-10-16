@@ -45,6 +45,8 @@ export interface Advice {
 }
 
 const MAX_TERMS = 14;
+const MIN_UNITS = 12;
+const MAX_UNITS = 15;
 const quote = (name: string) => `«${name}»`;
 const joinAnd = (names: string[]) => names.map(quote).join(" و");
 
@@ -53,7 +55,8 @@ export function adviseStudent(input: AdviceInput): Advice {
   const plan = [...new Set(input.planCourseIds.map(Number))];
   const ruleOf = new Map(input.rules.map(rule => [rule.courseId, rule] as const));
   const credit = (id: number) => input.credit.get(id) || 0;
-  const target = Math.max(6, Math.min(18, Math.round(input.targetUnits) || 15));
+  /* فصلُ الطالب بين ١٢ و١٥ وحدة: لا يُقترح فوق ١٥ ولا يُترك دون ١٢ ما دام في المطروح ما يملؤه. */
+  const target = Math.max(MIN_UNITS, Math.min(MAX_UNITS, Math.round(input.targetUnits) || MAX_UNITS));
   const inGroup = new Set(input.groups.flatMap(group => group.courseIds));
   const loose = new Set(input.rules.filter(rule => rule.kind === "elective" && !inGroup.has(rule.courseId)).map(rule => rule.courseId));
   const compulsory = plan.filter(id => !inGroup.has(id) && !loose.has(id) && !passed.has(id));
@@ -114,13 +117,23 @@ export function adviseStudent(input: AdviceInput): Advice {
     const picked: number[] = [];
     let sum = 0;
     const take = { c: needC.slice(), u: needU.slice() };
+    const eligible = new Set(pool);
     for (const id of pool) {
-      const g = groupOf.get(id);
-      if (g !== undefined && take.c[g] <= 0 && take.u[g] <= 0) continue;
-      if (sum + credit(id) > target && picked.length) continue;
-      if (credit(id) <= 0) continue;
-      picked.push(id); sum += credit(id);
-      if (g !== undefined) { take.c[g] -= 1; take.u[g] -= credit(id); }
+      if (picked.includes(id)) continue;
+      /* ما يُسجَّل معه: يدخل معه أو لا يدخل — مقرنٌ غير متاح أو لا يتّسع له الفصل يُسقط المقرر. */
+      const partners = (ruleOf.get(id)?.coreq || []).filter(c => !have.has(c) && !picked.includes(c) && c !== id);
+      if (partners.some(c => !eligible.has(c))) continue;
+      const group = [id, ...partners];
+      const cost = group.reduce((acc, c) => acc + credit(c), 0);
+      if (group.some(c => credit(c) <= 0)) continue;
+      if (sum + cost > target) continue;
+      const open = group.filter(c => { const g = groupOf.get(c); return g === undefined || take.c[g] > 0 || take.u[g] > 0; });
+      if (open.length !== group.length) continue;
+      for (const c of group) {
+        picked.push(c); sum += credit(c);
+        const g = groupOf.get(c);
+        if (g !== undefined) { take.c[g] -= 1; take.u[g] -= credit(c); }
+      }
       if (sum >= target) break;
     }
     return picked;
@@ -157,7 +170,9 @@ export function adviseStudent(input: AdviceInput): Advice {
     const unlocks = [...unlocksOf(id)].filter(child => compulsorySet.has(child)).sort((a, b) => score(b) - score(a)).map(input.name);
     const g = groupOf.get(id);
     let why: string;
+    const partner = (ruleOf.get(id)?.coreq || []).filter(c => picksIds.includes(c) && c !== id);
     if (unlocks.length) why = `يفتح لك ${joinAnd(unlocks.slice(0, 2))}${unlocks.length > 2 ? ` و${countOf(unlocks.length - 2, AR.course)} غيرها` : ""}`;
+    else if (partner.length) why = `يُسجَّل مع ${joinAnd(partner.map(input.name))}`;
     else if (g !== undefined) why = `اختياريٌّ تحتاجه من «${groups[g].group.name}»`;
     else why = "مطلوبٌ لتخرّجك";
     return { courseId: id, name: input.name(id), code: input.code(id), credit: credit(id), why, unlocks };

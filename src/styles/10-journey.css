@@ -196,13 +196,13 @@
   font-size:clamp(14px,1.3vw,17px);
   font-weight:600;
 }
-.jr-headnum>small{color:var(--jr-ink-3);font-size:12px;letter-spacing:.04em}
+.jr-headnum>small{color:var(--jr-ink-2);font-size:13.5px;letter-spacing:.02em}
 
 .jr-scroll-cue{
   margin-top:clamp(22px,3.4vh,38px);
   display:inline-flex;align-items:center;gap:9px;
-  color:var(--jr-ink-3);
-  font-size:12px;letter-spacing:.06em;
+  color:var(--jr-ink-2);
+  font-size:13px;letter-spacing:.06em;
 }
 .jr-scroll-cue>i{
   width:1px;height:26px;
@@ -277,7 +277,7 @@
   font-weight:600;
   color:var(--jr-accent);
 }
-.jr-figure>small{color:var(--jr-ink-3);font-size:12px;line-height:1.6}
+.jr-figure>small{color:var(--jr-ink-2);font-size:14px;line-height:1.65}
 
 /* ── ٣ · المسار ────────────────────────────────────────────────────────
       One rail, five stations. The rail is drawn on the list, so the stations
@@ -335,7 +335,7 @@
   unicode-bidi:isolate;
 }
 .jr-station>strong{font-size:clamp(15px,1.35vw,18px);font-weight:600;color:var(--jr-ink)}
-.jr-station>p{margin:0;color:var(--jr-ink-2);font-size:12.5px;line-height:1.75}
+.jr-station>p{margin:0;color:var(--jr-ink-2);font-size:14.5px;line-height:1.75}
 
 /* ── ٤ · الفلسفة ───────────────────────────────────────────────────────── */
 .jr-creed{text-align:center}
@@ -580,7 +580,7 @@
     grid-template-columns:none;grid-template-areas:none;
     padding-block:0;row-gap:8px;
   }
-  .jr-station>p{font-size:12px;line-height:1.65}
+  .jr-station>p{font-size:13.5px;line-height:1.65}
   .jr-creed blockquote{font-size:clamp(26px,7.4vh,42px)}
 }
 
@@ -597,3 +597,9 @@
   .jr-rail>.jr-station{opacity:1;transform:none;animation:none}
   .jr-state-pulse{animation:none}
 }
+
+/* Measured rail (see ScheduleJourney): node centre to node centre, solid between. */
+.jr-rail.is-fit::before{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)),color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)))}
+.jr-rail.is-fit::after{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 78%,transparent),color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)))}
+.jr-rail.is-fit.is-row::before,.jr-rail.is-fit.is-row::after{inset-inline-start:var(--jr-rail-s);inset-inline-end:var(--jr-rail-e)}
+.jr-rail.is-fit.is-col::before,.jr-rail.is-fit.is-col::after{inset-block-start:var(--jr-rail-s);inset-block-end:var(--jr-rail-e)}

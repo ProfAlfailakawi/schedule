@@ -13,6 +13,7 @@ export type JourneyReading = {
     instructors: number;
     sections: number;
     colleges: number;
+    since?: number | null;
   };
   current: {
     termId: number | null;
@@ -188,6 +189,37 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
 
   useEffect(() => { sheet.current?.querySelector<HTMLElement>("button")?.focus(); }, [reading, failed]);
 
+  /* The rail runs from the centre of the first station's node to the centre of the
+     last one — never past them into the margin or the last station's text. CSS
+     alone cannot know where those centres land, so measure them and hand the
+     insets back as custom properties (row on wide screens, column on phones). */
+  useEffect(() => {
+    const rail = sheet.current?.querySelector<HTMLElement>(".jr-rail");
+    if (!rail || typeof ResizeObserver === "undefined") return;
+    const fit = () => {
+      const nodes = rail.querySelectorAll<HTMLElement>(".jr-station-node");
+      if (nodes.length < 2) return;
+      const box = rail.getBoundingClientRect();
+      const a = nodes[0].getBoundingClientRect(), b = nodes[nodes.length - 1].getBoundingClientRect();
+      const column = Math.abs(a.left - b.left) < 2;
+      const rtl = getComputedStyle(rail).direction === "rtl";
+      let start: number, end: number;
+      if (column) { start = a.top + a.height / 2 - box.top; end = box.bottom - (b.top + b.height / 2); }
+      else if (rtl) { start = box.right - (a.left + a.width / 2); end = (b.left + b.width / 2) - box.left; }
+      else { start = a.left + a.width / 2 - box.left; end = box.right - (b.left + b.width / 2); }
+      rail.style.setProperty("--jr-rail-s", `${start}px`);
+      rail.style.setProperty("--jr-rail-e", `${end}px`);
+      rail.style.setProperty("--jr-rail-dir", column ? "to bottom" : rtl ? "to left" : "to right");
+      rail.classList.add("is-fit");
+      rail.classList.toggle("is-col", column);
+      rail.classList.toggle("is-row", !column);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, []);
+
   const life = reading?.lifetime;
   const empty = Boolean(reading && (life?.terms || 0) === 0);
   const scale = useRevealOnce<HTMLElement>(sheet, Boolean(reading && !empty));
@@ -339,7 +371,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
         <footer className="jr-foot">
           <div>
             <span>التأسيس والتطوير</span>
-            <strong>عشر سنوات تشغيل أكاديمي متصل</strong>
+            <strong>{life?.since ? `تشغيل أكاديمي متصل منذ ${life.since}` : "تشغيل أكاديمي متصل"}</strong>
             <em className="jr-foot-authors">د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</em>
           </div>
           <small dir="ltr">SCHEDULE{version ? ` · ${version}` : ""}</small>

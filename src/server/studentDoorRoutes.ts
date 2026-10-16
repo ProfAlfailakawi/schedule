@@ -14,6 +14,7 @@
  *     قاعدة البيانات في كل زيارة: ٢٥ ألف طالبٍ لا يقرأون الجدولَ ٢٥ ألف مرة.
  *   · ما يراه الطالبُ من الجدول أعدادٌ لا مواعيد: المسودةُ للأقسام والعمادة.
  */
+import express from "express";
 import rateLimit from "express-rate-limit";
 import { randomUUID } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
@@ -53,11 +54,21 @@ export interface StudentDoorDeps {
   openIdentity?: (cipher: string) => Promise<string>;
   identityKey: () => Promise<Buffer>;
   isProduction: () => boolean;
+  /** طلبُ الخريج: قواعدُ الاستبيان القديم وتحقّقُه من الصحيفة، تُحقن من الخادم فلا تُنسخ. */
+  graduate?: {
+    rule: (sectionId: number, planId: string | undefined, termName: string) => Promise<{ saved: boolean; summer: boolean; threshold?: number; minThreshold?: number; degreeUnits?: number }>;
+    proof: (input: { collegeId: number; termId: number; civil: string; name: string; sectionId: number; bytes: Buffer; mime: string }) => Promise<{ status: number; body: any }>;
+    submit: (input: { civil: string; sectionId: number; termId: number; proofToken: string }) => Promise<any>;
+  };
 }
 
-/** أقصى وحداتٍ يطلبها الطالبُ لفصله، وأدناها: الهدفُ ١٢–١٥ والسقفُ ١٨. */
+/** صحيفةُ التخرّج المرفوعة: حدٌّ واحدٌ يُقال للطالب ويُفرض هنا (كما في الاستبيان القديم). */
+const PROOF_MAX_BYTES = 14 * 1024 * 1024;
+const GRADUATE_REASONS = ["field-conflict", "field-prerequisite-conflict"] as const;
+
+/** وحداتُ الطالب في فصله: بين ١٢ و١٥. */
 export const WISH_UNITS_MIN = 12;
-export const WISH_UNITS_MAX = 18;
+export const WISH_UNITS_MAX = 15;
 const SESSION_HOURS = 12;
 
 type Door = { fingerprint: string; profile: StudentProfile };
@@ -570,6 +581,85 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
   });
 
   /* ── طلب استثنائي من مساري: فتح مقرر أو تعارض، من الملف الموثّق نفسه ── */
+  /* ── طلبُ الخريج / المتوقَّع تخرّجه: يعرف من وحداته المجتازة، ثم يرفع صحيفته للتدقيق كما كان في الاستبيان ── */
+  const proofLimiter = createAttemptLimiter({ maxFailures: intFromEnv("STUDENT_DOOR_PROOF_MAX", 12), windowMs: 10 * 60_000, capacity: 20_000 });
+  const identityOfProfile = async (profile: StudentProfile): Promise<{ name: string; civil: string } | null> => {
+    if (!deps.openIdentity || !profile.nameCipher || !profile.civilCipher) return null;
+    try {
+      const [name, civil] = await Promise.all([deps.openIdentity(profile.nameCipher), deps.openIdentity(profile.civilCipher)]);
+      return name && civil ? { name, civil } : null;
+    } catch { return null; }
+  };
+
+  app.get("/api/public/me/graduate", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    if (profile.AdSectionId <= 0 || !deps.graduate) { res.json({ ready: false, reason: "no-setup" }); return; }
+    const term = pickDoorTerm((await Repository.getTerms()) as any[]);
+    if (!term) { res.json({ ready: false, reason: "no-term" }); return; }
+    const phase = readStudentPhase(term.AdTermStudentPhases);
+    const termId = Number(term.AdTermId), termName = String(term.AdTermName || "");
+    const rule = await deps.graduate.rule(profile.AdSectionId, profile.curriculumPlanId, termName);
+    const need = (await Repository.getStudentNeedsByFingerprint(fingerprint, profile.AdCollegeId, termId)).find(row => row.requestType === "graduate");
+    const passed = Number(profile.passedUnits) || 0;
+    const threshold = rule.threshold ?? rule.minThreshold ?? 0;
+    res.json({
+      ready: true, canRequest: phase.mode !== "closed", line: phase.line, termName, summer: rule.summer,
+      ruleSaved: rule.saved, threshold, thresholdExact: rule.threshold !== undefined, degreeUnits: rule.degreeUnits || 0,
+      passedUnits: passed, enough: Boolean(rule.saved && threshold > 0 && passed >= threshold), short: rule.saved ? Math.max(0, threshold - passed) : 0,
+      reasons: GRADUATE_REASONS.map(code => ({ code })),
+      existing: need ? { caseRef: caseRefFor(need), eligibility: need.eligibility || "not-checked", reason: need.graduateReason || "" } : null,
+    });
+  });
+
+  app.post("/api/public/me/graduate/proof", writeLimit, requireDoor, express.raw({ type: "application/octet-stream", limit: PROOF_MAX_BYTES }), async (req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    if (!deps.graduate) { fail(res, 404, "غير متاح.", "off"); return; }
+    if (profile.AdSectionId <= 0) { fail(res, 409, "أكمل ملفّك الأكاديمي أولاً.", "no-setup"); return; }
+    const identity = await identityOfProfile(profile);
+    if (!identity) { fail(res, 409, "حدّث بيانات هويتك في ملف مساري قبل رفع الصحيفة.", "identity-needed"); return; }
+    const attempt = proofLimiter.reserve(fingerprint);
+    if (!attempt) { fail(res, 429, "محاولاتٌ كثيرة لرفع الصحيفة. انتظر دقائق ثم أعد المحاولة.", "rate"); return; }
+    const term = pickDoorTerm((await Repository.getTerms()) as any[]);
+    if (!term || readStudentPhase(term.AdTermStudentPhases).mode === "closed") { fail(res, 409, "الطلبات مغلقة الآن.", "requests-closed"); return; }
+    const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!bytes.length) { fail(res, 400, "ارفع صحيفة التخرج PDF أو صورة واضحة.", "no-file"); return; }
+    const result = await deps.graduate.proof({
+      collegeId: Number(profile.AdCollegeId), termId: Number(term.AdTermId), civil: identity.civil, name: identity.name,
+      sectionId: profile.AdSectionId, bytes, mime: String(req.get("x-file-type") || "application/pdf").slice(0, 80),
+    });
+    if (result.status === 200) attempt.release();
+    res.status(result.status).json(result.body);
+  });
+
+  /** إرسالُ طلب الخريج من «مساري»: الإثباتُ حيّ، والعتبةُ من القاعدة الحالية، والملاحظةُ والنوعُ مطلوبان — كالاستبيان تماماً. */
+  async function submitGraduate(req: Request, res: Response, ctx: { fingerprint: string; profile: StudentProfile; termId: number; closed: boolean; line: string; termName: string }) {
+    const { fingerprint, profile, termId } = ctx;
+    if (!deps.graduate) { fail(res, 404, "غير متاح.", "off"); return; }
+    if (ctx.closed) { fail(res, 409, "الطلبات مغلقة الآن.", "requests-closed", { line: ctx.line }); return; }
+    const reason = GRADUATE_REASONS.find(code => code === req.body?.graduateReason);
+    if (!reason) { fail(res, 400, "اختر نوع طلب الميداني.", "bad-reason"); return; }
+    const details = String(req.body?.details || "").normalize("NFKC").replace(/[<>]/g, "").replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 600);
+    if (details.length < 3) { fail(res, 400, "اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال.", "details-needed"); return; }
+    const identity = await identityOfProfile(profile);
+    if (!identity) { fail(res, 409, "حدّث بيانات هويتك في ملف مساري قبل إرسال طلب للقسم.", "identity-needed"); return; }
+    const checked = await deps.graduate.submit({ civil: identity.civil, sectionId: profile.AdSectionId, termId, proofToken: String(req.body?.proofToken || "") });
+    if (checked.error) { fail(res, checked.error.status, checked.error.body.error, checked.error.body.code); return; }
+    const saved = await Repository.saveStudentNeed({
+      fingerprint, AdCollegeId: Number(profile.AdCollegeId), AdSectionId: Number(profile.AdSectionId), studentSectionId: Number(profile.AdSectionId),
+      surveySectionId: Number(profile.AdSectionId), AdTermId: termId, courseIds: [], requestType: "graduate",
+      curriculumPlanId: checked.provenPlanId || profile.curriculumPlanId, nameCipher: profile.nameCipher!, civilCipher: profile.civilCipher!, details,
+      graduateReason: reason, passedUnits: checked.passedUnits, requiredUnits: checked.requiredUnits, degreeUnits: checked.degreeUnits,
+      eligibility: checked.eligibility, proofNameMatched: checked.nameMatched,
+    });
+    const sections = await Repository.getSections();
+    noStore(res);
+    res.status(201).json({ ok: true, requestType: "graduate", termId, caseRef: caseRefFor(saved), cases: [{
+      sectionName: String((sections as any[]).find(section => Number(section.AdSectionId) === Number(profile.AdSectionId))?.AdSectionName || "القسم المختص"), caseRef: caseRefFor(saved), courseIds: [],
+    }] });
+  }
+
   app.get("/api/public/me/request-context", requireDoor, async (_req: Request, res: Response) => {
     const { fingerprint, profile } = doorOf(res);
     noStore(res);
@@ -628,8 +718,10 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const term = pickDoorTerm(terms as any[]);
     if (!term) { fail(res, 409, "لا يوجد فصل دراسي مفتوح للطلبات الآن.", "no-term"); return; }
     const phase = readStudentPhase(term.AdTermStudentPhases);
-    if (!phase.canEditWishes && !phase.canReport) { fail(res, 409, "نافذة الطلبات غير مفتوحة الآن.", "requests-closed", { line: phase.line }); return; }
     const termId = Number(term.AdTermId);
+    /* الخريجُ لا ينتظر نافذة الرغبات: طلبُه مفتوحٌ ما دامت الطلبات لم تُغلق (كما كان في الاستبيان). */
+    if (req.body?.requestType === "graduate") { await submitGraduate(req, res, { fingerprint, profile, termId, closed: phase.mode === "closed", line: phase.line, termName: String(term.AdTermName || "") }); return; }
+    if (!phase.canEditWishes && !phase.canReport) { fail(res, 409, "نافذة الطلبات غير مفتوحة الآن.", "requests-closed", { line: phase.line }); return; }
     const [run, ticket] = await Promise.all([Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint)]);
     if (!studentNeedsCommitteeHelp(profile, run, ticket, termId)) {
       fail(res, 409, "لا توجد حالة تعثر مؤكدة في آخر محاكاة تستدعي طلباً فردياً. حدّث رغباتك وانتظر إعادة الاحتساب.", "no-proven-blocker"); return;

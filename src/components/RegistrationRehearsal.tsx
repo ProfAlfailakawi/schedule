@@ -16,6 +16,7 @@ import ApplyProposal, { postScheduleProposal, postWhatIf } from "./ApplyProposal
 import SemesterReadiness, { type Insight, type QualityCell } from "./SemesterReadiness";
 import { writeSharedScope } from "../utils/sharedScope";
 import CourseImpact from "./CourseImpact";
+import { OutcomeCourse, OutcomeLegend } from "./OutcomeStory";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 interface Unmet { "not-offered": number; conflict: number; full: number; prereq: number; units: number }
@@ -45,8 +46,9 @@ const request = async (url: string, init?: RequestInit) => {
   return data;
 };
 
+/* كلُّ عددٍ هنا طلبةٌ، وتُقرأ الجملةُ بعده: «9 طلاب — لن يجدوا مقعداً». */
 const WHY: Array<[keyof Unmet, string, string]> = [
-  ["full", "السعة الافتراضية لا تكفي", "bad"], ["not-offered", "المقرر مطلوب ولا توجد له شعبة", "warn"], ["conflict", "موعد الشعبة يتعارض مع مقرر آخر اختاره الطالب", "info"], ["units", "المقررات تتجاوز حد الوحدات الذي اختاره الطالب", "soft"], ["prereq", "المتطلب السابق غير مكتمل وفق الملف", "soft"],
+  ["full", "لن يجدوا مقعداً: الطلب أكبر من السعة الافتراضية", "bad"], ["not-offered", "يريدونه ولا توجد له شعبة", "warn"], ["conflict", "وقته يتعارض مع مقرر آخر اختاروه", "info"], ["units", "يتجاوزون حدّ الوحدات الذي اختاروه", "soft"], ["prereq", "ينقصهم متطلب سابق وفق ملفاتهم", "soft"],
 ];
 const qualityLabel = (key: string) => ({
   "invalid-identity": "هوية المقرر أو الشعبة غير مكتملة",
@@ -224,7 +226,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
                     <div className="sm-track"><i className={fill >= 95 ? "full" : fill >= 80 ? "high" : ""} style={{ inlineSize: `${fill}%` }} /></div>
                     <small>{c.sections ? `${countOf(c.sections, AR.section)} · ${c.taken} من ${countOf(c.capacity, AR.seat)}` : "لا تُطرح هذا الفصل"} · طُلب {c.wanted}</small>
                   </div>
-                  <div className="sm-why">{unmet.map(x => <span key={x.key} className={`sm-chip ${x.tone}`}>{x.label} {x.n}</span>)}</div>
+                  <div className="sm-why">{unmet.map(x => <span key={x.key} className={`sm-chip ${x.tone}`}><b>{countOf(x.n, AR.student)}</b> — {x.label}</span>)}</div>
                   <CourseImpact courseId={c.courseId} />
                   {canSchedule && data.term && needsDecision(c) ? <RadarSchedule course={c as CourseRow & { collegeId?: number; sectionId?: number }} termId={data.term.id} onChanged={() => void load()} /> : null}
                 </article>
@@ -306,10 +308,6 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
   const registered = outcome.courses.reduce((s, c) => s + c.registered, 0), stuck = outcome.courses.reduce((s, c) => s + c.stuck, 0);
   const total = registered + stuck;
   const okPct = total ? Math.round((registered / total) * 100) : 0;
-  const reasons: Array<[string, string, number]> = [
-    ["امتلأت الشعب", "bad", outcome.courses.reduce((s, c) => s + c.full, 0)], ["المسبق لا يسمح", "soft", outcome.courses.reduce((s, c) => s + c.prereq, 0)],
-    ["تعارض", "info", outcome.courses.reduce((s, c) => s + c.conflict, 0)], ["سبب آخر", "soft", outcome.courses.reduce((s, c) => s + c.other, 0)],
-  ];
   const worst = outcome.courses.filter(c => c.stuck > 0).slice(0, 8);
   const share = outcome.answered !== null && predictedStudents ? Math.round((outcome.answered / predictedStudents) * 100) : 0;
   return (
@@ -322,17 +320,8 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
         <article className="sm-kpi"><span className="sm-ic"><Layers /></span><b>{okPct}٪</b><small>من المقرراتِ المُجاب عنها سُجّلت</small>
           <div className="sm-meter"><i style={{ inlineSize: `${okPct}%` }} /></div><em>{countOf(registered, AR.course)} سُجّلت · {countOf(stuck, AR.course)} تعثّرت</em></article>
       </div>
-      <div className="sm-why">{reasons.filter(x => x[2] > 0).map(([label, tone, n]) => <span key={label} className={`sm-chip ${tone}`}>{label === "تعارض" ? "تعارض مع مقرر آخر" : label === "المسبق لا يسمح" ? "المتطلب السابق غير مكتمل" : label} {n}</span>)}</div>
-      {worst.map(c => {
-        const sum = c.registered + c.stuck;
-        return (
-          <article key={c.courseId} className="sm-row hot">
-            <div className="sm-name"><b>{c.name}</b><span>{c.code}</span></div>
-            <div className="sm-gauge"><div className="sm-track"><i className="full" style={{ inlineSize: `${sum ? Math.round((c.stuck / sum) * 100) : 0}%` }} /></div><small>لم يسجّله {c.stuck} من {sum} أجابوا</small></div>
-            <div className="sm-why">{c.full ? <span className="sm-chip bad">السعة انتهت {c.full}</span> : null}{c.prereq ? <span className="sm-chip soft">المتطلب السابق غير مكتمل {c.prereq}</span> : null}{c.conflict ? <span className="sm-chip info">تعارض مع مقرر آخر {c.conflict}</span> : null}</div>
-          </article>
-        );
-      })}
+      <OutcomeLegend rows={outcome.courses} />
+      {worst.map(c => <OutcomeCourse key={c.courseId} row={c} />)}
       <details className="sm-info"><summary><Info /> مصدر الأجوبة</summary><p>أجوبةُ الطلبة أنفسهم في «مساري» بعد التسجيل، وهي عيّنةٌ ممن اختار أن يجيب — لا كلُّ الطلبة. «لم يسجّل» تعني أنه لم يتمكن من تسجيل المقرر، والأسباب إجاباتُهم.{outcome.scoped ? " المعروض مقرراتُ قسمك فقط." : ""}</p></details>
     </section>
   );

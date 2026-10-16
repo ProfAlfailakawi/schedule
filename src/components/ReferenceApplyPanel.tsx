@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ArrowLeftRight, CheckCircle2, ListPlus, Link2, ShieldAlert, Wand2 } from "lucide-react";
+import { ArrowLeftRight, Ban, CheckCircle2, ListPlus, Link2, ShieldAlert, Wand2 } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 
@@ -54,40 +54,71 @@ export default function ReferenceApplyPanel({ referenceId, referenceName, onAppl
     updates: sum.updates + site.updates.length, creates: sum.creates + site.creates.length, links: sum.links + site.links.length, skipped: sum.skipped + site.skipped.length,
   }), { updates: 0, creates: 0, links: 0, skipped: 0 });
 
+  const branchOf = (site: Site) => site.branch === "012" ? "بنات" : site.branch === "011" ? "بنين" : "";
+  const collegeOf = (site: Site) => site.collegeName.replace(/\s*[-–]\s*(بنين|بنات)\s*$/, "");
+  const STATS = [
+    { key: "updates", label: "تصحيح", Icon: ArrowLeftRight, tone: "fix" },
+    { key: "creates", label: "إضافة", Icon: ListPlus, tone: "add" },
+    { key: "links", label: "ربط", Icon: Link2, tone: "link" },
+    { key: "skipped", label: "استبعاد", Icon: Ban, tone: "skip" },
+  ] as const;
+
   return (
     <section className="rap" aria-label="تطبيق الصحيفة المرجعية">
       <header className="rap-head">
         <span className="rap-ic" aria-hidden="true"><Wand2 /></span>
-        <div><b>طبّق «{referenceName}» على الكتالوج</b><small>تصحيح الأسماء والوحدات والساعات، وإضافة الناقص، وربط مقررات كل قسم بصحيفته، وبناء مسوّدة قواعد للمراجعة. تُعاين أولاً ولا يُكتب شيء قبل تأكيدك.</small></div>
+        <div><b>طبّق «{referenceName}» على الكتالوج</b><small>معاينة أولاً · لا يُكتب شيء قبل تأكيدك</small></div>
         {!report ? <PrimaryButton type="button" disabled={busy} onClick={look} data-guide-ignore="معاينة تطبيق الصحيفة المرجعية على الكتالوج؛ لا يكتب شيئاً">{busy ? "جارٍ الفحص…" : "عاين ما سيتغيّر"}</PrimaryButton> : null}
       </header>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
       {report ? (
         <div className="rap-body">
-          <p className="rap-totals" role="status">
-            {totals.updates ? <span><ArrowLeftRight aria-hidden="true" /> تصحيح {countOf(totals.updates, AR.course)}</span> : null}
-            {totals.creates ? <span><ListPlus aria-hidden="true" /> إضافة {countOf(totals.creates, AR.course)}</span> : null}
-            {totals.links ? <span><Link2 aria-hidden="true" /> ربط {countOf(totals.links, AR.course)}</span> : null}
-            {totals.skipped ? <span>استبعاد {countOf(totals.skipped, AR.course)}</span> : null}
-            {!totals.updates && !totals.creates && !totals.links && !totals.skipped ? <span><CheckCircle2 aria-hidden="true" /> الكتالوج مطابق لهذه الصحيفة</span> : null}
-          </p>
+          {totals.updates || totals.creates || totals.links || totals.skipped ? (
+            <div className="rap-stats" role="status">
+              {STATS.map(({ key, label, Icon, tone }) => (
+                <div key={key} className={`rap-stat is-${tone}${totals[key] ? "" : " is-zero"}`}>
+                  <Icon aria-hidden="true" /><b>{totals[key].toLocaleString("en-US")}</b><span>{label}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="rap-match" role="status"><CheckCircle2 aria-hidden="true" /> الكتالوج مطابق لهذه الصحيفة</p>}
           <ul className="rap-sites">
-            {sites.map(site => (
-              <li key={site.sectionId} className="rap-site">
-                <div className="rap-site-head"><b>{site.collegeName}</b><small>{site.branch === "012" ? "فرع البنات" : site.branch === "011" ? "فرع البنين" : "فرع غير معروف"}{site.courseCount ? ` · ${countOf(site.courseCount, AR.course)} في صحيفته` : ""}</small></div>
-                {site.planNote ? <Notice type="info" inline>{site.planNote}</Notice> : null}
-                <ul className="rap-lines">
-                  {site.updates.length ? <li>تصحيح {countOf(site.updates.length, AR.course)}: {site.updates.slice(0, 3).map(row => `${row.before.name} ← ${row.after.name}`).join("، ")}{site.updates.length > 3 ? "…" : ""}</li> : null}
-                  {site.creates.length ? <li>إضافة {countOf(site.creates.length, AR.course)} ناقصاً في كتالوج أقسامها</li> : null}
-                  {site.links.length ? <li>ربط {countOf(site.links.length, AR.course)} بصحيفة القسم</li> : null}
-                  {site.skipped.length ? <li title={site.skipped.map(row => `${row.name}: ${row.reason}`).join("\n")}>استبعاد {countOf(site.skipped.length, AR.course)}: {[...new Set(site.skipped.map(row => row.reason))].join("؛ ")}</li> : null}
-                  {site.held?.length ? <li className="rap-held"><ShieldAlert aria-hidden="true" /> {countOf(site.held.length, AR.course)} باسمٍ مجمَّد (في صحيفةٍ انتقالية): {site.held.slice(0, 2).map(row => `${row.before.name} ← ${row.after.name}`).join("، ")}</li> : null}
-                  {!site.updates.length && !site.creates.length && !site.links.length && !site.planNote ? <li>مطابق: لا شيء يتغيّر.</li> : null}
-                  {site.applied ? <li className="rap-done"><CheckCircle2 aria-hidden="true" /> طُبّق · {countOf(site.rules, AR.course)} بقواعد في المسوّدة</li> : null}
-                </ul>
-                {site.notes.length ? <details className="rap-notes"><summary>{countOf(site.notes.length, AR.note)}</summary><ul>{site.notes.slice(0, 12).map((note, i) => <li key={i}>{note}</li>)}</ul></details> : null}
-              </li>
-            ))}
+            {sites.map(site => {
+              const chips = [
+                { n: site.updates.length, Icon: ArrowLeftRight, tone: "fix", tip: site.updates.map(row => `${row.before.name} ← ${row.after.name}`).join("\n") },
+                { n: site.creates.length, Icon: ListPlus, tone: "add", tip: site.creates.map(row => row.name).join("\n") },
+                { n: site.links.length, Icon: Link2, tone: "link", tip: "" },
+                { n: site.skipped.length, Icon: Ban, tone: "skip", tip: [...new Set(site.skipped.map(row => row.reason))].join("\n") },
+                { n: site.held?.length || 0, Icon: ShieldAlert, tone: "held", tip: (site.held || []).map(row => `${row.before.name} ← ${row.after.name}`).join("\n") },
+              ].filter(chip => chip.n);
+              const hasDetail = site.updates.length || site.skipped.length || site.held?.length || site.notes.length;
+              return (
+                <li key={site.sectionId} className="rap-site">
+                  <div className="rap-site-head">
+                    <b>{collegeOf(site)}</b>
+                    {branchOf(site) ? <span className={`rap-branch is-${site.branch}`}>{branchOf(site)}</span> : null}
+                    {site.courseCount ? <small>{countOf(site.courseCount, AR.course)}</small> : null}
+                  </div>
+                  {site.planNote ? <Notice type="info" inline>{site.planNote}</Notice> : null}
+                  <div className="rap-chips">
+                    {chips.length ? chips.map(({ n, Icon, tone, tip }) => (
+                      <span key={tone} className={`rap-chip is-${tone}`} title={tip || undefined}><Icon aria-hidden="true" />{n}</span>
+                    )) : <span className="rap-chip is-ok"><CheckCircle2 aria-hidden="true" />مطابق</span>}
+                    {site.applied ? <span className="rap-chip is-ok"><CheckCircle2 aria-hidden="true" />طُبّق</span> : null}
+                  </div>
+                  {hasDetail ? (
+                    <details className="rap-notes"><summary>التفاصيل</summary>
+                      <ul>
+                        {site.updates.map(row => <li key={`u${row.code}`}><ArrowLeftRight aria-hidden="true" />{row.before.name} ← {row.after.name}</li>)}
+                        {site.held?.map(row => <li key={`h${row.code}`} className="rap-held"><ShieldAlert aria-hidden="true" />{row.before.name} ← {row.after.name} · اسم مجمَّد</li>)}
+                        {[...new Set(site.skipped.map(row => row.reason))].map(reason => <li key={`s${reason}`}><Ban aria-hidden="true" />{countOf(site.skipped.filter(row => row.reason === reason).length, AR.course)}: {reason}</li>)}
+                        {site.notes.slice(0, 12).map((note, i) => <li key={`n${i}`}>{note}</li>)}
+                      </ul>
+                    </details>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
           {!done ? (
             <div className="rap-actions">

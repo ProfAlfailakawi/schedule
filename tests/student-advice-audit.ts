@@ -68,6 +68,30 @@ const base = (over: Partial<AdviceInput> = {}): AdviceInput => ({
   check(gated(60).picks.some(p => p.courseId === 9), "A6 ويُقترح حين يبلغ الحدّ");
 }
 {
+  /* الوحدات بين ١٢ و١٥: لا فوق ١٥، ولا دون ١٢ ما دام في المطروح ما يملؤه. */
+  const many = { ...base(), planCourseIds: [1, 2, 6, 7, 8, 9, 10, 11], groups: [], rules: [], credit: new Map([1, 2, 6, 7, 8, 9, 10, 11].map(id => [id, 3] as const)) };
+  Object.assign(names, { 10: "ج", 11: "د" }); Object.assign(codes, { 10: "TEC501", 11: "TEC502" });
+  const wide = adviseStudent({ ...many, targetUnits: 18 });
+  check(wide.units <= 15 && wide.units >= 12, "A7 هدفٌ ١٨ يُقصّ إلى ١٥: بين ١٢ و١٥", wide.units);
+  const low = adviseStudent({ ...many, targetUnits: 6 });
+  check(low.units >= 12 && low.units <= 15, "A7 هدفٌ ٦ يُرفع إلى ١٢", low.units);
+}
+{
+  /* المقرنُ يُسجَّل معه: يدخل معه أو لا يدخل. */
+  const co = (over: Partial<AdviceInput> = {}) => adviseStudent(base({
+    planCourseIds: [1, 2, 6, 7], groups: [], targetUnits: 12,
+    rules: [{ courseId: 1, kind: "compulsory", coreq: [2] }, { courseId: 2, kind: "compulsory" }, { courseId: 6, kind: "compulsory" }, { courseId: 7, kind: "compulsory" }], ...over,
+  }));
+  const withPartner = co({ targetUnits: 6 });
+  const ids = withPartner.picks.map(p => p.courseId);
+  check(!ids.includes(1) || ids.includes(2), "A8 مقررٌ مقرنُه لا يُقترح دونه", ids);
+  const blocked = co({ offered: id => id !== 2, targetUnits: 12 });
+  check(!blocked.picks.some(p => p.courseId === 1), "A8 مقرنٌ غير مطروح يُسقط المقرر", blocked.picks.map(p => p.courseId));
+  const together = co({ targetUnits: 12 });
+  const one = together.picks.find(p => p.courseId === 1);
+  check(!one || together.picks.some(p => p.courseId === 2), "A8 المقرنان معاً حين يُقترح أحدهما");
+}
+{
   const noRules = adviseStudent(base({ rules: [], groups: [] }));
   check(!noRules.hasRules && noRules.picks.length > 0, "A1 بلا قواعد معتمدة: يُقترح بحسب المطروح وتُعلَن غيبةُ القواعد");
 }

@@ -215,3 +215,45 @@
 .qd-done>span svg{width:30px;height:30px}
 .qd-done b{font-size:1.3rem}.qd-done small{color:var(--muted)}
 @media print{.qd-scrim,.qd-open{display:none!important}}
+
+/* ══ سجلّ الحالات: بطاقاتٌ لا جدولٌ عريض ══════════════════════════════════════════
+   كل حالةٍ بطاقة: من هو، وما يطلب، وما قرارُه — والباقي (الرقم المدني والتاريخ ورقم الحالة) خلف «تفاصيل». */
+.student-cases-table-wrap{overflow:visible;border:0;border-radius:0;background:none;box-shadow:none}
+.student-cases-table{min-width:0!important;display:block;border:0}
+.student-cases-table thead{display:none}
+.student-cases-table tbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,440px),1fr));gap:12px}
+.student-cases-table tr.sc-card{--c:var(--success);display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:14px 16px;border:1px solid var(--line);border-inline-start:4px solid var(--c);border-radius:20px;background:var(--surface);box-shadow:var(--shadow-xs);transition:box-shadow .18s,transform .18s}
+.student-cases-table tr.sc-card:hover{background:var(--surface);box-shadow:0 14px 28px -20px rgba(19,24,23,.45)}
+.student-cases-table tr.sc-card.case-course-conflict{--c:var(--danger)}
+.student-cases-table tr.sc-card.case-graduate{--c:var(--warning)}
+.student-cases-table tr.sc-card td{display:block;padding:0;border:0!important;min-width:0}
+.student-cases-table tr.sc-card td::before{display:none}
+.sc-head{display:flex!important;align-items:center;gap:12px}
+.sc-av{flex:none;inline-size:42px;block-size:42px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 14%,var(--surface));color:var(--c);font-weight:800;font-size:1.1rem}
+.sc-who{flex:1;min-inline-size:0;display:grid;gap:1px}
+.sc-who strong{font-size:1.02rem;line-height:1.4}
+.sc-who small{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;color:var(--muted);font-size:.78rem}
+.sc-type{flex:none;display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:99px;font-size:.76rem;font-weight:700;background:color-mix(in srgb,var(--c) 13%,var(--surface));color:var(--c)}
+.sc-type svg{inline-size:13px;block-size:13px}
+.student-cases-table tr.sc-card .student-case-detail-cell{min-width:0}
+.student-cases-table tr.sc-card .student-case-detail{display:grid;gap:8px}
+.student-cases-table tr.sc-card .student-case-course{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 12px;border-radius:14px;background:var(--surface-2,#f4f3ef)}
+.student-cases-table tr.sc-card .student-case-course>b{flex:1 1 180px;font-size:1rem;line-height:1.5}
+.student-cases-table tr.sc-card .student-case-decision{margin:0;flex:1 1 100%;justify-content:space-between}
+.student-cases-table tr.sc-card .student-case-state{min-height:26px;padding:0 11px;font-size:.78rem;font-weight:700}
+.student-cases-table tr.sc-card .student-case-actions{gap:6px}
+.student-cases-table tr.sc-card .student-case-actions .changes-chip{min-height:38px;padding:0 14px;border-radius:12px;font-weight:700}
+.student-cases-table tr.sc-card .student-case-actions .changes-chip:first-child{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}
+.student-cases-table tr.sc-card .student-case-actions .changes-chip:last-child:not(:first-child){color:var(--danger)}
+.student-cases-table tr.sc-card .student-case-notes{display:flex;flex-wrap:wrap;gap:6px}
+.sc-foot{display:flex!important;align-items:center;justify-content:space-between;gap:10px}
+.sc-foot .student-case-row-action:empty{display:none}
+.student-cases-table tr.sc-card .student-case-more-toggle{display:inline-flex;align-items:center;gap:4px;margin:0;min-height:32px;padding:0 12px;border:0;border-radius:99px;background:var(--surface-2,#f1f0eb);color:var(--muted);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer}
+.student-cases-table tr.sc-card .student-case-more-toggle svg{inline-size:14px;block-size:14px;transition:transform .15s}
+.student-cases-table tr.sc-card .student-case-more-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.student-cases-table tr.sc-card:not(.is-more-open) td.sc-more{display:none!important}
+.sc-more{display:flex!important;flex-wrap:wrap;gap:8px 18px;padding-block-start:10px!important;border-block-start:1px dashed var(--line)!important;font-size:.82rem}
+.sc-more>span{display:grid;gap:1px}
+.sc-more small{color:var(--muted);font-size:.72rem}
+.sc-more code{font:700 .82rem var(--font-mono);letter-spacing:.04em}
+.student-cases-table tr.sc-card td.sc-more{border-block-start:1px dashed var(--line)!important}
