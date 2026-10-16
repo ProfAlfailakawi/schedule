@@ -12,7 +12,10 @@ import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, 
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
-import ApplyProposal, { postScheduleProposal } from "./ApplyProposal";
+import ApplyProposal, { postScheduleProposal, postWhatIf } from "./ApplyProposal";
+import SemesterReadiness, { type Insight, type QualityCell } from "./SemesterReadiness";
+import { writeSharedScope } from "../utils/sharedScope";
+import CourseImpact from "./CourseImpact";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 interface Unmet { "not-offered": number; conflict: number; full: number; prereq: number; units: number }
@@ -66,6 +69,8 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const [q, setQ] = useState("");
   const [scenario, setScenario] = useState<"actual" | "projected">("actual");
   const [view, setView] = useState<"capacity" | "decide" | "outcome" | null>(null);
+  const [insight, setInsight] = useState<Insight | null>(null);
+  const [insightFailed, setInsightFailed] = useState(false);
   const autoRunInFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -77,6 +82,19 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 30_000);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  /* لماذا لم يبلغوا 12؟ وأيّ شعبةٍ بيانُها ناقص؟ — بعد الملخّص، وتُعاد بعد كل احتساب جديد. */
+  const ranAt = data?.run?.ranAt;
+  useEffect(() => {
+    if (!ranAt) return;
+    let live = true;
+    fetch("/api/simulation/insight", { cache: "no-store" }).then(async response => {
+      if (!response.ok) throw new Error("insight");
+      const body = await response.json();
+      if (live) { setInsight(body.ready ? body : null); setInsightFailed(false); }
+    }).catch(() => { if (live) setInsightFailed(true); });
+    return () => { live = false; };
+  }, [ranAt]);
 
   /* Source writes mark the saved run stale. The admin view repairs it on its
      own; polling also catches changes made in another session or process. */
@@ -145,6 +163,8 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
         <EmptyState title="جارٍ إعداد الرادار تلقائياً" detail={data.canRun ? "سيظهر التحليل هنا بعد اكتمال الاحتساب؛ لا حاجة إلى تشغيله يدوياً." : "تُحدّثه إدارةُ النظام آلياً، ثم يظهر التحليل هنا."} />
       ) : (
         <>
+          <SemesterReadiness bands={bands} wanted={wantedTotal} seated={seatedTotal} fullCourses={rows.filter(c => c.unmet.full > 0).length} notOffered={rows.filter(c => c.unmet["not-offered"] > 0).length}
+            onStart={decide.length ? () => { setView("decide"); window.scrollTo({ top: 0, behavior: "smooth" }); } : undefined} insight={insight} failed={insightFailed} />
           <div className="sm-views" role="tablist" aria-label="أقسام الرادار">
             <button type="button" role="tab" aria-selected={shownView === "decide"} onClick={() => setView("decide")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className={`sm-ic${decide.length ? " hot" : ""}`}><CircleAlert /></span><b>{decide.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>تحتاج قراراً</small></button>
             <button type="button" role="tab" aria-selected={shownView === "capacity"} onClick={() => setView("capacity")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><GraduationCap /></span><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>أقل من 12 وحدة</small></button>
@@ -175,6 +195,8 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
               {quality.issues.duplicateRows ? <li>صفوف مكررة جرى تجاهلها · {quality.issues.duplicateRows}</li> : null}
               <li>الشعب المستبعدة لا تدخل في المقاعد المؤكدة. أعد الاحتساب بعد تصحيح المصدر.</li>
             </ul> : null}
+            {insight?.quality?.length ? <QualityCells cells={insight.quality} truncated={Boolean(insight.qualityTruncated)} termId={data?.term?.id || 0}
+              onOpen={canSchedule && onNavigate ? () => onNavigate("schedules") : undefined} qualityLabel={qualityLabel} /> : null}
           </details> : null}
 
           <details className="sm-provenance"><summary>مصدر الأرقام <small>آخر احتساب {new Date(r.ranAt).toLocaleString("ar-KW-u-nu-latn", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></summary>
@@ -203,6 +225,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
                     <small>{c.sections ? `${countOf(c.sections, AR.section)} · ${c.taken} من ${countOf(c.capacity, AR.seat)}` : "لا تُطرح هذا الفصل"} · طُلب {c.wanted}</small>
                   </div>
                   <div className="sm-why">{unmet.map(x => <span key={x.key} className={`sm-chip ${x.tone}`}>{x.label} {x.n}</span>)}</div>
+                  <CourseImpact courseId={c.courseId} />
                   {canSchedule && data.term && needsDecision(c) ? <RadarSchedule course={c as CourseRow & { collegeId?: number; sectionId?: number }} termId={data.term.id} onChanged={() => void load()} /> : null}
                 </article>
               );
@@ -244,6 +267,7 @@ function RadarSchedule({ course, termId, onChanged }: { course: CourseRow & { co
               compact
               lines={[`شعبة ${slot.sectionCode} لـ«${course.name}» · ${slot.dayLabel} ${formatScheduleTimeRange(slot.start, slot.end)} · ${slot.roomCode}${slot.roomHall ? `/${slot.roomHall}` : ""} · ${slot.instructorName}`]}
               why={`تخدم ${countOf(proposal.shortfall, AR.student)} بلا مقعدٍ في هذا المقرر.`}
+              preview={() => postWhatIf({ kind: "opening", collegeId: course.collegeId, sectionId: course.sectionId, termId, courseId: course.courseId, placement: slot })}
               run={async () => {
                 const result = await postScheduleProposal({
                   kind: "opening", collegeId: course.collegeId, sectionId: course.sectionId, termId, courseId: course.courseId, placement: slot,
@@ -294,5 +318,29 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
       })}
       <details className="sm-info"><summary><Info /> مصدر الأجوبة</summary><p>أجوبةُ الطلبة أنفسهم في «مساري» بعد التسجيل، وهي عيّنةٌ ممن اختار أن يجيب — لا كلُّ الطلبة. «لم يسجّل» تعني أنه لم يتمكن من تسجيل المقرر، والأسباب إجاباتُهم.{outcome.scoped ? " المعروض مقرراتُ قسمك فقط." : ""}</p></details>
     </section>
+  );
+}
+
+/** الشعب المستبعدة، واحدةً واحدة: ما نقصها، وزرٌّ يفتح خانتَها في الجدول (لمن يملك الجدول). */
+function QualityCells({ cells, truncated, termId, onOpen, qualityLabel }: { cells: QualityCell[]; truncated: boolean; termId: number; onOpen?: () => void; qualityLabel: (key: string) => string }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? cells : cells.slice(0, 6);
+  return (
+    <div className="qc-list" aria-label="الشعب التي تحتاج استكمال بياناتها">
+      {shown.map(cell => (
+        <div key={`${cell.offeringId}:${cell.issue}`} className="qc-row">
+          <span className="qc-ic" aria-hidden="true"><AlertTriangle /></span>
+          <div><b>{cell.courseName || `مقرر ${cell.courseId}`}</b><small>{cell.courseCode} · شعبة {cell.code} · {qualityLabel(cell.issue)}</small></div>
+          {onOpen && cell.rowId ? (
+            <SecondaryButton type="button" onClick={() => {
+              writeSharedScope({ collegeId: cell.collegeId, sectionId: cell.sectionId, termId });
+              try { sessionStorage.setItem("schedule-open-context-id", String(cell.rowId)); } catch { /* التخزين غير متاح: يُفتح الجدول بلا تحديد */ }
+              onOpen();
+            }} data-guide-ignore="يفتح الجدول على هذه الشعبة لاستكمال بياناتها؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> افتح الخانة</SecondaryButton>
+          ) : null}
+        </div>
+      ))}
+      {cells.length > 6 ? <button type="button" className="sm-toggle" onClick={() => setAll(!all)} data-guide-ignore="عرضُ بقية الشعب المستبعدة؛ لا يكتب شيئاً">{all ? "أقل" : `كل الشعب (${cells.length}${truncated ? "+" : ""})`}</button> : null}
+    </div>
   );
 }
