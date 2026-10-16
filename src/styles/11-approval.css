@@ -455,6 +455,8 @@
    حفظ ما لم يُعدَّل.                                                      */
 .changes-term-picker{display:inline-flex;align-items:center;gap:8px}
 .changes-term-picker>span{color:var(--muted);font-size:.84rem;font-weight:600}
+/* The title actions were a plain block: the term label touched the department-schedule button and sat on a different line-box. */
+.changes-title-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
 .changes-term-picker select{
   min-block-size:38px;padding:6px 11px;font:inherit;
   border:1px solid var(--line-strong);border-radius:var(--r-sm);
