@@ -56,6 +56,19 @@ const load = async (name: string): Promise<ParsedPlan> => parsePlanItems(await e
   check(diff.oldOnly.length === 58 && diff.newOnly.length === 49, `قديمة بلا مقابل 58، وجديدة بلا مقابل 49 (${diff.oldOnly.length}/${diff.newOnly.length})`);
   check(normalizeCourseName("الثقافه العلميه") === normalizeCourseName("الثقافة العلمية"), "مطابقة الأسماء تتجاوز الهاء/التاء المربوطة");
 
+  /* ── أسطر «أو» المتتالية تبقى مجموعةً واحدة، وغياب الترويسة تحذير ── */
+  const rowsOf = (...rows: Array<[number, number, string]>) => rows.map(([x, y, str]) => ({ str, x, y, w: 40 }));
+  const synthetic = parsePlanItems([rowsOf(
+    [690, 500, "الكلية"], [700, 503, "كلية التربية"], [260, 503, "الفصل الدراسي الاول 2027-2026"],
+    [685, 448, "-1 مقررات ثقافية عامة"], [509, 448, ")3( وحدة"],
+    [702, 432, "مجموعة إجبارية"], [514, 432, ")3( وحدة"],
+    [707, 405, "114 02 01"], [654, 405, "لغة"], [525, 405, "3"], [491, 405, "3"],
+    [424, 393, "101 02 01"], [430, 381, "أو"], [424, 381, "102 02 01"], [430, 369, "أو"], [424, 369, "103 02 01"],
+  )]);
+  const only = synthetic.courses[0];
+  check(JSON.stringify(only?.prereqAny) === '[["0102101","0102102","0102103"]]' && only?.prereqAll.length === 0, "أ ثم «أو ب» ثم «أو ج» = (أ أو ب أو ج) لا (أ أو ب) و ج");
+  check(synthetic.warnings.some(w => /الكلية|القسم|الدرجة/.test(w)), "ترويسةٌ ناقصة (قسم/درجة) تُنتج تحذيراً لا قراءةً صامتة");
+
   /* ── ملفٌ غير موثوق ── */
   let refused = false;
   try { await extractPlanItems(new Uint8Array(PLAN_PDF_MAX_BYTES + 1)); } catch { refused = true; }

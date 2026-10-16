@@ -16,13 +16,13 @@ const check = (ok: boolean, label: string) => {
   else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); }
 };
 
-/** تصحيحاتٌ إملائية مقصودة في المرجع لأسماءٍ مطبوعةٍ بإملاءٍ قديم؛ لا يُقبل غيرها. */
-const SPELLING_CORRECTIONS: Record<string, string> = {
-  "0105107": "مدخل إلى حاسبات الجيب والإحصاء",
-  "0109227": "مبادئ الحاسوب التعليمي",
-  "0115154": "سيكولوجية النمو",
-  "0115256": "سيكولوجية الابتكار",
-  "0115296": "سيكولوجية القراءة",
+/** تصحيحاتٌ إملائية مقصودة: الاسم المطبوع بإملائه القديم ← الاسم في المرجع. لا يُقبل غيرهما. */
+const SPELLING_CORRECTIONS: Record<string, { printed: string; corrected: string }> = {
+  "0105107": { printed: "مدخل الى حاسبات الجيب ولاحصاء", corrected: "مدخل إلى حاسبات الجيب والإحصاء" },
+  "0109227": { printed: "مبادىءالحاسوب التعليمى", corrected: "مبادئ الحاسوب التعليمي" },
+  "0115154": { printed: "سيكلوجيه النمو", corrected: "سيكولوجية النمو" },
+  "0115256": { printed: "سيكلوجيه الابتكار", corrected: "سيكولوجية الابتكار" },
+  "0115296": { printed: "سيكلوجيه القراءه", corrected: "سيكولوجية القراءة" },
 };
 
 (async () => {
@@ -41,8 +41,10 @@ const SPELLING_CORRECTIONS: Record<string, string> = {
       const { course, group } = hit;
       if (course.credit !== source.units) problems.push(`${key} وحدات: مرجع ${course.credit}، مطبوع ${source.units}`);
       if (course.hours !== source.hours) problems.push(`${key} ساعات: مرجع ${course.hours}، مطبوع ${source.hours}`);
-      const expectedName = SPELLING_CORRECTIONS[key];
-      const nameOk = expectedName ? course.name === expectedName : normalizeCourseName(course.name) === normalizeCourseName(source.name);
+      const exception = SPELLING_CORRECTIONS[key];
+      const nameOk = exception
+        ? course.name === exception.corrected && source.name === exception.printed
+        : normalizeCourseName(course.name) === normalizeCourseName(source.name);
       if (!nameOk) problems.push(`${key} اسم: مرجع «${course.name}»، مطبوع «${source.name}»`);
       const refPrereq = course.prerequisites.filter((code: string) => code !== "PEN");
       const wantAll = [...source.prereqAll].sort().join(), haveAll = [...refPrereq].sort().join();

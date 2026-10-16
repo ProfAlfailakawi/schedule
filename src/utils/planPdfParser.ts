@@ -152,11 +152,16 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
   if (!plan.program) warnings.push("لم يُقرأ رمز البرنامج (BA-…)");
   if (!plan.startYear) warnings.push("لم تُقرأ سنة بدء الخطة");
   if (!plan.degreeUnits) warnings.push("لم يُقرأ عدد وحدات التخرج");
+  if (!plan.college) warnings.push("لم تُقرأ الكلية");
+  if (!plan.department) warnings.push("لم يُقرأ القسم");
+  if (!plan.degree) warnings.push("لم تُقرأ الدرجة العلمية");
 
   /* ── الجسم: عمودٌ بعد عمود، الأيمن أولاً ثم الأيسر، صفحةً بعد صفحة ── */
   let section: PlanSection | null = null;
   let group: PlanGroup | null = null;
   let current: PlanCourse | null = null;
+  /* مجموعةُ «أ أو ب» المفتوحة: أسطرُ «أو» المتتالية تُضاف إليها فلا تنقسم إلى (أ أو ب) و ج. */
+  let openAny: string[] | null = null;
   let groupIndex = 0;
 
   const openGroup = (name: string, units: number | null) => {
@@ -165,7 +170,7 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
     const kind: PlanGroupKind = /اختيارية|إختيارية/.test(name) ? "elective" : /التدريب/.test(name) ? "training" : "mandatory";
     group = { id: `s${section.no}g${groupIndex}`, sectionNo: section.no, name, kind, units, offeredUnits: 0 };
     plan.groups.push(group);
-    current = null;
+    current = null; openAny = null;
   };
   const unitsOf = (text: string): number | null => {
     const hit = text.match(/\((\d+)\)\s*وحدة/);
@@ -187,7 +192,7 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
           const no = m ? Number(m[1]) : plan.sections.length + 1;
           section = { no, name: (m?.[2] || "").trim(), units: unitsOf(text) };
           plan.sections.push(section);
-          group = null; current = null; groupIndex = 0;
+          group = null; current = null; openAny = null; groupIndex = 0;
           continue;
         }
         const codeItems = line.items.filter(item => CODE.test(item.str));
@@ -211,6 +216,7 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
           const hours = hoursItem ? Number(hoursItem.str) : NaN;
           if (!Number.isFinite(units)) warnings.push(`مقرر ${ids.code}: لم تُقرأ الوحدات`);
           if (!Number.isFinite(hours)) warnings.push(`مقرر ${ids.code}: لم تُقرأ الساعات`);
+          openAny = null;
           current = {
             ...ids, college: printed.college, dept: printed.dept, number: printed.number, name,
             units: Number.isFinite(units) ? units : 0, hours: Number.isFinite(hours) ? hours : 0,
@@ -227,14 +233,21 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
           const keys = prereqs.map(item => { const c = splitCode(item.str); return toCode(c.college, c.dept, c.number).codeKey; });
           if (orMark || pen) {
             /* «أ أو ب»: أ هو آخر لازمٍ سبق، وما بعد «أو» بدائل */
-            const alternatives: string[] = [];
-            const base = current.prereqAll.pop();
-            if (base) alternatives.push(base);
-            alternatives.push(...keys);
-            if (pen) alternatives.push("PEN");
-            if (alternatives.length > 1) current.prereqAny.push(alternatives);
-            else if (alternatives.length === 1) current.prereqAll.push(alternatives[0]);
+            if (openAny) {
+              /* سطرُ «أو» ثالثٌ فأكثر: يلتحق بالمجموعة المفتوحة */
+              openAny.push(...keys);
+              if (pen) openAny.push("PEN");
+            } else {
+              const alternatives: string[] = [];
+              const base = current.prereqAll.pop();
+              if (base) alternatives.push(base);
+              alternatives.push(...keys);
+              if (pen) alternatives.push("PEN");
+              if (alternatives.length > 1) { current.prereqAny.push(alternatives); openAny = alternatives; }
+              else if (alternatives.length === 1) current.prereqAll.push(alternatives[0]);
+            }
           } else {
+            openAny = null;
             for (const key of keys) if (!current.prereqAll.includes(key)) current.prereqAll.push(key);
           }
           continue;
