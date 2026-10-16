@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Brain, ClipboardList, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
+import { Brain, ClipboardList, Layers, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ScheduleOrigin } from "../types";
 
 /**
@@ -12,6 +12,7 @@ const ORIGIN: Record<string, { label: string; icon: React.ReactNode }> = {
   "student-case": { label: "حالة طالب", icon: <UserRound aria-hidden="true" /> },
   "instructor-request": { label: "رغبة أستاذ", icon: <ClipboardList aria-hidden="true" /> },
   intelligence: { label: "مركز الذكاء", icon: <Brain aria-hidden="true" /> },
+  planning: { label: "تخطيط الشعب", icon: <Layers aria-hidden="true" /> },
 };
 interface EventRow { at: string; who: string; action: string; what: string }
 const stamp = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toLocaleString("ar-KW-u-nu-latn", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""; };

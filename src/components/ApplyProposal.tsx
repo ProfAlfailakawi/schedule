@@ -60,7 +60,7 @@ function BandBar({ label, bands, total }: { label: string; bands: Bands; total: 
   );
 }
 
-function ImpactCard({ impact }: { impact: ChangeImpact }) {
+export function ImpactCard({ impact }: { impact: ChangeImpact }) {
   const Icon = impact.verdict === "avoid" ? AlertOctagon : impact.verdict === "neutral" ? CircleSlash : impact.verdict === "caution" ? TrendingDown : TrendingUp;
   return (
     <div className={`ip-card v-${impact.verdict}`}>

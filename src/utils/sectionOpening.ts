@@ -95,6 +95,8 @@ export interface SectionProposal {
   /** New sections the arithmetic asks for. */
   needed: number;
   placements: Placement[];
+  /** لماذا لم توضع كلُّ الشعب المطلوبة (حين placements < needed): ما يحتاجه القسم لا ما يخمّنه المحرّك. */
+  unplacedReason?: string;
   sentence: string;
 }
 
@@ -290,6 +292,12 @@ export function readSectionOpenings(
     const nextCode = (usedCodes.length ? Math.max(...usedCodes) : openSections) + 1;
 
     const placements: Placement[] = [];
+    const courseHoursNow = Number(course.CourseHours || course.CourseCredit) || 0;
+    const eligibleAtStart = teachers.filter(id => {
+      const person = personById.get(id);
+      const limit = Number(person?.AdInstructorLoad) || 0;
+      return person && person.AdInstructorStatus !== "retired" && person.AdInstructorStatus !== "sabbatical" && limit > 0 && (currentLoads.get(id) || 0) + courseHoursNow <= limit;
+    });
     for (let slot = 1; slot <= needed; slot += 1) {
       let placed: Placement | null = null;
 
@@ -337,6 +345,11 @@ export function readSectionOpenings(
       if (placed) placements.push(placed);
       else break;
     }
+    const unplacedReason = placements.length >= needed ? undefined
+      : !rooms.some(candidateRoom => candidateRoom.capacity >= capacity) ? "لا قاعة موثّقة بسعةٍ تكفي لهذا المقرر"
+      : !teachers.length ? "لا أستاذ درّس هذا المقرر من قبل: اختر أستاذاً"
+      : !eligibleAtStart.length ? "أحمال من درّسوه ممتلئة أو بلا نصاب مسجَّل"
+      : "لا وقتَ خالياً من التعارض مع الجدول والقاعات والدفعة";
 
     const proposal: SectionProposal = {
       courseId: item.id,
@@ -344,7 +357,7 @@ export function readSectionOpenings(
       courseCode: course.CourseCode,
       demand: item.students,
       predicted: item.predicted,
-      capacity, openSections, seats, shortfall, needed, placements,
+      capacity, openSections, seats, shortfall, needed, placements, ...(unplacedReason ? { unplacedReason } : {}),
       sentence: "",
     };
     proposal.sentence = describeProposal(proposal);

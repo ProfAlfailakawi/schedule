@@ -1,5 +1,4 @@
-/* ==========================================================================
-   SCHEDULE — ACADEMIC WORKSPACE
+/* ===================================================================   SCHEDULE — ACADEMIC WORKSPACE
    Single, coherent presentation layer. Load order is the cascade order.
    ========================================================================== */
 
@@ -15,6 +14,7 @@
 @import "./styles/19-beauty-admin-registration.css";
 @import "./styles/20-insight.css";
 @import "./styles/21-plan-general.css";
+@import "./styles/23-section-build.css";
 @import "./styles/22-outcome-story.css";
 @import "./styles/14-proposal.css";
 @import "./styles/07-responsive.css";

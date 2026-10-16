@@ -298,7 +298,7 @@ export interface FSchedule {
   origin?: ScheduleOrigin;
 }
 
-export type ScheduleOriginKind = "radar" | "student-case" | "instructor-request" | "intelligence";
+export type ScheduleOriginKind = "radar" | "student-case" | "instructor-request" | "intelligence" | "planning";
 
 export interface ScheduleOrigin {
   kind: ScheduleOriginKind;
