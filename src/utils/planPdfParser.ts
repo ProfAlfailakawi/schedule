@@ -19,6 +19,8 @@
  * كما طُبع (013099) وبصفره البادئ (0130099)، ويُطابَق أيُّهما وُجد.
  */
 
+import { AR, countOf } from "./arabicCount";
+
 export interface PlanItem { str: string; x: number; y: number; w: number }
 
 export type PlanGroupKind = "mandatory" | "elective" | "training";
@@ -266,9 +268,9 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
   for (const group of plan.groups) {
     if (group.units === null) continue;
     if (group.kind === "elective") {
-      if (group.offeredUnits < group.units) warnings.push(`مجموعة «${group.name}»: المعروض ${group.offeredUnits} وحدة أقل من المطلوب ${group.units}`);
+      if (group.offeredUnits < group.units) warnings.push(`مجموعة «${group.name}»: المعروض ${countOf(group.offeredUnits, AR.unit)} أقل من المطلوب ${countOf(group.units, AR.unit)}`);
     } else if (group.offeredUnits !== group.units) {
-      warnings.push(`مجموعة «${group.name}»: مجموع المقررات ${group.offeredUnits} وحدة والمطبوع ${group.units}`);
+      warnings.push(`مجموعة «${group.name}»: مجموع المقررات ${countOf(group.offeredUnits, AR.unit)} والمطبوع ${countOf(group.units, AR.unit)}`);
     }
   }
   let sum = 0;
@@ -278,7 +280,7 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
     if (sec.units !== null && required !== sec.units) warnings.push(`قسم «${sec.name}»: مجموع مجموعاته ${required} والمطبوع ${sec.units}`);
     sum += sec.units ?? required;
   }
-  if (plan.degreeUnits && sum !== plan.degreeUnits) warnings.push(`مجموع الأقسام ${sum} وحدة وعدد وحدات التخرج المطبوع ${plan.degreeUnits}`);
+  if (plan.degreeUnits && sum !== plan.degreeUnits) warnings.push(`مجموع الأقسام ${countOf(sum, AR.unit)} وعدد وحدات التخرج المطبوع ${plan.degreeUnits}`);
   return plan;
 }
 
