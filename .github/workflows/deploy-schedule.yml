@@ -64,3 +64,21 @@ jobs:
               --image="$IMAGE" \
               --quiet
           done
+
+      # «Deploy: success» is not proof the site changed (2026-10-16). The release
+      # counts only when schedule.dr-alfailakawi.com serves the same build as the
+      # official service it is mapped to.
+      - name: Verify the official domain serves this release
+        run: |
+          official="https://schedule-34704073784.europe-west1.run.app/sw.js"
+          domain="https://schedule.dr-alfailakawi.com/sw.js"
+          want=$(curl -fsS --max-time 20 "$official" | grep -o 'BUILD="[^"]*"' || true)
+          echo "official service: $want"
+          for attempt in $(seq 1 20); do
+            got=$(curl -fsS --max-time 20 "$domain" | grep -o 'BUILD="[^"]*"' || true)
+            echo "domain (try $attempt): ${got:-unreachable}"
+            if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "✓ schedule.dr-alfailakawi.com serves this release"; exit 0; fi
+            sleep 30
+          done
+          echo "::error::schedule.dr-alfailakawi.com is not serving the deployed build. Do NOT touch the domain mapping — see AGENTS.md."
+          exit 1
