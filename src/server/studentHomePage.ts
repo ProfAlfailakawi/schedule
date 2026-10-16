@@ -65,6 +65,10 @@ button,input{font:inherit;color:inherit}
 .mark{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.28em;color:var(--brass)}
 .term{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:var(--card);border:1px solid var(--line);font-size:12.5px;color:var(--dim)}
 .term .i{inline-size:14px;block-size:14px;color:var(--accent)}
+.topr{display:flex;align-items:center;gap:8px}
+.jrn{display:inline-flex;align-items:center;gap:6px;padding:5px 13px;border-radius:999px;background:var(--card);border:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--ink,inherit);text-decoration:none;transition:border-color .2s,transform .2s}
+.jrn:hover,.jrn:focus-visible{border-color:var(--brass);outline:none;transform:translateY(-1px)}
+.jrn .i{inline-size:15px;block-size:15px;color:var(--brass)}
 
 /* ── بطاقات ── */
 .hero{display:grid;gap:12px;padding:22px 20px;border-radius:26px;color:#fff;background:linear-gradient(155deg,#1f6b5c 0%,#164f44 70%);box-shadow:0 18px 36px -22px rgba(22,79,68,.7);position:relative;overflow:hidden}
@@ -394,7 +398,7 @@ function markOverflow(){var t=document.querySelector(".track");if(t&&t.scrollWid
 function animateRings(){var fgs=document.querySelectorAll(".ring .fg");for(var i=0;i<fgs.length;i++){(function(el){requestAnimationFrame(function(){requestAnimationFrame(function(){el.style.strokeDashoffset=el.getAttribute("data-off")})})})(fgs[i])}}
 function phaseChip(){var s=S.state;if(!s)return"";var ph=s.phase;return '<div class="phase">'+ic(ph.mode==="wishes"?"heart":ph.mode==="report"?"ticket":ph.mode==="frozen"?"lock":"clock")+'<span>'+(ph.line.indexOf(ph.label)>=0?'':'<b>'+esc(ph.label)+'</b> · ')+esc(ph.line)+'</span></div>'}
 function track(){var s=S.state;if(!s||!s.timeline)return"";var ICON={submission:"book",wishes:"heart",frozen:"lock",round:"ticket",close:"flag"};var h='<ol class="track" aria-label="رحلة الفصل">';s.timeline.forEach(function(st){var d=st.to||st.from;h+='<li class="stp '+st.state+'"'+(st.state==="now"?' aria-current="step"':"")+'><span class="d">'+ic(st.state==="done"?"check":ICON[st.kind]||"clock")+'</span><b>'+esc(st.title)+'</b><small>'+(d?esc(fmtShort(d)):"—")+'</small></li>'});return h+'</ol>'}
-function setTop(){var s=S.state;topEl.innerHTML='<span class="mark">SCHEDULE</span>'+(s&&s.term?'<span class="term">'+ic("cal")+esc(s.term.name)+'</span>':"")}
+function setTop(){var s=S.state;topEl.innerHTML='<span class="mark">SCHEDULE</span><span class="topr">'+(s&&s.term?'<span class="term">'+ic("cal")+esc(s.term.name)+'</span>':"")+'<a class="jrn" href="/?journey=1&amp;back=/me" aria-label="افتح رحلة SCHEDULE">'+ic("spark")+'<span>الرحلة</span></a></span>'}
 function setView(v){S.view=v;render()}
 function sheet(html){closeSheet();var el=document.createElement("div");el.className="scrim";el.id="scrim";el.innerHTML='<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>'+html+'</div>';el.addEventListener("click",function(e){if(e.target===el)closeSheet()});document.body.appendChild(el);return el}
 function closeSheet(){var el=document.getElementById("scrim");if(el)el.remove()}
@@ -860,7 +864,7 @@ export function studentHomePage(nonce: string, track: "boys" | "girls" | "" = ""
 <body>
 ${SPRITE}
 <div class="app">
-<header class="top" id="top"><span class="mark">SCHEDULE</span></header>
+<header class="top" id="top"><span class="mark">SCHEDULE</span><span class="topr"><a class="jrn" href="/?journey=1&amp;back=/me" aria-label="افتح رحلة SCHEDULE"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg><span>الرحلة</span></a></span></header>
 <main id="app" aria-live="polite"><div class="skel"></div></main>
 </div>
 <div class="dock" id="dock"></div>

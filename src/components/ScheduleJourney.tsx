@@ -13,6 +13,7 @@ export type JourneyReading = {
     instructors: number;
     sections: number;
     colleges: number;
+    since?: number | null;
   };
   current: {
     termId: number | null;
@@ -339,7 +340,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
         <footer className="jr-foot">
           <div>
             <span>التأسيس والتطوير</span>
-            <strong>عشر سنوات تشغيل أكاديمي متصل</strong>
+            <strong>{life?.since ? `تشغيل أكاديمي متصل منذ ${life.since}` : "تشغيل أكاديمي متصل"}</strong>
             <em className="jr-foot-authors">د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</em>
           </div>
           <small dir="ltr">SCHEDULE{version ? ` · ${version}` : ""}</small>
