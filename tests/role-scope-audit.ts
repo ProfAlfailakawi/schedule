@@ -173,6 +173,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
     "notificationItemsForTerm", "approvalBadgeForTerm", "owningSectionsInScopeFor", "requirePowerAdmin", "requireRootAdmin",
     "requirePermission(11)", "requirePermission(12)", "requirePermission(15)", "requireAnyPermission([11, 15])", "isPowerUser"];
   const REVIEWED: Record<string, string> = {
+    "POST /api/schedules/apply-proposal": "يمرّ من معالجَي الحفظ نفسيهما (createScheduleHandler/updateScheduleHandler: isScopeAllowed + قفل + تعارض)، وللنقل يسأل applyProposalCore النطاقَ صراحةً",
     "GET /api/version": "رقم الإصدار — لا بيانات",
     "GET /api/journey": "أعدادٌ مجمّعة عامّة عمداً (تُعرض قبل الدخول)، بلا أسماء",
     "GET /api/colleges": "أسماء كليات النطاق (تصفية بصفوف النطاق)",
@@ -194,7 +195,13 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   heads.forEach((match, i) => {
     const path_ = match[2];
     if (!path_.startsWith("/api/") || path_.startsWith("/api/public/") || path_.startsWith("/api/auth/") || path_.startsWith("/api/demo/")) return;
-    const body = server.slice(match.index!, heads[i + 1]?.index ?? server.length);
+    let body = server.slice(match.index!, heads[i + 1]?.index ?? server.length);
+    /* مسارٌ يسجَّل بمعالجٍ مسمّى (إضافةُ الموعد وتعديلُه): الحارسُ في جسم المعالج لا في سطر التسجيل. */
+    const named = body.match(/,\s*(\w+Handler)\);/)?.[1];
+    if (named) {
+      const at = server.indexOf(`const ${named} = async`);
+      body += at > -1 ? server.slice(at, server.indexOf("\napp.", at)) : "";
+    }
     const key = `${match[1].toUpperCase()} ${path_}`;
     if (GUARDS.some(guard => body.includes(guard)) || REVIEWED[key]) return;
     unguarded.push(key);
