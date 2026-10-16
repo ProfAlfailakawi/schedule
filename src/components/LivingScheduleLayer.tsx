@@ -44,7 +44,7 @@ import {
   WhyResult,
 } from "./LivingScheduleScenes";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
-import { livingScopeKey, readLiving, sharedLiving } from "../utils/livingCache";
+import { livingScopeKey, readLiving, recallScores, rememberScores, sharedLiving } from "../utils/livingCache";
 import type { ScheduleExperience } from "./ScheduleExperienceLayer";
 import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
@@ -246,6 +246,8 @@ export default function LivingScheduleLayer({
       throw error;
     }
   };
+  const scoresKey = `${user?.SystemUserId ?? 0}|${livingScopeKey(collegeId, sectionId, termId, experience?.analysisScope)}`;
+  const recalled = React.useMemo(() => recallScores(scoresKey), [scoresKey]);
   const loadLiving = async () => {
     const request = ++livingRequest.current;
     try {
@@ -259,6 +261,7 @@ export default function LivingScheduleLayer({
         () => json(`/api/intelligence/living${q ? `?${q}` : ""}`),
       );
       if (request !== livingRequest.current) return;
+      rememberScores(scoresKey, d?.health);
       setLiving(d);
       if (!selectedId && rows[0]) setSelectedId(rows[0].id);
     } catch (e: any) {
@@ -758,10 +761,20 @@ export default function LivingScheduleLayer({
           </div>
         </div>
         <div className="living-health-strip" aria-label="مؤشرات صحة الجدول قيد التحميل">
-          {["الجودة", "المرونة", "العدالة"].map(label => (
-            <span key={label} className="is-loading" style={{ ["--reading" as any]: "0%" }}>
+          {[
+            { label: "الجودة", value: recalled?.quality },
+            { label: "المرونة", value: recalled?.resilience },
+            { label: "العدالة", value: recalled?.fairness },
+          ].map(metric => recalled ? (
+            <span key={metric.label} className="is-recalled" title="آخر قراءة — تُحدَّث خلال لحظات" style={{ ["--reading" as any]: `${Math.max(0, Math.min(100, Number(metric.value)))}%` }}>
+              <MiniRing value={Number(metric.value)} size={34} decorative />
+              <small>{metric.label}</small>
+              <b className="sr-only">{metric.value}</b>
+            </span>
+          ) : (
+            <span key={metric.label} className="is-loading" style={{ ["--reading" as any]: "0%" }}>
               <MiniRing value={null} size={34}><i className="health-skeleton-dot" aria-hidden="true" /></MiniRing>
-              <small>{label}</small>
+              <small>{metric.label}</small>
               <b className="sr-only">—</b>
             </span>
           ))}

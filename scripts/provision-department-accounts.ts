@@ -119,6 +119,11 @@ for (const [familyKey, members] of families) {
   for (const kind of KINDS) {
     const login = `${prefix}${kind.suffix}`;
     const existing = userByLogin.get(login.toLowerCase());
+    /* حسابٌ بصفة هذا النوع يغطي القسم أصلاً تحت اسم دخول آخر (schedule21، Electricalunit…):
+       لا يُنشأ شقيقٌ مكرّر له. */
+    const familyIds = new Set(familySections.map(s => Number(s.AdSectionId)));
+    const sameRoleOwner = !existing && live.find(u => u.Role === kind.role && (assigns as any[]).some(a => Number(a.SystemUserId) === Number(u.SystemUserId) && familyIds.has(Number(a.AdSectionId))));
+    if (sameRoleOwner) { console.log(`  = ${familyName}: ${kind.namePrefix} موجود باسم ${sameRoleOwner.SystemUserLogin} — لا حساب جديد`); continue; }
     if (!existing) {
       console.log(`  + حساب ${login} (${kind.namePrefix} ${familyName}) — ${desired.length + pendingColleges} نطاق`);
       if (APPLY) {

@@ -1805,7 +1805,7 @@ export default function App() {
         );
       case "simulation":
         /* القراءةُ بحدود النطاق في الخادم؛ والأيقونةُ لا تظهر إلا إن كانت هناك تحديثٌ أو من يشغّلها. */
-        return simulationVisible ? <RegistrationRehearsal onNavigate={(view) => go(view as View)} /> : unauthorized();
+        return simulationVisible ? <RegistrationRehearsal onNavigate={(view) => go(view as View)} canSchedule={hasPerm(7) && !sessionRole.viewerOnly && !sessionRole.advisorOnly} /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
         return planReviewAccess ? <PlanReview onNavigate={hasPerm(6) ? go : undefined} /> : unauthorized();

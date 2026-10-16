@@ -54,7 +54,7 @@ check(!server.includes('app.get("/api/public/request/:token", requireAuth'), "و
 /* ── القاعةُ لا تغادر ──────────────────────────────────────────────────── */
 
 check(server.includes("function stripForInstructor"), "تجريدُ ما لا يخصّ الأستاذ في دالّةٍ واحدة");
-check(server.includes("const { roomCandidates, ...rest } = item;"), "والمرشّحاتُ تُنزع نزعاً، لا تُستثنى بالنسيان");
+check(server.includes("const { roomCandidates, roomOptions, ...rest } = item;"), "والمرشّحاتُ وتفاصيلُ قاعاتِها تُنزع نزعاً، لا تُستثنى بالنسيان");
 check(/after: rest\.after \? \{ \.\.\.rest\.after, room: undefined \}/.test(server),
   "و«طلب» لا تحمل قاعةً أبداً");
 check(server.includes("stripForInstructor(await judgeRequestItems(request))"), "والقراءةُ تمرّ بالتجريد");

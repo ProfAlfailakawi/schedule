@@ -304,11 +304,19 @@ try {
   check(due({ mode: "waiting", ranAt: undefined }) === false && due({ mode: "closed", ranAt: undefined }) === false, "I1 قبل الرغبات وبعد الإغلاق: لا يعمل وحدَه");
   check(due({ mode: "frozen", wishesClose: "2026-10-12", ranAt: "2026-10-12T05:00:00Z" }) === true, "I1 أُغلقت الرغباتُ بعد آخر تحديث: تحديثٌ أخيرٌ بالرغبات النهائية");
   check(due({ mode: "frozen", wishesClose: "2026-10-12", ranAt: "2026-10-14T20:00:00Z" }) === false, "I1 وبعد التحديث الأخير لا يتكرّر قبل ٢٤ ساعة");
+  /* قديمٌ بتعديلٍ في الجدول: يُحدَّث بعد هدوءٍ قصير وبفاصلٍ بين تشغيلين، لا بعد ٢٤ ساعة */
+  const MIN = 60_000;
+  const stale = (agoStale: number, agoRan: number) => due({ ranAt: new Date(now - agoRan * MIN).toISOString(), stale: true, staleAt: new Date(now - agoStale * MIN).toISOString() });
+  check(stale(5, 30) === true, "J1 عُدِّل الجدولُ قبل ٥ دقائق وآخر تشغيلٍ قبل ٣٠: يُحدَّث وحدَه");
+  check(stale(1, 30) === false, "J1 عُدِّل قبل دقيقة فقط: ينتظر أن يهدأ التعديل (لا إعادةَ حسابٍ مع كل صفٍّ في استيراد)");
+  check(stale(5, 4) === false, "J1 وآخرُ تشغيلٍ قبل ٤ دقائق: فاصلٌ أدنى بين تشغيلين");
+  check(due({ ranAt: new Date(now - 30 * MIN).toISOString(), stale: false }) === false, "J1 غيرُ قديمٍ وحديث: لا يُشغَّل");
+  check(due({ mode: "closed", ranAt: new Date(now - 30 * MIN).toISOString(), stale: true, staleAt: new Date(now - 10 * MIN).toISOString() }) === false, "J1 خارج مراحل الرغبات: لا تحديثَ وحدَه ولو كان قديماً");
   check(radarAutoSettings().enabled === true && radarAutoSettings().everyHours === 24, "I2 الافتراضي: تلقائيٌّ كل ٢٤ ساعة");
   const adminSummary = (await http("GET", "/api/simulation/summary", { who: "admin" })).json;
   check(adminSummary.auto?.enabled === true && adminSummary.auto.everyHours === 24, "I2 الشاشةُ تقول إنه تلقائي وكم ساعة");
   const rs = fs.readFileSync(path.join(process.cwd(), "src/server/simulationRoutes.ts"), "utf8"), sv = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
-  check(rs.includes("acquireRegistrationRunLease") && rs.includes("Repository.isDemoMode()") && sv.includes("scheduleRadarAutoRun("), "I2 بقفلٍ بين الخوادم، ولا يعمل في التجربة، ويُجدول عند الإقلاع");
+  check(rs.includes("acquireRegistrationRunLease") && rs.includes("Repository.isDemoMode()") && sv.includes("scheduleRadarAutoRun(") && rs.includes("if (run?.stale) kickRadarRefresh()"), "I2 بقفلٍ بين الخوادم، ولا يعمل في التجربة، ويُجدول عند الإقلاع");
 } finally { server.close(); }
 
 console.log(`\n${passed} passed, ${failed} failed`);

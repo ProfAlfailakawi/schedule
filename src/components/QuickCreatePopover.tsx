@@ -57,6 +57,8 @@ export type QuickSeed = {
   instructorId: number;
   room: string;
   hall: string;
+  /** قاعةٌ خاليةٌ في هذا الوقت يقترحها النظامُ (طلبُ أستاذ): تُملأ في البطاقة ويبقى للمنسّق أن يغيّرها. */
+  suggestion?: { room: string; hall: string; buildingId?: string; roomId?: string; locationStatus?: "VERIFIED" | "PENDING_ROOM" };
 };
 
 export default function QuickCreatePopover({
@@ -108,9 +110,9 @@ export default function QuickCreatePopover({
     courseId: initialCourseId || 0,
     scode: initialCourseId && nextSectionCode ? nextSectionCode(initialCourseId) : "",
     instructorId: seed.instructorId || 0,
-    room: "",
-    hall: "",
-    buildingId: undefined, roomId: undefined, locationStatus: undefined,
+    room: seed.suggestion?.room || "",
+    hall: seed.suggestion?.hall || "",
+    buildingId: seed.suggestion?.buildingId, roomId: seed.suggestion?.roomId, locationStatus: seed.suggestion?.locationStatus,
     start: timeOf(openedStart),
     end: timeOf(openedEnd),
   });

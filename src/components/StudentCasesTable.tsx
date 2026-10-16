@@ -14,7 +14,7 @@
  * `tests/student-registration-audit.ts` refuses a second copy of the table.
  */
 import React, { useMemo, useState } from "react";
-import { ListFilter, Printer } from "lucide-react";
+import { ChevronDown, ListFilter, Printer } from "lucide-react";
 import { Badge, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
@@ -237,6 +237,8 @@ export default function StudentCasesTable({
               ><span>{label}</span><b>{counts[value].toLocaleString("ar-KW-u-nu-latn")}</b></button>
             ))}
           </div>
+          <details className="student-case-print-menu">
+          <summary data-guide-ignore="فتح قائمة الطباعة — عرضٌ فقط"><Printer aria-hidden="true" />طباعة<ChevronDown aria-hidden="true" /></summary>
           <div className="student-case-print-actions" aria-label="خيارات طباعة حالات الطلبة">
             <SecondaryButton data-guide-ignore="طباعة شاملة لسجل حالات الطلبة فقط" onClick={() => printCases("all")} disabled={!counts.all}><Printer />الشاملة</SecondaryButton>
             {/* طباعةُ نوعٍ لا حالةَ فيه لا تُعرض زرّاً معطّلاً. */}
@@ -244,6 +246,7 @@ export default function StudentCasesTable({
             {counts["course-conflict"] ? <SecondaryButton data-guide-ignore="طباعة حالات التعارض فقط" onClick={() => printCases("course-conflict")}><Printer />التعارض</SecondaryButton> : null}
             {counts.graduate ? <SecondaryButton data-guide-ignore="طباعة حالات الخريج والمتوقع فقط" onClick={() => printCases("graduate")}><Printer />الخريج</SecondaryButton> : null}
           </div>
+          </details>
         </div>
         {toolbarExtra ? <div className="student-case-toolbar student-case-toolbar--extra">{toolbarExtra}</div> : null}
         </div>

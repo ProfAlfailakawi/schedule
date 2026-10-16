@@ -87,7 +87,7 @@ check(Boolean(quiet.best), "بلا صفوف: الجميع متفرغ");
 check(!other.best && other.ranked[0].busy.includes("د. ب"), "صفّ الأستاذ في كلية أخرى يجعله مشغولاً");
 
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
-const route = server.slice(server.indexOf('app.post("/api/schedules/meeting-slots"'), server.indexOf('app.post("/api/schedules", requirePermission(7)'));
+const route = server.slice(server.indexOf('app.post("/api/schedules/meeting-slots"'), server.indexOf('const SCHEDULE_ORIGIN_KINDS'));
 check(/getSchedulesByScope\(\{\s*termId\s*\}\)/.test(route), "الخادم يقرأ صفوف الفصل كله (termId فقط، بلا كلية/قسم)");
 check(/computeMeetingSlots\(/.test(route) && !/SCHEDULE_DAY_START/.test(route), "الحساب في utils/meetingSlots وحده — لا نسخة ثانية في الخادم");
 check(/requirePermission\(7\)/.test(route), "المسار محمي بصلاحية الجدول");

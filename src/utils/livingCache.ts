@@ -83,3 +83,44 @@ export function sharedLiving<T>(key: string, load: () => Promise<T>): Promise<T>
 export function forgetLiving(key?: string): void {
   if (key) { store.delete(key); inflight.delete(key); } else { store.clear(); inflight.clear(); }
 }
+
+/**
+ * ── آخر قراءةٍ للمؤشرات الثلاثة ─────────────────────────────────────────────
+ *
+ * The full reading is deliberately late (a dwell, then a university-wide
+ * analysis that was measured at up to 17 seconds), so the three rings sat empty
+ * for as long as that took on every visit. The three numbers themselves are
+ * tiny. The last ones seen for a scope are kept in this browser and drawn, dimmed
+ * and labelled as the last reading, the instant the deck mounts; the real
+ * analysis still runs exactly as before and replaces them. Nothing here
+ * decides anything — a miss, a blocked storage, or an old value just means the
+ * rings wait as they always did.
+ */
+export type RememberedScores = { quality: number; resilience: number; fairness: number; descriptor?: string };
+const SCORES_KEY = "schedule.lastScores.v1";
+const SCORES_MAX = 24;
+
+function scoresBook(): Record<string, RememberedScores & { at: number }> {
+  try { return JSON.parse(window.localStorage.getItem(SCORES_KEY) || "{}") || {}; } catch { return {}; }
+}
+
+export function recallScores(key: string): RememberedScores | null {
+  const hit = scoresBook()[key];
+  if (!hit) return null;
+  const ok = [hit.quality, hit.resilience, hit.fairness].every(n => Number.isFinite(Number(n)));
+  return ok ? hit : null;
+}
+
+export function rememberScores(key: string, health: any): void {
+  const quality = Number(health?.quality), resilience = Number(health?.resilience), fairness = Number(health?.fairness);
+  if (![quality, resilience, fairness].every(Number.isFinite)) return;
+  try {
+    const book = scoresBook();
+    book[key] = { quality, resilience, fairness, descriptor: typeof health?.descriptor === "string" ? health.descriptor : undefined, at: Date.now() };
+    const keys = Object.keys(book);
+    if (keys.length > SCORES_MAX) {
+      keys.sort((a, b) => book[a].at - book[b].at).slice(0, keys.length - SCORES_MAX).forEach(k => delete book[k]);
+    }
+    window.localStorage.setItem(SCORES_KEY, JSON.stringify(book));
+  } catch { /* storage unavailable: the rings simply wait */ }
+}
