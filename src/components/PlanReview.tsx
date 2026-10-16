@@ -272,7 +272,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 <p className="pr-ext-note" role="status"><Lock size={14} aria-hidden="true" /> {countOf(view.courses.filter(c => c.external).length, AR.course)} عامّاً ({countOf(view.courses.filter(c => c.external).reduce((sum, c) => sum + c.credit, 0), AR.unit)}) تُحتسب في صحيفتك وتبقى لأقسامها: تراها ولا تعدّلها.</p>
               ) : null}
               {confirmApprove ? (
-                <div className="pr-confirm" role="alertdialog" aria-labelledby="pr-confirm-title">
+                <div className="pr-confirm" role="alertdialog" aria-modal="false" aria-labelledby="pr-confirm-title">
                   <span className="pr-confirm-ic" aria-hidden="true"><ShieldCheck /></span>
                   <div>
                     <b id="pr-confirm-title">تأكيد اعتماد الصحيفة</b>
