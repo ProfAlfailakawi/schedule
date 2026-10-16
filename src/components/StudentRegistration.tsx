@@ -27,7 +27,7 @@ import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import ApplyProposal from "./ApplyProposal";
 import StudentCasesTable, { GRADUATE_REASON_LABEL, STUDENT_CASE_TYPE_LABEL, type StudentCaseView } from "./StudentCasesTable";
-import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, StatCard } from "./ui";
+import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf, nounFor, studentNounsFor } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import { singleDepartmentOf } from "../utils/scopeContext";
@@ -754,35 +754,25 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         />
       ) : (
         <>
-<div className="stat-tiles" aria-label="ملخّص الكشف">
-            <div className="stat-tone" data-tone="accent">
-            <StatCard
-              label={`${nounFor(totals?.students ?? 0, studentWords.student)} ${nounFor(totals?.students ?? 0, viewer === "registration" ? studentWords.handedOver : studentWords.answered)}`}
-              value={totals?.students ?? 0}
-              icon={<Users aria-hidden="true" />}
-            />
-            </div>
-            {/* الصفرُ لا يُعرض لوحةً (قاعدة إخفاء الفارغ): العددُ الأول يكفي جواباً. */}
-            {viewer !== "registration" && totals?.pendingCommittee ? (
-              <div className="stat-tone" data-tone="warning">
-                <StatCard label={`${nounFor(totals.pendingCommittee, AR.request)} ${nounFor(totals.pendingCommittee, AR.waitVerb)} اللجنة`} value={totals.pendingCommittee} icon={<Hourglass aria-hidden="true" />} />
-              </div>
-            ) : null}
-            {totals?.waiting ? (
-              <div className="stat-tone" data-tone="info">
-                <StatCard label={`${nounFor(totals.waiting, AR.request)} ${nounFor(totals.waiting, AR.waitVerb)} التسجيل`} value={totals.waiting} icon={<Clock3 aria-hidden="true" />} />
-              </div>
-            ) : null}
-            {totals?.registered ? (
-              <div className="stat-tone" data-tone="success">
-                <StatCard label={`${nounFor(totals.registered, AR.course)} ${nounFor(totals.registered, AR.registeredVerb)}`} value={totals.registered} icon={<CheckCheck aria-hidden="true" />} />
-              </div>
-            ) : null}
-          </div>
+{/* ── رحلة الطلب: من الطالب إلى اللجنة إلى التسجيل — كلُّ محطةٍ عددُها، ولمسُها يصفّي. ── */}
+          <ol className="reg-flow" aria-label="رحلة الطلب">
+            {([
+              ["all", <Users key="i" aria-hidden="true" />, totals?.students ?? 0, viewer === "registration" ? "طالب سُلّم" : "طالب أجاب", "accent"],
+              ...(viewer !== "registration" ? [["pending", <Hourglass key="i" aria-hidden="true" />, totals?.pendingCommittee ?? 0, "عند اللجنة", "warning"]] : []),
+              ["approved", <Clock3 key="i" aria-hidden="true" />, totals?.waiting ?? 0, "عند التسجيل", "info"],
+              ["registered", <CheckCheck key="i" aria-hidden="true" />, totals?.registered ?? 0, "سُجّل", "success"],
+            ] as Array<[StatusFilter, React.ReactNode, number, string, string]>).map(([value, icon, n, label, tone]) => (
+              <li key={value} data-tone={tone} data-empty={!n || undefined}>
+                <button type="button" aria-pressed={statusFilter === value} onClick={() => { filterChosen.current = true; setStatusFilter(value); }} data-guide-ignore="تصفية العرض من رحلة الطلب — لا يغيّر شيئاً">
+                  <span className="reg-flow-ic">{icon}</span><b>{n.toLocaleString("ar-KW-u-nu-latn")}</b><small>{label}</small>
+                </button>
+              </li>
+            ))}
+          </ol>
 
           {!canWrite ? (
-            <p className="registration-readonly">
-              <Clock3 aria-hidden="true" /> هذا الكشف للقراءة بصفتك. الموافقةُ فيه للجنة القسم، والتسجيلُ لموظفي التسجيل.
+            <p className="registration-readonly" title="الموافقةُ للجنة القسم، والتسجيلُ لموظفي التسجيل.">
+              <Clock3 aria-hidden="true" /> للقراءة فقط
             </p>
           ) : null}
 

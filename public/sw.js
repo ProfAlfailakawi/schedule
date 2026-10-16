@@ -40,6 +40,11 @@ self.addEventListener("message",event=>{if(event.data?.type==="CLEAR_API_CACHE")
 self.addEventListener("fetch",event=>{
   const request=event.request,url=new URL(request.url);
   if(request.method!=="GET"||url.origin!==self.location.origin)return;
+  /* Standalone pages under /plans/ (department study-plan infographics) are not
+     part of the app. Left to the navigation rule below, opening one would store
+     it under APP_SHELL_KEY and an offline launch of the app would show the plan
+     instead of the app. They go straight to the network, untouched. */
+  if(url.pathname.startsWith("/plans/"))return;
   if(url.pathname.startsWith("/api/")){
     // Never persist authentication responses or credential/admin-user payloads.
     if(url.pathname.startsWith("/api/auth/")||url.pathname==="/api/users"||!isCacheableApi(url.pathname))return;

@@ -8,7 +8,7 @@
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, CircleAlert, CircleHelp, Download, GraduationCap, Layers, Ticket, Users } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Ticket, Users } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
@@ -134,7 +134,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
         <div className={`sm-phase ${data.phase.namesVisible ? "after" : "before"}`}>
           <span className="sm-ic">{data.phase.namesVisible ? <Users /> : <Ticket />}</span>
           <div><b>{data.phase.label}</b><small>{data.phase.line}</small>
-            <small>{data.phase.namesVisible ? "بدأ التسجيل: تصل أسماءُ المتعثّرين الأقسامَ المالكة للمقررات في «كشف التسجيل»." : "قبل التسجيل: أرقامٌ فقط — لا أسماءَ حتى تبدأ الجولة الأولى."}</small></div>
+            <small>{data.phase.namesVisible ? "الأسماء في «كشف التسجيل»" : "أرقامٌ فقط — بلا أسماء"}</small></div>
           {onNavigate && data.phase.namesVisible ? <div className="sm-links"><button type="button" onClick={() => onNavigate("studentRegistration")} data-guide-ignore="انتقالٌ إلى كشف التسجيل من شاشةٍ مسجّلة في المرشد باسم page.simulation">كشف التسجيل</button></div> : null}
         </div>
       ) : null}
@@ -157,7 +157,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
             </div>
             {selectedPopulation > 0 ? <div className="sm-capacity-bar" role="img" aria-label="توزيع المشاركين حسب قدرتهم على تكوين جدول"><i className="reach15" style={{ inlineSize: `${(bands?.canReach15 || 0) / selectedPopulation * 100}%` }} /><i className="reach12" style={{ inlineSize: `${(bands?.canReach12To14 || 0) / selectedPopulation * 100}%` }} /><i className="below12" style={{ inlineSize: `${(bands?.below12 || 0) / selectedPopulation * 100}%` }} /><i className="unknown" style={{ inlineSize: `${(bands?.unknown || 0) / selectedPopulation * 100}%` }} /></div> : null}
             {bands?.graduatingBelow12 ? <p className="sm-graduation-note">{bands.graduatingBelow12.toLocaleString("ar-KW-u-nu-latn")} يحتاجون أقل من 12 وحدة لإكمال المتبقي وفق الصحيفة.</p> : null}
-            <p className="sm-base">هذا تقدير قدرة، لا أهلية رسمية ولا تسجيل أو حجز. المقررات المجتازة واردة من ملفات الطلبة وليست صحيفة رسمية.</p>
+            <details className="sm-info"><summary><Info /> تقدير لا تسجيل</summary><p>هذا تقدير قدرة، لا أهلية رسمية ولا تسجيل أو حجز. المقررات المجتازة واردة من ملفات الطلبة وليست صحيفة رسمية.</p></details>
           </section>
           {quality ? <details className="sm-quality">
             <summary><span><i style={{ inlineSize: `${qualityPct}%` }} /></span><b>{qualityPct}٪ من الشعب جاهزة للتحليل</b><small>{quality.excluded ? `${countOf(quality.excluded, AR.section)} تحتاج استكمال بياناتها` : "لا توجد شعب مستبعدة"}</small></summary>
@@ -263,7 +263,6 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
   return (
     <section className="sm-list sm-out">
       <header><h3>بعد التسجيل: ماذا حدث؟</h3></header>
-      <p className="sm-base">تظهر هنا إجابات الطلبة بعد التسجيل: «لم يسجّل» تعني أنه لم يتمكن من تسجيل المقرر. أعداد الأسباب هي إجاباتهم عن سبب التعثر.</p>
       <div className="sm-kpis">
         {outcome.answered !== null
           ? <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answered.toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا «هل سجلت؟»</small><em>{share}٪ ممن شملهم الرادار</em></article>
@@ -282,7 +281,7 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
           </article>
         );
       })}
-      <p className="sm-base">مصدرها: أجوبةُ الطلبة أنفسهم في «مساري»، وهي عيّنةٌ ممن اختار أن يجيب — لا كلُّ الطلبة.{outcome.scoped ? " المعروض مقرراتُ قسمك فقط." : ""}</p>
+      <details className="sm-info"><summary><Info /> مصدر الأجوبة</summary><p>أجوبةُ الطلبة أنفسهم في «مساري» بعد التسجيل، وهي عيّنةٌ ممن اختار أن يجيب — لا كلُّ الطلبة. «لم يسجّل» تعني أنه لم يتمكن من تسجيل المقرر، والأسباب إجاباتُهم.{outcome.scoped ? " المعروض مقرراتُ قسمك فقط." : ""}</p></details>
     </section>
   );
 }
