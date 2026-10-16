@@ -109,8 +109,10 @@ function useRevealOnce<T extends HTMLElement>(
     const target: EventTarget = root || window;
     target.addEventListener("scroll", check, { passive: true });
     window.addEventListener("resize", check, { passive: true });
-    /* Last resort: nothing on this screen may stay invisible. */
-    const failsafe = window.setTimeout(() => setRevealed(true), 2500);
+    /* Last resort, only where nothing can watch the scroll: a timer that fires while
+       the section is still below the fold plays its animation where no one sees it
+       (on phones the figures sit several screens down, so they arrived already counted). */
+    const failsafe = observer ? 0 : window.setTimeout(() => setRevealed(true), 2500);
 
     return () => {
       observer?.disconnect();
@@ -210,9 +212,8 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
       rail.style.setProperty("--jr-rail-s", `${start}px`);
       rail.style.setProperty("--jr-rail-e", `${end}px`);
       rail.style.setProperty("--jr-rail-dir", column ? "to bottom" : rtl ? "to left" : "to right");
-      rail.classList.add("is-fit");
-      rail.classList.toggle("is-col", column);
-      rail.classList.toggle("is-row", !column);
+      /* An attribute, not a class: React owns className and rewrites it on reveal. */
+      rail.dataset.fit = column ? "col" : "row";
     };
     fit();
     const observer = new ResizeObserver(fit);

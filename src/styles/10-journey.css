@@ -599,7 +599,7 @@
 }
 
 /* Measured rail (see ScheduleJourney): node centre to node centre, solid between. */
-.jr-rail.is-fit::before{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)),color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)))}
-.jr-rail.is-fit::after{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 78%,transparent),color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)))}
-.jr-rail.is-fit.is-row::before,.jr-rail.is-fit.is-row::after{inset-inline-start:var(--jr-rail-s);inset-inline-end:var(--jr-rail-e)}
-.jr-rail.is-fit.is-col::before,.jr-rail.is-fit.is-col::after{inset-block-start:var(--jr-rail-s);inset-block-end:var(--jr-rail-e)}
+.jr-rail[data-fit]::before{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)),color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)))}
+.jr-rail[data-fit]::after{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 78%,transparent),color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)))}
+.jr-rail[data-fit=row]::before,.jr-rail[data-fit=row]::after{inset-inline-start:var(--jr-rail-s);inset-inline-end:var(--jr-rail-e)}
+.jr-rail[data-fit=col]::before,.jr-rail[data-fit=col]::after{inset-block-start:var(--jr-rail-s);inset-block-end:var(--jr-rail-e)}
