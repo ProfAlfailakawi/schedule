@@ -29,6 +29,7 @@ import {
   MailCheck,
   Wifi,
   WifiOff,
+  Wrench,
   X,
 } from "lucide-react";
 import { controlLabel } from "./utils/controlLabel";
@@ -1655,13 +1656,13 @@ export default function App() {
   const connectionGate = (standalone = false) => {
     const copy = health === "offline"
       ? { title: "لا يوجد اتصال بالإنترنت", detail: "تحقق من الاتصال ثم أعد المحاولة." }
-      : health === "database-down"
-        ? { title: "الخدمة غير متاحة الآن", detail: "حاول مرة أخرى بعد قليل." }
-        : { title: "تعذر الوصول إلى البرنامج", detail: "نتحقق من الاتصال بالخادم." };
+      /* The reader cannot fix a server-side outage, so it is not worded as
+         their connection problem: it reads as planned maintenance. */
+      : { title: "النظام قيد التحديث والصيانة", detail: "نعمل على تحسينات جديدة، وسيعود النظام خلال دقائق. شكراً لصبركم." };
     return (
       <div className={`connection-gate no-print ${standalone ? "standalone" : ""}`} role="alertdialog" aria-modal="true" aria-live="assertive">
         <div className="connection-gate-card">
-          <span className="connection-gate-icon" aria-hidden="true"><WifiOff /></span>
+          <span className="connection-gate-icon" aria-hidden="true">{health === "offline" ? <WifiOff /> : <Wrench />}</span>
           <div>
             <strong>{copy.title}</strong>
             <span>{copy.detail}</span>
