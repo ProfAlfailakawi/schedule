@@ -310,7 +310,9 @@
     color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)) 86%,
     transparent);
 }
-.jr-station{position:relative;display:grid;gap:10px;align-content:start;padding-top:0}
+/* z-index lifts each station (and its opaque node) above the rail pseudo-elements, which
+   would otherwise paint later and cross the icons. */
+.jr-station{position:relative;z-index:1;display:grid;gap:10px;align-content:start;padding-top:0}
 .jr-station-node{
   position:relative;
   z-index:1;
@@ -599,7 +601,7 @@
 }
 
 /* Measured rail (see ScheduleJourney): node centre to node centre, solid between. */
-.jr-rail[data-fit]::before{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)),color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)))}
+.jr-rail[data-fit]::before{z-index:0;background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)),color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)))}
 .jr-rail[data-fit]::after{background:linear-gradient(var(--jr-rail-dir),color-mix(in srgb,var(--jr-brass) 78%,transparent),color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)))}
 .jr-rail[data-fit=row]::before,.jr-rail[data-fit=row]::after{inset-inline-start:var(--jr-rail-s);inset-inline-end:var(--jr-rail-e)}
 .jr-rail[data-fit=col]::before,.jr-rail[data-fit=col]::after{inset-block-start:var(--jr-rail-s);inset-block-end:var(--jr-rail-e)}
