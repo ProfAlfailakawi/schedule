@@ -1,0 +1,56 @@
+/**
+ * ── حارس وجهة النشر ────────────────────────────────────────────────────────
+ *
+ * On 2026-10-16 a single commit quietly pointed every deploy at a different
+ * Google Cloud project. CI stayed green and "Deploy SCHEDULE" said success,
+ * while schedule.dr-alfailakawi.com — mapped to the official service — never
+ * received another release. Then re-creating the domain mapping took HTTPS down
+ * while a new certificate was issued.
+ *
+ * This guard fails CI if either can happen again. The rules it enforces are in
+ * AGENTS.md; change them only with the owner's explicit decision.
+ */
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+const OFFICIAL_PROJECT = "gen-lang-client-0379571946";
+const OFFICIAL_REGIONS = ["europe-west1", "europe-west2"];
+const failures = [];
+
+/* ١. سير النشر ينشر على الخدمة الرسمية، والصورة وحدها. */
+const workflow = readFileSync(".github/workflows/deploy-schedule.yml", "utf8");
+const deploys = [...workflow.matchAll(/gcloud run deploy\s+schedule([\s\S]*?)--quiet/g)].map(m => m[1]);
+if (!deploys.length) failures.push("deploy-schedule.yml لا يحوي أمر `gcloud run deploy schedule`.");
+for (const block of deploys) {
+  const project = block.match(/--project[= ]([\w-]+)/)?.[1];
+  if (project !== OFFICIAL_PROJECT) failures.push(`النشر يذهب إلى المشروع «${project || "غير محدد"}» لا إلى الرسمي ${OFFICIAL_PROJECT}.`);
+  for (const flag of ["--service-account", "--set-env-vars", "--set-secrets", "--update-env-vars", "--clear-env-vars", "--memory", "--cpu", "--no-allow-unauthenticated"]) {
+    if (block.includes(flag)) failures.push(`النشر على الخدمة الرسمية يغيّر إعداداتها (${flag}). المسموح تغيير الصورة فقط.`);
+  }
+}
+for (const region of OFFICIAL_REGIONS) {
+  if (!workflow.includes(region)) failures.push(`النشر لا يشمل المنطقة الرسمية ${region}.`);
+}
+if (!/schedule\.dr-alfailakawi\.com/.test(workflow)) failures.push("سير النشر لا يتحقق من الدومين الرسمي بعد النشر.");
+
+/* ٢. لا أمر يمسّ ربط الدومين في أي ملف من المستودع. */
+const SKIP = new Set(["node_modules", ".git", "dist", "AGENTS.md", "deploy-target-guard.mjs"]);
+const SCAN = /\.(ya?ml|sh|mjs|cjs|js|ts|json|py)$/;
+function walk(dir) {
+  for (const name of readdirSync(dir)) {
+    if (SKIP.has(name)) continue;
+    const path = join(dir, name);
+    const stat = statSync(path);
+    if (stat.isDirectory()) walk(path);
+    else if (SCAN.test(name) && stat.size < 2_000_000 && /domain-mappings/.test(readFileSync(path, "utf8"))) {
+      failures.push(`${path} يحوي أمر domain-mappings — ربط الدومين لا يُمسّ (AGENTS.md).`);
+    }
+  }
+}
+walk(".");
+
+if (failures.length) {
+  console.error("✗ حارس وجهة النشر:\n" + failures.map(f => "  - " + f).join("\n") + "\n\nاقرأ AGENTS.md.");
+  process.exit(1);
+}
+console.log(`✓ حارس وجهة النشر: ${deploys.length} أمر نشر، كلها إلى ${OFFICIAL_PROJECT} وبالصورة وحدها؛ لا مساس بربط الدومين.`);

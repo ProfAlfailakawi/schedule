@@ -31,7 +31,7 @@ import MiniRing from "./MiniRing";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
-  ClipboardPen, Equal, Grid3x3, MailCheck, MailOpen, MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
+  ClipboardPen, Equal, Grid3x3, MailOpen, MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
 import { DnaCount } from "./dna";
 import { RequestTimelineToggle } from "./dna/requestDna";
@@ -1292,7 +1292,6 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                   </div>
                 </div>
                 <div className="glance-legend">
-                  <div data-tone="answered"><MailCheck aria-hidden="true" /><b>{num(Number(totals.answered || 0))}</b><span>أجابوا</span></div>
                   {openedQuiet ? <div data-tone="opened"><MailOpen aria-hidden="true" /><b>{num(openedQuiet)}</b><span>فتحوا ولم يجيبوا</span></div> : null}
                   {totals.unopened ? <div data-tone="unopened"><MailQuestion aria-hidden="true" /><b>{num(Number(totals.unopened))}</b><span>لم يفتحوا</span></div> : null}
                   {totals.settled ? <div data-tone="settled"><ShieldCheck aria-hidden="true" /><b>{num(Number(totals.settled))}</b><span>انتهى</span></div> : null}

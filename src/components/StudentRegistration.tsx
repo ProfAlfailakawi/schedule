@@ -22,7 +22,7 @@ import { byArabic } from "../utils/sorting";
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, Users, X } from "lucide-react";
+import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, MessageSquareText, Users, X } from "lucide-react";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import ApplyProposal from "./ApplyProposal";
@@ -682,7 +682,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
     if (!row.details && !row.caseDroppedAt) return null;
     return (
       <span className="student-case-notes">
-        {row.details ? <em className="registration-details">ملاحظات الطالب: {row.details}</em> : null}
+        {row.details ? <em className="registration-details" title={`ملاحظات الطالب: ${row.details}`}><MessageSquareText aria-hidden="true" /><span className="sr-only">ملاحظات الطالب: </span>{row.details.replace(/^من «مساري» بعد التسجيل — /, "")}</em> : null}
         {row.caseDroppedAt ? <em className="registration-dropped">ألغى الطالب طلب الخريج السابق بعد قرارٍ فيه، واستبدله بهذا الطلب.</em> : null}
       </span>
     );
@@ -757,9 +757,9 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
 {/* ── رحلة الطلب: من الطالب إلى اللجنة إلى التسجيل — كلُّ محطةٍ عددُها، ولمسُها يصفّي. ── */}
           <ol className="reg-flow" aria-label="رحلة الطلب">
             {([
-              ["all", <Users key="i" aria-hidden="true" />, totals?.students ?? 0, viewer === "registration" ? "طالب سُلّم" : "طالب أجاب", "accent"],
-              ...(viewer !== "registration" ? [["pending", <Hourglass key="i" aria-hidden="true" />, totals?.pendingCommittee ?? 0, "عند اللجنة", "warning"]] : []),
-              ["approved", <Clock3 key="i" aria-hidden="true" />, totals?.waiting ?? 0, "عند التسجيل", "info"],
+              ["all", <Users key="i" aria-hidden="true" />, totals?.students ?? 0, viewer === "registration" ? "الكل · سُلّم" : "الكل · أجاب", "accent"],
+              ...(viewer !== "registration" ? [["pending", <Hourglass key="i" aria-hidden="true" />, totals?.pendingCommittee ?? 0, PENDING_COMMITTEE, "warning"]] : []),
+              ["approved", <Clock3 key="i" aria-hidden="true" />, totals?.waiting ?? 0, "بانتظار التسجيل", "info"],
               ["registered", <CheckCheck key="i" aria-hidden="true" />, totals?.registered ?? 0, "سُجّل", "success"],
             ] as Array<[StatusFilter, React.ReactNode, number, string, string]>).map(([value, icon, n, label, tone]) => (
               <li key={value} data-tone={tone} data-empty={!n || undefined}>
@@ -799,7 +799,8 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                   ["rejected", "ردّه التسجيل"],
                 ] as Array<[StatusFilter, string]>)
                   /* حالةٌ لا طالبَ فيها لا تُعرض مرشّحاً — إلا المختارةُ الآن. */
-                  .filter(([value]) => value === "all" || statusCounts[value] || statusFilter === value)
+                  /* محطّاتُ رحلة الطلب فوق الجدول هي المرشّح؛ هنا ما لا محطّةَ له فقط (الردّ). */
+                  .filter(([value]) => (value === "committee-rejected" || value === "rejected") && (statusCounts[value] || statusFilter === value))
                   .map(([value, label]) => (
                   <button
                     key={value} type="button" className="changes-chip"

@@ -46,24 +46,39 @@ jobs:
           docker build --tag "$IMAGE" .
           docker push "$IMAGE"
 
-      - name: Deploy the same release to London and Belgium
+      # ── الوجهة الرسمية: خدمة schedule في gen-lang-client-0379571946 ─────────
+      # schedule.dr-alfailakawi.com is a Cloud Run domain mapping on THIS
+      # service (europe-west1), and it has served the site for months. The
+      # image is built in schedule-863eb's registry above, but the release must
+      # land here or the official domain never sees it (2026-10-16: it did not,
+      # for a whole day). Only the image changes; the service keeps its own
+      # runtime identity, env and secrets exactly as they are.
+      - name: Deploy the same release to the official service (Belgium + London)
         env:
           IMAGE: europe-west1-docker.pkg.dev/schedule-863eb/schedule/schedule:${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          for region in europe-west2 europe-west1; do
+          for region in europe-west1 europe-west2; do
             gcloud run deploy schedule \
-              --project=schedule-863eb \
+              --project=gen-lang-client-0379571946 \
               --region="$region" \
-              --platform=managed \
-              --port=3000 \
               --image="$IMAGE" \
-              --service-account=schedule-runtime@schedule-863eb.iam.gserviceaccount.com \
-              --cpu=8 \
-              --memory=4Gi \
-              --max=13 \
-              --timeout=1800 \
-              --allow-unauthenticated \
-              --set-env-vars='DATA_MODE=firestore,AUTO_IMPORT_LEGACY_DATA=false,FIREBASE_PROJECT_ID=gen-lang-client-0379571946,FIREBASE_DATABASE_ID=ai-studio-schedule-337bbbf5-1098-44cb-aabf-95536daf9106,GEMINI_SCHEDULE_MODEL=gemini-3.6-flash' \
-              --set-secrets='GEMINI_API_KEY=GEMINI_API_KEY:latest' \
               --quiet
           done
+
+      # «Deploy: success» is not proof the site changed (2026-10-16). The release
+      # counts only when schedule.dr-alfailakawi.com serves the same build as the
+      # official service it is mapped to.
+      - name: Verify the official domain serves this release
+        run: |
+          official="https://schedule-34704073784.europe-west1.run.app/sw.js"
+          domain="https://schedule.dr-alfailakawi.com/sw.js"
+          want=$(curl -fsS --max-time 20 "$official" | grep -o 'BUILD="[^"]*"' || true)
+          echo "official service: $want"
+          for attempt in $(seq 1 20); do
+            got=$(curl -fsS --max-time 20 "$domain" | grep -o 'BUILD="[^"]*"' || true)
+            echo "domain (try $attempt): ${got:-unreachable}"
+            if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "✓ schedule.dr-alfailakawi.com serves this release"; exit 0; fi
+            sleep 30
+          done
+          echo "::error::schedule.dr-alfailakawi.com is not serving the deployed build. Do NOT touch the domain mapping — see AGENTS.md."
+          exit 1

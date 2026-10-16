@@ -8,7 +8,7 @@
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Ticket, Users } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Ticket, Users } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
@@ -65,6 +65,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const [all, setAll] = useState(false);
   const [q, setQ] = useState("");
   const [scenario, setScenario] = useState<"actual" | "projected">("actual");
+  const [view, setView] = useState<"capacity" | "decide" | "outcome" | null>(null);
   const autoRunInFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -119,6 +120,8 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const quality = r?.dataQuality;
   const qualityPct = quality?.total ? Math.round(quality.ready / quality.total * 100) : 0;
   const maxWindow = Math.max(1, ...(r?.windows || [1]));
+  /* يفتح الرادار على ما يحتاج فعلاً: بعد بدء التسجيل أجوبةُ الطلبة، وقبله ما يحتاج قراراً. */
+  const shownView = view || (data?.phase?.namesVisible && outcome && outcome.answers > 0 ? "outcome" : decide.length ? "decide" : "capacity");
 
   return (
     <div className="sm-page" dir="rtl">
@@ -142,11 +145,17 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
         <EmptyState title="جارٍ إعداد الرادار تلقائياً" detail={data.canRun ? "سيظهر التحليل هنا بعد اكتمال الاحتساب؛ لا حاجة إلى تشغيله يدوياً." : "تُحدّثه إدارةُ النظام آلياً، ثم يظهر التحليل هنا."} />
       ) : (
         <>
-          <div className="sm-scenario-tabs" role="tablist" aria-label="مصدر تحليل التسجيل">
+          <div className="sm-views" role="tablist" aria-label="أقسام الرادار">
+            <button type="button" role="tab" aria-selected={shownView === "decide"} onClick={() => setView("decide")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className={`sm-ic${decide.length ? " hot" : ""}`}><CircleAlert /></span><b>{decide.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>تحتاج قراراً</small></button>
+            <button type="button" role="tab" aria-selected={shownView === "capacity"} onClick={() => setView("capacity")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><GraduationCap /></span><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>أقل من 12 وحدة</small></button>
+            {outcome && outcome.answers > 0 ? <button type="button" role="tab" aria-selected={shownView === "outcome"} onClick={() => setView("outcome")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><Ticket /></span><b>{(outcome.answered ?? outcome.answers).toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا بعد التسجيل</small></button> : null}
+          </div>
+          {shownView !== "outcome" ? <div className="sm-scenario-tabs" role="tablist" aria-label="مصدر تحليل التسجيل">
             <button type="button" role="tab" aria-selected={scenario === "actual"} onClick={() => setScenario("actual")} data-guide-ignore="اختيار مصدر الرغبات داخل شاشة مرشد التسجيل">الرغبات الفعلية <small>{r.students.toLocaleString("ar-KW-u-nu-latn")}</small></button>
             <button type="button" role="tab" aria-selected={scenario === "projected"} onClick={() => setScenario("projected")} disabled={!r.projected} data-guide-ignore="اختيار التوقعات داخل شاشة مرشد التسجيل">التوقعات <small>{(r.projected?.students || 0).toLocaleString("ar-KW-u-nu-latn")}</small></button>
-          </div>
+          </div> : null}
           {r.stale ? <div className="sm-stale" role="status"><AlertTriangle size={16} /> تغيّرت البيانات؛ {busy ? "يجري تحديث الرادار تلقائياً الآن." : "سيُعاد احتساب الرادار تلقائياً."}</div> : null}
+          {shownView === "capacity" ? <>
           <section className="sm-capacity-summary" aria-label="قدرة الطلبة على تكوين جدول">
             <header><div><small>{scenario === "actual" ? "قدرة المشاركين" : "سيناريو غير المشاركين"}</small><strong>{countOf(selectedPopulation, AR.student)}</strong></div><span>خطة فعلية في المسودة · السعة افتراضية</span></header>
             <div className="sm-capacity-bands">
@@ -172,16 +181,18 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
             <p>الرغبات الفعلية: {countOf(r.students, AR.profile)} من {countOf(r.population, AR.profile)} ملفاً مكتملاً. {data.auto?.enabled ? `تحديث تلقائي عند تغيّر البيانات، ومراجعة دورية كل ${countOf(data.auto.everyHours, AR.hour)}.` : "التحديث التلقائي متوقف."} {r.withoutRules ? `${countOf(r.withoutRules, AR.profile)} بلا قواعد صحيفة معتمدة.` : ""} {r.defaulted ? `${countOf(r.defaulted, AR.profile)} غير مشارك؛ يظهر كتوقع مستقل.` : ""} {r.scoped ? "مقررات قسمك." : ""} محاكاة تقديرية، لا تسجيل رسمي ولا مقاعد محجوزة.</p>
           </details>
 
-          {outcome && outcome.answers > 0 ? <OutcomeBlock outcome={outcome} predictedStudents={r.students} /> : null}
+          </> : null}
 
-          <section className="sm-list">
+          {shownView === "outcome" && outcome ? <OutcomeBlock outcome={outcome} predictedStudents={r.students} /> : null}
+
+          {shownView === "decide" ? <section className="sm-list">
             <header>
               <h3>{all ? "كل المقررات" : "تحتاج قراراً"}</h3>
               <input aria-label="بحث" placeholder="ابحث بالرمز أو الاسم" value={q} onChange={e => setQ(e.target.value)} />
               <button type="button" className="sm-toggle" onClick={() => setAll(!all)} data-guide-ignore="تبديلُ عرض المقررات داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">{all ? "الزحام فقط" : `كل المقررات (${rows.length})`}</button>
             </header>
             <details className="sm-how"><summary>كيف أقرأ الأرقام؟</summary><p>«طُلب» هو عدد الطلبة الذين اختاروا المقرر. «وجد مقعداً» نتيجة توزيع افتراضي على الشعب والسعات المتاحة؛ لا يحجز مقعداً. «تعارض» يعني أن وقت شعبة هذا المقرر يتزامن مع مقرر آخر اختاره الطالب. «المتطلب السابق» مقرر يجب اجتيازه بحسب قواعد الصحيفة المعتمدة.</p></details>
-            {!shown.length ? <p className="sm-none">{all ? "لا نتائج." : calm.length ? "لا اختناق مقاعد ظاهر في المقررات المعروضة؛ راجع فئات قدرة الطلبة وجودة البيانات." : "لا مقررات."}</p> : shown.map(c => {
+            {!shown.length ? <p className="sm-none">{!all && calm.length ? <><span className="sm-ic"><Check /></span><b>لا زحام ظاهر</b><small>كل المقررات وجدت مقاعد كافية في التقدير.</small></> : all ? "لا نتائج." : "لا مقررات."}</p> : shown.map(c => {
               const unmet = WHY.map(([key, label, tone]) => ({ key, label, tone, n: c.unmet[key] })).filter(x => x.n > 0);
               const fill = c.capacity ? Math.min(100, Math.round((c.taken / c.capacity) * 100)) : 0;
               return (
@@ -196,7 +207,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
                 </article>
               );
             })}
-          </section>
+          </section> : null}
         </>
       )}
     </div>
