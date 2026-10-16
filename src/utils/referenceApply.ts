@@ -45,6 +45,8 @@ export interface ReferenceApplication {
   notes: string[];
   /** مقررات الصحيفة في هذا الموقع بعد الاستبعاد: للعدّ والمراجعة. */
   courseCount: number;
+  /** منها متطلباتٌ عامة (مقررات أقسامٍ أخرى): تُعرض في صحيفة القسم مقفولةً وتُحتسب في التقدّم. */
+  externals: number;
 }
 
 const girlsOnly = (name: string) => /للبنات\s+فقط/.test(name);
@@ -62,7 +64,7 @@ export const branchAudience = (branchRoot: string): AudienceBranch => (branchRoo
 
 export function planReferenceApplication(reference: CurriculumReference, groups: readonly ComparedGroup[], branchRoot: string, memberIds: ReadonlySet<number>, targetSectionId: number): ReferenceApplication {
   const here = branchAudience(branchRoot);
-  const out: ReferenceApplication = { updates: [], creates: [], links: [], skipped: [], notes: [], courseCount: 0 };
+  const out: ReferenceApplication = { updates: [], creates: [], links: [], skipped: [], notes: [], courseCount: 0, externals: 0 };
   for (const group of groups) {
     for (const course of group.courses) {
       const audience = audienceOf(reference, course);
@@ -71,15 +73,18 @@ export function planReferenceApplication(reference: CurriculumReference, groups:
         continue;
       }
       out.courseCount += 1;
+      const foreign = course.ownerSectionId !== targetSectionId;
       if (audience === "boys") out.notes.push(`«${course.name}» للبنين بالاستنتاج لا بنصٍّ مطبوع: راجعه.`);
       if (course.externalAlternative) out.notes.push(`«${course.name}»: متطلبه ${course.prerequisites.join("، ") || "—"} أو ${course.externalAlternative}؛ ${course.externalAlternative} اختبارٌ لا مقرر فلم يُقيَّد به.`);
       if (course.state === "ambiguous") { out.skipped.push({ code: course.code, name: course.name, reason: "الرمز يطابق أكثر من سجل: يلزم حسم الهوية يدوياً" }); out.courseCount -= 1; continue; }
       if (course.state === "missing") {
         if (!course.ownerSectionId) { out.skipped.push({ code: course.code, name: course.name, reason: "لم يتحدد قسمٌ مالك واحد لهذا الرمز في هذه الكلية" }); out.courseCount -= 1; continue; }
         out.creates.push({ code: course.code, name: course.name, credit: course.credit, hours: course.hours, sectionId: course.ownerSectionId });
+        if (foreign) out.externals += 1;
         continue;
       }
       const current = course.current!;
+      if (foreign) out.externals += 1;
       if (course.state === "different" && (current.name.normalize("NFKC").trim() !== course.name || current.credit !== course.credit || current.hours !== course.hours)) {
         out.updates.push({
           courseId: current.id, code: course.code, ownerSectionId: course.ownerSectionId, identityChange: current.name.normalize("NFKC").trim() !== course.name,

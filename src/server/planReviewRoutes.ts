@@ -42,6 +42,8 @@ interface CourseInfo { id: number; code: string; name: string; credit: number; h
 interface Context {
   plan: Plan;
   courseIds: number[];
+  /** متطلباتٌ عامة (مقررات أقسامٍ أخرى) داخل `courseIds`: للقراءة. */
+  externalIds: number[];
   catalog: Map<number, CourseInfo>;
   sectionName: string;
 }
@@ -128,9 +130,13 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         capacity: Number(course.MaxStudent) || 0, collegeId: Number(course.AdCollegeId), sectionId: Number(course.AdSectionId),
       });
     }
+    const [draftSet, liveSet] = await Promise.all([Repository.getRuleDraft(planId), Repository.getRuleSet(planId)]);
+    const externalIds = [...new Set(((draftSet || liveSet)?.externals || []).map(Number).filter(id => id > 0))];
+    const memberIds = [...new Set(links.filter(link => link.planId === planId).map(link => Number(link.AdCourseId)))];
     return {
       plan: { id: plan.id, AdCollegeId: Number(plan.AdCollegeId), AdSectionId: Number(plan.AdSectionId), name: plan.name, status: plan.status },
-      courseIds: [...new Set(links.filter(link => link.planId === planId).map(link => Number(link.AdCourseId)))],
+      externalIds: externalIds.filter(id => !memberIds.includes(id)),
+      courseIds: [...new Set([...memberIds, ...externalIds])],
       catalog,
       sectionName: String((sections as any[]).find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || ""),
     };
@@ -162,7 +168,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         const course = ctx.catalog.get(id) || { id, code: "", name: `مقرر ${id}`, credit: 0, hours: 0, capacity: 0, collegeId: 0, sectionId: 0 };
         return { id, code: course.code, name: course.name, credit: course.credit, hours: course.hours, capacity: course.capacity,
           collegeId: course.collegeId, sectionId: course.sectionId, ownerSectionId: course.sectionId,
-          ownerSectionName: sections.get(course.sectionId) || "", owned: ownsCourse(req, course) };
+          ownerSectionName: sections.get(course.sectionId) || "", owned: ownsCourse(req, course), external: ctx.externalIds.includes(id) };
       }),
       /* مقرراتٌ يشير إليها مسبقٌ أو مقرن ولا تقع في الصحيفة: تُعرض أسماؤها لا غير. */
       referenced: [...new Set(shown.rules.flatMap(rule => [...(rule.prereq?.all || []), ...(rule.prereq?.anyOf || []).flat(), ...(rule.coreq || [])]))]
@@ -350,7 +356,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const sid = Number(target.AdSectionId), cid = Number(target.AdCollegeId);
       const collegeName = String((colleges as any[]).find(row => Number(row.AdCollegeId) === cid)?.AdCollegeName || "");
       const branch = collegeBranchRoot(colleges as any[], cid);
-      const report: any = { sectionId: sid, collegeId: cid, collegeName, branch, planId: null, planNote: "", updates: [], creates: [], links: [], skipped: [], notes: [], rules: 0, groups: 0, applied: false };
+      const report: any = { sectionId: sid, collegeId: cid, collegeName, branch, planId: null, planNote: "", updates: [], creates: [], links: [], skipped: [], notes: [], rules: 0, groups: 0, externals: 0, applied: false };
       let courses = await Repository.getCourses();
       let snapshot = await referenceSnapshotFor(sections as any[], courses)(target);
       let ref: any = snapshot.references.find((row: any) => row.id === reference.id);
@@ -381,7 +387,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       };
       for (const update of application.updates) update.frozen = update.identityChange && (await frozenIdsOf(update.ownerSectionId)).has(update.courseId);
       const { apply: toApply, held } = splitFrozenUpdates(application.updates, req.body?.confirmIdentity === true);
-      Object.assign(report, { held, updates: application.updates, creates: application.creates, links: application.links, skipped: application.skipped, notes: application.notes, courseCount: application.courseCount });
+      Object.assign(report, { held, updates: application.updates, creates: application.creates, links: application.links, skipped: application.skipped, notes: application.notes, courseCount: application.courseCount, externals: application.externals });
       if (dryRun || !ref.planId) { reports.push(report); continue; }
 
       /* 1) تصحيح ما يخالف الصحيفة */
@@ -412,30 +418,37 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const byId = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
       const memberNow = new Set<number>(snapshot.links.filter(link => link.planId === ref.planId).map(link => Number(link.AdCourseId)));
       const skipCodes = new Set<string>(application.skipped.map(item => referenceCodeKey(item.code)));
-      const memberIdByCode = new Map<string, number>(), knownIdByCode = new Map<string, number>();
+      const memberIdByCode = new Map<string, number>(), knownIdByCode = new Map<string, number>(), externalIdByCode = new Map<string, number>();
       for (const group of ref.groups) for (const course of group.courses) {
         const key = referenceCodeKey(course.code);
         if (!course.current || skipCodes.has(key)) continue;
         knownIdByCode.set(key, Number(course.current.id));
-        if (course.ownerSectionId !== sid) continue;
+        if (course.ownerSectionId !== sid) {
+          /* مقررُ قسمٍ آخر: متطلبٌ عامٌّ للقراءة. يُصحَّح في كتالوج قسمه، ولا يُربط بعضوية هذه الصحيفة. */
+          externalIdByCode.set(key, Number(course.current.id));
+          continue;
+        }
         const row = byId.get(Number(course.current.id));
         if (!row) continue;
         if (!memberNow.has(row.AdCourseId)) await Repository.addCourseToCurriculumPlan(ref.planId, row, by);
         memberIdByCode.set(key, Number(row.AdCourseId));
       }
-      /* 4) مسوّدة القواعد: لا تُعتمد، ولا تمحو ما كتبه القسم */
-      const built = buildReferenceRules(reference, memberIdByCode, knownIdByCode, skipCodes);
-      const ownIds = new Set<number>(memberIdByCode.values());
+      /* 4) مسوّدة القواعد: لا تُعتمد، ولا تمحو ما كتبه القسم. المتطلباتُ العامة تدخلها قراءةً (للقسم) وبقواعدها (للإدارة). */
+      const ruleScope = new Map<string, number>([...memberIdByCode, ...externalIdByCode]);
+      const built = buildReferenceRules(reference, ruleScope, knownIdByCode, skipCodes);
       const live = await Repository.getRuleSet(ref.planId);
+      const allIds = new Set<number>(ruleScope.values());
+      const externalIds = [...externalIdByCode.values()];
       await Repository.updateRuleDraft(ref.planId, current => {
-        const base: CurriculumRuleSet = current ? { ...current } : { id: ref.planId, planId: ref.planId, AdCollegeId: cid, AdSectionId: sid, rules: live?.rules || [], groups: live?.groups || [], version: live?.version || 0, status: "review", basedOnVersion: live?.version || 0, updatedAt: "", updatedBy: by };
+        const base: CurriculumRuleSet = current ? { ...current } : { id: ref.planId, planId: ref.planId, AdCollegeId: cid, AdSectionId: sid, rules: live?.rules || [], groups: live?.groups || [], externals: live?.externals, version: live?.version || 0, status: "review", basedOnVersion: live?.version || 0, updatedAt: "", updatedBy: by };
         const hasRule = new Set(base.rules.map(rule => rule.courseId));
         const hasGroup = new Set(base.groups.map(group => group.id));
         const rules = normalizeRules([...base.rules, ...built.rules.filter(rule => !hasRule.has(rule.courseId))]);
-        const groups = [...base.groups, ...built.groups.filter(group => !hasGroup.has(group.id)).map(group => normalizeGroup({ ...group, courseIds: group.courseIds.filter(id => ownIds.has(id)) })).filter(Boolean) as ElectiveGroup[]];
-        return { ...base, rules: withDerivedGroups(rules, groups), groups, status: "review", updatedAt: new Date().toISOString(), updatedBy: `تطبيق الصحيفة المرجعية · ${by}` };
+        const groups = [...base.groups, ...built.groups.filter(group => !hasGroup.has(group.id)).map(group => normalizeGroup({ ...group, courseIds: group.courseIds.filter(id => allIds.has(id)) })).filter(Boolean) as ElectiveGroup[]];
+        const externals = [...new Set([...(base.externals || []), ...externalIds])].sort((a, b) => a - b);
+        return { ...base, rules: withDerivedGroups(rules, groups), groups, externals, status: "review", updatedAt: new Date().toISOString(), updatedBy: `تطبيق الصحيفة المرجعية · ${by}` };
       });
-      report.rules = built.rules.length; report.groups = built.groups.length; report.notes.push(...built.notes.slice(0, 20)); report.applied = true;
+      report.externals = externalIds.length; report.rules = built.rules.length; report.groups = built.groups.length; report.notes.push(...built.notes.slice(0, 20)); report.applied = true;
       reports.push(report);
     }
     if (!dryRun) {

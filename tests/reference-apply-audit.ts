@@ -39,6 +39,13 @@ function catalogOf(reference: typeof OLD, tweak: (course: { code: string; name: 
 const plain = (course: { code: string; name: string; credit: number; hours: number }, id: number): AdCourse =>
   ({ AdCourseId: id, AdCollegeId: COLLEGE, AdSectionId: ownerOf(course.code), CourseCode: course.code, CourseName: course.name, CourseCredit: course.credit, CourseHours: course.hours, MaxStudent: 0 });
 
+/* ── المتطلبات العامة تُحتسب في التقدّم (محاكاة وباب الطالب) من القواعد المعتمدة ── */
+{
+  const read = (file: string) => fs.readFileSync(file, "utf8");
+  check(read("src/server/simulationData.ts").includes("...(set?.externals || []).map(Number)"), "المحاكاة تحتسب المتطلبات العامة من القواعد المعتمدة");
+  check(read("src/server/studentDoorRoutes.ts").includes("approvedSets.get(plan.id)?.externals"), "وتقدّمُ الطالب في «مساري» كذلك، بلا إدخالها كتالوجَ القسم");
+}
+
 /* ── الفرع والجمهور ── */
 check(branchAudience("012") === "girls" && branchAudience("011") === "boys", "الفرع 012 بنات و011 بنون");
 check(audienceOf(OLD, { code: "0111148", name: "أشغال إبرة (للبنات فقط)" }) === "girls", "«للبنات فقط» المطبوعة ⇦ بنات (القديمة)");
@@ -53,6 +60,7 @@ check(!girls.skipped.some(item => item.code === "0111148"), "موقع البنا
 check(girls.updates.length === 1 && girls.updates[0].code === "0109114" && girls.updates[0].after.name === "تكنولوجيا الأجهزة التعليمية" && girls.updates[0].after.credit === 2, "اسمٌ/وحداتٌ مخالفة ⇦ تصحيحٌ إلى الصحيفة");
 check(girls.creates.length === 1 && girls.creates[0].code === "0109125" && girls.creates[0].sectionId === 9, "المقرر الناقص يُنشأ في القسم المالك");
 check(girls.links.every(link => (girlsCatalog.find(row => row.AdCourseId === link.courseId)?.AdSectionId) === SECTION) && girls.links.length > 20, "الربط لمقررات قسم الصحيفة وحدها");
+check(girls.externals > 30 && girls.externals < girls.courseCount, `المتطلبات العامة (مقررات أقسامٍ أخرى) مُحصاة: ${girls.externals} من ${girls.courseCount}`);
 check(girls.courseCount === 73 - 6 - 0, `عدد مقررات الصحيفة في موقع البنات ${girls.courseCount} = 67`);
 
 /* ── موقع بنين: عكس ذلك ── */
@@ -182,7 +190,11 @@ try {
     const artsSection = sectionOf.get(`${girlsCollege.AdCollegeId}:02`)!;
     const artsOverview = (await call("GET", `/api/curriculum/sections/${artsSection}`)).body;
     check(!(artsOverview?.memberships || []).filter((row: any) => !String(row.planId).startsWith("virtual:")).length, "H15c مقرر قسمٍ آخر أُضيف للكتالوج ولم يُربط بأي صحيفة", artsOverview?.memberships?.length);
-    check(!review.body?.courses?.some((c: any) => c.ownerSectionId !== girlsTech), "H16 مقررات الصحيفة من قسمها وحده");
+    const ext = (review.body?.courses || []).filter((c: any) => c.external), own = (review.body?.courses || []).filter((c: any) => !c.external);
+    check(ext.length > 30 && own.every((c: any) => c.ownerSectionId === girlsTech) && ext.every((c: any) => c.ownerSectionId !== girlsTech), `H16 مقررات الصحيفة: ${own.length} لقسمها و${ext.length} متطلباً عاماً لأقسامٍ أخرى (مقفولة)`);
+    const apiExt = (await call("GET", `/api/curriculum/sections/${girlsTech}`)).body;
+    check(!(apiExt?.memberships || []).some((row: any) => ext.some((c: any) => c.id === row.AdCourseId)), "H16b المتطلبات العامة لا تدخل عضوية صحيفة القسم ولا كتالوجَه التشغيلي");
+    check((review.body?.rules || []).some((r: any) => ext.some((c: any) => c.id === r.courseId)), "H16c ولها قواعدُها (المستوى والنوع) في المسوّدة")
 
     const again = await call("POST", "/api/plan-review/reference/apply", { referenceId: "old", sectionIds, dryRun: false });
     check(again.status === 200 && again.body.sites.every((row: any) => row.updates.length === 0 && row.creates.length === 0 && row.links.length === 0), "H17 إعادة التطبيق لا تغيّر شيئاً", again.body?.sites?.map((x: any) => [x.updates.length, x.creates.length, x.links.length]));

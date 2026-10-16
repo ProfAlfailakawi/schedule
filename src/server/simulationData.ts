@@ -80,7 +80,7 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
     for (const plan of live) {
       const set = approved.get(plan.id);
       plans.push({
-        planId: plan.id, courseIds: [...new Set(links.filter(link => link.planId === plan.id).map(link => Number(link.AdCourseId)))],
+        planId: plan.id, courseIds: [...new Set([...links.filter(link => link.planId === plan.id).map(link => Number(link.AdCourseId)), ...(set?.externals || []).map(Number)])],
         rules: set?.rules || [], groups: set?.groups || [], hasApprovedRules: Boolean(set),
       });
     }

@@ -89,7 +89,9 @@ async function sectionCatalog(sectionId: number): Promise<SectionCatalog> {
     ]);
     const live = plans.filter(plan => plan.status !== "archived");
     const byPlan = new Map<string, number[]>();
-    for (const plan of live) byPlan.set(plan.id, [...new Set(links.filter(link => link.planId === plan.id).map(link => Number(link.AdCourseId)))]);
+    /* المتطلباتُ العامة (مقررات أقسامٍ أخرى) تُحتسب في تقدّم الطالب من القواعد المعتمدة، ولا تدخل كتالوجَ القسم. */
+    const approvedSets = new Map((await Promise.all(live.map(async plan => [plan.id, await Repository.getRuleSet(plan.id)] as const))));
+    for (const plan of live) byPlan.set(plan.id, [...new Set([...links.filter(link => link.planId === plan.id).map(link => Number(link.AdCourseId)), ...(approvedSets.get(plan.id)?.externals || []).map(Number)])]);
     const known = new Map<number, { code: string; name: string; credit: number }>();
     for (const course of courses as AdCourse[]) {
       known.set(Number(course.AdCourseId), { code: String(course.CourseCode || ""), name: String(course.CourseName || ""), credit: Number(course.CourseCredit) || 0 });
