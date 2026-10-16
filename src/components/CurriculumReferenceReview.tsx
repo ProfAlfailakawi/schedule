@@ -54,10 +54,12 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
 
   const references = sections.find(row => row.sectionId === selectedSectionId)?.references || [];
   const reference = references.find(row => row.id === selected);
-  const entries = useMemo<CourseEntry[]>(() => reference ? reference.groups.flatMap(group => group.courses.map(course => ({
+  /* مقررات القسم وحدها: مقررات الكلية العامة (ثقافة عامة ومتطلبات الكلية) تُصحَّح عند أقسامها، وعرضها هنا يوهم القسم أنها له.
+     ما لم تُحسم ملكيته (ownerSectionId = 0) يبقى ظاهراً لأنه يحتاج قراراً. */
+  const entries = useMemo<CourseEntry[]>(() => reference ? reference.groups.flatMap(group => group.courses.filter(course => !course.ownerSectionId || course.ownerSectionId === selectedSectionId).map(course => ({
     course, groupId: group.id, groupName: group.name, category: group.category, requiredUnits: group.requiredUnits, elective: group.elective,
     level: courseLevelFromCode(course.code) || 0,
-  }))) : [], [reference]);
+  }))) : [], [reference, selectedSectionId]);
   const categoryOptions = useMemo(() => [...new Set(entries.map(row => row.category))], [entries]);
   const groupOptions = useMemo(() => [...new Map<string, string>(entries.map(row => [row.groupId, row.groupName] as const)).entries()], [entries]);
   const levelOptions = useMemo<number[]>(() => [...new Set<number>(entries.map(row => row.level))].sort((a, b) => a - b), [entries]);
