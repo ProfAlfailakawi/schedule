@@ -30,6 +30,9 @@ const ids = (input: StudentNoticeInput) => buildStudentNotices(input).map(n => n
 
 /* N1 */
 {
+  const withOpen = buildStudentNotices({ ...base, opened: [{ courseId: 9, name: "مشروع التخرج", section: "502" }] }).find(n => n.id === "opened:9");
+  check(withOpen?.tone === "action" && withOpen.title.includes("مشروع التخرج") && withOpen.target === "ticket", "N1 فُتحت شعبةٌ لمقررٍ أرده الطالب: يُقال له ويُحال إلى تذكرته");
+  check(ids({ ...base }).includes("advice") && !ids({ ...base, setupDone: false }).includes("advice"), "N1 «مقترحك الشخصي» لمن أكمل ملفّه وحده");
   check(ids({ ...base, setupDone: false }).join() === "setup", "N1 ملفٌّ لم يكتمل: «أكمل ملفّك» وحدها");
   check(ids({ ...base, phase: { ...base.phase, canEditWishes: true, nextAt: "25 أكتوبر", nextLabel: "تنتهي الرغبات" } }).includes("wishes-open"), "N1 الرغباتُ مفتوحة ولم يكتب: يُطلب منه");
   check(!ids({ ...base, hasWishes: true, phase: { ...base.phase, canEditWishes: true } }).includes("wishes-open"), "N1 كتب رغباته: لا يُطلب ثانيةً");
@@ -45,7 +48,7 @@ const ids = (input: StudentNoticeInput) => buildStudentNotices(input).map(n => n
     { courseId: 3, name: "سيرة", state: "awaiting-registration" }, { courseId: 4, name: "عقيدة", state: "pending" }, { courseId: 5, name: "حديث", state: "rejected", note: "امتلأت الشعبة" },
     { courseId: 6, name: "نحو", state: "rejected", dropped: true },
   ] });
-  check(cs.length === 5 && cs.every(n => n.id !== "case:6:rejected"), "N1 ما حذفه الطالب لا يُقال له");
+  check(cs.filter(n => n.id.startsWith("case:")).length === 5 && cs.every(n => n.id !== "case:6:rejected"), "N1 ما حذفه الطالب لا يُقال له");
   check(cs[0].tone === "alert" && cs[cs.length - 1].tone === "done", "N1 الترتيب: ما رُدّ أولاً، وما تمّ آخراً", cs.map(n => n.tone));
   check(cs.find(n => n.id.startsWith("case:2"))!.detail === "متطلّبٌ سابق لم يُستوفَ" && cs.find(n => n.id.startsWith("case:5"))!.detail === "امتلأت الشعبة", "N1 سببُ الرفض يُقال: من القائمة أو من ملاحظة القسم");
   check(new Set(cs.map(n => n.id)).size === cs.length, "N1 معرّفاتٌ فريدة");

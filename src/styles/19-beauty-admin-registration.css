@@ -55,26 +55,35 @@
     background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);
   }
 }
-/* The register beside the side rail (≈ 1024–1400px): eight columns at their roomy
+/* The register beside the side rail (≈ 1024–1440px): eight columns at their roomy
    padding are wider than the card, so the last column (the date) sat cut off at
    rest. Tighter cell padding lets the same eight columns fit; below this the table
    still scrolls inside its card and on a phone it is cards. */
-@media screen and (min-width:761px) and (max-width:1400px){
+@media screen and (min-width:761px) and (max-width:1440px){
   .student-cases-table{min-width:0}
   .student-cases-table thead th,.student-cases-table tbody td{padding-inline:4px}
   .student-cases-table td.student-case-detail-cell,
   .student-cases-register--decisions .student-cases-table td.student-case-detail-cell{min-width:130px}
   .student-cases-table td code{padding-inline:6px}
+  /* The curriculum tag sits under the section name as a small rounded label; set inline in
+     a narrow cell it wrapped into a tall three-line capsule. */
+  .student-cases-table td .student-case-plan{display:flex;width:fit-content;max-width:100%;margin:4px 0 0;padding:2px 8px;border-radius:10px;line-height:1.4}
 }
-/* Below ≈ 960px the eight columns cannot fit and the card scrolls sideways (RTL: the
-   rest of the row is to the left). A soft shadow on that edge says there is more,
-   instead of a column simply ending at the card's rim. */
+/* Below ≈ 960px the eight columns at their natural widths (≈ 860px) are wider than the
+   card. Rather than scroll, let the cells breathe: headers, the type badge, the
+   state pill and the approve button wrap onto two lines, the type is set in a slightly
+   smaller size, and the register fits from 761px up with no sideways scroll and no edge
+   shadow to explain one. Every column stays. */
 @media screen and (min-width:761px) and (max-width:960px){
-  .student-cases-table-wrap{
-    background:
-      radial-gradient(farthest-side at 0 50%,color-mix(in srgb,var(--ink) 16%,transparent),transparent) left center/10px 100% no-repeat scroll,
-      var(--surface);
-  }
+  .student-cases-table{font-size:11.5px}
+  .student-cases-table thead th{white-space:normal;line-height:1.4;vertical-align:bottom}
+  .student-cases-table td[data-label="الرقم المدني"]{font-size:11px}
+  .student-cases-table td code{font-size:11px;letter-spacing:0;padding-inline:4px}
+  .student-cases-table td .badge{white-space:normal;text-align:center;border-radius:12px;line-height:1.4;padding-block:3px}
+  .student-cases-table td .student-case-state{white-space:normal}
+  .student-cases-table td .student-case-approve-all{font-size:11px;padding-inline:8px;min-height:30px}
+  .student-cases-table td.student-case-detail-cell,
+  .student-cases-register--decisions .student-cases-table td.student-case-detail-cell{min-width:120px}
 }
 @media (prefers-reduced-motion:reduce){
   .admin-quiet-summary>span,.admin-quiet-summary>article,.student-cases-table tbody tr{transition:none}
@@ -84,6 +93,16 @@
 /* ── Login: dark signature caption reaches 4.5:1 ────────────────────────── */
 :root[data-theme="dark"] .apex-login-signature,
 :root[data-theme="dark"] .apex-login-signature small{color:#b3beb8}
+
+/* ── System-administration tab rail (desktop) ─────────────────────────────────
+   Six plain tabs plus the page's action button were ≈ 80px wider than the rail, so the
+   last tab («النسخة الاحتياطية») was cut off at rest. Slightly closer gaps, padding and a
+   28px icon let all six sit in view; narrower rails still scroll as before. */
+@media screen and (min-width:769px){
+  .console-rail:has(.console-tab-plain){gap:4px;padding:6px}
+  .console-rail .console-tab-plain{flex:1 1 auto;min-width:auto;padding-inline:8px;gap:0 6px}
+  .console-rail .console-tab-plain .console-tab-icon{width:28px;height:28px;border-radius:10px}
+}
 
 /* ── كشف التسجيل: رحلة الطلب (طالب ← لجنة ← تسجيل ← سُجّل) ── */
 .reg-flow{list-style:none;margin:0;padding:0;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:0;counter-reset:none}
@@ -137,3 +156,54 @@
 .sm-none{display:grid;justify-items:center;gap:4px;padding:28px 12px;text-align:center;color:var(--muted)}
 .sm-none .sm-ic{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:var(--success-soft,#e2f0e8);color:var(--success,#25684a)}
 .sm-none b{color:var(--ink);font-size:1rem}
+
+/* ── الرادار: أثر فتح الشعبة قبل اعتمادها ── */
+.sm-impact{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border-radius:12px;background:var(--success-soft,#e2f0e8)}
+.sm-impact b{font-size:.82rem;color:var(--success,#25684a)}
+
+/* ── قرارٌ سريع: بطاقةٌ واحدة ── */
+.qd-open{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--accent);color:var(--on-accent,#fff);font:inherit;font-weight:700;cursor:pointer;box-shadow:0 10px 22px -14px var(--accent);justify-self:start}
+.qd-open svg{width:18px;height:18px}
+.qd-open b{display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 7px;border-radius:99px;background:#ffffff2b;font-variant-numeric:tabular-nums}
+.qd-scrim{position:fixed;inset:0;z-index:55;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,#0b1210 55%,transparent);backdrop-filter:blur(3px)}
+.qd{inline-size:min(460px,100%);max-block-size:94dvh;overflow:auto;display:grid;gap:12px;padding:16px;border-radius:26px;background:var(--surface,#fff);box-shadow:0 30px 60px -24px #000a}
+.qd header{display:flex;align-items:center;gap:10px}
+.qd header b{display:inline-flex;align-items:center;gap:7px;font-size:1.05rem}
+.qd header b svg{width:18px;height:18px;color:var(--accent)}
+.qd header span{margin-inline-start:auto;color:var(--muted);font-variant-numeric:tabular-nums;font-size:.88rem}
+.qd header button{width:38px;height:38px;border:0;border-radius:12px;background:var(--surface-2,#f1f0eb);display:grid;place-items:center;cursor:pointer}
+.qd-bar{block-size:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.qd-bar i{display:block;block-size:100%;border-radius:99px;background:var(--accent);transition:inline-size .35s}
+.qd-card{display:grid;gap:14px;animation:qdIn .28s cubic-bezier(.2,.7,.2,1) both}
+@keyframes qdIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.qd-card{animation:none}}
+.qd-who{display:flex;align-items:center;gap:12px}
+.qd-who>div{flex:1;min-width:0;display:grid;gap:1px}
+.qd-who b{font-size:1.05rem}.qd-who small{color:var(--muted);font-size:.82rem}
+.qd-who code{font-size:.78rem;color:var(--muted);background:var(--surface-2,#f1f0eb);padding:3px 8px;border-radius:8px}
+.qd-av{flex:none;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:1.2rem}
+.qd-what{display:grid;gap:6px;padding:16px;border-radius:18px;background:var(--surface-2,#f4f3ef);justify-items:start}
+.qd-what strong{font-size:1.35rem;line-height:1.4}
+.qd-what code{font-size:.82rem;color:var(--accent);font-weight:700}
+.qd-what small{color:var(--muted)}
+.qd-side{padding:3px 11px;border-radius:99px;font-size:.78rem;font-weight:700;background:var(--warning-soft,#f7ecd4);color:var(--warning,#8d6423)}
+.qd-side.registration{background:var(--info-soft,#e0ecf7);color:var(--info,#2f5f8f)}
+.qd-note{display:flex;gap:7px;align-items:flex-start;margin:4px 0 0;padding:8px 10px;border-radius:12px;background:var(--surface,#fff);color:var(--muted);font-size:.84rem;line-height:1.7}
+.qd-note svg{width:15px;height:15px;flex:none;margin-top:3px}
+.qd-acts{display:grid;grid-template-columns:1.4fr 1fr;gap:10px}
+.qd-acts button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:60px;border-radius:18px;border:1.5px solid var(--line-strong,var(--line));background:var(--surface,#fff);font:inherit;font-size:1.05rem;font-weight:700;cursor:pointer;position:relative}
+.qd-acts button svg{width:20px;height:20px}
+.qd-acts .yes{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff);box-shadow:0 12px 24px -16px var(--accent)}
+.qd-acts .no{color:var(--danger,#a33)}
+.qd-acts button:disabled{opacity:.5;cursor:wait}
+.qd-acts kbd{position:absolute;inset-block-start:6px;inset-inline-end:8px;font:600 .66rem ui-monospace,monospace;opacity:.6;border:1px solid currentColor;border-radius:5px;padding:0 4px}
+@media (pointer:coarse){.qd-acts kbd{display:none}}
+.qd-skip{justify-self:center;border:0;background:none;color:var(--muted);font:inherit;font-weight:600;cursor:pointer;padding:6px 14px}
+.qd-skip:disabled{opacity:.35}
+.qd-hint{margin:0;text-align:center;color:var(--muted);font-size:.75rem}
+@media (pointer:fine){.qd-hint{display:none}}
+.qd-done{display:grid;justify-items:center;gap:8px;padding:28px 10px;text-align:center}
+.qd-done>span{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--success-soft,#e2f0e8);color:var(--success,#25684a)}
+.qd-done>span svg{width:30px;height:30px}
+.qd-done b{font-size:1.3rem}.qd-done small{color:var(--muted)}
+@media print{.qd-scrim,.qd-open{display:none!important}}

@@ -1,3 +1,4 @@
+import { buildInboxHeat } from "../utils/inboxHeat";
 import { byArabic } from "../utils/sorting";
 /**
  * ── وارِدُ الأساتذة ─────────────────────────────────────────────────────────
@@ -918,26 +919,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
      عدٌّ لا غير، من بنود الطلبات المُجابة المحمَّلة أصلاً في الشاشة — لا
      جلبَ جديداً، ولا تعريفاً للتعارض بين أستاذين. بنودُ «أبقِ» و«احذف» لا
      تُعدّ لأنها ليست موعداً مطلوباً. */
-  const heat = useMemo(() => {
-    const cells = new Map<string, number>();
-    const starts = new Set<string>();
-    for (const row of rows || []) {
-      if (row.status === "sent") continue;
-      for (const item of row.items || []) {
-        if ((item.action !== "change" && item.action !== "add") || (item as any).hidden) continue;
-        for (const slot of item.slots || []) {
-          const match = /^(\d{1,2}):(\d{2})/.exec(String(slot.start || ""));
-          if (!INBOX_DAY_NAMES[slot.day] || !match) continue;
-          const start = `${match[1].padStart(2, "0")}:${match[2]}`;
-          starts.add(start);
-          cells.set(`${slot.day}|${start}`, (cells.get(`${slot.day}|${start}`) || 0) + 1);
-        }
-      }
-    }
-    const times = [...starts].sort();
-    const max = Math.max(0, ...cells.values());
-    return { cells, times, max };
-  }, [rows]);
+  const heat = useMemo(() => buildInboxHeat(rows || [], day => Boolean(INBOX_DAY_NAMES[day as keyof typeof INBOX_DAY_NAMES])), [rows]);
   const openedQuiet = (rows || []).filter(row => row.status === "sent" && row.linkOpenedAt).length;
 
   /* الأساتذةُ الذين في الوارد فعلاً، مرتّبون أبجدياً بحسب الاسم — كقائمة الأستاذ في
@@ -1301,7 +1283,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
               </section>
               {heat.times.length ? (
                 <section className="glance-card glance-heat" aria-label="تكدس الطلبات">
-                  <header><Grid3x3 aria-hidden="true" /><b>تكدس الطلبات</b><span>مواعيدُ البدء المطلوبة</span></header>
+                  <header><Grid3x3 aria-hidden="true" /><b>تكدس الطلبات</b><span>مواعيدُ البدء المطلوبة</span>{heat.short.size ? <em className="heat-short-flag"><ShieldAlert aria-hidden="true" /> {countOf(heat.short.size, AR.appointment)} بلا قاعاتٍ تكفي</em> : null}</header>
                   <div className="heat-grid" role="table" aria-label="عدد المواعيد المطلوبة لكل يوم ووقت بدء">
                     <div className="heat-row heat-head" role="row">
                       <span aria-hidden="true" />
@@ -1313,10 +1295,11 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                         {Object.entries(INBOX_DAY_NAMES).map(([day, name]) => {
                           const count = heat.cells.get(`${day}|${time}`) || 0;
                           const level = count ? Math.max(1, Math.ceil((count / heat.max) * 4)) : 0;
+                          const lack = heat.short.get(`${day}|${time}`);
                           return (
-                            <span key={day} role="cell" className="heat-cell" data-heat={level}
-                              title={`${name} ${time}: ${num(count)} ${count === 1 ? "موعد" : "مواعيد"}`}
-                              aria-label={`${name} ${time}: ${num(count)}`}>
+                            <span key={day} role="cell" className="heat-cell" data-heat={level} data-short={lack ? "1" : undefined}
+                              title={`${name} ${time}: ${num(count)} ${count === 1 ? "موعد" : "مواعيد"}${lack ? ` — ${countOf(lack.asks, AR.request)} لـ${countOf(lack.rooms, AR.room)} متاحة فقط` : ""}`}
+                              aria-label={`${name} ${time}: ${num(count)}${lack ? ` — عجز قاعات: ${countOf(lack.asks, AR.request)} و${countOf(lack.rooms, AR.room)}` : ""}`}>
                               {""}
                             </span>
                           );
@@ -1328,6 +1311,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                     <span>أقل</span>
                     {[0, 1, 2, 3, 4].map(level => <span key={level} className="heat-swatch heat-cell" data-heat={level} />)}
                     <span>أكثر</span>
+                    {heat.short.size ? <><span className="heat-swatch heat-cell" data-heat="3" data-short="1" /><span>عجز قاعات</span></> : null}
                   </footer>
                 </section>
               ) : null}

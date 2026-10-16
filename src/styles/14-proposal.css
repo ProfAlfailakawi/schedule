@@ -777,3 +777,9 @@ body:has(.sp-root) .smart-guide-fab{visibility:hidden}
 .request-table td[data-label="القرار"]>*+*{margin-top:6px}
 /* Heat map: colour intensity only — the count stays in each cell's title. */
 .heat-cell{font-size:0}
+
+/* ── تكدّس الطلبات: طبقة «عجز القاعات» — الطلباتُ أكثرُ من القاعات المتاحة لها ── */
+.heat-cell[data-short="1"]{box-shadow:inset 0 0 0 2px var(--danger,#b3372c);position:relative}
+.heat-cell[data-short="1"]::after{content:"!";position:absolute;inset:0;display:grid;place-items:center;font:800 .72rem/1 inherit;color:var(--danger,#b3372c)}
+.heat-short-flag{margin-inline-start:auto;display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;background:var(--danger-soft,#f8e3df);color:var(--danger,#b3372c);font-style:normal;font-size:.78rem;font-weight:700}
+.heat-short-flag svg{width:14px;height:14px}

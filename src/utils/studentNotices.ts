@@ -8,12 +8,12 @@
  * مرتّبةٌ بما يستحقّ نظرَه أولاً: ما يُطلب منه، فما رُدّ، فما جدّ، فما تمّ.
  */
 export type StudentNoticeTone = "action" | "alert" | "info" | "done";
-export type StudentNoticeTarget = "setup" | "wishes" | "ticket" | "report" | "cases";
+export type StudentNoticeTarget = "setup" | "wishes" | "ticket" | "report" | "cases" | "advice";
 
 export interface StudentNotice {
   id: string;
   tone: StudentNoticeTone;
-  icon: "edit" | "ticket" | "check" | "info" | "clock" | "lock";
+  icon: "edit" | "ticket" | "check" | "info" | "clock" | "lock" | "spark";
   title: string;
   detail?: string;
   target: StudentNoticeTarget;
@@ -28,6 +28,8 @@ export interface StudentNoticeInput {
   reportAnswered: boolean;
   reportCourses: number;
   cases: StudentCaseCourse[];
+  /** شعبٌ فتحها القسمُ حديثاً لمقرراتٍ أرادها الطالبُ أو تعثّر فيها (من اقتراح الرادار/مركز الذكاء). */
+  opened?: Array<{ courseId: number; name: string; section: string }>;
 }
 
 export const REJECT_REASON_AR: Record<string, string> = {
@@ -59,6 +61,12 @@ export function buildStudentNotices(input: StudentNoticeInput): StudentNotice[] 
   }
   if (input.reportAnswered) out.push({ id: "report-done", tone: "done", icon: "check", title: "وصل جوابك على «هل سجلت؟»", target: "report" });
 
+  if (input.setupDone && !input.ticket) {
+    out.push({ id: "advice", tone: "info", icon: "spark", title: "مقترحك الشخصي لهذا الفصل", detail: "ما تسجّله ولماذا — من صحيفتك وما يُطرح.", target: "advice" });
+  }
+  for (const row of input.opened || []) {
+    out.push({ id: `opened:${row.courseId}`, tone: "action", icon: "ticket", title: `فُتحت شعبةٌ جديدة لـ«${row.name}»`, detail: row.section ? `الشعبة ${row.section} — جرّبها في تذكرتك.` : "جرّبها في تذكرتك.", target: "ticket" });
+  }
   for (const course of input.cases) {
     if (course.dropped) continue;
     if (course.state === "committee-rejected" || course.state === "rejected") {

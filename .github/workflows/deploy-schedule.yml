@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Verify and deploy to schedule-863eb
+    name: Deploy to the official service (schedule.dr-alfailakawi.com)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success')
@@ -27,7 +27,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Authenticate to Google Cloud with workload identity federation
+      - name: Authenticate (identity lives in schedule-863eb, which only builds images)
         id: auth
         uses: google-github-actions/auth@v3
         with:

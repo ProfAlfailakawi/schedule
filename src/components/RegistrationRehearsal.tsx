@@ -255,12 +255,20 @@ function RadarSchedule({ course, termId, onChanged }: { course: CourseRow & { co
   };
   return (
     <div className="sm-act">
-      {state === "idle" ? <SecondaryButton type="button" onClick={read} data-guide-ignore="يقرأ اقتراح فتح شعبة لهذا المقرر؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> اقتراح الجدول</SecondaryButton> : null}
+      {state === "idle" ? <SecondaryButton type="button" onClick={read} data-guide-ignore="يقرأ اقتراح فتح شعبة لهذا المقرر؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> ماذا لو فتحنا شعبة؟</SecondaryButton> : null}
       {state === "loading" ? <small>يبحث عن وقتٍ خالٍ من التعارض…</small> : null}
       {message ? <small className="sm-act-note">{message}</small> : null}
       {state === "ready" && !proposal ? <small className="sm-act-note">لا يقترح المحرّك شعبةً لهذا المقرر الآن: إمّا أن الطلب لا يُنتج مقاعد ناقصة، أو لا وقتَ خالياً من التعارض. راجع الجدول في ورشة القسم.</small> : null}
       {state === "ready" && proposal ? (
         <div className="sm-act-list">
+          {proposal.simulationImpact ? (() => {
+            const impact = proposal.simulationImpact as { delta12: number; delta15: number; conflictsBefore: number; conflictsAfter: number };
+            const chips: Array<[string, string]> = [];
+            if (impact.delta12 > 0) chips.push(["ok", `+${countOf(impact.delta12, AR.student)} يبلغون 12 وحدة`]);
+            if (impact.delta15 > 0) chips.push(["ok", `+${countOf(impact.delta15, AR.student)} يبلغون 15 وحدة`]);
+            if (impact.conflictsAfter < impact.conflictsBefore) chips.push(["info", `التعارضات ${impact.conflictsBefore.toLocaleString("ar-KW-u-nu-latn")} ← ${impact.conflictsAfter.toLocaleString("ar-KW-u-nu-latn")}`]);
+            return chips.length ? <div className="sm-impact" aria-label="أثر فتح الشعبة"><b>أثر فتحها</b>{chips.map(([tone, text]) => <span key={text} className={`sm-chip ${tone}`}>{text}</span>)}</div> : null;
+          })() : null}
           {(proposal.placements || []).map((slot: any) => slot.instructorId ? (
             <ApplyProposal
               key={slot.index}
