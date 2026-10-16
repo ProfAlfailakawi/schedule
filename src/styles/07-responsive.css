@@ -1901,3 +1901,33 @@ html[data-demo-admin-readonly="true"] .app-main::before{
 @media (max-width:760px){
   .schedule-form-sections button:not([aria-label]){min-height:44px}
 }
+
+/* ==========================================================================
+   LOGIN — CHROME iOS
+   Chrome on iPhone leaves its toolbars up on a non-scrolling page and still
+   reports svh/dvh as the full screen, so the fixed login was taller than the
+   visible area (story clipped under the card). Login.tsx measures the visible
+   height into --login-vh and flags short screens with data-short; this block
+   sizes the screen from that and lets it scroll as a last resort, instead of
+   clipping. Safari is unaffected: there --login-vh equals the real svh.
+   ========================================================================== */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait){
+  .apex-login{
+    height:var(--login-vh,100svh)!important;
+    min-height:var(--login-vh,100svh)!important;
+    max-height:var(--login-vh,100svh)!important;
+    overflow-x:hidden!important;overflow-y:auto!important;
+    -webkit-overflow-scrolling:touch;
+  }
+  .apex-login-stage{overflow:visible!important;flex:1 0 auto!important}
+  .apex-login[data-short="true"] .apex-login-stage{gap:7px!important;padding:3px 0!important}
+  .apex-login[data-short="true"] .apex-login-kicker,
+  .apex-login[data-short="true"] .apex-login-principles,
+  .apex-login[data-short="true"] .apex-access-head p{display:none!important}
+  .apex-login[data-short="true"] .apex-login-story h1{font-size:29px!important;margin-top:0!important}
+  .apex-login[data-short="true"] .apex-login-story>p{font-size:12px!important;margin-top:4px!important}
+  .apex-login[data-short="true"] .apex-login-access{padding:13px 15px!important}
+  .apex-login[data-short="true"] .apex-login-form{margin-top:7px!important;gap:6px!important}
+  .apex-login[data-short="true"] .apex-login-mark{width:38px!important;height:38px!important;flex-basis:38px!important}
+  .apex-login[data-short="true"] .apex-login-mark svg{width:38px!important;height:38px!important}
+}

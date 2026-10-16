@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Command,
@@ -26,6 +26,34 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     [identityOpen, setIdentityOpen] = useState(false),
     [demoLoading, setDemoLoading] = useState(false),
     [demoEnabled, setDemoEnabled] = useState(false);
+
+  /* Chrome on iOS keeps its toolbars up on a page that cannot scroll, yet
+     reports svh/dvh as if they were retracted — the "fixed" login is then
+     taller than what the person actually sees and the story collapses onto
+     the card. window.innerHeight/visualViewport are the visible truth in both
+     Safari and Chrome, so the screen is sized from them and compacts itself
+     (data-short) when that visible height is small. */
+  const mainRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const node = mainRef.current;
+    if (!node) return;
+    const measure = () => {
+      const h = Math.round(window.visualViewport?.height || window.innerHeight || 0);
+      if (!h) return;
+      node.style.setProperty("--login-vh", `${h}px`);
+      node.dataset.short = h <= 720 ? "true" : "false";
+    };
+    measure();
+    const vv = window.visualViewport;
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    vv?.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      vv?.removeEventListener("resize", measure);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -72,7 +100,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
   };
   return (
-    <main className="apex-login visual-minimal" dir="rtl">
+    <main ref={mainRef} className="apex-login visual-minimal" dir="rtl">
       <div className="apex-login-ambient" aria-hidden="true">
         <i />
         <i />
