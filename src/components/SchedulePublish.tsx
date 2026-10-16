@@ -1,7 +1,8 @@
 import { DnaStepper } from "./dna";
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, RefreshCw, Send, Trash2, Users, X } from "lucide-react";
+import { CalendarPlus, Check, Copy, GraduationCap, IdCard, Link2, QrCode, RefreshCw, Send, Trash2, Users, X } from "lucide-react";
+import MasariQrButton from "./MasariQrButton";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { AR, countOf, oblique } from "../utils/arabicCount";
@@ -450,18 +451,29 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   className={kind === "survey" ? "active" : ""}
                   onClick={() => setKind("survey")}
                   data-guide-ignore="اختيار رابط الطلب الأكاديمي الفردي؛ رغبات الفصل العامة تجمع في مساري"
-                  aria-pressed={kind === "survey"} title="طلب حالة أكاديمية"
+                  aria-pressed={kind === "survey"} title="مساري — بوابة الطالب"
                 >
-                  <ClipboardList aria-hidden="true" />
-                  <span>طلب حالة أكاديمية</span>
+                  <GraduationCap aria-hidden="true" />
+                  <span>مساري</span>
                 </button>
               </div>
-              <p className="share-kind-note">لرغبات الطلبة العامة استخدم QR «مساري»؛ هذا الرابط مخصص لحالة فردية مثل طلب مقرر أو تعارض محدد أو استكمال متطلبات التخرج.</p>
-              <div className="share-step-actions">
-                <PrimaryButton type="button" onClick={() => setStep("options")}>
-                  التالي · الصلاحية
-                </PrimaryButton>
-              </div>
+              {kind === "survey" ? (
+                <>
+                  <p className="share-kind-note">بوابةُ الطالب الواحدة: جدولُه المتوقع، رغباتُه، تذكرتُه، وطلبُ الحالة (مقرر لم يُفتح · تعارض · خريج/متوقع تخرّجه). رمزٌ واحد للجامعة؛ والروابط القديمة تفتح مساري تلقائياً.</p>
+                  <div className="share-step-actions">
+                    <MasariQrButton data-guide-ignore="رمز مساري من بطاقة النشر — لا يكتب شيئاً" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="share-kind-note">لرغبات الطلبة العامة وطلبات الحالة استخدم «مساري».</p>
+                  <div className="share-step-actions">
+                    <PrimaryButton type="button" onClick={() => setStep("options")}>
+                      التالي · الصلاحية
+                    </PrimaryButton>
+                  </div>
+                </>
+              )}
             </section>
 
             <section
@@ -576,7 +588,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                             {link.kind === "staff"
                               ? <><IdCard aria-hidden="true" /> بطاقة الأستاذ</>
                               : link.kind === "survey"
-                              ? <><ClipboardList aria-hidden="true" /> طلب حالة أكاديمية</>
+                              ? <><GraduationCap aria-hidden="true" /> رابط قديم · يفتح مساري</>
                               : <><Users aria-hidden="true" /> جدول القسم</>}
                           </span>
                           <b dir="ltr" className="share-link-id">
