@@ -15,6 +15,7 @@
  *   · ما يراه الطالبُ من الجدول أعدادٌ لا مواعيد: المسودةُ للأقسام والعمادة.
  */
 import rateLimit from "express-rate-limit";
+import { randomUUID } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 import { Repository } from "../db/repository";
 import type { AdCourse, StudentNeed, StudentProfile, StudentWishes } from "../types";
@@ -26,7 +27,9 @@ import {
   AFTER_GRADUATION_DAYS, CODE_LENGTH, CODE_MAX_FAILURES, REMEMBER_DAYS, afterCodeFailure, codeProblem, expectedGraduation,
   lockState, planProgress, profileLifetime, resetLifetime, sanitizePassed, shouldTouch, unitsOf, RESET_COOLDOWN_DAYS,
 } from "../utils/studentProfile";
-import { ticketContext } from "./simulationData";
+import { buildSimulationOfferings, ticketContext } from "./simulationData";
+import { auditSimOfferings } from "../utils/registrationSim";
+import { verifiedUnresolvableStudentConflicts } from "../utils/studentCaseConflict";
 import { unmetPrereq } from "../utils/curriculumRules";
 import { buildStudentNotices } from "../utils/studentNotices";
 import { studentNeedsCommitteeHelp } from "../utils/studentNeedRequest";
@@ -498,18 +501,42 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const termId = Number(term.AdTermId);
     const [run, ticket] = await Promise.all([Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint)]);
     const eligible = studentNeedsCommitteeHelp(profile, run, ticket, termId);
+    if (!eligible || !(phase.canEditWishes || phase.canReport)) {
+      res.json({ ready: true, canRequest: false, line: phase.line, termId, termName: String(term.AdTermName || ""), courses: [], conflictOwnCourses: [], conflictCourses: [], conflictPairs: [] });
+      return;
+    }
     const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
     const remaining = new Set(planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds);
-    const blocked = new Set(eligible ? ticket!.unmet.map(item => Number(item.courseId)) : []);
+    const openable = new Set(eligible ? ticket!.unmet.filter(item => item.reason === "not-offered" || item.reason === "full").map(item => Number(item.courseId)) : []);
+    const conflictBlocked = new Set(eligible ? ticket!.unmet.filter(item => item.reason === "conflict").map(item => Number(item.courseId)) : []);
     const all = (courses as AdCourse[]).filter(course => Number(course.AdCollegeId) === Number(profile.AdCollegeId)
       && Number.isInteger(Number(course.AdCourseId)) && Number(course.AdCourseId) > 0)
       .map(course => ({ id: Number(course.AdCourseId), code: String(course.CourseCode || ""), name: String(course.CourseName || ""),
         own: Number(course.AdSectionId) === Number(profile.AdSectionId), remaining: remaining.has(Number(course.AdCourseId)) }))
       .sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }) || a.name.localeCompare(b.name, "ar"));
+    const courseById = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
+    let pairs: ReturnType<typeof verifiedUnresolvableStudentConflicts> = [], conflictCourses: Array<(typeof all)[number] & { sectionName: string }> = [];
+    if (conflictBlocked.size && all.some(course => !course.own)) {
+      const [schedules, sections, published] = await Promise.all([
+        Repository.getSchedulesByScope({ termId }), Repository.getSections(), ticketContext(termId),
+      ]);
+      const table = buildSimulationOfferings(termId, schedules, courseById);
+      const confirmed = auditSimOfferings(table.offerings).confirmed;
+      pairs = verifiedUnresolvableStudentConflicts([...conflictBlocked], all.filter(course => !course.own).map(course => course.id), confirmed, published.signed,
+        { collegeId: Number(profile.AdCollegeId), sectionId: Number(profile.AdSectionId) });
+      const eligibleOtherIds = new Set(pairs.map(pair => pair.otherCourseId));
+      const conflictCourseInfo = new Map(all.filter(course => eligibleOtherIds.has(course.id)).map(course => {
+        const row = courseById.get(course.id);
+        return [course.id, { ...course, sectionName: String((sections as any[]).find(section => Number(section.AdSectionId) === Number(row?.AdSectionId))?.AdSectionName || "قسم آخر") }];
+      }));
+      conflictCourses = [...conflictCourseInfo.values()];
+    }
     res.json({ ready: true, canRequest: eligible && (phase.canEditWishes || phase.canReport), line: phase.line,
       termId, termName: String(term.AdTermName || ""),
-      courses: eligible ? all.filter(course => course.own && course.remaining && blocked.has(course.id)) : [],
-      conflictCourses: eligible ? all : [] });
+      courses: eligible ? all.filter(course => course.own && course.remaining && openable.has(course.id)) : [],
+      conflictOwnCourses: eligible ? all.filter(course => course.own && course.remaining && conflictBlocked.has(course.id)) : [],
+      conflictCourses,
+      conflictPairs: pairs });
   });
 
   app.post("/api/public/me/request", writeLimit, requireDoor, async (req: Request, res: Response) => {
@@ -527,7 +554,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     if (!studentNeedsCommitteeHelp(profile, run, ticket, termId)) {
       fail(res, 409, "لا توجد حالة تعثر مؤكدة في آخر محاكاة تستدعي طلباً فردياً. حدّث رغباتك وانتظر إعادة الاحتساب.", "no-proven-blocker"); return;
     }
-    const blocked = new Set(ticket!.unmet.map(item => Number(item.courseId)));
+    const openable = new Set(ticket!.unmet.filter(item => item.reason === "not-offered" || item.reason === "full").map(item => Number(item.courseId)));
 
     const requestType = req.body?.requestType === "course-conflict" ? "course-conflict" : req.body?.requestType === "new-course" ? "new-course" : "";
     if (!requestType) { fail(res, 400, "اختر فتح مقرر أو مراجعة تعارض مقررين.", "bad-request-type"); return; }
@@ -537,15 +564,24 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const remaining = new Set(planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds);
     const ids: number[] = [...new Set<number>((Array.isArray(req.body?.courseIds) ? req.body.courseIds : []).map(Number)
       .filter(id => Number.isInteger(id) && id > 0))];
-    if (requestType === "new-course" && (ids.length !== 1 || !remaining.has(ids[0]) || !blocked.has(ids[0]))) {
-      fail(res, 400, "اختر مقرراً واحداً متبقياً ومتعذراً في محاكاة التسجيل.", "course-outside-plan"); return;
+    if (requestType === "new-course" && (ids.length < 1 || ids.length > 12 || ids.some(id => !remaining.has(id) || !openable.has(id) || Number(byId.get(id)?.AdSectionId) !== Number(profile.AdSectionId)))) {
+      fail(res, 400, "اختر من مقرراتك المتبقية المتعذرة في المحاكاة (حتى 12 مقرراً).", "course-outside-plan"); return;
     }
     if (requestType === "course-conflict") {
       if (ids.length !== 2 || ids[0] === ids[1]) { fail(res, 400, "اختر مقررين مختلفين للتعارض.", "bad-conflict-pair"); return; }
       const rows = ids.map(id => byId.get(id));
-      if (rows.some(course => !course || Number(course.AdCollegeId) !== Number(profile.AdCollegeId))
-        || !rows.some(course => Number(course?.AdSectionId) === Number(profile.AdSectionId) && remaining.has(Number(course?.AdCourseId)) && blocked.has(Number(course?.AdCourseId)))) {
-        fail(res, 400, "يجب أن يكون أحد المقررين من مقرراتك المتبقية، وأن يكون المقرران ضمن كليتك.", "conflict-outside-scope"); return;
+      const ownId = ids.find(id => Number(byId.get(id)?.AdSectionId) === Number(profile.AdSectionId));
+      const otherId = ids.find(id => id !== ownId);
+      const schedules = await Repository.getSchedulesByScope({ termId });
+      const table = buildSimulationOfferings(termId, schedules, byId);
+      const confirmed = auditSimOfferings(table.offerings).confirmed;
+      const published = await ticketContext(termId);
+      const pairs = verifiedUnresolvableStudentConflicts(ownId ? [ownId] : [], otherId ? [otherId] : [], confirmed, published.signed,
+        { collegeId: Number(profile.AdCollegeId), sectionId: Number(profile.AdSectionId) });
+      if (!ownId || !otherId || rows.some(course => !course || Number(course.AdCollegeId) !== Number(profile.AdCollegeId))
+        || !remaining.has(ownId) || !ticket!.unmet.some(item => Number(item.courseId) === ownId && item.reason === "conflict")
+        || !pairs.some(pair => pair.ownCourseId === ownId && pair.otherCourseId === otherId)) {
+        fail(res, 409, "لم يثبت تعذّر حل هذا التعارض من الجداول المنشورة المكتملة. جرّب الشعب البديلة أو حدّث المحاكاة.", "conflict-not-proven"); return;
       }
     }
     const details = String(req.body?.details || "").normalize("NFKC").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 600);
@@ -555,14 +591,39 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     if (existing?.requestType === "graduate" && existing.eligibility === "eligible") {
       fail(res, 409, "لديك حالة تخرج موثّقة لهذا الفصل. تابعها من «حالاتي» أو حدّثها من مسارها الحالي.", "verified-graduate-case"); return;
     }
-    const entry: Omit<StudentNeed, "id" | "createdAt"> = {
-      fingerprint, AdCollegeId: Number(profile.AdCollegeId), AdSectionId: Number(profile.AdSectionId),
-      studentSectionId: Number(profile.AdSectionId), surveySectionId: Number(profile.AdSectionId), AdTermId: termId,
-      curriculumPlanId: profile.curriculumPlanId, courseIds: ids, requestType,
-      nameCipher: profile.nameCipher, civilCipher: profile.civilCipher, details, eligibility: "not-checked",
-    };
-    const saved = await Repository.saveStudentNeed(entry);
-    noStore(res); res.status(201).json({ ok: true, caseRef: caseRefFor(saved), requestType, termId, courseIds: ids });
+    const requestGroupId = randomUUID();
+    const grouped = new Map<number, number[]>();
+    for (const id of ids) {
+      const owner = Number(byId.get(id)?.AdSectionId);
+      if (!owner) continue;
+      grouped.set(owner, [...(grouped.get(owner) || []), id]);
+    }
+    const sections = await Repository.getSections();
+    const byOwner: Array<{ sectionId: number; caseRef: string; courseIds: number[] }> = [];
+    for (const [ownerSectionId, ownerCourseIds] of grouped) {
+      const ownerCollegeId = Number(byId.get(ownerCourseIds[0])?.AdCollegeId);
+      const paired = ids.filter(id => !ownerCourseIds.includes(id)).map(id => {
+        const course = byId.get(id);
+        return `${String(course?.CourseCode || "")} ${String(course?.CourseName || "")}`.trim();
+      }).filter(Boolean);
+      const ownerDetails = requestType === "course-conflict" && paired.length
+        ? `${details} · تعارض مع: ${paired.join("، ")}` : details;
+      const entry: Omit<StudentNeed, "id" | "createdAt"> = {
+        fingerprint, AdCollegeId: ownerCollegeId,
+        AdSectionId: ownerCollegeId === Number(profile.AdCollegeId) ? Number(profile.AdSectionId) : ownerSectionId,
+        studentSectionId: Number(profile.AdSectionId), surveySectionId: ownerSectionId, AdTermId: termId,
+        curriculumPlanId: profile.curriculumPlanId, courseIds: ownerCourseIds, requestType,
+        requestGroupId, nameCipher: profile.nameCipher, civilCipher: profile.civilCipher,
+        details: ownerDetails, eligibility: "not-checked",
+      };
+      const saved = await Repository.saveStudentNeed(entry);
+      byOwner.push({ sectionId: ownerSectionId, caseRef: caseRefFor(saved), courseIds: ownerCourseIds });
+    }
+    const primary = byOwner.find(row => row.sectionId === Number(profile.AdSectionId)) || byOwner[0];
+    noStore(res); res.status(201).json({ ok: true, caseRef: primary?.caseRef || "", cases: byOwner.map(row => ({
+      sectionName: String((sections as any[]).find(section => Number(section.AdSectionId) === row.sectionId)?.AdSectionName || "القسم المختص"),
+      caseRef: row.caseRef, courseIds: row.courseIds,
+    })), requestGroupId, requestType, termId, courseIds: ids });
   });
 
   /* ── المطروح لي: متبقّي صحيفتي أيُّه يُطرح هذا الفصل؟ (أعدادٌ لا مواعيد) ─── */
@@ -747,6 +808,16 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     if (!run || !ticket || ticket.runId !== run.runId) { res.json({ ready: false, reason: profile.AdSectionId > 0 ? "no-run" : "no-setup" }); return; }
     const [catalog, context] = await Promise.all([sectionCatalog(profile.AdSectionId), ticketContext(termId)]);
     const info = (id: number) => catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
+    const alternativesFor = (courseId: number, currentId: string) => {
+      const seen = new Set<string>();
+      return ticket.plans.flatMap(plan => plan.items.filter(item => Number(item.courseId) === Number(courseId)).map(item => {
+        const id = String(item.offeringId || ""), offering = context.offerings.get(id);
+        if (!id || id === currentId || seen.has(id) || !offering?.slots.length
+          || !context.signed.has(`${offering.collegeId}:${offering.sectionId}`)) return null;
+        seen.add(id);
+        return { offeringId: id, section: offering.code, slots: offering.slots, tight: item.tight };
+      }).filter((item): item is NonNullable<typeof item> => Boolean(item)));
+    };
     const round = term.AdTermStudentPhases?.rounds?.[ticket.window - 1];
     res.json({
       ready: true, termName: String(term.AdTermName || ""), ranAt: run.ranAt,
@@ -758,7 +829,9 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         items: plan.items.map(item => {
           const offering = context.offerings.get(item.offeringId);
           const visible = Boolean(offering && context.signed.has(`${offering.collegeId}:${offering.sectionId}`));
-          return { courseId: item.courseId, ...info(item.courseId), tight: item.tight, timesVisible: visible, section: visible ? offering!.code : "", slots: visible ? offering!.slots : [] };
+          return { courseId: item.courseId, ...info(item.courseId), tight: item.tight, timesVisible: visible,
+            section: visible ? offering!.code : "", slots: visible ? offering!.slots : [],
+            offeringId: visible ? item.offeringId : "", alternatives: visible ? alternativesFor(item.courseId, item.offeringId) : [] };
         }),
       })),
       unmet: ticket.unmet.map(entry => ({ courseId: entry.courseId, ...info(entry.courseId), reason: entry.reason })),

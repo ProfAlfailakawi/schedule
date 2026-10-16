@@ -247,6 +247,10 @@ button,input{font:inherit;color:inherit}
 .rp .ref{font:700 22px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;direction:ltr;text-align:center;padding:12px;border-radius:14px;background:var(--accent-soft);color:var(--accent)}
 
 .tk .fine{font-size:11.5px;color:var(--muted);line-height:1.7;margin:0}
+.tk .ticket-alt{display:grid;gap:5px;margin-inline-start:46px;margin-block-start:-7px}
+.tk .ticket-alt label{font-size:11px;color:var(--muted)}
+.tk .ticket-alt .inp{min-block-size:40px;padding:8px 11px;font-size:12px}
+@media(max-width:580px){.tk .ticket-alt{margin-inline-start:0}.tk .ln{gap:8px;padding:9px}}
 
 
 /* ── شريط سفلي لاصق ── */
@@ -468,36 +472,48 @@ function loadCases(){var host=document.getElementById("cases");if(!host)return;
 function loadCaseRequest(){var host=document.getElementById("caseRequest");if(!host)return;
   api("GET","/api/public/me/request-context").then(function(r){if(!r.ok||!r.d.ready||!r.d.canRequest){host.innerHTML="";return}paintCaseRequest(host,r.d)})}
 function paintCaseRequest(host,d){
-  var options=function(list){return '<option value="">اختر المقرر</option>'+list.map(function(c){return '<option value="'+c.id+'">'+esc(c.code)+' · '+esc(c.name)+'</option>'}).join("")};
-  var h='<details class="card fade more"><summary>تعذّر تكوين جدول؟ اطلب مراجعة القسم</summary><div style="margin-block-start:10px"><p class="muted">يصل اختيارك للقسم للمراجعة. لا يثبت الأهلية، ولا يحجز مقعداً، ولا يؤكد وجود تعارض.</p>'
-    +'<div class="field"><label for="crtype">نوع الطلب</label><select class="inp" id="crtype"><option value="new-course">أحتاج طرح مقرر من صحيفتي</option><option value="course-conflict">أواجه تعارضاً بين مقررين</option></select></div>'
+  var options=function(list){return '<option value="">اختر المقرر</option>'+list.map(function(c){return '<option value="'+c.id+'">'+esc(c.code)+' · '+esc(c.name)+(c.sectionName?' · '+esc(c.sectionName):'')+'</option>'}).join("")};
+  var h='<details class="card fade more"><summary>تعذّر تكوين جدول؟ اطلب مراجعة القسم</summary><div style="margin-block-start:10px"><p class="muted">يصل اختيارك للقسم المختص للمراجعة. لا يثبت الأهلية ولا يحجز مقعداً. طلب التعارض لا يظهر إلا إذا لم نجد توليفة منشورة خالية منه.</p>'
+    +'<div class="field"><label for="crtype">نوع الطلب</label><select class="inp" id="crtype"><option value="new-course">أحتاج طرح مقررات من صحيفتي</option><option value="course-conflict">تعذّر حل تعارض بين مقررين</option></select></div>'
     +'<div class="field" id="crcourses"></div><div class="field"><label for="crdetails">سبب مختصر</label><textarea class="inp" id="crdetails" maxlength="600" rows="3" placeholder="اكتب ما يحتاج القسم معرفته"></textarea></div>'
     +'<label class="row" style="gap:10px;align-items:flex-start"><input type="checkbox" id="crconsent"><span>أوافق على إرسال اسمي ورقمي المدني إلى القسم لمراجعة هذا الطلب.</span></label>'
     +errBox("crerr")+'<button class="btn" id="crsend">أرسل طلب المراجعة</button><div id="crdone"></div></div></details>';
   host.innerHTML=h;
   var kind=document.getElementById("crtype"),courses=document.getElementById("crcourses");
+  if(!(d.conflictPairs||[]).length){var conflictOption=kind.querySelector('option[value="course-conflict"]');if(conflictOption)conflictOption.remove()}
   function draw(){var conflict=kind.value==="course-conflict";courses.innerHTML=conflict
-    ?'<label for="crone">المقرر من صحيفتك</label><select class="inp" id="crone">'+options(d.courses)+'</select><label for="crtwo" style="margin-block-start:8px">المقرر المتعارض معه في كليتك</label><select class="inp" id="crtwo">'+options(d.conflictCourses)+'</select>'
-    :'<label for="crone">المقرر المتبقي في صحيفتك</label><select class="inp" id="crone">'+options(d.courses)+'</select>'}
+    ?'<label for="crone">المقرر المتعثر في صحيفتك</label><select class="inp" id="crone">'+options(d.conflictOwnCourses||[])+'</select><label for="crtwo" style="margin-block-start:8px">المقرر الآخر · يظهر فقط عند ثبوت التعارض</label><select class="inp" id="crtwo">'+options([])+'</select>'
+    :'<label>المقررات المتبقية المتعذرة في المحاكاة · اختر ما يحتاج مراجعة (حتى 12)</label><div class="case-course-choices" style="display:grid;gap:7px;max-block-size:220px;overflow:auto">'+(d.courses||[]).map(function(c){return '<label class="case-course-choice" style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--line);border-radius:11px"><input type="checkbox" name="crcourse" value="'+c.id+'"><span><bdi>'+esc(c.code)+'</bdi> · '+esc(c.name)+'</span></label>'}).join("")+'</div>';
+    if(conflict){var own=document.getElementById("crone"),other=document.getElementById("crtwo");function fill(){var id=Number(own.value||0),list=(d.conflictCourses||[]).filter(function(c){return(d.conflictPairs||[]).some(function(p){return Number(p.ownCourseId)===id&&Number(p.otherCourseId)===Number(c.id)})});other.innerHTML=options(list)}own.addEventListener("change",fill);fill()}}
   kind.addEventListener("change",draw);draw();
-  document.getElementById("crsend").addEventListener("click",function(){var button=this,selected=[Number((document.getElementById("crone")||{}).value||0)];if(kind.value==="course-conflict")selected.push(Number((document.getElementById("crtwo")||{}).value||0));
+  document.getElementById("crcourses").addEventListener("change",function(e){if(e.target&&e.target.name==="crcourse"&&e.target.checked&&host.querySelectorAll('input[name="crcourse"]:checked').length>12){e.target.checked=false;showErr("crerr","يمكنك اختيار حتى 12 مقرراً في الطلب الواحد.")}});
+  document.getElementById("crsend").addEventListener("click",function(){var button=this,selected=[],checks=host.querySelectorAll('input[name="crcourse"]:checked');if(kind.value==="course-conflict")selected=[Number((document.getElementById("crone")||{}).value||0),Number((document.getElementById("crtwo")||{}).value||0)];else for(var ci=0;ci<checks.length;ci++)selected.push(Number(checks[ci].value));
     var consent=document.getElementById("crconsent").checked,details=document.getElementById("crdetails").value;button.disabled=true;showErr("crerr","");
     api("POST","/api/public/me/request",{requestType:kind.value,courseIds:selected,details:details,consent:consent}).then(function(r){button.disabled=false;if(!r.ok){showErr("crerr",r.d.error||"تعذّر إرسال الطلب");return}
-      document.getElementById("crdone").innerHTML='<p class="lead">وصل طلبك إلى القسم.</p><p class="muted">رقم الحالة</p><div class="ref">'+esc(r.d.caseRef)+'</div>';loadCases();toast("وصل طلب المراجعة")})})}
+      var cases=r.d.cases||[{sectionName:"القسم المختص",caseRef:r.d.caseRef}],done='<p class="lead">وصل طلبك للأقسام المعنية.</p>';cases.forEach(function(c){done+='<p class="muted">'+esc(c.sectionName)+' · رقم الحالة</p><div class="ref">'+esc(c.caseRef)+'</div>'});document.getElementById("crdone").innerHTML=done;loadCases();toast("وصل طلب المراجعة")})})}
 function loadTicket(){var host=document.getElementById("ticket");if(!host)return;
   api("GET","/api/public/me/ticket").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var t=r.d;S.ticket=t;S.tkPlan=S.tkPlan||"A";paintTicket(host)})}
-function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
+function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||{};t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
+  var activeItems=cur.items.map(function(i){return S.tkOverrides[cur.label+":"+i.courseId]||i}),visibleTimes=activeItems.length>0&&activeItems.every(function(i){return i.timesVisible}),daySet={},gapMinutes=0;if(visibleTimes){var byDay={};activeItems.forEach(function(i){(i.slots||[]).forEach(function(slot){(byDay[slot.day]||(byDay[slot.day]=[])).push(slot)})});Object.keys(byDay).forEach(function(day){daySet[day]=true;var slots=byDay[day].sort(function(a,b){return a.start-b.start});for(var n=1;n<slots.length;n++)gapMinutes+=Math.max(0,slots[n].start-slots[n-1].end)})}
   var w=t.window,when=w.name?(w.name+(w.start?" · "+fmtShort(w.start)+(w.end?" → "+fmtShort(w.end):""):"")):"يحدّد موعدَها صاحبُ القرار";
   var h='<section class="card tk fade"><div class="hd"><span class="win"><b>'+w.n+'</b><small>من '+w.of+'</small></span><div class="tx"><b>تذكرتي · نافذتي '+w.n+'</b><span class="muted">'+esc(when)+'</span></div></div><div class="perf"></div><div class="bd">';
   if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد آخر حساب — ستتحدّث تذكرتك في التحديث القادم</div>';
   if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
   h+='<div class="seg fit" role="group" aria-label="الخطة">'+t.plans.map(function(p){return '<button type="button" data-l="'+p.label+'" aria-pressed="'+(p.label===cur.label?"true":"false")+'">'+({A:"الخطة أ",B:"الخطة ب",C:"الخطة ج"})[p.label]+'</button>'}).join("")+'</div>';
   h+='<div class="row between"><span class="muted">'+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(cur.units,AR.unit)+'</span></div>';
+  if(visibleTimes)h+='<p class="fine">'+countOf(Object.keys(daySet).length,AR.day)+' حضور · '+(gapMinutes?('فراغات بين المحاضرات نحو '+countOf(Math.round(gapMinutes/6)/10,AR.hour)):'بلا فراغات طويلة')+' · التعديل معاينة شخصية لا تغيّر جدول القسم.</p>';
   if(!cur.items.length)h+='<p class="lead">لا مقرراتٍ تُناسب هذه الخطة الآن.</p>';
-  cur.items.forEach(function(i){h+='<div class="ln"><span class="ic">'+ic("book")+'</span><span class="tx"><b>'+esc(i.name)+'</b><small>'+(i.timesVisible?esc(i.section?"شعبة "+i.section+" · ":"")+slotsText(i.slots):ic("lock","")+" الموعد يظهر عند اعتماد جدول القسم")+'</small></span>'+(i.tight?'<span class="chip warn">مقاعد قليلة</span>':'')+'<span class="code">'+esc(i.code)+'</span></div>'});
+  cur.items.forEach(function(i){var key=cur.label+":"+i.courseId,alt=S.tkOverrides[key],chosen=alt||i,alternatives=i.alternatives||[];
+    h+='<div class="ln"><span class="ic">'+ic("book")+'</span><span class="tx"><b>'+esc(i.name)+'</b><small>'+(chosen.timesVisible?esc(chosen.section?"شعبة "+chosen.section+" · ":"")+slotsText(chosen.slots):ic("lock","")+" الموعد يظهر عند اعتماد جدول القسم")+'</small></span>'+(chosen.tight?'<span class="chip warn">مقاعد قليلة</span>':'')+'<span class="code">'+esc(i.code)+'</span></div>';
+    if(i.timesVisible&&alternatives.length){h+='<div class="ticket-alt"><label for="ta'+i.courseId+'">جرّب شعبة بديلة · معاينة شخصية</label><select class="inp ticket-alt-select" id="ta'+i.courseId+'" data-course="'+i.courseId+'"><option value="">الشعبة المقترحة · '+esc(i.section)+'</option>'+alternatives.map(function(a){return '<option value="'+esc(a.offeringId)+'"'+(alt&&alt.offeringId===a.offeringId?' selected':'')+'>شعبة '+esc(a.section)+(a.tight?' · مقاعد قليلة':'')+'</option>'}).join("")+'</select></div>'}
+  });
+  h+='<p class="fine" id="tkerr" role="status" aria-live="polite"></p>';
   if(t.unmet.length){h+='<details class="more"><summary>'+ic("down")+' ما لم نضعه ('+t.unmet.length+')</summary><div class="list" style="margin-block-start:6px">'+t.unmet.map(function(u){return '<div class="opt off"><span class="tx"><b>'+esc(u.name)+'</b><small>'+esc(WHY[u.reason]||"")+'</small></span></div>'}).join("")+'</div></details>'}
   h+='<p class="fine">'+ic("shield","")+' تقديرٌ تجريبي من بياناتٍ جمعناها — لا يحجز مقعداً ولا يُغني عن التسجيل الرسمي.</p></div></section>';
   host.innerHTML=h;
+  var alternatives=host.querySelectorAll(".ticket-alt-select");for(var ai=0;ai<alternatives.length;ai++)(function(select){select.addEventListener("change",function(){var courseId=Number(select.getAttribute("data-course")),item=cur.items.find(function(row){return Number(row.courseId)===courseId}),key=cur.label+":"+courseId,candidate=(item.alternatives||[]).filter(function(a){return a.offeringId===select.value})[0],next={};for(var overrideKey in S.tkOverrides)if(Object.prototype.hasOwnProperty.call(S.tkOverrides,overrideKey))next[overrideKey]=S.tkOverrides[overrideKey];if(candidate)next[key]=candidate;else delete next[key];
+      var chosen=cur.items.map(function(row){return next[cur.label+":"+row.courseId]||row}),clash=false;for(var x=0;x<chosen.length;x++)for(var y=x+1;y<chosen.length;y++){var a=chosen[x].slots||[],b=chosen[y].slots||[];if(a.some(function(l){return b.some(function(r){return l.day===r.day&&l.start<r.end&&r.start<l.end})}))clash=true}
+      if(clash){select.value=S.tkOverrides[key]?S.tkOverrides[key].offeringId:"";document.getElementById("tkerr").textContent="هذه الشعبة تتعارض مع مقرر آخر في خطتك؛ اختر شعبة أخرى.";return}S.tkOverrides=next;paintTicket(host)} )})(alternatives[ai]);
   host.querySelectorAll(".seg button").forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");paintTicket(host)})})}
 function loadReport(){var host=document.getElementById("report");if(!host)return;
   api("GET","/api/public/me/report").then(function(r){if(!r.ok||!r.d.ready||(!r.d.canReport&&!r.d.answers.length)||!r.d.courses.length){host.innerHTML="";return}S.report=r.d;S.rp={};r.d.answers.forEach(function(a){S.rp[a.courseId]={state:a.state,reason:a.reason||"other"}});S.rpHelp=false;paintReport(host)})}

@@ -22,6 +22,8 @@ import { pickDoorTerm } from "../src/utils/termStudentPhases";
 import { clearDoorCookie, codeVersion, doorCookie, hashCode, readCookie, readDoorSession, signDoorSession, verifyCode } from "../src/server/studentDoor";
 import { STUDENT_HOME_SCRIPT, studentHomePage } from "../src/server/studentHomePage";
 import { studentNeedsCommitteeHelp } from "../src/utils/studentNeedRequest";
+import { verifiedUnresolvableStudentConflicts } from "../src/utils/studentCaseConflict";
+import type { SimOffering } from "../src/utils/registrationSim";
 import type { AdTerm, StudentProfile } from "../src/types";
 
 let passed = 0, failed = 0;
@@ -40,7 +42,7 @@ check(studentHomeSource.includes("var remaining=(S.offered&&S.offered.courses)||
 "D5 يستطيع الطالب إبداء حاجته إلى مقرر غير مطروح، وتظهر حالته بوضوح");
 check(studentHomeSource.includes("/api/public/me/request-context") && studentHomeSource.includes("/api/public/me/request")
   && studentHomeSource.includes("أوافق على إرسال اسمي ورقمي المدني") && studentHomeSource.includes("تعذّر تكوين جدول؟")
-  && studentHomeSource.includes("لا يؤكد وجود تعارض"),
+  && studentHomeSource.includes("conflictPairs") && studentHomeSource.includes("لم نجد توليفة منشورة خالية منه"),
 "D5 يستطيع الطالب إرسال طلب الفتح/التعارض من مساري بموافقة صريحة");
 
 {
@@ -407,6 +409,34 @@ check(studentHomeSource.includes("/api/public/me/request-context") && studentHom
   check(page.includes("w.termId!==s.term.id)w=null"), "رغباتُ فصلٍ سابق لا تظهر في الفصل الحالي");
   check(routes.includes("allowed.includes(id) && !passed.includes(id)"), "الرغباتُ تُنقّى عند تغيّر الصحيفة أو المنجَز");
   check(/where\("fingerprint", "==", fingerprint\)\.orderBy\(FieldPath\.documentId\(\)\)/.test(repo), "قراءةُ بصمةٍ بالترقيم لا بحدٍّ يُسقط السجلات");
+  check(routes.includes("ids.length > 12") && routes.includes("requestGroupId") && routes.includes("for (const [ownerSectionId, ownerCourseIds] of grouped)"),
+    "طلب فتح المقررات المتعددة يُحفظ مرةً واحدة لكل مالك ويربط أجزاء التعارض بمعرّف مجموعة");
+  check(routes.includes("conflict-not-proven") && routes.includes("auditSimOfferings(table.offerings)"),
+    "طلب التعارض يُرفض إن لم تثبت جداول منشورة مكتملة وجود تعارض غير قابل للحل");
+  check(routes.includes("alternativesFor(item.courseId, item.offeringId)") && routes.includes("context.signed.has"),
+    "بدائل خطة الطالب تقتصر على شعب من خططه المحاكاة وجداول أقسامها الموقعة");
+  check(page.includes('name="crcourse"') && page.includes("conflictPairs") && page.includes("للأقسام المعنية"),
+    "واجهة مساري تسمح باختيار عدة مقررات وتوضح إرسال أجزاء الحالة لمالكيها");
+  check(page.includes("ticket-alt-select") && page.includes("S.tkOverrides") && page.includes("هذه الشعبة تتعارض مع مقرر آخر")
+    && page.includes("التعديل معاينة شخصية لا تغيّر جدول القسم"),
+    "الطالب يجرب شعبة بديلة ويتلقى منع التعارض دون حفظ مسودة القسم");
+}
+
+/* التعارض لا يثبت من كلمة الطالب وحدها: يجب أن تتصادم كل توليفات الشعب المؤكدة. */
+{
+  const offer = (id: string, courseId: number, sectionId: number, start: number, end: number): SimOffering => ({
+    id, courseId, code: id, collegeId: 1, sectionId, capacity: 30, slots: [{ day: 0, start, end }],
+  });
+  const signed = new Set(["1:11", "1:12"]);
+  const base = [offer("a", 101, 11, 480, 570), offer("b", 202, 12, 500, 590)];
+  check(verifiedUnresolvableStudentConflicts([101], [202], base, signed, { collegeId: 1, sectionId: 11 }).length === 1,
+    "التعارض الفعلي بين شعب منشورة مكتملة يثبت");
+  check(verifiedUnresolvableStudentConflicts([101], [202], [...base, offer("b2", 202, 12, 600, 690)], signed, { collegeId: 1, sectionId: 11 }).length === 0,
+    "وجود توليفة بديلة غير متعارضة يمنع إنشاء حالة استثنائية");
+  check(verifiedUnresolvableStudentConflicts([101], [202], [base[0], { ...base[1], slots: [] }], signed, { collegeId: 1, sectionId: 11 }).length === 0,
+    "المواعيد الناقصة لا تثبت تعارضاً");
+  check(verifiedUnresolvableStudentConflicts([101], [202], base, new Set(["1:11"]), { collegeId: 1, sectionId: 11 }).length === 0,
+    "شعبة قسم غير موقّع لا تستخدم لإثبات التعارض للطالب");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -676,6 +676,8 @@ export interface StudentNeed {
   /** Every course this student says they need. */
   courseIds: number[];
   requestType?: "new-course" | "course-conflict" | "graduate";
+  /** يربط أجزاء طلب التعارض الواحد الموجّهة إلى مالكي المقررات. */
+  requestGroupId?: string;
   /** The student's name and civil ID, each sealed with field-level AES-256-GCM
    * (server.ts sealStudentIdentity). Decrypted only for the authorised
    * department/registration screens — the record is NOT anonymous. */
