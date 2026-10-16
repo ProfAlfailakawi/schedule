@@ -22,7 +22,7 @@ import { byArabic } from "../utils/sorting";
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, MessageSquareText, Users, X } from "lucide-react";
+import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, MessageSquareText, Users, X, Zap } from "lucide-react";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import ApplyProposal from "./ApplyProposal";
@@ -212,6 +212,93 @@ function RejectSheet({ course, busy, onClose, onSubmit, committee = false }: {
             {busy ? "يحفظ…" : committee ? "سجّل عدم الموافقة" : "سجّل الردّ"}
           </PrimaryButton>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── قرارٌ سريع: بطاقةُ طالبٍ واحدة في الوسط، ثم التالية ───────────────────────────
+   اللجنةُ تُنهي أربعين حالةً في دقائق لا بتنقّلٍ في جدولٍ عريض. القراراتُ هي نفسُها التي في السجلّ
+   (setState/setCaseState): لا طريقَ ثانياً إلى الكتابة. الرفضُ يمرّ بورقة السبب نفسها. */
+interface QuickItem { key: string; row: CaseRow; course: CaseCourse | null; side: "committee" | "registration" }
+
+function QuickDecide({ items, busy, onApprove, onReject, onClose }: {
+  items: QuickItem[]; busy: boolean; onApprove: (item: QuickItem) => void; onReject: (item: QuickItem) => void; onClose: () => void;
+}) {
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const [start] = useState(items.length);
+  const ordered = useMemo(() => [...items.filter(item => !skipped.includes(item.key)), ...items.filter(item => skipped.includes(item.key))], [items, skipped]);
+  const current = ordered[0];
+  const doneCount = Math.max(0, start - items.length);
+  const touch = useRef<{ x: number; y: number } | null>(null);
+  const skip = () => { if (current && items.length > 1) setSkipped(list => [...list.filter(key => key !== current.key), current.key]); };
+  const nf = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (event.key === "Escape") onClose();
+      else if (!current || busy) return;
+      else if (event.key === "Enter") { event.preventDefault(); onApprove(current); }
+      else if (event.key === "r" || event.key === "R" || event.key === "ر") onReject(current);
+      else if (event.key === "ArrowLeft" || event.key === " ") { event.preventDefault(); skip(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  const row = current?.row;
+  return (
+    <div className="qd-scrim" role="dialog" aria-modal="true" aria-label="قرار سريع" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="qd">
+        <header>
+          <b><Zap aria-hidden="true" /> قرار سريع</b>
+          <span>{nf(Math.min(doneCount + 1, start))} من {nf(start)}</span>
+          <button type="button" onClick={onClose} aria-label="إغلاق" data-guide-ignore="إغلاق القرار السريع — لا يغيّر شيئاً"><X /></button>
+        </header>
+        <div className="qd-bar" aria-hidden="true"><i style={{ inlineSize: `${start ? (doneCount / start) * 100 : 100}%` }} /></div>
+        {current && row ? (
+          <article
+            className="qd-card" key={current.key}
+            onTouchStart={event => { touch.current = event.touches.length === 1 ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null; }}
+            onTouchEnd={event => {
+              const start = touch.current; touch.current = null;
+              if (!start || busy) return;
+              const dx = event.changedTouches[0].clientX - start.x, dy = event.changedTouches[0].clientY - start.y;
+              if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+              if (dx > 0) onApprove(current); else skip();
+            }}
+          >
+            <div className="qd-who">
+              <span className="qd-av" aria-hidden="true">{(row.name || "؟").trim().charAt(0)}</span>
+              <div><b>{row.name || "—"}</b><small>{row.studentSectionName}{row.curriculum ? ` · ${row.curriculum.name}` : ""}</small></div>
+              <code dir="ltr">{row.caseRef}</code>
+            </div>
+            <div className="qd-what">
+              <span className={`qd-side ${current.side}`}>{current.side === "committee" ? "قرار اللجنة" : "قرار التسجيل"}</span>
+              {current.course ? <>
+                <strong>{current.course.name}</strong>
+                <code dir="ltr">{current.course.code}</code>
+              </> : <>
+                <strong>طلب خريج</strong>
+                {row.graduate ? <small>{GRADUATE_REASON_LABEL[row.graduate.reason as keyof typeof GRADUATE_REASON_LABEL] || row.graduate.reason} · أنجز {nf(row.graduate.passedUnits)} من {countOf(row.graduate.requiredUnits, AR.unit)}</small> : null}
+              </>}
+              {row.details ? <p className="qd-note"><MessageSquareText aria-hidden="true" />{row.details.replace(/^من «مساري» بعد التسجيل — /, "")}</p> : null}
+            </div>
+            <div className="qd-acts">
+              <button type="button" className="yes" disabled={busy} onClick={() => onApprove(current)} data-guide-target="registration.action.state"><Check aria-hidden="true" /> {current.side === "committee" ? "موافقة" : "سجّل"}<kbd>↵</kbd></button>
+              <button type="button" className="no" disabled={busy} onClick={() => onReject(current)} data-guide-ignore="يفتح ورقة سبب الرفض؛ لا يكتب قبل التأكيد"><X aria-hidden="true" /> {current.side === "committee" ? "رفض" : "ردّ"}<kbd>R</kbd></button>
+            </div>
+            <button type="button" className="qd-skip" disabled={items.length < 2} onClick={skip} data-guide-ignore="تخطّي الحالة — لا يغيّر شيئاً">تخطّ ←</button>
+            <p className="qd-hint">اسحب لليمين للموافقة · لليسار للتخطّي</p>
+          </article>
+        ) : (
+          <div className="qd-done">
+            <span aria-hidden="true"><CheckCheck /></span>
+            <b>{start ? "أنهيت الكل" : "لا حالات تنتظرك"}</b>
+            {start ? <small>قرّرتَ في {nf(start)} {start === 1 ? "حالة" : "حالات"}.</small> : null}
+            <PrimaryButton type="button" onClick={onClose} data-guide-ignore="إغلاق القرار السريع — لا يغيّر شيئاً">رجوع إلى الكشف</PrimaryButton>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -409,6 +496,27 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
     for (const row of rows || []) for (const status of rowStatuses(row)) counts[status] = (counts[status] || 0) + 1;
     return counts;
   }, [rows]);
+
+  const [quick, setQuick] = useState(false);
+  const quickItems = useMemo<QuickItem[]>(() => {
+    const out: QuickItem[] = [];
+    for (const row of rows || []) {
+      if (row.caseLevel) {
+        const status = row.caseStatus || "pending";
+        if (committeeActs && status === "pending") out.push({ key: `${row.id}:case:c`, row, course: null, side: "committee" });
+        else if (registrationActs && status === "approved") out.push({ key: `${row.id}:case:r`, row, course: null, side: "registration" });
+        continue;
+      }
+      for (const course of row.courses) {
+        if (course.readOnly || course.droppedByStudent) continue;
+        if (committeeActs && !course.settled) out.push({ key: `${row.id}:${course.id}:c`, row, course, side: "committee" });
+        else if (registrationActs && course.settled && course.state === "awaiting-registration") out.push({ key: `${row.id}:${course.id}:r`, row, course, side: "registration" });
+      }
+    }
+    /* من يملك الجهتين (صاحب الصلاحية الكاملة): اللجنةُ أولاً، فإذا فرغت جاء التسجيل — فلا تعود البطاقةُ نفسُها بعد موافقتها. */
+    const committee = out.filter(item => item.side === "committee");
+    return committeeActs && registrationActs && committee.length ? committee : out;
+  }, [rows, committeeActs, registrationActs]);
 
   /* ── تصديرُ ما يُعرض، كما يُعرض ──────────────────────────────────────────
      التسجيلُ يصفّي «بانتظار التسجيل» فيصدّر الكشفَ المعتمد جاهزاً للتسجيل،
@@ -770,6 +878,12 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
             ))}
           </ol>
 
+          {quickItems.length > 0 ? (
+            <button type="button" className="qd-open" onClick={() => setQuick(true)} data-guide-ignore="يفتح نافذة القرار السريع؛ لا يكتب شيئاً قبل أن تقرّر">
+              <Zap aria-hidden="true" /> قرار سريع <b>{quickItems.length.toLocaleString("ar-KW-u-nu-latn")}</b>
+            </button>
+          ) : null}
+
           {!canWrite ? (
             <p className="registration-readonly" title="الموافقةُ للجنة القسم، والتسجيلُ لموظفي التسجيل.">
               <Clock3 aria-hidden="true" /> للقراءة فقط
@@ -844,6 +958,19 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
           />
         </>
       )}
+
+      {quick ? (
+        <QuickDecide
+          items={quickItems}
+          busy={busyKey !== null}
+          onClose={() => setQuick(false)}
+          onApprove={item => {
+            if (item.course) void setState(item.row, item.course, item.side === "committee" ? "awaiting-registration" : "registered");
+            else void setCaseState(item.row, item.side === "committee" ? "committee" : "registrar", "approved");
+          }}
+          onReject={item => setRejecting({ row: item.row, course: item.course, committee: item.side === "committee" })}
+        />
+      ) : null}
 
       {rejecting ? (
         <RejectSheet
