@@ -456,7 +456,8 @@ async function revisionBehaviour() {
       check(unchanged.length === 5, "R7-review قراراتُ الاعتماد الخمسة بلا كتابة صفوف");
       check(callers.length - unchanged.length === 9 && (server.match(/await recordVersionAfter\(/g) || []).length === 10,
         "R7-review كلُّ عمليةٍ تكتب صفوفاً تسجّل ما صار من صفوفها (الإضافة، التعديل ونقله، الحذف، الاستبدال، النسخ، النشر، الاسترجاع، التراجع)");
-      const add = route('app.post("/api/schedules", ');
+      /* إضافةُ الموعد معالجٌ مسمّى (يستعمله «اعتماد الاقتراح» أيضاً): الجسمُ عند تعريفه لا عند تسجيل المسار. */
+      const add = route("const createScheduleHandler = async");
       check(add.indexOf("recordVersionAfter(addVersion, before => [...before, newSched])") > add.indexOf("Repository.createSchedule(")
         && add.indexOf("recordVersionAfter(addVersion") < add.indexOf("res.status(201)"), "R7-review والتسجيلُ داخل الطلب وقبل الردّ");
     }

@@ -108,6 +108,7 @@ import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, t
 import { interruptedImportMessage } from "../utils/importStreamFailure";
 import { pageReviewIssues, pagesAwaitingReview, scanLeftCellUnread, pagesWithUnreadCells, pagesLabel } from "../utils/importPageReview";
 import MiniRing, { ringFromScoreText } from "./MiniRing";
+import ApplyProposal, { postScheduleProposal } from "./ApplyProposal";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -3467,6 +3468,22 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               <SecondaryButton onClick={() => openSectionDraft(item, slot)}>
                                 <Plus /> افتحها في النسخة التجريبية
                               </SecondaryButton>
+                              {slot.instructorId ? (
+                                <ApplyProposal
+                                  compact
+                                  lines={[`شعبة ${slot.sectionCode} لـ«${item.courseName}» · ${slot.dayLabel} ${formatScheduleTimeRange(slot.start, slot.end)} · ${slot.roomCode}${slot.roomHall ? `/${slot.roomHall}` : ""} · ${slot.instructorName}`]}
+                                  why={`تخدم ${countOf(item.shortfall, AR.student)} بلا مقعدٍ اليوم.`}
+                                  run={async () => {
+                                    const source = sourceScope(item);
+                                    const result = await postScheduleProposal({
+                                      kind: "opening", collegeId: source.collegeId, sectionId: source.sectionId, termId, courseId: item.courseId, placement: slot,
+                                      origin: { kind: "intelligence", refId: `course:${item.courseId}`, note: `فتح شعبة لـ«${item.courseName}» (طلبه ${item.demand})` },
+                                    });
+                                    return { summary: `فُتحت شعبة ${result.applied[0].row.SCode} لـ«${item.courseName}» في الجدول`, amendment: Boolean(result.amendment) };
+                                  }}
+                                  onApplied={() => { void reload(); }}
+                                />
+                              ) : <small className="ap-why-not">يلزم أستاذٌ: اختره من النسخة التجريبية ثم احفظ.</small>}
                               {slot.note ? <small className="opening-note">{slot.note}</small> : null}
                             </div>
                           ))}
@@ -3529,6 +3546,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         <SecondaryButton onClick={() => openRepair(fix)} data-guide-ignore="معاينة نقل الجدول داخل نسخة محلية لا تحفظ التعديل">
                           <WandSparkles /> معاينة التأثير
                         </SecondaryButton>
+                        <ApplyProposal
+                          compact
+                          icon="check"
+                          label={fix.swapWith ? "اعتمد التبديل في الجدول" : "اعتمد النقل في الجدول"}
+                          lines={[
+                            `${fix.courseName} · شعبة ${fix.sectionCode}: من ${fix.from.dayLabel} ${scheduleClockForDisplay(fix.from.start)} إلى ${fix.to.dayLabel} ${scheduleClockForDisplay(fix.to.start)}`,
+                            ...(fix.swapWith ? [`${fix.swapWith.courseName} · شعبة ${fix.swapWith.sectionCode}: من ${fix.swapWith.from.dayLabel} ${scheduleClockForDisplay(fix.swapWith.from.start)} إلى ${fix.swapWith.to.dayLabel} ${scheduleClockForDisplay(fix.swapWith.to.start)}`] : []),
+                          ]}
+                          why={fix.simulationImpact ? `بعد إعادة المحاكاة: ${countOf(fix.simulationImpact.delta15 || 0, AR.student)} إضافي يبلغ 15 وحدة، وتعارضات الخطط من ${fix.simulationImpact.conflictsBefore || 0} إلى ${fix.simulationImpact.conflictsAfter || 0}.` : undefined}
+                          run={async () => {
+                            const source = sourceScope(fix);
+                            const moves = [fix, ...(fix.swapWith ? [fix.swapWith] : [])].map((move: any, index: number) => ({
+                              rowId: index === 0 ? fix.rowId : fix.swapWith.rowId, from: move.from, to: move.to,
+                            }));
+                            const result = await postScheduleProposal({
+                              kind: fix.swapWith ? "swap" : "move", collegeId: source.collegeId, sectionId: source.sectionId, termId, moves,
+                              origin: { kind: "intelligence", refId: `row:${fix.rowId}`, note: `${fix.swapWith ? "تبديل" : "نقل"} «${fix.courseName}» لتخفيف تعارض الطلبة` },
+                            });
+                            return { summary: `${fix.swapWith ? "بُدّل موعدا" : "نُقل موعد"} «${fix.courseName}» في الجدول`, amendment: Boolean(result.amendment) };
+                          }}
+                          onApplied={() => { void reload(); }}
+                        />
                       </div>
                     </article>
                   ))}

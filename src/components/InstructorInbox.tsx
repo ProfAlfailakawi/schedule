@@ -1038,6 +1038,11 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           y: Number(extra?.anchor?.y || window.innerHeight / 3),
           instructorId: Number(row.AdInstructorId),
           room: "", hall: "",
+          /* أولُ قاعةٍ يثبت النظامُ أنها خاليةٌ في هذا الوقت: تُملأ سلفاً فيكفي المنسّقَ أن يحفظ. */
+          suggestion: (() => {
+            const first = (item.roomOptions || [])[0];
+            return first ? { room: first.room, hall: first.hall, buildingId: first.buildingId, roomId: first.roomId, locationStatus: "VERIFIED" as const } : undefined;
+          })(),
         },
       });
       return true;

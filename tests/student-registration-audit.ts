@@ -108,7 +108,9 @@ check(!write("registrarStaff", "/schedules/5").allowed,
 
 check(types.includes("النظام لا يملك مقاعد ولا يدّعي امتلاكها"),
   "ومكتوبٌ في النموذج أن النظام لا يملك مقاعد ولا يدّعي امتلاكها");
-check(screen.includes("ولا تعرض جدولاً ولا شعبة"), "والشاشةُ لا تعرض جدولاً ولا شعبة");
+check(screen.includes("ولا تعرض جدولاً ولا مقاعد") && !/import .*(Schedules|ScheduleBoard|DepartmentSchedule)/.test(screen),
+  "والشاشةُ لا تعرض جدولاً ولا مقاعد (الاستثناءُ الوحيد زرُّ اللجنة: موافقة + فتح شعبة، يكتب بباب الاعتماد الواحد)");
+check(screen.includes("موافقة + فتح شعبة") && screen.includes("committeeActs && !course.settled") && !screen.includes("/api/schedules\"") , "وزرُّ فتح الشعبة للجنة وحدها، ولا يكتب الشاشةُ في الجدول مباشرةً");
 const registrationRoute = server.slice(
   server.indexOf('app.post("/api/student-registration/:id/course-state"'),
   server.indexOf("/** The department's tray."),

@@ -60,6 +60,11 @@ check(guard.indexOf("AdTermClosed") < guard.indexOf("getScheduleApproval"),
 
 /* كان ثلاثةُ أبوابٍ تكتب بلا حارسٍ أصلاً: استثناءُ الأسبوع إضافةً وحذفاً.
    وإلغاءُ محاضرةٍ في فصلٍ منتهٍ تغييرٌ لما جرى فعلاً. */
+const DOOR_HANDLER: Record<string, string> = {
+  'app.post("/api/schedules"': "const createScheduleHandler = async",
+  'app.put("/api/schedules/:id"': "const updateScheduleHandler = async",
+  'app.delete("/api/schedules/:id"': "const deleteScheduleHandler = async",
+};
 for (const door of [
   'app.post("/api/schedules"',
   'app.put("/api/schedules/:id"',
@@ -71,7 +76,8 @@ for (const door of [
   'app.post("/api/schedules/:id/exceptions"',
   'app.delete("/api/schedules/:id/exceptions/:exceptionId"',
 ]) {
-  const at = server.indexOf(door);
+  /* إضافةُ الموعد وتعديلُه صارا معالجَين مسمّيَين (يستعملهما «اعتماد الاقتراح» أيضاً): الجسمُ عند تعريفهما. */
+  const at = server.indexOf(DOOR_HANDLER[door] || door);
   /* وجسمُ المسار ينتهي عند المسار الذي يليه: نافذةٌ ثابتةُ الطول تبتلع حارسَ
      جارِه، فيمرّ بابٌ مفتوحٌ على أنه محروس. */
   const next = server.indexOf("\napp.", at + 1);
@@ -105,8 +111,8 @@ check(workspace.includes('<b>لجنةُ الجدول</b>'),
  * قاعة، فيُصلح القارئُ ما ليس بعطل ثم يُردّ ثانيةً بالسبب الحقيقيّ. والرسالةُ
  * الأولى ليست خطأً في ذاتها، لكنها تُرسله في طريقٍ لا يُوصل. */
 const editDoor = server.slice(
-  server.indexOf('app.put("/api/schedules/:id"'),
-  server.indexOf('app.delete("/api/schedules/:id"'),
+  server.indexOf("const updateScheduleHandler = async"),
+  server.indexOf('app.put("/api/schedules/:id", requirePermission(7), updateScheduleHandler)'),
 );
 check(editDoor.indexOf("const frozenSource = await scheduleLockRefusal(")
   < editDoor.indexOf("الرجاء إدخال الحقول المطلوبة بالأحمر"),

@@ -10,7 +10,9 @@ import { byArabic } from "../utils/sorting";
  * التسجيلُ يكتب أين وصل كلُّ مقرّر، والقسمُ يقرأ ما كتبه لحظتَها، والطالبُ
  * يراه في صفحته بلا أن يسأل أحداً.
  *
- * **ولا تعرض جدولاً ولا شعبة.** الحالةُ قولٌ عن طلب طالبٍ بعينه، لا عن مقعد.
+ * **ولا تعرض جدولاً ولا مقاعد.** الحالةُ قولٌ عن طلب طالبٍ بعينه، لا عن مقعد. والاستثناءُ الوحيد زرُّ اللجنة
+ * «موافقة + فتح شعبة»: حين يثبت أن شعبةً جديدةً تخلو من التعارض تُفتح في الجدول بالمسار نفسه الذي تفتح به
+ * الورشة، ولا تُسجَّل الموافقةُ إن رُفضت الشعبة.
  * النظامُ لا يملك المقاعد، والتسجيلُ هو صاحبُها — وادّعاءُ غير ذلك يصنع زحمةً
  * أسوأَ حين يكتشف الطالبُ أن ما قرأه ليس تسجيلاً.
  *
@@ -21,10 +23,12 @@ import { byArabic } from "../utils/sorting";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, Users, X } from "lucide-react";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
+import ApplyProposal from "./ApplyProposal";
 import StudentCasesTable, { GRADUATE_REASON_LABEL, STUDENT_CASE_TYPE_LABEL, type StudentCaseView } from "./StudentCasesTable";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
-import { AR, nounFor, studentNounsFor } from "../utils/arabicCount";
+import { AR, countOf, nounFor, studentNounsFor } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import { singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
@@ -59,6 +63,8 @@ interface CaseCourse {
   reasonCode?: StudentCourseRejectReason | StudentCommitteeRejectReason;
   note?: string; by?: string; byRole?: string; at?: string;
   settled: boolean;
+  /** موافقةُ اللجنة فتحت شعبةً في الجدول الأصلي. */
+  scheduleId?: number; sectionCode?: string;
   /** مقرّرُ قسمٍ آخر في طلبٍ قُدّم عبر استبيان هذا القسم: يُعرض ويُقرَّر في كشف قسمه. */
   readOnly?: boolean;
   decidedBySectionName?: string;
@@ -321,6 +327,24 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
 
   useEffect(() => { void load(); }, [load]);
 
+  /* ── اقتراحاتُ فتح الشعب لمقرّرات هذا القسم ──────────────────────────────────
+     من القراءة نفسها التي يعرضها مركز الذكاء (الطلبُ ÷ السعة − المفتوح، موضوعةً في أسبوعٍ حقيقيّ). لمن
+     لا يملك صلاحيةَ الجدول يُرفض الطلب فلا يُعرض زرٌّ — والتسجيلُ لا يرى منها شيئاً. */
+  const [openings, setOpenings] = useState<Map<number, { shortfall: number; slot: any }>>(new Map());
+  const loadOpenings = useCallback(async () => {
+    if (!collegeId || !sectionId || !termId) { setOpenings(new Map()); return; }
+    try {
+      const data = await request(`/api/schedules/demand?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`);
+      const next = new Map<number, { shortfall: number; slot: any }>();
+      for (const proposal of data?.openings?.proposals || []) {
+        const slot = (proposal.placements || []).find((placement: any) => Number(placement.instructorId) > 0);
+        if (slot && !proposal.predicted) next.set(Number(proposal.courseId), { shortfall: Number(proposal.shortfall) || 0, slot });
+      }
+      setOpenings(next);
+    } catch { setOpenings(new Map()); }
+  }, [collegeId, sectionId, termId]);
+  useEffect(() => { void loadOpenings(); }, [loadOpenings]);
+
   /* النبضةُ الحيّة: قرارٌ كتبته اللجنة أو التسجيل من شاشةٍ أخرى يُقرأ هنا فوراً. */
   useEffect(() => {
     if (!collegeId || !sectionId || !termId || typeof EventSource === "undefined") return;
@@ -506,6 +530,29 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         {course.reasonCode ? <em>{reasonLabel(course.reasonCode)}{course.note ? ` · ${course.note}` : ""}</em>
           : course.note ? <em>{course.note}</em> : null}
         {course.droppedByStudent ? <em className="registration-dropped">{course.droppedLabel || "ألغاه الطالب بعد التسجيل"}</em> : null}
+            {committeeActs && !course.settled && !course.readOnly && !course.droppedByStudent && openings.get(course.id) ? (() => {
+              const proposal = openings.get(course.id)!, slot = proposal.slot;
+              return (
+                <ApplyProposal
+                  compact
+                  icon="check"
+                  label="موافقة + فتح شعبة"
+                  lines={[
+                    `موافقةُ اللجنة على طلب «${course.name}»`,
+                    `وفتحُ شعبةٍ جديدة له في الجدول: ${slot.dayLabel} ${formatScheduleTimeRange(slot.start, slot.end)} · ${slot.roomCode}${slot.roomHall ? `/${slot.roomHall}` : ""} · ${slot.instructorName}`,
+                  ]}
+                  why={`${countOf(proposal.shortfall, AR.student)} بلا مقعدٍ في هذا المقرر اليوم.`}
+                  run={async () => {
+                    const result = await request(`/api/student-registration/${row.id}/course-state`, {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ courseId: course.id, state: "awaiting-registration", openSection: slot }),
+                    });
+                    return { summary: `وُوفق على الطلب وفُتحت شعبة ${result.opened?.sectionCode || "جديدة"} في الجدول`, amendment: Boolean(result.opened?.amendment) };
+                  }}
+                  onApplied={() => { void load(); void loadOpenings(); }}
+                />
+              );
+            })() : null}
         {committeeActs && !(registrationActs && course.state === "awaiting-registration") && !course.readOnly && !course.droppedByStudent && !decidedByRegistration(course)
           && (!course.settled || course.state === "committee-rejected" || course.state === "awaiting-registration") ? (
           <span className="student-case-actions" aria-label="قرار اللجنة">
@@ -517,6 +564,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
             >
               <Check aria-hidden="true" /> موافقة اللجنة
             </button> : null}
+
             {!course.settled || course.state === "awaiting-registration" ? <button
               type="button" className="changes-chip"
               disabled={busyKey === key || busyKey === `${row.id}:all`}

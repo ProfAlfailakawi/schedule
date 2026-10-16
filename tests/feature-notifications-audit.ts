@@ -22,6 +22,11 @@ const base: StudentNoticeInput = {
   reportAnswered: false, reportCourses: 0, cases: [],
 };
 const ids = (input: StudentNoticeInput) => buildStudentNotices(input).map(n => n.id);
+{
+  const plain = buildStudentNotices({ ...base, cases: [{ courseId: 3, name: "الذكاء الاصطناعي", state: "awaiting-registration" }] }).find(n => n.id === "case:3:awaiting");
+  const opened = buildStudentNotices({ ...base, cases: [{ courseId: 3, name: "الذكاء الاصطناعي", state: "awaiting-registration", opened: true }] }).find(n => n.id === "case:3:awaiting");
+  check(plain?.detail === "بانتظار التسجيل." && /فُتحت لك شعبةٌ جديدة/.test(opened?.detail || "") && !/موعد|\d{2}:\d{2}/.test(opened?.detail || ""), "N1 موافقةٌ فتحت شعبةً: يُقال للطالب ذلك بلا موعدٍ (الجدولُ مسوّدةٌ حتى يعتمده القسم)", opened);
+}
 
 /* N1 */
 {
