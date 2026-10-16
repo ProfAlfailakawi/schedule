@@ -14927,9 +14927,9 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
   const started = week.length > 0;
   const ordered = hardestFirst(gaps.filter(row => row.remaining > 0), levelOf);
   const demand = demandFromTargets([...ordered, ...gaps.filter(row => row.remaining === 0 && row.target !== null)], id => Number(courseById.get(id)?.MaxStudent) || 0, levelOf);
-  const style = started && ordered.length ? await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId }) : null;
-  const reading = started && ordered.length
-    ? readSectionOpenings(week, termWeek, courses, people as any[], history, demand, null, style?.reading || null, style?.doorway || 0, 999, registry.rooms)
+  const style = ordered.length ? await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId }) : null;
+  const reading = ordered.length
+    ? readSectionOpenings(week, termWeek, courses, people as any[], history, demand, null, style?.reading || null, style?.doorway || 0, 999, registry.rooms, termId)
     : { proposals: [], noCeiling: [], headline: "" };
   const byCourse = new Map(reading.proposals.map(proposal => [proposal.courseId, proposal]));
   const rows = gaps.map(row => {
@@ -14937,9 +14937,8 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
     const placements = proposal?.placements || [];
     let reason = "";
     if (row.remaining > 0 && placements.length < row.remaining) {
-      reason = !started ? "القسم لم يبدأ جدول هذا الفصل بعد"
-        : !(Number(courseById.get(row.courseId)?.MaxStudent) > 0) ? "سعة الشعبة غير مسجّلة في المقرر"
-        : proposal?.unplacedReason || "لا شعبة قائمة ولا إيقاع معتاد لتحديد مدة المحاضرة";
+      reason = !(Number(courseById.get(row.courseId)?.MaxStudent) > 0) ? "سعة الشعبة غير مسجّلة في المقرر"
+        : proposal?.unplacedReason || "لا تاريخ للقسم يحدد مدة محاضرة هذا المقرر";
     }
     return { ...row, placements, unplaced: Math.max(0, row.remaining - placements.length), reason };
   });
