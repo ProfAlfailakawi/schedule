@@ -1,10 +1,11 @@
 import { AR, countOf } from "../utils/arabicCount";
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, BookOpen, Check, ChevronDown, GraduationCap, Layers3, Link2, Search, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, BookOpen, Check, ChevronDown, GraduationCap, Layers3, Link2, Search } from "lucide-react";
 import type { compareCurriculumReference } from "../utils/curriculumReference";
 import type { CurriculumReference } from "../data/technologyEducationCurricula";
 import { courseLevelFromCode } from "../utils/curriculumRules";
 import { Notice } from "./ui";
+import ReferenceApplyPanel from "./ReferenceApplyPanel";
 
 type Reference = Omit<CurriculumReference, "groups"> & { planId: string | null; groups: Array<Omit<ReturnType<typeof compareCurriculumReference>[number], "courses"> & { courses: Array<ReturnType<typeof compareCurriculumReference>[number]["courses"][number] & { ownerSectionId: number; ownerSectionName: string; ownerCollegeId: number }> }> };
 type SectionResult = { sectionId: number; collegeId: number; collegeName: string; sectionName: string; references: Reference[] };
@@ -16,7 +17,7 @@ const statusLabels: Record<string, string> = { matched: "مطابق", different:
 const statusIcon = (state: string) => state === "matched" ? <Check size={14} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />;
 const plainCode = (value: string) => String(value || "").replace(/\s+/g, "").toUpperCase();
 
-export default function CurriculumReferenceReview({ sectionId, onCatalogAction }: { sectionId: number; onCatalogAction?: (action: CatalogAction) => void }) {
+export default function CurriculumReferenceReview({ sectionId, onCatalogAction, canApply }: { sectionId: number; onCatalogAction?: (action: CatalogAction) => void; canApply?: boolean }) {
   const [sections, setSections] = useState<SectionResult[]>([]);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("new");
@@ -28,6 +29,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
   const [query, setQuery] = useState("");
   const [focusedCode, setFocusedCode] = useState("");
   const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let active = true; setSections([]); setSelectedSectionId(sectionId); setError(""); setFocusedCode("");
@@ -37,7 +39,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
       if (active) setSections([...new Map((body.sections || []).map((row: SectionResult) => [Number(row.sectionId), row])).values()]);
     }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
-  }, [sectionId]);
+  }, [sectionId, reload]);
 
   const references = sections.find(row => row.sectionId === selectedSectionId)?.references || [];
   const reference = references.find(row => row.id === selected);
@@ -117,9 +119,19 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
       <div className={`reference-summary-item${missing ? " is-missing" : ""}`}><span className="reference-summary-icon"><AlertCircle size={17} /></span><span><small>تحتاج متابعة</small><b>{countOf(missing + review, AR.course)}</b></span></div>
     </div>
 
+    <div className="reference-sections" role="tablist" aria-label="أقسام الصحيفة">
+      {["all", ...categoryOptions].map(option => {
+        const rows = option === "all" ? entries : entries.filter(row => row.category === option);
+        return <button key={option} type="button" role="tab" aria-selected={category === option} className={category === option ? "on" : ""} onClick={() => setCategory(option)} data-guide-ignore="تصفية مقررات الصحيفة بحسب قسمها: ثقافة عامة وتخصصية ومهنية وتدريب ميداني">
+          <b>{option === "all" ? "كل الأقسام" : option}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small>
+        </button>;
+      })}
+    </div>
+
+    {canApply ? <ReferenceApplyPanel key={`${selectedSectionId}:${reference.id}`} referenceId={reference.id} referenceName={reference.name} onApplied={() => setReload(n => n + 1)} /> : null}
+
     <div className="reference-filterbar" aria-label="تصفية المقررات">
       <label className="reference-search"><Search size={16} aria-hidden="true" /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="ابحث باسم المقرر أو رمزه" aria-label="ابحث باسم المقرر أو رمزه" /></label>
-      <label><SlidersHorizontal size={15} aria-hidden="true" /><select aria-label="نوع المقرر" value={category} onChange={event => setCategory(event.target.value)}><option value="all">كل التصنيفات</option>{categoryOptions.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
       <label><Layers3 size={15} aria-hidden="true" /><select aria-label="المجموعة" value={groupKind} onChange={event => setGroupKind(event.target.value)}><option value="all">كل المجموعات</option>{groupOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
       <label><span className="reference-level-mark" aria-hidden="true">١٠٠</span><select aria-label="المستوى" value={levelFilter} onChange={event => setLevelFilter(event.target.value)}><option value="all">كل المستويات</option>{levelOptions.map(value => <option key={value} value={String(value)}>{value ? `المستوى ${value}` : "تمهيدي / غير مصنف"}</option>)}</select></label>
       <label><AlertCircle size={15} aria-hidden="true" /><select aria-label="حالة المطابقة" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">كل الحالات</option><option value="attention">تحتاج متابعة</option><option value="matched">مطابقة</option><option value="different">تحتاج تصحيحًا</option><option value="missing">غير مضافة</option><option value="ambiguous">هوية غير محسومة</option></select></label>

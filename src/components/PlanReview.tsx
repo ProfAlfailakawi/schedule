@@ -242,7 +242,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
             </div>
           </div>
 
-          <CurriculumReferenceReview sectionId={sectionId} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
+          <CurriculumReferenceReview sectionId={sectionId} canApply={Boolean(status?.canImport)} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
           {!planId ? <EmptyState title="لم تُجهّز صحيفة تشغيلية بعد" detail="المرجع المرفق متاح للمطابقة. إنشاء الصحيفة وربط مقرراتها يسبق اعتماد قواعدها." /> : !view ? <MicroLoader /> : (
             <>
               <div className={`pr-state ${view.state.status}`}>

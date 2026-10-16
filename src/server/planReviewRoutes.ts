@@ -17,13 +17,15 @@ import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurri
 import { compareCurriculumReference, isTechnologyEducation, referenceCodeKey } from "../utils/curriculumReference";
 import { AR, countOf } from "../utils/arabicCount";
 import type { Express, Request, RequestHandler, Response } from "express";
-import { RuleDraftConflict, Repository } from "../db/repository";
-import type { AdCourse, CurriculumRuleSet } from "../types";
+import { DuplicateResourceError, RuleDraftConflict, Repository } from "../db/repository";
+import type { AdCourse, CurriculumRuleSet, ElectiveGroup } from "../types";
 import { roleDefinition } from "../utils/academicRoles";
 import { sectionLabels } from "../utils/sectionLabel";
 import {
   checkRuleSet, normalizeGroup, normalizeRule, normalizeRules, withDerivedGroups, type RuleIssue,
 } from "../utils/curriculumRules";
+import { buildReferenceRules, planReferenceApplication, splitFrozenUpdates } from "../utils/referenceApply";
+import { collegeBranchRoot } from "../utils/branchScope";
 import { rowsToDrafts, type ImportPlan, type RuleImportRow } from "../utils/curriculumRulesImport";
 
 export interface PlanReviewDeps {
@@ -61,6 +63,37 @@ export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "i
     out.push({ planId: draft.planId, planName: plan?.name || "الصحيفة", sectionId: draft.AdSectionId, collegeId: draft.AdCollegeId, sectionName: sections.get(draft.AdSectionId) || "", updatedAt: draft.updatedAt });
   }
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** مقارنة صحائف تكنولوجيا التعليم المرجعية بكتالوج موقعٍ واحد: للعرض وللتطبيق معاً، فلا يفترقان. */
+export function referenceSnapshotFor(sections: any[], courses: AdCourse[]) {
+    const sectionCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
+    const sectionIdsByCollegeCode = new Map<string, number[]>();
+    for (const row of sections) {
+      const key = `${Number(row.AdCollegeId)}:${sectionCodes.get(Number(row.AdSectionId)) || ""}`;
+      sectionIdsByCollegeCode.set(key, [...(sectionIdsByCollegeCode.get(key) || []), Number(row.AdSectionId)]);
+    }
+  return async (target: any) => {
+      const [plans, links] = await Promise.all([Repository.getCurriculumPlans(Number(target.AdSectionId)), Repository.getCurriculumPlanCourses(Number(target.AdSectionId))]);
+      const collegeCourses = courses.filter(row => Number(row.AdCollegeId) === Number(target.AdCollegeId)).map(row => {
+        const code = referenceCodeKey(row.CourseCode), ownerCode = sectionCodes.get(Number(row.AdSectionId));
+        return { ...row, CourseCode: /^\d{1,3}$/.test(code) && /^\d{2}$/.test(ownerCode || "") ? `01${ownerCode}${code.padStart(3, "0")}` : code };
+      });
+      const references = TECHNOLOGY_EDUCATION_CURRICULA.map(reference => {
+        const matchingPlans = plans.filter(plan => !plan.virtual && plan.status === (reference.id === "new" ? "active" : "transition"));
+        const plan = matchingPlans.length === 1 ? matchingPlans[0] : undefined;
+        const members = new Set(links.filter(link => link.planId === plan?.id).map(link => Number(link.AdCourseId)));
+        const groups = compareCurriculumReference(reference, collegeCourses, members, Number(target.AdSectionId)).map(group => ({ ...group, courses: group.courses.map(course => {
+          const matched = course.current && collegeCourses.find(row => Number(row.AdCourseId) === Number(course.current?.id));
+          const inferred = sectionIdsByCollegeCode.get(`${Number(target.AdCollegeId)}:${course.code.slice(2, 4)}`) || [];
+          const ownerSectionId = Number(matched?.AdSectionId) || (inferred.length === 1 ? inferred[0] : 0);
+          const owner = sections.find(row => Number(row.AdSectionId) === ownerSectionId);
+          return { ...course, ownerSectionId, ownerSectionName: String(owner?.AdSectionName || ""), ownerCollegeId: Number(target.AdCollegeId) };
+        }) }));
+        return { ...reference, planId: plan?.id || null, groups };
+      });
+      return { plans, links, collegeCourses, references };
+  };
 }
 
 export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): void {
@@ -190,31 +223,9 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     const [courses, sections, colleges] = await Promise.all([Repository.getCourses(), Repository.getSections(), Repository.getColleges()]);
     const technologySections = sections.filter(row => isTechnologyEducation(row.AdSectionName)
       && (deps.isPowerUser(req) || deps.isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))));
-    const sectionCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
-    const sectionIdsByCollegeCode = new Map<string, number[]>();
-    for (const row of sections) {
-      const key = `${Number(row.AdCollegeId)}:${sectionCodes.get(Number(row.AdSectionId)) || ""}`;
-      sectionIdsByCollegeCode.set(key, [...(sectionIdsByCollegeCode.get(key) || []), Number(row.AdSectionId)]);
-    }
+    const snapshotOf = referenceSnapshotFor(sections, courses);
     const sectionResults = await Promise.all(technologySections.map(async target => {
-      const [plans, links] = await Promise.all([Repository.getCurriculumPlans(Number(target.AdSectionId)), Repository.getCurriculumPlanCourses(Number(target.AdSectionId))]);
-      const collegeCourses = courses.filter(row => Number(row.AdCollegeId) === Number(target.AdCollegeId)).map(row => {
-        const code = referenceCodeKey(row.CourseCode), ownerCode = sectionCodes.get(Number(row.AdSectionId));
-        return { ...row, CourseCode: /^\d{1,3}$/.test(code) && /^\d{2}$/.test(ownerCode || "") ? `01${ownerCode}${code.padStart(3, "0")}` : code };
-      });
-      const references = TECHNOLOGY_EDUCATION_CURRICULA.map(reference => {
-        const matchingPlans = plans.filter(plan => !plan.virtual && plan.status === (reference.id === "new" ? "active" : "transition"));
-        const plan = matchingPlans.length === 1 ? matchingPlans[0] : undefined;
-        const members = new Set(links.filter(link => link.planId === plan?.id).map(link => Number(link.AdCourseId)));
-        const groups = compareCurriculumReference(reference, collegeCourses, members, Number(target.AdSectionId)).map(group => ({ ...group, courses: group.courses.map(course => {
-          const matched = course.current && collegeCourses.find(row => Number(row.AdCourseId) === Number(course.current?.id));
-          const inferred = sectionIdsByCollegeCode.get(`${Number(target.AdCollegeId)}:${course.code.slice(2, 4)}`) || [];
-          const ownerSectionId = Number(matched?.AdSectionId) || (inferred.length === 1 ? inferred[0] : 0);
-          const owner = sections.find(row => Number(row.AdSectionId) === ownerSectionId);
-          return { ...course, ownerSectionId, ownerSectionName: String(owner?.AdSectionName || ""), ownerCollegeId: Number(target.AdCollegeId) };
-        }) }));
-        return { ...reference, planId: plan?.id || null, groups };
-      });
+      const { references } = await snapshotOf(target);
       return { sectionId: Number(target.AdSectionId), collegeId: Number(target.AdCollegeId), collegeName: colleges.find(row => Number(row.AdCollegeId) === Number(target.AdCollegeId))?.AdCollegeName || "", sectionName: target.AdSectionName, references };
     }));
     res.json({ sectionId, references: sectionResults.find(row => row.sectionId === sectionId)?.references || [], sections: sectionResults });
@@ -318,6 +329,120 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       if (error instanceof RuleDraftConflict) { fail(res, 409, error.message, { code: "stale" }); return; }
       throw error;
     }
+  });
+
+  /* ── تطبيق صحيفة تكنولوجيا التعليم المرجعية على كتالوج الموقع ──────────────────────
+     المعاينة والتطبيق من الدالة نفسها (planReferenceApplication): ما يُعرض هو ما يُكتب.
+     الحساب الرئيسي وحده؛ يصحّح الاسم والوحدات والساعات إلى الصحيفة، ويضيف الناقص في قسمه المالك،
+     ويربط مقررات القسم بالصحيفة، ويُنشئ مسوّدة قواعد (مستوى/نوع/مسبقات/مجموعات) لا تُعتمد. */
+  app.post("/api/plan-review/reference/apply", deps.requireAuth, async (req: Request, res: Response) => {
+    if (!deps.isRootAdmin(req)) { fail(res, 403, "تطبيق الصحيفة المرجعية للحساب الرئيسي وحده."); return; }
+    const reference = TECHNOLOGY_EDUCATION_CURRICULA.find(row => row.id === req.body?.referenceId);
+    if (!reference) { fail(res, 400, "اختر الصحيفة القديمة أو الجديدة."); return; }
+    const dryRun = req.body?.dryRun !== false;
+    const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+    const wanted = Array.isArray(req.body?.sectionIds) ? new Set((req.body.sectionIds as unknown[]).map(Number)) : null;
+    const targets = (sections as any[]).filter(row => isTechnologyEducation(row.AdSectionName) && (!wanted || wanted.has(Number(row.AdSectionId))));
+    if (!targets.length) { fail(res, 404, "لا قسم تكنولوجيا التعليم في المواقع المختارة."); return; }
+    const by = deps.actorName(req);
+    const reports: any[] = [];
+    for (const target of targets) {
+      const sid = Number(target.AdSectionId), cid = Number(target.AdCollegeId);
+      const collegeName = String((colleges as any[]).find(row => Number(row.AdCollegeId) === cid)?.AdCollegeName || "");
+      const branch = collegeBranchRoot(colleges as any[], cid);
+      const report: any = { sectionId: sid, collegeId: cid, collegeName, branch, planId: null, planNote: "", updates: [], creates: [], links: [], skipped: [], notes: [], rules: 0, groups: 0, applied: false };
+      let courses = await Repository.getCourses();
+      let snapshot = await referenceSnapshotFor(sections as any[], courses)(target);
+      let ref: any = snapshot.references.find((row: any) => row.id === reference.id);
+      if (!branch) { report.planNote = "موقع بلا فرع معروف: لم يُطبَّق."; reports.push(report); continue; }
+      if (!ref.planId) {
+        const live = snapshot.plans.filter(plan => !plan.virtual && plan.status !== "archived");
+        if (reference.id === "old" && live.length) report.planNote = "لا صحيفة انتقالية (سابقة) في هذا الموقع: تُنشأ مع الصحيفة الجديدة فحسب.";
+        else if (dryRun) report.planNote = reference.id === "new" ? "ستُنشأ الصحيفة الجديدة وتُنقل الحالية إلى «السابقة»." : "ستُنشأ الصحيفة الجديدة فتظهر معها «الصحيفة السابقة».";
+        else {
+          await Repository.createCurriculumPlan({ collegeId: cid, sectionId: sid, name: `الصحيفة الجديدة ${reference.effectiveTerm}`, by });
+          snapshot = await referenceSnapshotFor(sections as any[], courses)(target);
+          ref = snapshot.references.find((row: any) => row.id === reference.id);
+        }
+        if (report.planNote.startsWith("لا صحيفة")) { reports.push(report); continue; }
+      }
+      report.planId = ref.planId;
+      const members = new Set<number>(snapshot.links.filter(link => link.planId === ref.planId).map(link => Number(link.AdCourseId)));
+      const application = planReferenceApplication(reference, ref.groups, branch, members, sid);
+      /* الاسم المجمَّد: مقرر في صحيفةٍ غير فعّالة (في قسمه). */
+      const frozenCache = new Map<number, Set<number>>();
+      const frozenIdsOf = async (sectionOfCourse: number): Promise<Set<number>> => {
+        if (!frozenCache.has(sectionOfCourse)) {
+          const [ownPlans, ownLinks] = await Promise.all([Repository.getCurriculumPlans(sectionOfCourse), Repository.getCurriculumPlanCourses(sectionOfCourse)]);
+          const inactive = new Set(ownPlans.filter(plan => plan.status !== "active" && !plan.virtual).map(plan => plan.id));
+          frozenCache.set(sectionOfCourse, new Set(ownLinks.filter(link => inactive.has(link.planId)).map(link => Number(link.AdCourseId))));
+        }
+        return frozenCache.get(sectionOfCourse)!;
+      };
+      for (const update of application.updates) update.frozen = update.identityChange && (await frozenIdsOf(update.ownerSectionId)).has(update.courseId);
+      const { apply: toApply, held } = splitFrozenUpdates(application.updates, req.body?.confirmIdentity === true);
+      Object.assign(report, { held, updates: application.updates, creates: application.creates, links: application.links, skipped: application.skipped, notes: application.notes, courseCount: application.courseCount });
+      if (dryRun || !ref.planId) { reports.push(report); continue; }
+
+      /* 1) تصحيح ما يخالف الصحيفة */
+      for (const update of toApply) {
+        const row = (courses as AdCourse[]).find(course => Number(course.AdCourseId) === update.courseId);
+        if (!row) continue;
+        await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, update.after.name, update.after.credit, update.after.hours, Number(row.MaxStudent) || 0);
+      }
+      /* 2) إضافة الناقص في كتالوج قسمه المالك */
+      const createdIds = new Map<string, number>();
+      for (const create of application.creates) {
+        const ownerCourses = (courses as AdCourse[]).filter(course => Number(course.AdSectionId) === create.sectionId);
+        const shortStyle = ownerCourses.length > 0 && ownerCourses.filter(course => /^\d{1,3}$/.test(referenceCodeKey(course.CourseCode))).length * 2 > ownerCourses.length;
+        const code = shortStyle ? String(Number(create.code.slice(-3))) : create.code;
+        try {
+          const made = await Repository.createCourse(cid, create.sectionId, code, create.name, create.credit, create.hours, 0);
+          createdIds.set(create.code, Number(made.AdCourseId));
+        } catch (error) {
+          if (error instanceof DuplicateResourceError) report.notes.push(`«${create.name}»: الرمز ${code} مستعمل في القسم؛ لم يُنشأ.`);
+          else throw error;
+        }
+      }
+      courses = await Repository.getCourses();
+      const after = referenceSnapshotFor(sections as any[], courses);
+      snapshot = await after(target);
+      ref = snapshot.references.find((row: any) => row.id === reference.id);
+      /* 3) ربط مقررات القسم بالصحيفة */
+      const byId = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
+      const memberNow = new Set<number>(snapshot.links.filter(link => link.planId === ref.planId).map(link => Number(link.AdCourseId)));
+      const skipCodes = new Set<string>(application.skipped.map(item => referenceCodeKey(item.code)));
+      const memberIdByCode = new Map<string, number>(), knownIdByCode = new Map<string, number>();
+      for (const group of ref.groups) for (const course of group.courses) {
+        const key = referenceCodeKey(course.code);
+        if (!course.current || skipCodes.has(key)) continue;
+        knownIdByCode.set(key, Number(course.current.id));
+        if (course.ownerSectionId !== sid) continue;
+        const row = byId.get(Number(course.current.id));
+        if (!row) continue;
+        if (!memberNow.has(row.AdCourseId)) await Repository.addCourseToCurriculumPlan(ref.planId, row, by);
+        memberIdByCode.set(key, Number(row.AdCourseId));
+      }
+      /* 4) مسوّدة القواعد: لا تُعتمد، ولا تمحو ما كتبه القسم */
+      const built = buildReferenceRules(reference, memberIdByCode, knownIdByCode, skipCodes);
+      const ownIds = new Set<number>(memberIdByCode.values());
+      const live = await Repository.getRuleSet(ref.planId);
+      await Repository.updateRuleDraft(ref.planId, current => {
+        const base: CurriculumRuleSet = current ? { ...current } : { id: ref.planId, planId: ref.planId, AdCollegeId: cid, AdSectionId: sid, rules: live?.rules || [], groups: live?.groups || [], version: live?.version || 0, status: "review", basedOnVersion: live?.version || 0, updatedAt: "", updatedBy: by };
+        const hasRule = new Set(base.rules.map(rule => rule.courseId));
+        const hasGroup = new Set(base.groups.map(group => group.id));
+        const rules = normalizeRules([...base.rules, ...built.rules.filter(rule => !hasRule.has(rule.courseId))]);
+        const groups = [...base.groups, ...built.groups.filter(group => !hasGroup.has(group.id)).map(group => normalizeGroup({ ...group, courseIds: group.courseIds.filter(id => ownIds.has(id)) })).filter(Boolean) as ElectiveGroup[]];
+        return { ...base, rules: withDerivedGroups(rules, groups), groups, status: "review", updatedAt: new Date().toISOString(), updatedBy: `تطبيق الصحيفة المرجعية · ${by}` };
+      });
+      report.rules = built.rules.length; report.groups = built.groups.length; report.notes.push(...built.notes.slice(0, 20)); report.applied = true;
+      reports.push(report);
+    }
+    if (!dryRun) {
+      const total = reports.reduce((sum, row) => sum + row.updates.length + row.creates.length + row.links.length, 0);
+      res.locals.auditChanges = `تطبيق ${reference.name} (${reference.program}) على ${countOf(reports.filter(row => row.applied).length, AR.site)}: ${countOf(total, AR.change)}`;
+    }
+    res.json({ referenceId: reference.id, dryRun, sites: reports });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */
