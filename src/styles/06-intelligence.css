@@ -4099,7 +4099,8 @@ button.twin-delta{width:100%}
   .living-overlay{padding:0!important;place-items:stretch!important}
   .living-overlay .living-panel{width:100%!important;max-width:none!important;height:100dvh!important;max-height:none!important;border:0!important;border-radius:0!important}
 }
-.living-command-deck .living-pulse-core{transform:translateY(8px)}
+/* No downward shift: the deck is sized by layout, so a transform pushed the last line of the pulse text out of its frame. */
+.living-command-deck .living-pulse-core{align-self:center}
 .week-shape-title{margin-top:24px!important;margin-bottom:10px!important}
 .week-shape-track>i.week-shape-wait{color:#52687f!important}
 .week-shape-track>i.week-shape-wait>span{display:inline-flex;align-items:center;justify-content:center;min-height:18px;padding:2px 7px;border-radius:999px;border:1px solid color-mix(in srgb,#607b99 22%,var(--line));background:color-mix(in srgb,var(--surface) 88%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 2px 8px color-mix(in srgb,#23384e 10%,transparent);color:color-mix(in srgb,#425d79 84%,var(--ink));font:700 9px/1 var(--font-mono);white-space:nowrap}
@@ -4909,3 +4910,5 @@ button.twin-delta{width:100%}
    the 12px floor applies to the app chrome, not to report/print layouts. */
 .query-page,.print-report,.print-wide,.lens-strip,.lens-week,.lens-groups,.lens-tags,.lens-index,
 [class*="section-plan-report"],.vault-export-progress-head{--t-xs:11.5px;--t-micro:11px;--t-eyebrow:11px}
+
+.living-health-strip>span.is-recalled{opacity:.7}
