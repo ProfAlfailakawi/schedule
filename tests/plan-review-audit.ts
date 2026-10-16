@@ -95,6 +95,12 @@ const ctx = (plan: number[]) => ({
   check(describePrereq({ all: [1, 2], anyOf: [[3, 4]], minUnits: 60 }, id => NAMES[id]) === "أ + ب + (ج أو د) + 60 وحدة", "R3 المسبق بالعربية", describePrereq({ all: [1, 2], anyOf: [[3, 4]], minUnits: 60 }, id => NAMES[id]));
   const levels = byLevel([1, 2, 3, 4], [{ courseId: 2, level: 200 }, { courseId: 1, level: 100 }, { courseId: 3, level: 200 }]);
   check([...levels.keys()].join() === "100,200,0" && levels.get(200)!.join() === "2,3" && levels.get(0)!.join() === "4", "R3 الخريطة بالمستويات، وغيرُ الموزَّع في الآخر");
+  const legacyLevels = byLevel([1, 2, 3, 4], [{ courseId: 1, level: 1 } as any, { courseId: 2, level: 2 } as any, { courseId: 3, level: 4 } as any]);
+  check([...legacyLevels.keys()].join() === "100,200,400,0", "R3 المستويات القديمة 1–4 تظهر في الصحيفة بصيغة 100–400");
+  const sorted = byLevel([3, 1, 2], [], new Map([[1, "EDT105"], [2, "EDT110"], [3, "EDT315"]]));
+  check(sorted.get(100)!.join() === "1,2" && sorted.get(300)!.join() === "3", "R3 المقررات داخل المستوى ترتب برمز المقرر الرقمي");
+  const codeWins = byLevel([1], [{ courseId: 1, level: 200 }], new Map([[1, "EDT105"]]));
+  check(codeWins.has(100) && !codeWins.has(200), "R3 مستوى رمز المقرر يصحح التصنيف اليدوي القديم المخالف");
   check(courseLevelFromCode("0109101") === 100 && courseLevelFromCode("0109201") === 200 && courseLevelFromCode("0109468") === 400 && courseLevelFromCode("0109099") === undefined,
     "R3 مستوى المقرر يستنتج من آخر ثلاثة أرقام دون تصنيف المواد التمهيدية ضمن 100");
   const inferred = byLevel([1, 2, 3], [], new Map([[1, "0109101"], [2, "0109201"], [3, "0109099"]]));
@@ -109,6 +115,11 @@ const ctx = (plan: number[]) => ({
     "R6 اختيار مقرر يبرز المتطلبات السابقة والمقررات التي تعتمد عليه");
   check(source.includes('aria-label="نوع المقرر"') && source.includes('aria-label="المجموعة"') && source.includes('aria-label="حالة المطابقة"'),
     "R6 فلاتر التصنيف والمجموعة وحالة المطابقة قابلة للوصول");
+  check(source.includes("reference-guide") && source.includes("reference-level-toggle") && source.includes("reference-course-group-block"),
+    "R6 القراءة البصرية مختصرة: دليل الربط مطوي والمستويات ومجموعاتها قابلة للفتح");
+  const reviewUi = read("src/components/PlanReview.tsx");
+  check(reviewUi.includes("pr-level-chip") && reviewUi.includes("pr-level-head") && reviewUi.includes("aria-expanded={expandedLevels.includes(level)}"),
+    "R6 صحيفة المراجعة تعرض توزيعًا مصورًا وتفتح مقررات المستوى عند الحاجة");
 }
 
 /* ── R4: الاستيراد ───────────────────────────────────────────────────────── */

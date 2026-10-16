@@ -11,7 +11,7 @@
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, ChevronDown, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, courseLevelFromCode, dependentsOf, describePrereq } from "../utils/curriculumRules";
@@ -130,6 +130,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -151,6 +152,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
 
   useEffect(() => {
     if (!planId || !sectionId) { setView(null); return; }
+    setExpandedLevels([]);
     let live = true;
     setView(null); setSelected(0);
     request(`/api/plan-review/plan?planId=${encodeURIComponent(planId)}&sectionId=${sectionId}`)
@@ -259,15 +261,19 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 <div className="pr-infographic-stat"><span><GraduationCap /></span><div><small>مقررات الصحيفة</small><strong>{view.courses.length.toLocaleString("ar-KW-u-nu-latn")}</strong></div></div>
                 <div className="pr-infographic-stat"><span><Layers /></span><div><small>المستويات</small><strong>{levels.size.toLocaleString("ar-KW-u-nu-latn")}</strong></div></div>
                 <div className="pr-level-ribbon" aria-label="توزيع المقررات على المستويات">
-                  {[...levels.entries()].map(([level, ids]) => <div key={level} title={`${level ? `المستوى ${level}` : "بلا مستوى"}: ${countOf(ids.length, AR.course)}`}><span>{level || "—"}</span><i><b style={{ inlineSize: `${view.courses.length ? ids.length / view.courses.length * 100 : 0}%` }} /></i><small>{ids.length}</small></div>)}
+                  {[...levels.entries()].map(([level, ids]) => <div className="pr-level-chip" key={level} title={`${level ? `المستوى ${level}` : "بلا مستوى"}: ${countOf(ids.length, AR.course)}`}>
+                    <span className="pr-level-chip-icon"><Layers size={15} aria-hidden="true" /></span><span className="pr-level-chip-label"><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)}</small><i><b style={{ inlineSize: `${view.courses.length ? ids.length / view.courses.length * 100 : 0}%` }} /></i></span>
+                  </div>)}
                 </div>
               </section>
 
               <div className="pr-map" aria-label="خريطة المستويات">
                 {[...levels.entries()].map(([level, ids]) => (
                   <section key={level} className="pr-col">
-                    <h4>{level ? `المستوى ${level}` : "بلا مستوى"}</h4>
-                    {ids.map(id => {
+                    <button type="button" className="pr-level-head" aria-expanded={expandedLevels.includes(level)} data-guide-ignore="فتح مجموعة مستوى الصحيفة وعرض مقرراتها" onClick={() => setExpandedLevels(current => current.includes(level) ? current.filter(item => item !== level) : [...current, level])}>
+                      <span className="pr-level-head-icon"><GraduationCap size={16} aria-hidden="true" /></span><span><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)} · {countOf(ids.reduce((sum, id) => sum + (view.courses.find(course => course.id === id)?.credit || 0), 0), AR.unit)}</small></span><ChevronDown size={16} aria-hidden="true" />
+                    </button>
+                    {expandedLevels.includes(level) ? ids.map(id => {
                       const c = view.courses.find(x => x.id === id)!;
                       const rule = ruleOf(id);
                       const cls = ["pr-card", `k-${KIND_TONE[rule?.kind || "none"]}`, selected === id ? "sel" : "", upstream.has(id) ? "up" : "", downstream.has(id) ? "down" : "", c.owned ? "" : "lock"].join(" ");
@@ -277,7 +283,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                           <i>{countOf(c.credit, AR.unit)}{rule?.prereq ? " · " : ""}{rule?.prereq ? <Link2 size={11} /> : null}{c.owned ? null : <Lock size={11} />}</i>
                         </button>
                       );
-                    })}
+                    }) : null}
                   </section>
                 ))}
               </div>
