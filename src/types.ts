@@ -1292,6 +1292,8 @@ export interface InstructorRequestItem {
   excuse?: string;
   /** القاعاتُ المرشّحة — **للقسم وحده**، ولا تُرسل إلى صفحة الأستاذ. */
   roomCandidates?: string[];
+  /** تفاصيلُ أولى القاعات الخالية (مبنى وقاعة) — للقسم وحده — يُملأ بها نموذجُ الإضافة السريع. */
+  roomOptions?: Array<{ key: string; room: string; hall: string; buildingId?: string; roomId?: string }>;
   /** أقربُ الأوقات المتاحة حين يُمنع الطلب. */
   nearestTimes?: InstructorRequestSlot[];
   decision?: {

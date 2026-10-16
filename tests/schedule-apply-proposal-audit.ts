@@ -18,6 +18,19 @@ const check = (ok: boolean, label: string, extra?: unknown) => {
 const BASE = "http://localhost:3000";
 const up = async () => { try { return (await fetch(BASE + "/api/public/me/state")).ok; } catch { return false; } };
 
+/* ── الربط في الواجهات الأربع (مصدرٌ: يقول إن السلك موصول، والسلوكُ الحيّ أدناه) ── */
+{
+  const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
+  const intel = read("src/components/IntelligenceWorkspace.tsx"), reg = read("src/components/StudentRegistration.tsx"), radar = read("src/components/RegistrationRehearsal.tsx");
+  const inbox = read("src/components/InstructorInbox.tsx"), app = read("src/App.tsx"), srv = read("server.ts"), apply = read("src/components/ApplyProposal.tsx");
+  check(intel.includes('kind: "opening"') && intel.includes('kind: fix.swapWith ? "swap" : "move"') && intel.includes("<ApplyProposal"), "L1 مركز الذكاء: فتحُ الشعب والنقلُ والتبديل لها زرُّ «اعتمد في الجدول»");
+  check(reg.includes("openSection: slot") && reg.includes("موافقة + فتح شعبة") && reg.includes("committeeActs && !course.settled"), "L2 كشف التسجيل: موافقةُ اللجنة تحمل فتحَ الشعبة، وللجنة وحدها");
+  check(radar.includes("function RadarSchedule") && radar.includes('kind: "radar"') && app.includes("canSchedule={hasPerm(7) && !sessionRole.viewerOnly && !sessionRole.advisorOnly}"), "L3 الرادار: «اقتراح الجدول» لمن يملك الجدول فقط (لا للعرض الصرف ولا للمرشد)");
+  check(inbox.includes("roomOptions") && inbox.includes("suggestion:") && srv.includes("const { roomCandidates, roomOptions, ...rest } = item;"), "L4 رغبات الأساتذة: بطاقةُ الإضافة تُملأ بأول قاعةٍ خالية، ولا تصل صفحةَ الأستاذ");
+  check(apply.includes("/api/schedules/apply-proposal") && !/fetch\([^)]*\/api\/schedules["`]/.test(apply), "L5 الزرُّ لا يكتب إلا من باب الاعتماد الواحد");
+  check(srv.includes("createScheduleHandler, req") && srv.includes("updateScheduleHandler, req") && !/app\.post\("\/api\/schedules\/apply-proposal"[\s\S]{0,400}Repository\.(createSchedule|updateSchedule)/.test(srv), "L6 الباب يمرّ من معالجَي الحفظ نفسيهما، لا من الكتابة مباشرةً في المستودع");
+}
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-apply-proposal-"));
 let child: ReturnType<typeof spawn> | null = null;
 try {

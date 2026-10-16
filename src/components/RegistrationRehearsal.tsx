@@ -8,10 +8,12 @@
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CircleAlert, CircleHelp, Download, GraduationCap, Layers, Ticket, Users } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CircleAlert, CircleHelp, Download, GraduationCap, Layers, Ticket, Users } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
+import ApplyProposal, { postScheduleProposal } from "./ApplyProposal";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 interface Unmet { "not-offered": number; conflict: number; full: number; prereq: number; units: number }
 interface CourseRow { courseId: number; code: string; name: string; sections: number; capacity: number; taken: number; wanted: number; seated: number; unmet: Unmet }
@@ -55,7 +57,7 @@ const qualityLabel = (key: string) => ({
 const needsDecision = (c: CourseRow) => c.unmet.full > 0 || c.unmet["not-offered"] > 0;
 const weight = (c: CourseRow) => c.unmet.full * 3 + c.unmet["not-offered"] * 2 + c.unmet.conflict;
 
-export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
+export default function RegistrationRehearsal({ onNavigate, canSchedule = false }: { onNavigate?: (view: string) => void; canSchedule?: boolean } = {}) {
   const [data, setData] = useState<Summary | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState("");
@@ -190,12 +192,59 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
                     <small>{c.sections ? `${countOf(c.sections, AR.section)} · ${c.taken} من ${countOf(c.capacity, AR.seat)}` : "لا تُطرح هذا الفصل"} · طُلب {c.wanted}</small>
                   </div>
                   <div className="sm-why">{unmet.map(x => <span key={x.key} className={`sm-chip ${x.tone}`}>{x.label} {x.n}</span>)}</div>
+                  {canSchedule && data.term && needsDecision(c) ? <RadarSchedule course={c as CourseRow & { collegeId?: number; sectionId?: number }} termId={data.term.id} onChanged={() => void load()} /> : null}
                 </article>
               );
             })}
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * اقتراحُ الجدول لمقرّرٍ يحتاج قراراً: يُقرأ من محرّك فتح الشعب نفسِه (الطلبُ ÷ السعة − المفتوح، موضوعاً في
+ * أسبوعٍ حقيقيّ بلا تعارض)، ويُعتمد في الجدول الأصلي بضغطةٍ واحدة بعد التأكيد. لا يُقرأ شيءٌ حتى يُطلب.
+ */
+function RadarSchedule({ course, termId, onChanged }: { course: CourseRow & { collegeId?: number; sectionId?: number }; termId: number; onChanged: () => void }) {
+  const [state, setState] = useState<"idle" | "loading" | "ready">("idle");
+  const [proposal, setProposal] = useState<any>(null);
+  const [message, setMessage] = useState("");
+  const read = async () => {
+    setState("loading"); setMessage("");
+    try {
+      const data = await request(`/api/schedules/demand?collegeId=${course.collegeId}&sectionId=${course.sectionId}&termId=${termId}`);
+      setProposal((data?.openings?.proposals || []).find((item: any) => Number(item.courseId) === course.courseId) || null);
+      setState("ready");
+    } catch (e: any) { setMessage(e.message || "تعذّرت قراءة الاقتراح."); setState("idle"); }
+  };
+  return (
+    <div className="sm-act">
+      {state === "idle" ? <SecondaryButton type="button" onClick={read} data-guide-ignore="يقرأ اقتراح فتح شعبة لهذا المقرر؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> اقتراح الجدول</SecondaryButton> : null}
+      {state === "loading" ? <small>يبحث عن وقتٍ خالٍ من التعارض…</small> : null}
+      {message ? <small className="sm-act-note">{message}</small> : null}
+      {state === "ready" && !proposal ? <small className="sm-act-note">لا يقترح المحرّك شعبةً لهذا المقرر الآن: إمّا أن الطلب لا يُنتج مقاعد ناقصة، أو لا وقتَ خالياً من التعارض. راجع الجدول في ورشة القسم.</small> : null}
+      {state === "ready" && proposal ? (
+        <div className="sm-act-list">
+          {(proposal.placements || []).map((slot: any) => slot.instructorId ? (
+            <ApplyProposal
+              key={slot.index}
+              compact
+              lines={[`شعبة ${slot.sectionCode} لـ«${course.name}» · ${slot.dayLabel} ${formatScheduleTimeRange(slot.start, slot.end)} · ${slot.roomCode}${slot.roomHall ? `/${slot.roomHall}` : ""} · ${slot.instructorName}`]}
+              why={`تخدم ${countOf(proposal.shortfall, AR.student)} بلا مقعدٍ في هذا المقرر.`}
+              run={async () => {
+                const result = await postScheduleProposal({
+                  kind: "opening", collegeId: course.collegeId, sectionId: course.sectionId, termId, courseId: course.courseId, placement: slot,
+                  origin: { kind: "radar", refId: `course:${course.courseId}`, note: `فتح شعبة لـ«${course.name}» من رادار التسجيل` },
+                });
+                return { summary: `فُتحت شعبة ${result.applied[0].row.SCode} لـ«${course.name}» في الجدول`, amendment: Boolean(result.amendment) };
+              }}
+              onApplied={() => onChanged()}
+            />
+          ) : <small key={slot.index} className="sm-act-note">{slot.dayLabel} {formatScheduleTimeRange(slot.start, slot.end)}: لا أستاذَ خالياً — اختره من ورشة الجدول.</small>)}
+        </div>
+      ) : null}
     </div>
   );
 }

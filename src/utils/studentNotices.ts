@@ -19,7 +19,7 @@ export interface StudentNotice {
   target: StudentNoticeTarget;
 }
 
-export interface StudentCaseCourse { courseId: number; name: string; state: "awaiting-registration" | "committee-rejected" | "registered" | "rejected" | "pending"; reasonCode?: string; note?: string; dropped?: boolean }
+export interface StudentCaseCourse { courseId: number; name: string; state: "awaiting-registration" | "committee-rejected" | "registered" | "rejected" | "pending"; reasonCode?: string; note?: string; dropped?: boolean; /** موافقةُ اللجنة فتحت له شعبةً في الجدول. */ opened?: boolean }
 export interface StudentNoticeInput {
   setupDone: boolean;
   phase: { mode: string; canEditWishes: boolean; canReport: boolean; line: string; nextAt?: string; nextLabel?: string };
@@ -65,7 +65,7 @@ export function buildStudentNotices(input: StudentNoticeInput): StudentNotice[] 
       const why = course.note || REJECT_REASON_AR[course.reasonCode || ""] || "";
       out.push({ id: `case:${course.courseId}:${course.state}`, tone: "alert", icon: "lock", title: course.state === "rejected" ? `ردّ التسجيلُ «${course.name}»` : `لم يوافق القسمُ على «${course.name}»`, detail: why, target: "cases" });
     } else if (course.state === "awaiting-registration") {
-      out.push({ id: `case:${course.courseId}:awaiting`, tone: "info", icon: "clock", title: `وافق القسمُ على «${course.name}»`, detail: "بانتظار التسجيل.", target: "cases" });
+      out.push({ id: `case:${course.courseId}:awaiting`, tone: "info", icon: "clock", title: `وافق القسمُ على «${course.name}»`, detail: course.opened ? "وفُتحت لك شعبةٌ جديدة في الجدول؛ تظهر مواعيدها حين يعتمد القسمُ جدولَه. بانتظار التسجيل." : "بانتظار التسجيل.", target: "cases" });
     } else if (course.state === "registered") {
       out.push({ id: `case:${course.courseId}:registered`, tone: "done", icon: "check", title: `سُجّل لك «${course.name}»`, target: "cases" });
     } else {

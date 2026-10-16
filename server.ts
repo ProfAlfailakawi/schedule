@@ -17946,7 +17946,7 @@ function stripForInstructor(request: InstructorRequest) {
       ? { at: request.signature.at, verifyCode: request.signature.verifyCode, fingerprint: "" }
       : undefined,
     items: (request.items || []).map(item => {
-      const { roomCandidates, ...rest } = item;
+      const { roomCandidates, roomOptions, ...rest } = item;
       return {
         ...rest,
         /* «كان» تحمل قاعتَه هو — وهي قاعتُه يعرفها — و«طلب» لا تحملها أبداً. */
@@ -18362,6 +18362,11 @@ async function judgeRequestItems(request: InstructorRequest, options: { forDepar
       verdict: verdict.kind,
       reasons: verdict.reasons,
       roomCandidates: verdict.roomCandidates,
+      /* تفاصيلُ أولى القاعات الخالية (مبنى وقاعة) ليُملأ بها نموذجُ الإضافة السريع: للقسم وحده. */
+      roomOptions: verdict.roomCandidates.slice(0, 3).map(key => {
+        const known: any = rules.scopeRows.find(row => row.roomId && roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall) === key);
+        return known ? { key, room: String(known.AdRoomCode || ""), hall: String(known.AdRoomHall || ""), buildingId: known.buildingId, roomId: known.roomId } : null;
+      }).filter(Boolean) as any,
       nearestTimes: verdict.nearestTimes.map(entry => ({ day: entry.day, days: entry.days, start: entry.start, end: entry.end })),
     } as InstructorRequestItem;
   });

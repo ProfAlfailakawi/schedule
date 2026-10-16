@@ -689,7 +689,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const reportCourses = profile.AdSectionId > 0 ? ((await reportContext(profile, fingerprint))?.ids.length || 0) : 0;
     const cases = needs.flatMap(need => need.courseIds.map(courseId => {
       const state = (need.courseStates || []).find(row => Number(row.courseId) === courseId);
-      return { courseId, name: nameOf(courseId), state: (state?.state || "pending") as any, reasonCode: state?.reasonCode, note: state?.note, dropped: state?.droppedByStudent };
+      return { courseId, name: nameOf(courseId), state: (state?.state || "pending") as any, reasonCode: state?.reasonCode, note: state?.note, dropped: state?.droppedByStudent, opened: Boolean(state?.scheduleId) };
     }));
     res.json({
       notices: buildStudentNotices({
