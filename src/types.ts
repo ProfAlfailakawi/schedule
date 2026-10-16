@@ -483,6 +483,8 @@ export interface AuditLogEntry {
    * none, and a handler that cannot describe its change omits it.
    */
   changes?: string;
+  /** صفوفُ الجدول التي مسّها الطلب (للمسارات التي لا تحمل معرّفها). */
+  rowIds?: number[];
   status: number;
 }
 
@@ -787,6 +789,11 @@ export interface CurriculumRuleSet {
   AdSectionId: number;
   rules: CurriculumCourseRule[];
   groups: ElectiveGroup[];
+  /**
+   * متطلباتٌ عامة: مقرراتُ أقسامٍ أخرى (ثقافة عامة…) تُشترط في هذه الصحيفة. تُرى في صحيفة القسم مقفولةً،
+   * وتُحتسب في تقدّم الطالب والمحاكاة، ولا تُربط بعضويّتها (فلا تدخل كتالوجَ القسم ولا جدولَه). مالكُها قسمُها.
+   */
+  externals?: number[];
   /** رقمُ النسخة المعتمدة؛ كل اعتمادٍ يرفعه. المسوّدةُ تحمل ما بُنيت عليه. */
   version: number;
   /** للمسوّدة: «review» قيد المراجعة، «approved» اعتُمدت (وتبقى سجلاً). */

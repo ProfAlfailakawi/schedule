@@ -6,6 +6,7 @@
  * **المعتمدة وحدها** (المسوّدةُ لا تدخل). ثم تُحفظ النتيجةُ: ملخّصٌ بالأعداد، وتذكرةٌ
  * لكل طالب.
  */
+import { resetRadarInsight } from "./radarInsight";
 import { createHash, randomUUID } from "crypto";
 import { Repository } from "../db/repository";
 import type { AdCourse, AdTerm, RegistrationRun, RegistrationTicket } from "../types";
@@ -80,7 +81,7 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
     for (const plan of live) {
       const set = approved.get(plan.id);
       plans.push({
-        planId: plan.id, courseIds: [...new Set(links.filter(link => link.planId === plan.id).map(link => Number(link.AdCourseId)))],
+        planId: plan.id, courseIds: [...new Set([...links.filter(link => link.planId === plan.id).map(link => Number(link.AdCourseId)), ...(set?.externals || []).map(Number)])],
         rules: set?.rules || [], groups: set?.groups || [], hasApprovedRules: Boolean(set),
       });
     }
@@ -271,6 +272,58 @@ export function rankDemandRepairsBySimulation(
     || b.removes - a.removes || a.distanceMinutes - b.distanceMinutes);
 }
 
+/* ── ماذا لو؟ أثرُ تغييرٍ واحد قبل اعتماده ─────────────────────────────────────────
+ * يُعيد محاكاةَ من أجابوا على جدولٍ مفترضٍ ويقارن بالحالي: كم طالباً ارتفع حالُه، وكم انخفض، وكم تعارضاً
+ * زال. لا يكتب شيئاً ولا يحفظ سيناريو. «الضرر» أيُّ طالبٍ نزل من فئةٍ إلى أدنى منها (غير المعلوم لا يُقاس).
+ * ليس برهاناً على أمثلية، بل مقارنةُ حالتين على الرغبات نفسها. */
+const BAND_RANK: Record<string, number> = { canReach15: 4, canReach12To14: 3, graduatingBelow12: 3, below12: 1 };
+export type ChangeVerdict = "apply" | "caution" | "avoid" | "neutral";
+export interface ChangeImpact {
+  before: SimResult["capacity"]; after: SimResult["capacity"];
+  helped: number; harmed: number; unchanged: number; responders: number;
+  delta12: number; delta15: number; conflictsBefore: number; conflictsAfter: number;
+  /** طلبةٌ خارج نطاق الاقتراح تضرّروا (العددُ لإدارة النظام وحدها؛ لغيرها 0 أو 1 = هل ثمة ضرر). */
+  harmedOutside: number;
+  scheduleChanges: number; verdict: ChangeVerdict; virtualCapacity: true;
+}
+/** النطاقُ كلُّه يُقاس على طلبة نطاق الاقتراح؛ والضررُ خارجه يُحسب للحكم فقط ولا يُسرَّب عدده لغير الإدارة. */
+export function evaluateScheduleChange(
+  input: SimInput, schedules: import("../types").FSchedule[], courses: Map<number, AdCourse>, termId: number,
+  revised: import("../types").FSchedule[], scheduleChanges: number,
+  scopes: ReadonlyArray<{ collegeId: number; sectionId: number }>, revealOutside = false,
+): ChangeImpact {
+  const responders = input.students.filter(student => student.wishes);
+  const inScope = (student: SimStudent) => scopes.some(scope => scope.collegeId === student.collegeId && scope.sectionId === student.sectionId);
+  const mine = new Set(responders.filter(inScope).map(student => student.fp));
+  const base = simulateRegistration({ ...input, students: responders, offerings: buildSimulationOfferings(termId, schedules, courses).offerings, assessCapacity: true });
+  const next = simulateRegistration({ ...input, students: responders, offerings: buildSimulationOfferings(termId, revised, courses).offerings, assessCapacity: true });
+  const tally = (result: SimResult) => {
+    const value: SimResult["capacity"] = { canReach15: 0, canReach12To14: 0, below12: 0, graduatingBelow12: 0, unknown: 0 };
+    for (const ticket of result.tickets) if (mine.has(ticket.fp)) value[ticket.assessment || "unknown"] += 1;
+    return value;
+  };
+  const conflicts = (result: SimResult) => result.tickets.filter(ticket => mine.has(ticket.fp)).reduce((sum, ticket) => sum + ticket.unmet.filter(item => item.reason === "conflict").length, 0);
+  const prior = new Map(base.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
+  let helped = 0, harmed = 0, harmedOutside = 0;
+  for (const ticket of next.tickets) {
+    const a = BAND_RANK[prior.get(ticket.fp) || "unknown"], b = BAND_RANK[ticket.assessment || "unknown"];
+    if (a === undefined || b === undefined) continue;
+    if (mine.has(ticket.fp)) { if (b > a) helped += 1; else if (b < a) harmed += 1; }
+    else if (b < a) harmedOutside += 1;
+  }
+  const before = tally(base), after = tally(next);
+  const reaches12 = (value: SimResult["capacity"]) => value.canReach15 + value.canReach12To14;
+  const conflictsBefore = conflicts(base), conflictsAfter = conflicts(next);
+  const harmAll = harmed + harmedOutside;
+  const verdict: ChangeVerdict = harmAll > 0 ? (helped > harmAll ? "caution" : "avoid")
+    : helped > 0 || conflictsAfter < conflictsBefore ? "apply" : "neutral";
+  return {
+    before, after, helped, harmed, unchanged: Math.max(0, mine.size - helped - harmed), responders: mine.size,
+    delta12: reaches12(after) - reaches12(before), delta15: after.canReach15 - before.canReach15, conflictsBefore, conflictsAfter,
+    harmedOutside: revealOutside ? harmedOutside : Math.min(1, harmedOutside), scheduleChanges, verdict, virtualCapacity: true,
+  };
+}
+
 /** تشغيلٌ كامل: يحسب ويحفظ، ويُرجع الملخّص. */
 export async function runRegistrationSimulation(term: AdTerm, by: string): Promise<RegistrationRun> {
   const rounds = Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2);
@@ -339,6 +392,7 @@ export async function runRegistrationSimulation(term: AdTerm, by: string): Promi
   /* Only an actual current-term response can generate a private ticket. */
   const tickets: RegistrationTicket[] = result.tickets.map(ticket => ({ ...ticket, id: `${termId}_${ticket.fp}`, termId, runId }));
   await Repository.saveRegistrationRun(run, tickets);
+  resetRadarInsight();
   return run;
 }
 

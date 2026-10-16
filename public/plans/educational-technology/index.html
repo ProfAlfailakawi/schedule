@@ -34,6 +34,8 @@ html.fit #plan{min-width:0}
 .card.sel rect{stroke-opacity:1;stroke-width:4}
 #sheet{position:fixed;inset:auto 0 0 0;max-width:760px;margin:0 auto 14px;background:#fff;border-radius:24px;padding:18px 20px calc(16px + env(safe-area-inset-bottom,0));box-shadow:0 24px 60px rgba(11,37,69,.25),0 0 0 1px rgba(11,37,69,.06);z-index:9;max-height:58vh;overflow:auto;transform:translateY(calc(100% + 40px));transition:transform .32s cubic-bezier(.2,.9,.25,1);border-top:6px solid var(--c,#0B2545)}
 #sheet.open{transform:none}
+#sheet.zoomed{transition:none;margin:0;max-width:none;transform-origin:0 0}
+#sheet.zoomed:not(.open){display:none}
 #sheet .hd{display:flex;align-items:center;gap:14px;padding-left:44px}
 #sheet .num{font-size:34px;font-weight:900;color:var(--c);line-height:1}
 #sheet h3{margin:0;font-size:19px;font-weight:900;line-height:1.35}
@@ -101,7 +103,17 @@ function render(){
  <div><div class="l"><i>→</i>يفتح بعده</div>${nx.map(chip).join('')||'<div class="none">لا يفتح مقررات أخرى</div>'}</div></div>`;
  sh.classList.add('open');
 }
-function pick(c){sel=(c==null||c==sel)?null:c;hov=null;render()}
+function pick(c){sel=(c==null||c==sel)?null:c;hov=null;render();placeSheet()}
+// Pinch-zoom scales fixed elements too; keep the sheet at its natural size inside the visible area.
+const vv=window.visualViewport;
+function placeSheet(){
+ if(!vv||vv.scale<1.05||!sh.classList.contains('open')){if(sh.classList.contains('zoomed')){sh.classList.remove('zoomed');['inset','bottom','left','top','width','max-height','transform'].forEach(k=>sh.style.removeProperty(k))}return}
+ const k=1/vv.scale,W=Math.min(760,vv.width*vv.scale);
+ sh.classList.add('zoomed');
+ Object.assign(sh.style,{inset:'auto',bottom:'auto',left:(vv.offsetLeft+(vv.width-W*k)/2)+'px',top:(vv.offsetTop+vv.height)+'px',width:W+'px',maxHeight:(vv.height*vv.scale*.6)+'px',transform:`scale(${k}) translateY(-100%)`});
+}
+vv&&vv.addEventListener('resize',placeSheet);vv&&vv.addEventListener('scroll',placeSheet);
+
 const plan=document.getElementById('plan');
 plan.addEventListener('keydown',e=>{const g=e.target.closest('.card');if(!g)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();pick(+g.dataset.c)}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')pick(null)});
