@@ -30,7 +30,8 @@ import {
 import { buildSimulationOfferings, ticketContext } from "./simulationData";
 import { auditSimOfferings } from "../utils/registrationSim";
 import { verifiedUnresolvableStudentConflicts } from "../utils/studentCaseConflict";
-import { unmetPrereq } from "../utils/curriculumRules";
+import { remainingNeed, unmetPrereq } from "../utils/curriculumRules";
+import { adviseStudent } from "../utils/studentAdvice";
 import { buildStudentNotices } from "../utils/studentNotices";
 import { studentNeedsCommitteeHelp } from "../utils/studentNeedRequest";
 import { caseRefFor } from "../db/repository";
@@ -80,6 +81,14 @@ interface SectionCatalog {
 const catalogMemo = createTtlMemo<SectionCatalog>({ ttlMs: 10 * 60_000 });
 const sectionsMemo = createTtlMemo<any>({ ttlMs: 10 * 60_000 });
 const offeringMemo = createTtlMemo<Map<number, { sections: number }>>({ ttlMs: 5 * 60_000 });
+/** شعبٌ فُتحت من اقتراحٍ حديثاً: [مقرر → رمز الشعبة]. دقيقتان تكفيان: الإشعارُ لا يُلحّ. */
+const openedMemo = createTtlMemo<Map<number, string>>({ ttlMs: 2 * 60_000 });
+/** كم قسّمٌ أرسلوا رغباتهم: عددٌ واحد لكل (قسم، فصل)، لا قراءةَ كلّ الملفات لكل طالب. */
+const wishCountMemo = createTtlMemo<{ n: number; of: number }>({ ttlMs: 10 * 60_000 });
+const OPENED_WINDOW_DAYS = 21;
+/** قواعدُ الصحيفة المعتمدة: تُقرأ في كل فتحةٍ لمساري، فتُحفظ دقائق. */
+const ruleSetMemo = createTtlMemo<Awaited<ReturnType<typeof Repository.getRuleSet>> | null>({ ttlMs: 5 * 60_000 });
+const ruleSetOf = (planId: string) => ruleSetMemo.get(planId, async () => (await Repository.getRuleSet(planId)) || null);
 
 async function sectionCatalog(sectionId: number): Promise<SectionCatalog> {
   return catalogMemo.get(String(sectionId), async () => {
@@ -99,6 +108,19 @@ async function sectionCatalog(sectionId: number): Promise<SectionCatalog> {
     const catalog = (courses as AdCourse[]).filter(course => Number(course.AdSectionId) === sectionId && operational.has(Number(course.AdCourseId))).map(course => Number(course.AdCourseId));
     return { plans: live.map(plan => ({ id: plan.id, name: plan.name, status: plan.status })), byPlan, catalog, courses: known };
   });
+}
+
+/** ما ينقص الطالبَ من مسبقاتٍ قبل أن يأخذ كل مقرر (أسماءٌ جاهزة للعرض). واحدةٌ للمطروح وللتذكرة. */
+async function prereqNeeds(profile: StudentProfile, catalog: SectionCatalog): Promise<(id: number) => string[]> {
+  const ruleSet = profile.curriculumPlanId ? await Repository.getRuleSet(profile.curriculumPlanId) : undefined;
+  const passedSet = new Set(profile.passedCourseIds);
+  const nameOf = (id: number) => catalog.courses.get(id)?.name || `مقرر ${id}`;
+  return (id: number): string[] => {
+    const rule = ruleSet?.rules.find(row => row.courseId === id);
+    if (!rule?.prereq) return [];
+    const lack = unmetPrereq(rule.prereq, passedSet, profile.passedUnits);
+    return [...lack.all.map(nameOf), ...lack.anyOf.map(group => `(${group.map(nameOf).join(" أو ")})`), ...(lack.unitsShort ? [countOf(lack.unitsShort, AR.unit)] : [])];
+  };
 }
 
 /** مقرراتُ صحيفةٍ بعينها، أو كتالوجُ القسم إن لم تكن له صحائف. */
@@ -144,6 +166,13 @@ async function summaryOf(profile: StudentProfile) {
     planName = catalog.plans.find(plan => plan.id === profile.curriculumPlanId)?.name || "";
     const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
     progress = planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit);
+    /* الاختياريُّ يُحسب بمجموعته: من أنجز «٢ من ٥» لا يبقى عليه الثلاثةُ الباقية — وإلا بالغنا في المتبقّي والفصول. */
+    const rules = profile.curriculumPlanId ? await ruleSetOf(profile.curriculumPlanId) : null;
+    if (rules && rules.groups.length) {
+      const need = remainingNeed(allowedFor(catalog, profile.curriculumPlanId), rules, new Set(profile.passedCourseIds), credit);
+      const total = Math.max(need.requiredUnits, progress.passedUnits);
+      progress = { ...progress, totalUnits: total, remainingUnits: need.remainingUnits, percent: total > 0 ? Math.max(0, Math.min(100, Math.round(((total - need.remainingUnits) / total) * 100))) : 0 };
+    }
   }
   return {
     setupDone, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
@@ -439,7 +468,9 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const catalog = await sectionCatalog(profile.AdSectionId);
     const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
     const remaining = new Set(planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds);
-    const wanted = sanitizePassed(req.body?.courseIds, remaining).slice(0, 12);
+    /* ما ينقصه مسبقُه لا يدخل رغباتِه: لا يطلب مقرراً لا يستطيع تسجيله، فلا يُفسد الرادار بطلبٍ وهميّ. */
+    const needsOf = await prereqNeeds(profile, catalog);
+    const wanted = sanitizePassed(req.body?.courseIds, remaining).filter(id => needsOf(id).length === 0).slice(0, 12);
     const c = req.body?.constraints || {};
     const wishes: StudentWishes = {
       termId: Number(term.AdTermId), targetUnits: units, courseIds: wanted,
@@ -449,6 +480,43 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const saved = await Repository.updateStudentProfile(fingerprint, current => (current ? { ...current, wishes } : undefined));
     if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
     noStore(res); res.json({ ok: true, wishes });
+  });
+
+  /* ── مقترحي: «سجّل هذه الثلاثة لأنها تفتح لك كذا وتتخرّج بعد كذا» — من صحيفته ومسبقاتها وما يُطرح فعلاً ── */
+  app.get("/api/public/me/advice", requireDoor, async (_req: Request, res: Response) => {
+    const { profile } = doorOf(res);
+    noStore(res);
+    if (profile.AdSectionId <= 0) { res.json({ ready: false, reason: "no-setup" }); return; }
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    if (!term) { res.json({ ready: false, reason: "no-term" }); return; }
+    const termId = Number(term.AdTermId);
+    const [catalog, index, rules] = await Promise.all([sectionCatalog(profile.AdSectionId), offeringIndex(termId), profile.curriculumPlanId ? ruleSetOf(profile.curriculumPlanId) : Promise.resolve(null)]);
+    const plan = allowedFor(catalog, profile.curriculumPlanId);
+    if (!plan.length) { res.json({ ready: false, reason: "no-plan" }); return; }
+    const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
+    const advice = adviseStudent({
+      planCourseIds: plan, passed: profile.passedCourseIds, passedUnits: profile.passedUnits,
+      rules: rules?.rules || [], groups: rules?.groups || [], credit,
+      name: id => catalog.courses.get(id)?.name || `مقرر ${id}`, code: id => catalog.courses.get(id)?.code || "",
+      offered: id => (index.get(id)?.sections || 0) > 0,
+      targetUnits: profile.wishes && profile.wishes.termId === termId ? profile.wishes.targetUnits : 15,
+    });
+    res.json({ ready: true, termName: String(term.AdTermName || ""), ...advice });
+  });
+
+  /* ── «أنت واحدٌ من …»: كم زميلٍ في قسمك أرسلوا رغباتهم. عددٌ فقط، ولا يظهر إلا حين يكثر العدد (لا يُستدلّ منه على أحد). ── */
+  app.get("/api/public/me/wishes-count", requireDoor, async (_req: Request, res: Response) => {
+    const { profile } = doorOf(res);
+    noStore(res);
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    if (!term || profile.AdSectionId <= 0 || !profile.wishes || profile.wishes.termId !== Number(term.AdTermId)) { res.json({ ready: false }); return; }
+    const termId = Number(term.AdTermId), sectionId = profile.AdSectionId;
+    const stat = await wishCountMemo.get(`${termId}:${sectionId}`, async () => {
+      const list = (await Repository.getStudentProfilesByCollege(Number(profile.AdCollegeId))).filter(row => Number(row.AdSectionId) === sectionId && row.AdSectionId > 0);
+      return { of: list.length, n: list.filter(row => row.wishes && row.wishes.termId === termId).length };
+    });
+    const n = Math.max(1, stat.n);
+    res.json({ ready: true, n, of: Math.max(stat.of, n), show: stat.of >= 10 });
   });
 
   /* ── حالاتي: متابعة آمنة لطلبات الاستبيان القديم من ملف مساري ─────────── */
@@ -650,15 +718,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
     const progress = planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit);
     /* قواعدُ الصحيفة المعتمدة (إن وُجدت): ما ينقص الطالبَ من مسبقاتٍ قبل أن يستطيع أخذ المقرر. */
-    const ruleSet = profile.curriculumPlanId ? await Repository.getRuleSet(profile.curriculumPlanId) : undefined;
-    const passedSet = new Set(profile.passedCourseIds);
-    const nameOf = (id: number) => catalog.courses.get(id)?.name || `مقرر ${id}`;
-    const needsOf = (id: number): string[] => {
-      const rule = ruleSet?.rules.find(row => row.courseId === id);
-      if (!rule?.prereq) return [];
-      const lack = unmetPrereq(rule.prereq, passedSet, profile.passedUnits);
-      return [...lack.all.map(nameOf), ...lack.anyOf.map(group => `(${group.map(nameOf).join(" أو ")})`), ...(lack.unitsShort ? [countOf(lack.unitsShort, AR.unit)] : [])];
-    };
+    const needsOf = await prereqNeeds(profile, catalog);
     const courses = progress.remainingIds.map(id => {
       const info = catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
       return { id, ...info, sections: index.get(id)?.sections || 0, needs: needsOf(id) };
@@ -687,6 +747,24 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const nameOf = (id: number) => courseNames.get(id) || catalog?.courses.get(id)?.name || `مقرر ${id}`;
     const live = run && ticket && ticket.runId === run.runId ? ticket : null;
     const round = live ? term.AdTermStudentPhases?.rounds?.[live.window - 1] : undefined;
+    /* شعبٌ فتحها القسمُ حديثاً لما أراده الطالبُ أو لم يجد له مقعداً — يُقرأ من أصل صفّ الجدول (origin) لا من مخزنٍ جديد. */
+    const wanted = new Set<number>([
+      ...(profile.wishes && profile.wishes.termId === termId ? profile.wishes.courseIds : []),
+      ...(profile.registration && profile.registration.termId === termId ? profile.registration.answers.filter(a => a.state === "stuck").map(a => a.courseId) : []),
+      ...(live ? live.unmet.filter(entry => entry.reason === "full" || entry.reason === "not-offered").map(entry => entry.courseId) : []),
+    ]);
+    const openedAll = await openedMemo.get(String(termId), async () => {
+      const out = new Map<number, string>();
+      const since = Date.now() - OPENED_WINDOW_DAYS * 86_400_000;
+      for (const row of await Repository.getSchedulesByScope({ termId })) {
+        const origin = (row as any).origin as { kind?: string; refId?: string; at?: string } | undefined;
+        if (!origin || (origin.kind !== "radar" && origin.kind !== "intelligence") || !String(origin.refId || "").startsWith("course:")) continue;
+        if (!(Date.parse(String(origin.at || "")) >= since)) continue;
+        out.set(Number(row.AdCourseId), String(row.SCode || ""));
+      }
+      return out;
+    });
+    const opened = [...wanted].filter(id => openedAll.has(id)).slice(0, 4).map(id => ({ courseId: id, name: nameOf(id), section: openedAll.get(id) || "" }));
     /* العددُ نفسُه الذي تعرضه بطاقةُ «هل سجلت؟»: خطّةُ (أ) إن وُجدت، وإلا ما طُرح من متبقّي صحيفته. */
     const reportCourses = profile.AdSectionId > 0 ? ((await reportContext(profile, fingerprint))?.ids.length || 0) : 0;
     const cases = needs.flatMap(need => need.courseIds.map(courseId => {
@@ -700,7 +778,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         hasWishes: Boolean(profile.wishes && profile.wishes.termId === termId),
         ticket: live ? { stale: Date.parse(profile.updatedAt) > Date.parse(run!.ranAt), window: live.window, of: run!.rounds, windowName: round?.name, start: round?.start ? deadlineDateShort(round.start) : "", end: round?.end ? deadlineDateShort(round.end) : "" } : null,
         reportAnswered: Boolean(profile.registration && profile.registration.termId === termId),
-        reportCourses, cases,
+        reportCourses, cases, opened,
       }),
     });
   });
@@ -830,9 +908,26 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         return { offeringId: id, section: offering.code, slots: offering.slots, tight: item.tight };
       }).filter((item): item is NonNullable<typeof item> => Boolean(item)));
     };
+    /* مخزنُ التبديل: كلُّ مقررٍ متبقٍّ له شعبٌ بمواعيد معتمدة — ليجرّب الطالبُ استبدال مقررٍ بآخر على أسبوعه.
+       معاينةٌ شخصية: لا يُكتب منها شيء. ما ينقصه مسبقُه يُعرض مقفلاً بسببه. */
+    const needsOf = await prereqNeeds(profile, catalog);
+    const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
+    const remainingIds = new Set(planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds);
+    const byCourse = new Map<number, Array<{ offeringId: string; section: string; slots: Array<{ day: number; start: number; end: number }> }>>();
+    for (const [key, offering] of context.offerings) {
+      const parts = key.split("|");
+      if (parts.length !== 5) continue;
+      const courseId = Number(parts[3]);
+      if (!remainingIds.has(courseId) || !offering.slots.length || !context.signed.has(`${offering.collegeId}:${offering.sectionId}`)) continue;
+      const list = byCourse.get(courseId) || [];
+      if (list.length < 8) list.push({ offeringId: key, section: offering.code, slots: offering.slots });
+      byCourse.set(courseId, list);
+    }
+    const pool = [...byCourse.entries()].slice(0, 40).map(([courseId, offerings]) => ({ courseId, ...info(courseId), needs: needsOf(courseId), offerings }))
+      .sort((a, b) => a.needs.length - b.needs.length || a.code.localeCompare(b.code, "en"));
     const round = term.AdTermStudentPhases?.rounds?.[ticket.window - 1];
     res.json({
-      ready: true, termName: String(term.AdTermName || ""), ranAt: run.ranAt,
+      ready: true, termName: String(term.AdTermName || ""), ranAt: run.ranAt, pool,
       stale: Date.parse(profile.updatedAt) > Date.parse(run.ranAt),
       window: { n: ticket.window, of: run.rounds, name: round?.name || "", start: round?.start || "", end: round?.end || "" },
       remainingUnits: ticket.remainingUnits, defaulted: ticket.defaulted,

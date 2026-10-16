@@ -8,7 +8,7 @@
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Ticket, Users } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Ticket, TrendingUp, Users } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
@@ -232,12 +232,29 @@ function RadarSchedule({ course, termId, onChanged }: { course: CourseRow & { co
   };
   return (
     <div className="sm-act">
-      {state === "idle" ? <SecondaryButton type="button" onClick={read} data-guide-ignore="يقرأ اقتراح فتح شعبة لهذا المقرر؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> اقتراح الجدول</SecondaryButton> : null}
+      {state === "idle" ? <SecondaryButton type="button" onClick={read} data-guide-ignore="يقرأ اقتراح فتح شعبة لهذا المقرر؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> ماذا لو فتحنا شعبة؟</SecondaryButton> : null}
       {state === "loading" ? <small>يبحث عن وقتٍ خالٍ من التعارض…</small> : null}
       {message ? <small className="sm-act-note">{message}</small> : null}
       {state === "ready" && !proposal ? <small className="sm-act-note">لا يقترح المحرّك شعبةً لهذا المقرر الآن: إمّا أن الطلب لا يُنتج مقاعد ناقصة، أو لا وقتَ خالياً من التعارض. راجع الجدول في ورشة القسم.</small> : null}
       {state === "ready" && proposal ? (
         <div className="sm-act-list">
+          {proposal.simulationImpact ? (() => {
+            type Cap = { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number };
+            const impact = proposal.simulationImpact as { before?: Cap; after?: Cap; delta12: number; delta15: number; conflictsBefore: number; conflictsAfter: number };
+            const total = impact.after ? Object.values(impact.after).reduce((sum, n) => sum + Number(n || 0), 0) : 0;
+            const reach = (cap?: Cap) => (cap ? cap.canReach15 + cap.canReach12To14 : 0);
+            const nf = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
+            if (!total || impact.delta12 <= 0 && impact.delta15 <= 0 && impact.conflictsAfter >= impact.conflictsBefore) return null;
+            return (
+              <div className="sm-impact" aria-label="أثر فتح الشعبة">
+                <b><TrendingUp aria-hidden="true" /> أثر فتحها</b>
+                {([["قبل", reach(impact.before), "was"], ["بعد", reach(impact.after), "now"]] as const).map(([label, value, tone]) => (
+                  <div key={label} className="sm-ba"><span>{label}</span><div className="sm-ba-bar"><i className={tone} style={{ inlineSize: `${Math.min(100, (value / total) * 100)}%` }} /></div><em>{nf(value)}</em></div>
+                ))}
+                <small>طلبةٌ يبلغون 12 وحدة فأكثر من {nf(total)}{impact.conflictsAfter < impact.conflictsBefore ? ` · التعارضات ${nf(impact.conflictsBefore)} ← ${nf(impact.conflictsAfter)}` : ""}</small>
+              </div>
+            );
+          })() : null}
           {(proposal.placements || []).map((slot: any) => slot.instructorId ? (
             <ApplyProposal
               key={slot.index}

@@ -314,6 +314,10 @@ check(studentHomeSource.includes("/api/public/me/request-context") && studentHom
       const wantId = offered.courses.find((c: any) => c.sections > 0).id;
       const wished = await http("PUT", "/api/public/me/wishes", { targetUnits: 15, courseIds: [wantId, shared[0], 424242], constraints: { noMorning: true, freeDay: "yes" } });
       check(wished.status === 200 && wished.json.wishes.courseIds.join() === String(wantId) && wished.json.wishes.constraints.noMorning === true && wished.json.wishes.constraints.freeDay === false, "D6 الرغبات: المنجَزُ والغريب يُسقطان، والقيد بقيمةٍ صارمة", wished.json);
+      const advice = (await http("GET", "/api/public/me/advice")).json;
+      check(advice.ready === true && Array.isArray(advice.picks) && advice.picks.length > 0 && typeof advice.line === "string" && advice.hasRules === false && advice.picks.every((p: any) => typeof p.why === "string" && p.why.length > 0), "D6 مقترحي: مقرراتٌ مطروحة بسببٍ لكلٍّ منها، وتُعلَن غيبةُ القواعد المعتمدة", advice);
+      const wishCount = (await http("GET", "/api/public/me/wishes-count")).json;
+      check(wishCount.ready === true && wishCount.n >= 1 && wishCount.show === false, "D6 «أنت واحدٌ من…»: عددٌ فقط، ولا يظهر في قسمٍ صغير (لا يُستدلّ منه على أحد)", wishCount);
       const requestContext = await http("GET", "/api/public/me/request-context");
       const requestCourse = oldPlan.courses.find((c: any) => !saved.json.passedCourseIds.includes(c.id));
       const otherCollegeCourse = requestContext.json.conflictCourses.find((c: any) => !c.own);
