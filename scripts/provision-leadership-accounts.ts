@@ -1,9 +1,8 @@
 /**
  * ── حسابات القيادة: العمداء والتسجيل ──────────────────────────────────────────
  *
- *   عميد الكلية + العميد المساعد  حسابان لكل كلية من كليات التربية الأساسية الأربع
- *   عميد التسجيل · رئيس التسجيل   كل الكليات (قراءة)
- *   موظف التسجيل                  الكليات الأربع (نطاق يدوي)
+ *   خمسة حسابات، واحد لكل صفة، وكلٌّ منها على كل الكليات والأقسام:
+ *   عميد الكلية · العميد المساعد · عميد التسجيل · رئيس التسجيل · موظف التسجيل
  *
  * تُنشأ موقوفةً وبلا كلمة سر؛ يضعها المدير ويفعّل الحساب من شاشة المستخدمين.
  * آمنٌ لإعادة التشغيل: الحساب القائم لا يُمسّ.
@@ -22,36 +21,47 @@ if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_DATABASE_ID) {
 const APPLY = process.argv.includes("--apply");
 const { initDatabase, Repository } = await import("../src/db/repository");
 const { roleDefinition } = await import("../src/utils/academicRoles");
-const { officialCollegeSitePrefix } = await import("../src/utils/locationCollegePrefixes");
-
-/** رمز الموقع ← لاحقة اسم الدخول. */
-const SITES: Array<[string, string]> = [["012B", "banat"], ["011B", "banin"], ["012J", "jahra"], ["012F", "fahaheel"]];
 
 await initDatabase();
 console.log(APPLY ? "تطبيق (--apply)" : "معاينة فقط — لن يُكتب شيء");
 const colleges = await Repository.getColleges();
 const users = (await Repository.getUsers() as any[]).filter(u => !u.IsDeleted);
-const taken = new Set(users.map(u => String(u.SystemUserLogin).toLowerCase()));
+const byLogin = new Map(users.map(u => [String(u.SystemUserLogin).toLowerCase(), u]));
 
-type Plan = { login: string; name: string; role: any; assigns: Array<{ AdCollegeId: number; AdSectionId: number }> };
-const plans: Plan[] = [];
-const fourIds: number[] = [];
-for (const [site, suffix] of SITES) {
-  const college = colleges.find(c => String(officialCollegeSitePrefix(c.AdCollegeName) || "") === site);
-  if (!college) { console.log(`⚠ كلية ${site} غير مسجلة — تُخطّى`); continue; }
-  const id = Number(college.AdCollegeId); fourIds.push(id);
-  const scope = [{ AdCollegeId: id, AdSectionId: 0 }];
-  plans.push({ login: `dean${suffix}`, name: `عميد ${college.AdCollegeName}`, role: "dean", assigns: scope });
-  plans.push({ login: `vicedean${suffix}`, name: `العميد المساعد للشؤون الأكاديمية — ${college.AdCollegeName}`, role: "viceDean", assigns: scope });
-}
+/* حساب واحد لكل صفة، يغطي كل الكليات والأقسام (صفٌّ بقسم صفر = الكلية كلها). */
 const everyCollege = (colleges as any[]).map(c => ({ AdCollegeId: Number(c.AdCollegeId), AdSectionId: 0 }));
-plans.push({ login: "registrardean", name: "عميد التسجيل", role: "registrarDean", assigns: everyCollege });
-plans.push({ login: "registrarhead", name: "رئيس التسجيل", role: "registrarHead", assigns: everyCollege });
-plans.push({ login: "registrarstaff", name: "موظف التسجيل", role: "registrarStaff", assigns: fourIds.map(id => ({ AdCollegeId: id, AdSectionId: 0 })) });
+type Plan = { login: string; name: string; role: any; assigns: Array<{ AdCollegeId: number; AdSectionId: number }> };
+const plans: Plan[] = [
+  { login: "dean", name: "عميد الكلية", role: "dean", assigns: everyCollege },
+  { login: "vicedean", name: "العميد المساعد للشؤون الأكاديمية", role: "viceDean", assigns: everyCollege },
+  { login: "registrardean", name: "عميد التسجيل", role: "registrarDean", assigns: everyCollege },
+  { login: "registrarhead", name: "رئيس التسجيل", role: "registrarHead", assigns: everyCollege },
+  { login: "registrarstaff", name: "موظف التسجيل", role: "registrarStaff", assigns: everyCollege },
+];
+
+/* الحسابات الثمانية «لكل كلية» التي أنشأها الإصدار الأول من هذا السكربت: لم يُفعَّل
+   منها شيء ولا كلمة سر، فتُزال إن بقيت كما أُنشئت. */
+const retired = ["banat", "banin", "jahra", "fahaheel"].flatMap(x => [`dean${x}`, `vicedean${x}`]);
+for (const login of retired) {
+  const u = byLogin.get(login);
+  if (!u) continue;
+  if (u.IsActive || String(u.SystemUserPass || "").trim()) { console.log(`  ? ${login} فُعّل أو له كلمة سر — لم يُحذف`); continue; }
+  console.log(`  - حذف ${login} (قديم: لكل كلية)`);
+  if (APPLY) await Repository.deleteUser(Number(u.SystemUserId));
+}
 
 let created = 0;
 for (const p of plans) {
-  if (taken.has(p.login.toLowerCase())) { console.log(`  = ${p.login} موجود — لم يُمسّ`); continue; }
+  const existing = byLogin.get(p.login.toLowerCase());
+  if (existing) {
+    const current = await Repository.getUserAssigns(Number(existing.SystemUserId));
+    const have = new Set(current.map(a => `${Number(a.AdCollegeId)}:${Number(a.AdSectionId)}`));
+    const missing = p.assigns.filter(a => !have.has(`${a.AdCollegeId}:${a.AdSectionId}`));
+    if (!missing.length) { console.log(`  = ${p.login} موجود وكامل النطاق`); continue; }
+    console.log(`  ~ ${p.login}: توسيع +${missing.length} كلية`);
+    if (APPLY) await Repository.saveUserAssigns(Number(existing.SystemUserId), [...current.map(a => ({ AdCollegeId: Number(a.AdCollegeId), AdSectionId: Number(a.AdSectionId) })), ...missing]);
+    continue;
+  }
   console.log(`  + ${p.login}  ${p.name}  [${p.role}] — ${p.assigns.length} كلية`);
   if (!APPLY) continue;
   const user = await Repository.createUser({
