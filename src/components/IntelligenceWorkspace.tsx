@@ -108,7 +108,7 @@ import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, t
 import { interruptedImportMessage } from "../utils/importStreamFailure";
 import { pageReviewIssues, pagesAwaitingReview, scanLeftCellUnread, pagesWithUnreadCells, pagesLabel } from "../utils/importPageReview";
 import MiniRing, { ringFromScoreText } from "./MiniRing";
-import ApplyProposal, { postScheduleProposal } from "./ApplyProposal";
+import ApplyProposal, { postScheduleProposal, postWhatIf } from "./ApplyProposal";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -3473,6 +3473,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                   compact
                                   lines={[`شعبة ${slot.sectionCode} لـ«${item.courseName}» · ${slot.dayLabel} ${formatScheduleTimeRange(slot.start, slot.end)} · ${slot.roomCode}${slot.roomHall ? `/${slot.roomHall}` : ""} · ${slot.instructorName}`]}
                                   why={`تخدم ${countOf(item.shortfall, AR.student)} بلا مقعدٍ اليوم.`}
+                                  preview={() => { const source = sourceScope(item); return postWhatIf({ kind: "opening", collegeId: source.collegeId, sectionId: source.sectionId, termId, courseId: item.courseId, placement: slot }); }}
                                   run={async () => {
                                     const source = sourceScope(item);
                                     const result = await postScheduleProposal({
@@ -3555,6 +3556,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             ...(fix.swapWith ? [`${fix.swapWith.courseName} · شعبة ${fix.swapWith.sectionCode}: من ${fix.swapWith.from.dayLabel} ${scheduleClockForDisplay(fix.swapWith.from.start)} إلى ${fix.swapWith.to.dayLabel} ${scheduleClockForDisplay(fix.swapWith.to.start)}`] : []),
                           ]}
                           why={fix.simulationImpact ? `بعد إعادة المحاكاة: ${countOf(fix.simulationImpact.delta15 || 0, AR.student)} إضافي يبلغ 15 وحدة، وتعارضات الخطط من ${fix.simulationImpact.conflictsBefore || 0} إلى ${fix.simulationImpact.conflictsAfter || 0}.` : undefined}
+                          preview={() => postWhatIf({ kind: fix.swapWith ? "swap" : "move", termId, moves: [{ rowId: fix.rowId, to: fix.to }, ...(fix.swapWith ? [{ rowId: fix.swapWith.rowId, to: fix.swapWith.to }] : [])] })}
                           run={async () => {
                             const source = sourceScope(fix);
                             const moves = [fix, ...(fix.swapWith ? [fix.swapWith] : [])].map((move: any, index: number) => ({

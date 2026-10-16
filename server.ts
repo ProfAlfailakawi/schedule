@@ -103,6 +103,7 @@ import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planR
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
 import { seedDemoRadar } from "./src/server/demoRadarSeed";
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
+import { registerInsightRoutes } from "./src/server/insightRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
@@ -1084,6 +1085,8 @@ app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) =
       // records "موعد #418 عُدّل" answers nothing; the question is always
       // "from what, to what".
       changes: (res.locals?.auditChanges as string | undefined) || undefined,
+      /* الصفوفُ التي مسّها الطلب حين لا يحمل مسارُه معرّفها (إضافةٌ، اعتمادُ اقتراح): لتُقرأ «لماذا؟» من الموعد. */
+      rowIds: Array.isArray(res.locals?.auditRowIds) ? (res.locals.auditRowIds as number[]).slice(0, 10) : undefined,
       status: res.statusCode
     }).catch(error => console.error("Audit log write failed:", error));
   });
@@ -7627,6 +7630,7 @@ const createScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
   await recordVersionAfter(addVersion, before => [...before, newSched]);
   await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: newSched });
 
+  res.locals.auditRowIds = [Number(newSched.id)];
   res.status(201).json(newSched);
 };
 app.post("/api/schedules", requirePermission(7), createScheduleHandler);
@@ -8019,6 +8023,7 @@ async function applyProposalCore(req: AuthenticatedRequest, body: any): Promise<
 app.post("/api/schedules/apply-proposal", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const outcome = await applyProposalCore(req, req.body || {});
   if (outcome.audit) res.locals.auditChanges = outcome.audit;
+  res.locals.auditRowIds = ((outcome.json as any)?.applied || []).map((item: any) => Number(item?.row?.id)).filter(Number.isFinite);
   res.status(outcome.status).json(outcome.json);
 });
 
@@ -20282,6 +20287,11 @@ registerSimulationRoutes(app, {
   isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
   isPowerUser: req => isPowerUser(req),
   actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
+});
+registerInsightRoutes(app, {
+  requireAuth,
+  isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+  isPowerUser: req => isPowerUser(req),
 });
 
 /* ── مساري: رابطٌ دائمٌ واحدٌ للجامعة كلها ────────────────────────────

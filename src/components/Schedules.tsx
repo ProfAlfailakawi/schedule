@@ -1,4 +1,5 @@
 import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import RowHistory from "./RowHistory";
 import { TimeField } from "./TimeField";
 import {
   Activity,
@@ -12618,6 +12619,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <span><MapPin aria-hidden="true" /><bdi>{roomDisplay(context.selected) || "—"}</bdi></span>
                   {historicalLocationNeedsReview(context.selected) ? <small>بيانات مكان تاريخية غير موثقة</small> : null}
                 </div>
+                <RowHistory key={context.selected.id} rowId={Number(context.selected.id)} origin={(context.selected as any).origin || null} />
               </div>
             </div>
             <nav className="context-tabs" aria-label="أقسام تفاصيل الموعد">
