@@ -176,6 +176,12 @@ try {
     const review = await call("GET", `/api/plan-review/plan?planId=${legacy?.id}&sectionId=${girlsTech}`);
     check(review.status === 200 && review.body.rules.length >= 25 && review.body.state.status === "review", "H14 مسوّدة قواعد قيد المراجعة (لا اعتماد تلقائي)", review.body && { s: review.status, n: review.body.rules?.length, st: review.body.state?.status });
     check(review.body?.blockers === 0, "H15 لا موانع تمنع اعتماد المسوّدة", review.body?.issues?.filter((x: any) => x.severity === "block").slice(0, 3));
+    const activePlan = plans?.plans?.find((plan: any) => plan.status === "active");
+    const activeMembers = (plans?.memberships || []).filter((row: any) => row.planId === activePlan?.id).length;
+    check(activeMembers === 0, "H15b الصحيفة الجديدة الفعالة لا تتلقى مقررات «القديمة» تلقائياً عند الإنشاء", activeMembers);
+    const artsSection = sectionOf.get(`${girlsCollege.AdCollegeId}:02`)!;
+    const artsOverview = (await call("GET", `/api/curriculum/sections/${artsSection}`)).body;
+    check(!(artsOverview?.memberships || []).filter((row: any) => !String(row.planId).startsWith("virtual:")).length, "H15c مقرر قسمٍ آخر أُضيف للكتالوج ولم يُربط بأي صحيفة", artsOverview?.memberships?.length);
     check(!review.body?.courses?.some((c: any) => c.ownerSectionId !== girlsTech), "H16 مقررات الصحيفة من قسمها وحده");
 
     const again = await call("POST", "/api/plan-review/reference/apply", { referenceId: "old", sectionIds, dryRun: false });

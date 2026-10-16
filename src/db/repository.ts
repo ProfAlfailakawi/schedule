@@ -3249,7 +3249,9 @@ export const Repository = {
     name: string,
     credit: number,
     hours: number,
-    maxStudent: number
+    maxStudent: number,
+    /** false: كتالوجٌ فحسب — لا يُربط بالصحيفة الفعالة (التطبيق المرجعي يربط ما يشاء صراحةً). */
+    attachToActive = true
   ): Promise<AdCourse> => {
     /* اسمٌ منسوخٌ من PDF يُحفظ حروفاً عادية لا «أشكال عرض» — لكل طريق كتابة. */
     name = normalizeArabicText(name);
@@ -3292,7 +3294,7 @@ export const Repository = {
         transaction.set(courseRef, newCourse);
       });
       invalidateScheduleRelationCache();
-      await Repository.attachCourseToActiveCurriculum(newCourse);
+      if (attachToActive) await Repository.attachCourseToActiveCurriculum(newCourse);
       await markRegistrationRunsStale();
       return newCourse;
     }
@@ -3312,7 +3314,7 @@ export const Repository = {
     };
     db.courses.push(newCourse);
     saveDatabase();
-    await Repository.attachCourseToActiveCurriculum(newCourse);
+    if (attachToActive) await Repository.attachCourseToActiveCurriculum(newCourse);
     await markRegistrationRunsStale();
     return newCourse;
   },

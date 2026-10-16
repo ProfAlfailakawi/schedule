@@ -397,7 +397,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         const shortStyle = ownerCourses.length > 0 && ownerCourses.filter(course => /^\d{1,3}$/.test(referenceCodeKey(course.CourseCode))).length * 2 > ownerCourses.length;
         const code = shortStyle ? String(Number(create.code.slice(-3))) : create.code;
         try {
-          const made = await Repository.createCourse(cid, create.sectionId, code, create.name, create.credit, create.hours, 0);
+          const made = await Repository.createCourse(cid, create.sectionId, code, create.name, create.credit, create.hours, 0, false);
           createdIds.set(create.code, Number(made.AdCourseId));
         } catch (error) {
           if (error instanceof DuplicateResourceError) report.notes.push(`«${create.name}»: الرمز ${code} مستعمل في القسم؛ لم يُنشأ.`);
