@@ -1,0 +1,69 @@
+name: Deploy SCHEDULE
+
+on:
+  workflow_run:
+    workflows: [Comprehensive CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: schedule-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Verify and deploy to schedule-863eb
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success')
+    steps:
+      - name: Check out SCHEDULE
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Authenticate to Google Cloud with workload identity federation
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: schedule-863eb
+          workload_identity_provider: projects/929900395059/locations/global/workloadIdentityPools/github/providers/schedule
+          service_account: schedule-deployer@schedule-863eb.iam.gserviceaccount.com
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and publish one immutable image
+        env:
+          IMAGE: europe-west1-docker.pkg.dev/schedule-863eb/schedule/schedule:${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+          docker build --tag "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Deploy the same release to London and Belgium
+        env:
+          IMAGE: europe-west1-docker.pkg.dev/schedule-863eb/schedule/schedule:${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          for region in europe-west2 europe-west1; do
+            gcloud run deploy schedule \
+              --project=schedule-863eb \
+              --region="$region" \
+              --platform=managed \
+              --port=3000 \
+              --image="$IMAGE" \
+              --service-account=schedule-runtime@schedule-863eb.iam.gserviceaccount.com \
+              --cpu=8 \
+              --memory=4Gi \
+              --max=13 \
+              --timeout=1800 \
+              --allow-unauthenticated \
+              --set-env-vars='DATA_MODE=firestore,AUTO_IMPORT_LEGACY_DATA=false,FIREBASE_PROJECT_ID=gen-lang-client-0379571946,FIREBASE_DATABASE_ID=ai-studio-schedule-337bbbf5-1098-44cb-aabf-95536daf9106,GEMINI_SCHEDULE_MODEL=gemini-3.6-flash' \
+              --set-secrets='GEMINI_API_KEY=GEMINI_API_KEY:latest' \
+              --quiet
+          done

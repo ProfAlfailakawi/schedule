@@ -793,13 +793,18 @@ export async function initDatabase() {
       const databaseId = String(process.env.FIREBASE_DATABASE_ID || "(default)");
       const usersProbe = await firestoreDb.collection("users").limit(1).get();
       if (usersProbe.empty) {
-        console.warn(`Firestore target ${projectId}/${databaseId} has no users data. Allowing initialization to proceed to seed the database.`);
+        console.warn(`Firestore target ${projectId}/${databaseId} has no users data.`);
+        if (isCloudRunRuntime() && process.env.AUTO_IMPORT_LEGACY_DATA === "false") {
+          throw new Error(`Refusing to start against an empty Firestore database ${projectId}/${databaseId}; implicit production bootstrap is disabled.`);
+        }
       } else {
         console.log(`Firebase/Firestore verified successfully: project=${projectId}, database=${databaseId}`);
       }
 
-      // Allow auto-import even in production if the database is explicitly empty
-      if (process.env.AUTO_IMPORT_LEGACY_DATA !== "false" || usersProbe.empty) {
+      // A production deployment with imports disabled must never seed a database
+      // simply because it is empty: an incorrect project/database setting would
+      // otherwise look healthy while writing a packaged legacy snapshot there.
+      if (process.env.AUTO_IMPORT_LEGACY_DATA !== "false") {
         await seedFirestoreFromLocalSnapshotIfNeeded(firestoreDb);
       }
       return;

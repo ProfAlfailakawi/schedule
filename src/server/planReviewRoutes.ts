@@ -36,7 +36,7 @@ export interface PlanReviewDeps {
 }
 
 type Plan = { id: string; AdCollegeId: number; AdSectionId: number; name: string; status: string };
-interface CourseInfo { id: number; code: string; name: string; credit: number; collegeId: number; sectionId: number }
+interface CourseInfo { id: number; code: string; name: string; credit: number; hours: number; capacity: number; collegeId: number; sectionId: number }
 interface Context {
   plan: Plan;
   courseIds: number[];
@@ -70,9 +70,12 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
   /** من يرى الصحيفة: صاحبُ نطاقها بصفةٍ تفتح الشاشة، أو إدارةُ النظام. */
   const canSee = (req: any, plan: Plan) =>
     deps.isPowerUser(req) || (READERS.has(roleId(req)) && deps.isScopeAllowed(req, plan.AdCollegeId, plan.AdSectionId));
-  /** من يعدّل: من يبني الجدول (لا قارئٌ صِرف) في نطاقها. */
+  /** رئيس القسم يصحح صحيفته في نطاقه فقط؛ لا يحصل بذلك على صلاحية تعديل الجدول. */
   const canEdit = (req: any, plan: Plan) =>
-    deps.isPowerUser(req) || (canSee(req, plan) && !roleDefinition(req.user?.Role).readOnly && deps.hasPermission(req, WORKSPACE_FORM));
+    deps.isPowerUser(req) || (canSee(req, plan) && (
+      (roleId(req) === "departmentHead" && plan.status !== "archived")
+      || (!roleDefinition(req.user?.Role).readOnly && deps.hasPermission(req, WORKSPACE_FORM))
+    ));
   /** من يعتمد: رئيسُ لجنة الجدول وحده (وإدارةُ النظام). */
   const canApprove = (req: any, plan: Plan) => deps.isPowerUser(req) || (roleId(req) === "committeeChair" && canEdit(req, plan));
   const ownsCourse = (req: any, course: CourseInfo) => deps.isPowerUser(req) || deps.isScopeAllowed(req, course.collegeId, course.sectionId);
@@ -88,7 +91,8 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     for (const course of courses as AdCourse[]) {
       catalog.set(Number(course.AdCourseId), {
         id: Number(course.AdCourseId), code: String(course.CourseCode || ""), name: String(course.CourseName || ""),
-        credit: Number(course.CourseCredit) || 0, collegeId: Number(course.AdCollegeId), sectionId: Number(course.AdSectionId),
+        credit: Number(course.CourseCredit) || 0, hours: Number(course.CourseHours) || 0,
+        capacity: Number(course.MaxStudent) || 0, collegeId: Number(course.AdCollegeId), sectionId: Number(course.AdSectionId),
       });
     }
     return {
@@ -122,8 +126,10 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     return {
       plan: { id: ctx.plan.id, name: ctx.plan.name, status: ctx.plan.status, sectionId: ctx.plan.AdSectionId, sectionName: ctx.sectionName },
       courses: ctx.courseIds.map(id => {
-        const course = ctx.catalog.get(id) || { id, code: "", name: `مقرر ${id}`, credit: 0, collegeId: 0, sectionId: 0 };
-        return { id, code: course.code, name: course.name, credit: course.credit, ownerSectionId: course.sectionId, ownerSectionName: sections.get(course.sectionId) || "", owned: ownsCourse(req, course) };
+        const course = ctx.catalog.get(id) || { id, code: "", name: `مقرر ${id}`, credit: 0, hours: 0, capacity: 0, collegeId: 0, sectionId: 0 };
+        return { id, code: course.code, name: course.name, credit: course.credit, hours: course.hours, capacity: course.capacity,
+          collegeId: course.collegeId, sectionId: course.sectionId, ownerSectionId: course.sectionId,
+          ownerSectionName: sections.get(course.sectionId) || "", owned: ownsCourse(req, course) };
       }),
       /* مقرراتٌ يشير إليها مسبقٌ أو مقرن ولا تقع في الصحيفة: تُعرض أسماؤها لا غير. */
       referenced: [...new Set(shown.rules.flatMap(rule => [...(rule.prereq?.all || []), ...(rule.prereq?.anyOf || []).flat(), ...(rule.coreq || [])]))]
@@ -219,6 +225,26 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     if (!ctx) return;
     res.setHeader("Cache-Control", "no-store");
     res.json(await view(req, ctx));
+  });
+
+  /** محرر بيانات المقرر داخل الصحيفة: لا يغيّر الهوية أو الملكية، ويُبقي الكتابة داخل القسم والصحيفة. */
+  app.put("/api/plan-review/course-details", deps.requireAuth, async (req: Request, res: Response) => {
+    const ctx = await need(req, res, req.body?.planId, req.body?.sectionId);
+    if (!ctx) return;
+    if (!canEdit(req, ctx.plan)) { fail(res, 403, "لا تملك تعديل هذه الصحيفة."); return; }
+    const allowedFields = new Set(["planId", "sectionId", "courseId", "credit", "hours", "capacity"]);
+    if (Object.keys(req.body || {}).some(key => !allowedFields.has(key))) { fail(res, 400, "هذا المحرر يغيّر الوحدات والساعات والسعة فقط."); return; }
+    const courseId = Number(req.body?.courseId);
+    const course = ctx.catalog.get(courseId);
+    if (!course || !ctx.courseIds.includes(courseId)) { fail(res, 400, "هذا المقرر ليس في الصحيفة."); return; }
+    if (!ownsCourse(req, course)) { fail(res, 403, "لا يمكن تعديل مقرر تابع لقسم آخر.", { code: "foreign-course" }); return; }
+    const credit = Number(req.body?.credit), hours = Number(req.body?.hours), capacity = Number(req.body?.capacity);
+    if (!Number.isInteger(credit) || credit < 0 || credit > 20 || !Number.isFinite(hours) || hours < 0 || hours > 40 || Math.round(hours * 2) !== hours * 2 || !Number.isInteger(capacity) || capacity < 0 || capacity > 200) {
+      fail(res, 400, "تحقق من الوحدات والساعات والسعة."); return;
+    }
+    const updated = await Repository.updateCourse(course.id, course.collegeId, course.sectionId, course.code, course.name, credit, hours, capacity);
+    res.locals.auditChanges = `تصحيح بيانات مقرر «${course.name}» في صحيفة «${ctx.plan.name}»`;
+    res.json({ course: { id: updated.AdCourseId, credit: updated.CourseCredit, hours: updated.CourseHours, capacity: updated.MaxStudent } });
   });
 
   /** يكتب في المسوّدة: تُنشأ من المعتمدة إن لم تكن، وتعود «قيد المراجعة» بكل تعديل. */

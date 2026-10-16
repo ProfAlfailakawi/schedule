@@ -1,67 +1,94 @@
+substitutions:
+  # SCHEDULE is deployed to its own Google Cloud project. Billing may be shared
+  # across projects; project IDs and Firestore databases must remain isolated.
+  _DEPLOY_PROJECT_ID: 'schedule-863eb'
+  _RUNTIME_SERVICE_ACCOUNT: 'schedule-runtime@schedule-863eb.iam.gserviceaccount.com'
+  _FIRESTORE_PROJECT_ID: 'gen-lang-client-0379571946'
+  _FIRESTORE_DATABASE_ID: 'ai-studio-schedule-337bbbf5-1098-44cb-aabf-95536daf9106'
+
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
+      - 'europe-west1-docker.pkg.dev/${_DEPLOY_PROJECT_ID}/schedule/schedule:$COMMIT_SHA'
       - '.'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
+      - 'europe-west1-docker.pkg.dev/${_DEPLOY_PROJECT_ID}/schedule/schedule:$COMMIT_SHA'
 
-  # ── لندن: الوجهة الأصلية، تبقى كما هي ─────────────────────────────────────
-  # This is the region the load balancer has always pointed at and the one the
-  # Studio trigger was created for. It deploys first and unchanged, so a failure
-  # in the step below can never leave production without a fresh revision.
+  # London is the primary run.app service; Belgium serves the custom domain.
+  # Both regions use the exact same image, runtime identity and Firestore target.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     entrypoint: 'gcloud'
     args:
       - 'run'
       - 'deploy'
       - 'schedule'
+      - '--project'
+      - '${_DEPLOY_PROJECT_ID}'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
+      - 'europe-west1-docker.pkg.dev/${_DEPLOY_PROJECT_ID}/schedule/schedule:$COMMIT_SHA'
       - '--region'
       - 'europe-west2'
       - '--platform'
       - 'managed'
-      # قراءة مسح كامل تستغرق 3–5 دقائق؛ مهلة 300 ثانية كانت تقطع البث في
-      # منتصف القراءة فيظهر «انقطع الاتصال بالخادم» بعد دقائق من الانتظار.
+      - '--allow-unauthenticated'
+      - '--port'
+      - '3000'
+      - '--service-account'
+      - '${_RUNTIME_SERVICE_ACCOUNT}'
+      - '--cpu'
+      - '8'
+      - '--memory'
+      - '4Gi'
+      - '--max'
+      - '13'
       - '--timeout'
       - '1800'
+      - '--set-env-vars'
+      - 'DATA_MODE=firestore,AUTO_IMPORT_LEGACY_DATA=false,FIREBASE_PROJECT_ID=${_FIRESTORE_PROJECT_ID},FIREBASE_DATABASE_ID=${_FIRESTORE_DATABASE_ID},GEMINI_SCHEDULE_MODEL=gemini-3.6-flash'
+      - '--set-secrets'
+      - 'GEMINI_API_KEY=GEMINI_API_KEY:latest'
       - '--quiet'
 
-  # ── بلجيكا: الوجهة المجانية للنطاق ────────────────────────────────────────
-  #
-  # schedule.dr-alfailakawi.com maps DIRECTLY to this service through a Cloud
-  # Run domain mapping, which is free. The global load balancer it replaces
-  # billed ~$18/month whether or not anyone visited, and it never routed to
-  # Doha anyway (its only backend was London). Domain mappings are not offered
-  # in europe-west2 or me-central1; europe-west1 is the nearest region that has
-  # them, and Firestore sits in London, a few milliseconds away.
-  #
-  # Same image, same commit, same build as London above, so the two regions can
-  # never serve different code. London stays reachable on its run.app address.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     entrypoint: 'gcloud'
     args:
       - 'run'
       - 'deploy'
       - 'schedule'
+      - '--project'
+      - '${_DEPLOY_PROJECT_ID}'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
+      - 'europe-west1-docker.pkg.dev/${_DEPLOY_PROJECT_ID}/schedule/schedule:$COMMIT_SHA'
       - '--region'
       - 'europe-west1'
       - '--platform'
       - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '3000'
+      - '--service-account'
+      - '${_RUNTIME_SERVICE_ACCOUNT}'
+      - '--cpu'
+      - '8'
+      - '--memory'
+      - '4Gi'
+      - '--max'
+      - '13'
       - '--timeout'
       - '1800'
+      - '--set-env-vars'
+      - 'DATA_MODE=firestore,AUTO_IMPORT_LEGACY_DATA=false,FIREBASE_PROJECT_ID=${_FIRESTORE_PROJECT_ID},FIREBASE_DATABASE_ID=${_FIRESTORE_DATABASE_ID},GEMINI_SCHEDULE_MODEL=gemini-3.6-flash'
+      - '--set-secrets'
+      - 'GEMINI_API_KEY=GEMINI_API_KEY:latest'
       - '--quiet'
 
 images:
-  - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
+  - 'europe-west1-docker.pkg.dev/${_DEPLOY_PROJECT_ID}/schedule/schedule:$COMMIT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY

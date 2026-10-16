@@ -151,7 +151,8 @@ check('X-Content-Type-Options' in server and 'X-Frame-Options' in server,'securi
 check('allow read, write: if false' in txt('firestore.rules'),'direct client Firestore access denied')
 
 # 6) Firestore bootstrap + Cloud Run deployment hardening.
-check('process.env.AUTO_IMPORT_LEGACY_DATA !== "false"' in repo and 'await seedFirestoreFromLocalSnapshotIfNeeded(firestoreDb)' in repo,'Firestore bootstrap waits for exact legacy seed')
+check('if (process.env.AUTO_IMPORT_LEGACY_DATA !== "false")' in repo and 'await seedFirestoreFromLocalSnapshotIfNeeded(firestoreDb)' in repo,'Firestore bootstrap runs only when explicitly enabled')
+check('Refusing to start against an empty Firestore database' in repo and 'isCloudRunRuntime() && process.env.AUTO_IMPORT_LEGACY_DATA === "false"' in repo,'Cloud Run refuses an empty database instead of silently seeding the wrong target')
 check('_meta/legacyImport' in repo and '.count().get()' in repo,'Firestore bootstrap verifies counts and writes marker')
 check('db.json.gz' in snapshot and 'gunzipSync' in snapshot,'compressed legacy snapshot supported')
 # تغيّر العقدُ هنا عمداً: صارت هناك خدمةُ تجربةٍ على Cloud Run تعمل بصناديق

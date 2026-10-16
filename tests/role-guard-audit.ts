@@ -105,6 +105,13 @@ for (const role of ["dean", "viceDean", "registrarDean"] as AcademicRole[]) {
 check(isApprovalWritePath("/approvals") && isApprovalWritePath("/approvals/x/sign"), "مسار الاعتماد يُعرف بجذره وفروعه");
 check(!isApprovalWritePath("/approvals-export"), "بادئةٌ مشابهة لا تُفتح: لا يكفي أن يبدأ المسار بالحروف نفسها");
 check(!isApprovalWritePath("/schedules"), "مسار الجداول ليس من الدورة");
+check(roleWriteDecision({ method: "PUT", path: "/plan-review/course-details", authenticated: true, powerUser: false, role: "departmentHead" }).allowed,
+  "رئيس القسم يمرّ إلى محرر بيانات الصحيفة المحدود فقط");
+check(!roleWriteDecision({ method: "PUT", path: "/courses/101", authenticated: true, powerUser: false, role: "departmentHead" }).allowed
+  && !roleWriteDecision({ method: "PUT", path: "/schedules/101", authenticated: true, powerUser: false, role: "departmentHead" }).allowed,
+  "صلاحية الصحيفة لا تفتح شاشة المقررات العامة ولا تعديل الجدول");
+check(!roleWriteDecision({ method: "POST", path: "/plan-review/approve", authenticated: true, powerUser: false, role: "departmentHead" }).allowed,
+  "رئيس القسم لا يعتمد الصحيفة عبر الباب المحدود");
 
 check(roleWriteDecision({ method: "POST", path: "/auth/logout", authenticated: true, powerUser: false, role: "dean" }).allowed, "الخروج مفتوحٌ لكل صفة");
 check(roleWriteDecision({ method: "POST", path: "/auth/heartbeat", authenticated: true, powerUser: false, role: "dean" }).allowed, "النبض ليس تعديلاً");

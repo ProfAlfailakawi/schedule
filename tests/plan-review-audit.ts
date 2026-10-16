@@ -262,11 +262,19 @@ const ctx = (plan: number[]) => ({
     check(v.courses.length === 5 && v.courses.find((c: any) => c.id === 201).owned === false && v.courses.find((c: any) => c.id === 101).owned === true, "R5 مقرراتُ القسم مملوكة ومقرر القسم الآخر مقفول");
     check(v.can.edit === true && v.can.approve === true && v.state.status === "review" && v.blockers === 0, "R5 رئيس اللجنة يعدّل ويعتمد", v.state);
     const hv = (await call("head11", "GET", `/api/plan-review/plan?${Q}`)).json;
-    check(hv.can.edit === false && hv.can.approve === false, "R5 رئيس القسم: قراءةٌ فقط");
+    check(hv.can.edit === true && hv.can.approve === false, "R5 رئيس القسم يصحح صحيفة قسمه ولا يعتمدها");
+
+    const ownDetails = await call("head11", "PUT", "/api/plan-review/course-details", { planId: "p11", sectionId: 11, courseId: 101, credit: 4, hours: 4, capacity: 35 });
+    check(ownDetails.status === 200 && (await Repository.getCourseById(101))?.CourseCredit === 4 && (await Repository.getCourseById(101))?.MaxStudent === 35,
+      "R5 رئيس القسم يعدّل الوحدات والساعات والسعة من نافذة الصحيفة السريعة");
+    const foreignDetails = await call("head11", "PUT", "/api/plan-review/course-details", { planId: "p11", sectionId: 11, courseId: 201, credit: 4, hours: 4, capacity: 35 });
+    check(foreignDetails.status === 403 && (await Repository.getCourseById(201))?.CourseCredit === 3, "R5 محرر القسم لا يغيّر مقرر قسم آخر");
+    const identityTamper = await call("head11", "PUT", "/api/plan-review/course-details", { planId: "p11", sectionId: 11, courseId: 101, credit: 4, hours: 4, capacity: 35, CourseCode: "OWNED" });
+    check(identityTamper.status === 400 && (await Repository.getCourseById(101))?.CourseCode === "ISL101", "R5 المحرر السريع يرفض تغيير رمز المقرر أو هويته");
 
     /* التعديل: قواعدُ مقرراتِ القسم وحدها */
     const rule = (courseId: number, extra: any = {}) => ({ planId: "p11", sectionId: 11, rule: { courseId, ...extra } });
-    check((await call("head11", "PUT", "/api/plan-review/rule", rule(101, { level: 2 }))).status === 403, "R5 رئيس القسم لا يكتب");
+    check((await call("head11", "PUT", "/api/plan-review/rule", rule(101, { level: 2 }))).status === 200, "R5 رئيس القسم يعدّل قواعد مقررات قسمه قبل الاعتماد");
     check((await call("chair12", "PUT", "/api/plan-review/rule", rule(101, { level: 2 }))).status === 403, "R5 رئيس لجنةٍ في قسمٍ آخر لا يكتب");
     const foreign = await call("chair11", "PUT", "/api/plan-review/rule", rule(201, { level: 1 }));
     check(foreign.status === 403 && foreign.json.code === "foreign-course", "R5 مقررُ قسمٍ آخر لا يُعدَّل من قسمنا", foreign.json);
@@ -287,7 +295,7 @@ const ctx = (plan: number[]) => ({
     const grp = await call("chair11", "PUT", "/api/plan-review/group", { planId: "p11", sectionId: 11, group: { id: "g-e", name: "اختياري جامعة", minCourses: 2, minUnits: 6, courseIds: [104, 201] } });
     check(grp.status === 200 && grp.json.groups.some((g: any) => g.id === "g-e" && g.courseIds.join() === "104,201"), "R5 مجموعةٌ اختيارية تضمّ مقرر قسمٍ آخر (يُضاف ولا يُعدَّل)", grp.json.groups);
     check(grp.json.groups.length === 2 && !grp.json.groups.find((g: any) => g.id !== "g-e").courseIds.includes(104), "R5 المقرر في مجموعةٍ واحدة: ينتقل ولا يتكرّر");
-    check((await call("head11", "PUT", "/api/plan-review/group", { planId: "p11", sectionId: 11, group: { id: "x", name: "س" } })).status === 403, "R5 رئيس القسم لا يكتب المجموعات");
+    check((await call("head11", "PUT", "/api/plan-review/group", { planId: "p11", sectionId: 11, group: { id: "g1", name: "اختياري القسم", minCourses: 1, minUnits: 3, courseIds: [101, 102] } })).status === 200, "R5 رئيس القسم يعدّل مجموعات صحيفة قسمه قبل الاعتماد");
 
     const emptied = await call("chair11", "POST", "/api/plan-review/group/delete", { planId: "p11", sectionId: 11, groupId: "g1" });
     check(emptied.status === 200 && emptied.json.groups.length === 1, "R5 مجموعةٌ فرغت تُحذف قبل الاعتماد");

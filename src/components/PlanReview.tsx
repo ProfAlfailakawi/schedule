@@ -24,7 +24,7 @@ interface Status {
   canApprove: boolean;
   canImport?: boolean;
 }
-interface CourseRow { id: number; code: string; name: string; credit: number; ownerSectionName: string; owned: boolean }
+interface CourseRow { id: number; code: string; name: string; credit: number; hours: number; capacity: number; collegeId: number; sectionId: number; ownerSectionName: string; owned: boolean }
 interface View {
   plan: { id: string; name: string; sectionId: number; sectionName: string };
   courses: CourseRow[];
@@ -172,6 +172,18 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     finally { setBusy(false); }
   };
 
+  const saveCourseDetails = async (course: CourseRow, values: { credit: number; hours: number; capacity: number }) => {
+    setBusy(true); setError("");
+    try {
+      await request("/api/plan-review/course-details", { method: "PUT", body: JSON.stringify({ planId, sectionId, courseId: course.id, ...values }) });
+      const next: View = await request(`/api/plan-review/plan?planId=${encodeURIComponent(planId)}&sectionId=${sectionId}`);
+      setView(next);
+      await loadStatus();
+      window.dispatchEvent(new Event("schedule:plan-review-updated"));
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
   const openCatalogCorrection = (action: { kind: "edit" | "create"; sectionId: number; collegeId: number; courseId?: number; code: string; name: string; credit: number; hours: number }) => {
     sessionStorage.setItem("schedule-reference-course-action", JSON.stringify(action));
     onNavigate?.("courses");
@@ -289,6 +301,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
               </div>
 
               {sel ? <CourseEditor key={sel.id} course={sel} rule={ruleOf(sel.id)} view={view} nameOf={nameOf} busy={busy} onClose={() => setSelected(0)}
+                onSaveCourse={values => saveCourseDetails(sel, values)}
                 onSave={rule => act("/api/plan-review/rule", "PUT", { rule })} /> : null}
 
               <GroupsPanel view={view} nameOf={nameOf} busy={busy}
@@ -302,8 +315,9 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   );
 }
 
-function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave }: {
-  key?: React.Key; course: CourseRow; rule?: CurriculumCourseRule; view: View; nameOf: (id: number) => string; busy: boolean; onClose: () => void; onSave: (rule: CurriculumCourseRule) => void;
+function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave, onSaveCourse }: {
+  key?: React.Key; course: CourseRow; rule?: CurriculumCourseRule; view: View; nameOf: (id: number) => string; busy: boolean; onClose: () => void;
+  onSave: (rule: CurriculumCourseRule) => void; onSaveCourse: (values: { credit: number; hours: number; capacity: number }) => void;
 }) {
   const editable = view.can.edit && course.owned;
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -314,6 +328,9 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave }: {
   const [anyOf, setAnyOf] = useState<number[][]>(rule?.prereq?.anyOf || []);
   const [minUnits, setMinUnits] = useState(rule?.prereq?.minUnits || 0);
   const [coreq, setCoreq] = useState<number[]>(rule?.coreq || []);
+  const [credit, setCredit] = useState(course.credit);
+  const [hours, setHours] = useState(course.hours);
+  const [capacity, setCapacity] = useState(course.capacity);
   const options = view.courses.filter(c => c.id !== course.id).sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }));
   useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
@@ -350,6 +367,21 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave }: {
         <button type="button" aria-label="إغلاق" onClick={onClose} data-guide-ignore="إغلاقُ محرّر المقرر داخل شاشةٍ مسجّلة في المرشد باسم page.planReview"><X size={16} /></button>
       </header>
       {!course.owned ? <Notice type="info" inline><Lock size={14} /> هذا المقرر من {course.ownerSectionName || "قسمٍ آخر"} — يعدّل قواعده قسمُه.</Notice> : null}
+      <section className="pr-course-facts" aria-label="بيانات المقرر الأكاديمية">
+        <p className="pr-sum">بيانات المقرر · تظهر في الصحيفة القديمة والجديدة إذا كان السجل مشتركًا</p>
+        <div className="pr-grid">
+          <label>الوحدات
+            <input type="number" min={0} max={20} step={1} value={credit} disabled={!editable} onChange={e => setCredit(Number(e.target.value) || 0)} />
+          </label>
+          <label>الساعات
+            <input type="number" min={0} max={40} step="0.5" value={hours} disabled={!editable} onChange={e => setHours(Number(e.target.value) || 0)} />
+          </label>
+          <label>السعة
+            <input type="number" min={0} max={200} step={1} value={capacity} disabled={!editable} onChange={e => setCapacity(Number(e.target.value) || 0)} />
+          </label>
+        </div>
+        {editable ? <footer><PrimaryButton disabled={busy || (credit === course.credit && hours === course.hours && capacity === course.capacity)} onClick={() => onSaveCourse({ credit, hours, capacity })} data-guide-ignore="حفظ بيانات المقرر من محرر الصحيفة السريع">حفظ بيانات المقرر</PrimaryButton></footer> : null}
+      </section>
       {rule?.prereq ? <p className="pr-sum">{describePrereq(rule.prereq, nameOf)}</p> : null}
       <div className="pr-grid">
         <label>المستوى

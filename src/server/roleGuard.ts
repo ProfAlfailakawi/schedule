@@ -68,6 +68,11 @@ export function isApprovalWritePath(pathname: string): boolean {
   return APPROVAL_WRITE_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+/** صلاحية ضيقة لرئيس القسم: تصحيح مسوّدة صحيفته من شاشة المراجعة فقط. */
+const DEPARTMENT_PLAN_REVIEW_WRITES = new Set([
+  "/plan-review/rule", "/plan-review/group", "/plan-review/group/delete", "/plan-review/course-details",
+]);
+
 /**
  * الترتيب مقصود، وكل سطرٍ فيه يسبق ما بعده لسبب:
  *
@@ -83,6 +88,7 @@ export function roleWriteDecision(input: RoleGuardInput): RoleGuardVerdict {
   if (SESSION_WRITE_PATHS.has(input.path)) return { allowed: true, reason: "session" };
   if (input.powerUser) return { allowed: true, reason: "power" };
   if (!isReadOnlyRole(input.role)) return { allowed: true, reason: "writer" };
+  if (roleDefinition(input.role).id === "departmentHead" && DEPARTMENT_PLAN_REVIEW_WRITES.has(input.path)) return { allowed: true, reason: "approval" };
   /* المرشد يقرأ كشف التسجيل ولا يشارك في دورة الاعتماد: لا يمرّ من البابِ الضيّق. */
   if (isApprovalWritePath(input.path) && !isViewerOnlyRole(input.role) && !isAdvisorRole(input.role)) return { allowed: true, reason: "approval" };
   return { allowed: false, reason: "read-only-role" };

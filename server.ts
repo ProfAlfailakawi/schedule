@@ -3801,14 +3801,15 @@ app.put("/api/courses/:id", requirePermission(6), async (req: AuthenticatedReque
   if (!currentCourse) { res.status(404).json({ error: "المقرر الدراسي غير موجود" }); return; }
   /* الاسم يُقارن كما سيُحفظ: «أشكال العرض» وحروفها العادية اسمٌ واحد. */
   const identityChanged=currentCourse.CourseCode!==CourseCode||normalizeArabicText(currentCourse.CourseName)!==normalizeArabicText(CourseName);
-  const academicShapeChanged=Number(currentCourse.CourseCredit)!==Number(CourseCredit)||Number(currentCourse.CourseHours)!==Number(CourseHours);
   const [curriculumPlans,curriculumMemberships]=await Promise.all([
     Repository.getCurriculumPlans(Number(currentCourse.AdSectionId)),
     Repository.getCurriculumPlanCourses(Number(currentCourse.AdSectionId)),
   ]);
   const memberPlanIds=new Set(curriculumMemberships.filter(row=>Number(row.AdCourseId)===id).map(row=>row.planId));
   const belongsToFrozenCurriculum=curriculumPlans.some(plan=>memberPlanIds.has(plan.id)&&plan.status!=="active");
-  if (belongsToFrozenCurriculum&&(identityChanged||academicShapeChanged)) {
+  /* تصحيح الوحدات والساعات والسعة مسموحٌ لمالك المقرر حتى في الصحيفة الانتقالية؛
+     الذي يبقى مجمّداً هو الرمز والاسم، لحماية الروابط والسجل التدريسي التاريخي. */
+  if (belongsToFrozenCurriculum&&identityChanged) {
     res.status(409).json({error:"هذا المقرر جزء من صحيفة انتقالية أو مؤرشفة، لذلك جُمّدت هويته الأكاديمية. أنشئ المقرر بصيغته الجديدة ثم اربطه من شاشة الصحائف الأكاديمية."});return;
   }
   if (identityChanged && await Repository.hasSchedulesForCourse(id)) {

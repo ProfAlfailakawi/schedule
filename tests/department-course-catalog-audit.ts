@@ -5,6 +5,7 @@ const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
 const reviewRoutes = readFileSync(new URL("../src/server/planReviewRoutes.ts", import.meta.url), "utf8");
 const referenceView = readFileSync(new URL("../src/components/CurriculumReferenceReview.tsx", import.meta.url), "utf8");
 const coursesView = readFileSync(new URL("../src/components/Courses.tsx", import.meta.url), "utf8");
+const planReviewView = readFileSync(new URL("../src/components/PlanReview.tsx", import.meta.url), "utf8");
 const check = (ok: boolean, label: string) => {
   if (!ok) throw new Error(`✗ ${label}`);
   console.log(`✓ ${label}`);
@@ -31,3 +32,11 @@ check(/collegeName/.test(referenceView) && /body\.sections/.test(referenceView)
 check(/schedule-reference-course-action/.test(coursesView)
   && /setCapacity\(""\)/.test(coursesView),
   "التحويل إلى نموذج المقرر يملأ المصدر ويترك السعة الفعلية للقسم ليحددها");
+check(/onSaveCourse=\{values => saveCourseDetails\(sel, values\)\}/.test(planReviewView)
+  && /courseId: course\.id, \.\.\.values/.test(planReviewView)
+  && /app\.put\("\/api\/plan-review\/course-details"/.test(reviewRoutes)
+  && /حفظ بيانات المقرر/.test(planReviewView),
+  "النقر على بطاقة الصحيفة يفتح محررها السريع لحفظ الوحدات والساعات والسعة دون مغادرة الشاشة");
+check(/تصحيح الوحدات والساعات والسعة مسموحٌ لمالك المقرر حتى في الصحيفة الانتقالية/.test(server)
+  && /belongsToFrozenCurriculum&&identityChanged/.test(server),
+  "تصحيح بيانات المقرر القديمة مسموح مع استمرار تجميد الرمز والاسم التاريخيين");
