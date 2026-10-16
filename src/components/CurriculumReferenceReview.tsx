@@ -1,6 +1,6 @@
 import { AR, countOf } from "../utils/arabicCount";
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, BookOpen, Check, GraduationCap, Layers3, Link2, Search, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, BookOpen, Check, ChevronDown, GraduationCap, Layers3, Link2, Search, SlidersHorizontal } from "lucide-react";
 import type { compareCurriculumReference } from "../utils/curriculumReference";
 import type { CurriculumReference } from "../data/technologyEducationCurricula";
 import { courseLevelFromCode } from "../utils/curriculumRules";
@@ -27,6 +27,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [focusedCode, setFocusedCode] = useState("");
+  const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
 
   useEffect(() => {
     let active = true; setSections([]); setSelectedSectionId(sectionId); setError(""); setFocusedCode("");
@@ -83,6 +84,10 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
     return [...result.entries()].sort((a, b) => (a[0] || Number.MAX_SAFE_INTEGER) - (b[0] || Number.MAX_SAFE_INTEGER));
   }, [visibleEntries]);
 
+  useEffect(() => {
+    setExpandedLevels([]);
+  }, [selectedSectionId, selected, category, groupKind, levelFilter, statusFilter, query]);
+
   if (error) return <Notice type="error">{error}</Notice>;
   if (!reference) return null;
   const missing = entries.filter(row => row.course.state === "missing").length;
@@ -120,9 +125,9 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
       <label><AlertCircle size={15} aria-hidden="true" /><select aria-label="حالة المطابقة" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">كل الحالات</option><option value="attention">تحتاج متابعة</option><option value="matched">مطابقة</option><option value="different">تحتاج تصحيحًا</option><option value="missing">غير مضافة</option><option value="ambiguous">هوية غير محسومة</option></select></label>
     </div>
 
-    <div className="reference-legend" aria-label="دليل روابط المتطلبات">
-      <span><i className="legend-current" />المقرر المحدد</span><span><i className="legend-prereq" />مسبقاتُه</span><span><i className="legend-next" />مقررات يفتحها</span><span className="reference-legend-note"><Link2 size={14} />اضغط مقررًا لإظهار تسلسل متطلباته</span>
-    </div>
+    <details className="reference-guide"><summary><Link2 size={14} />طريقة قراءة الربط</summary><div className="reference-legend" aria-label="دليل روابط المتطلبات">
+      <span><i className="legend-current" />المقرر المحدد</span><span><i className="legend-prereq" />مسبقاتُه</span><span><i className="legend-next" />مقررات يفتحها</span><span className="reference-legend-note">اضغط مقررًا لإظهار تسلسل متطلباته</span>
+    </div></details>
 
     {focused ? <aside className="reference-selected" aria-live="polite">
       <div className="reference-selected-head"><span><bdi dir="ltr">{focused.course.code}</bdi><strong>{focused.course.name}</strong></span><button type="button" onClick={() => setFocusedCode("")} aria-label="إلغاء تحديد المقرر" data-guide-ignore="إلغاء تحديد المقرر في لوحة ربط متطلبات الصحيفة">إلغاء التحديد</button></div>
@@ -140,17 +145,25 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
     {!reference.planId ? <Notice type="info" inline>لا توجد صحيفة تشغيلية مرتبطة بهذه النسخة؛ هذه المقارنة للمرجع فقط.</Notice> : null}
     {!visibleEntries.length ? <div className="reference-empty"><Search size={19} /><b>لا توجد مقررات بهذا الاختيار</b><span>غيّر المرشحات أو امسح البحث لعرض الصحيفة كاملة.</span><button type="button" onClick={() => { setQuery(""); setCategory("all"); setGroupKind("all"); setLevelFilter("all"); setStatusFilter("all"); }} data-guide-ignore="مسح مرشحات صحيفة التخرج وإظهار كل المقررات">مسح المرشحات</button></div> : (
       <div className="reference-level-map" aria-label="المقررات مرتبة حسب المستوى">
-        {levels.map(([level, rows]) => <section className="reference-level-column" key={level}>
-          <header><span><b>{level ? `المستوى ${level}` : "تمهيدي / غير مصنف"}</b><small>{countOf(rows.length, AR.course)}</small></span><i>{level || "—"}</i></header>
-          <div className="reference-level-courses">{rows.map(({ course, groupName: groupTitle, category: courseCategory, requiredUnits, elective }) => {
+        {levels.map(([level, rows]) => {
+          const expanded = expandedLevels.includes(level);
+          const byGroupMap = new Map<string, { name: string; category: string; requiredUnits: number; elective: boolean }>();
+          rows.forEach(row => byGroupMap.set(row.groupId, { name: row.groupName, category: row.category, requiredUnits: row.requiredUnits, elective: row.elective }));
+          const byGroup = [...byGroupMap.entries()];
+          return <section className={`reference-level-column${expanded ? " is-open" : ""}`} key={level}>
+          <button type="button" className="reference-level-toggle" aria-expanded={expanded} data-guide-ignore="طي وفتح مجموعة مستوى المقررات داخل مراجعة الصحيفة" onClick={() => setExpandedLevels(current => expanded ? current.filter(value => value !== level) : [...current, level])}>
+            <span><b>{level ? `المستوى ${level}` : "تمهيدي / غير مصنف"}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small></span><i>{level || "—"}</i><ChevronDown size={17} aria-hidden="true" />
+          </button>
+          {expanded ? <div className="reference-level-groups">{byGroup.map(([groupId, info]) => <section className="reference-course-group-block" key={groupId}>
+          <header><span>{info.name}</span><small>{info.category} · {info.elective ? `اختياري · المطلوب ${countOf(info.requiredUnits, AR.unit)}` : "إجباري"}</small></header>
+          <div className="reference-level-courses">{rows.filter(row => row.groupId === groupId).map(({ course }) => {
             const key = plainCode(course.code), selectedCourse = focusedCode === course.code;
             const tone = ancestry.up.has(key) ? "prereq" : ancestry.down.has(key) ? "next" : "";
-            return <article key={`${course.code}-${groupTitle}`} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}`}>
+            return <article key={course.code} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}`}>
               <button type="button" className="reference-course-main" aria-pressed={selectedCourse} onClick={() => setFocusedCode(selectedCourse ? "" : course.code)} data-guide-ignore="إظهار روابط المتطلبات للمقرر في الصحيفة">
                 <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi><span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
                 <strong>{course.name}</strong>
-                <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)} · {courseCategory}</span>
-                <small className="reference-course-group">{groupTitle} · {elective ? `اختياري · ${countOf(requiredUnits, AR.unit)}` : "إجباري"}</small>
+                <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)} · {info.category}</span>
                 {course.prerequisites.length ? <span className="reference-prereq-summary"><Link2 size={13} /> يسبقه {course.prerequisites.length} {course.prerequisites.length === 1 ? "متطلب" : "متطلبات"}</span> : null}
               </button>
               {course.current ? <small className="reference-course-capacity">السعة المسجلة: {course.current.capacity === null ? "غير محددة" : countOf(course.current.capacity, AR.student)}</small> : null}
@@ -165,8 +178,8 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
                 <button type="button" className="reference-fix" data-guide-ignore="بدء إضافة المقرر الناقص إلى سجل القسم" onClick={() => onCatalogAction({ kind: "create", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>أضف المقرر إلى القسم</button>
               ) : null}
             </article>;
-          })}</div>
-        </section>)}
+          })}</div></section>)}</div> : null}
+        </section>})}
       </div>
     )}
     <footer className="reference-footer"><span><Layers3 size={14} />{countOf(visibleEntries.length, AR.course)} من {countOf(entries.length, AR.course)}</span><span>المستوى مستنتج من آخر ثلاثة أرقام في رمز المقرر؛ راجع القسم عند اختلاف الرمز عن الصحيفة.</span></footer>

@@ -20,6 +20,12 @@ import { AR, countOf } from "./arabicCount";
 export const CURRICULUM_LEVELS = [100, 200, 300, 400] as const;
 export const MAX_LEVEL = 400;
 export const MAX_UNITS_RULE = 200;
+/** Older curricula sometimes stored the ordinal 1–4 instead of 100–400. */
+export function normalizeLevel(value: unknown): number | undefined {
+  const entered = Math.round(Number(value));
+  const level = entered >= 1 && entered <= 4 ? entered * 100 : entered;
+  return CURRICULUM_LEVELS.includes(level as typeof CURRICULUM_LEVELS[number]) ? level : undefined;
+}
 /** The final three digits in the institutional course code encode its 100-level band. */
 export function courseLevelFromCode(value: unknown): number | undefined {
   const digits = String(value ?? "").replace(/\D/g, "");
@@ -45,9 +51,8 @@ export function normalizeRule(raw: any): CurriculumCourseRule | null {
   const courseId = toId(raw?.courseId);
   if (!courseId) return null;
   const rule: CurriculumCourseRule = { courseId };
-  const enteredLevel = Math.round(Number(raw?.level));
-  const level = enteredLevel >= 1 && enteredLevel <= 4 ? enteredLevel * 100 : enteredLevel;
-  if (CURRICULUM_LEVELS.includes(level as typeof CURRICULUM_LEVELS[number])) rule.level = level;
+  const level = normalizeLevel(raw?.level);
+  if (level) rule.level = level;
   if (KINDS.includes(raw?.kind)) rule.kind = raw.kind;
 
   const all = uniqueIds(raw?.prereq?.all, courseId);
@@ -303,11 +308,16 @@ export function describePrereq(prereq: CoursePrereq | undefined, name: (id: numb
 
 /** المستوياتُ من القواعد: خريطةٌ مستوى ← مقررات، ومقرراتٌ بلا مستوى تُجمع تحت 0. */
 export function byLevel(planCourseIds: readonly number[], rules: readonly CurriculumCourseRule[], codeById?: ReadonlyMap<number, string>): Map<number, number[]> {
-  const levelOf = new Map(rules.map(rule => [rule.courseId, rule.level || 0] as const));
+  const levelOf = new Map(rules.map(rule => [rule.courseId, normalizeLevel(rule.level) || 0] as const));
   const out = new Map<number, number[]>();
   for (const id of planCourseIds) {
-    const level = levelOf.get(id) || (codeById ? courseLevelFromCode(codeById.get(id)) : undefined) || 0;
+    // The institutional course code is the canonical level signal. A saved
+    // rule is only a fallback for legacy course codes that carry no 100-band.
+    const level = (codeById ? courseLevelFromCode(codeById.get(id)) : undefined) || levelOf.get(id) || 0;
     out.set(level, [...(out.get(level) || []), id]);
   }
-  return new Map([...out].sort((a, b) => (a[0] === 0 ? Number.MAX_SAFE_INTEGER : a[0]) - (b[0] === 0 ? Number.MAX_SAFE_INTEGER : b[0])));
+  const code = (id: number) => String(codeById?.get(id) ?? "");
+  return new Map([...out]
+    .map(([level, ids]) => [level, [...ids].sort((a, b) => code(a).localeCompare(code(b), "en", { numeric: true }) || a - b)] as const)
+    .sort((a, b) => (a[0] === 0 ? Number.MAX_SAFE_INTEGER : a[0]) - (b[0] === 0 ? Number.MAX_SAFE_INTEGER : b[0])));
 }
