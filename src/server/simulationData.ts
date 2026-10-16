@@ -282,32 +282,45 @@ export interface ChangeImpact {
   before: SimResult["capacity"]; after: SimResult["capacity"];
   helped: number; harmed: number; unchanged: number; responders: number;
   delta12: number; delta15: number; conflictsBefore: number; conflictsAfter: number;
+  /** طلبةٌ خارج نطاق الاقتراح تضرّروا (العددُ لإدارة النظام وحدها؛ لغيرها 0 أو 1 = هل ثمة ضرر). */
+  harmedOutside: number;
   scheduleChanges: number; verdict: ChangeVerdict; virtualCapacity: true;
 }
+/** النطاقُ كلُّه يُقاس على طلبة نطاق الاقتراح؛ والضررُ خارجه يُحسب للحكم فقط ولا يُسرَّب عدده لغير الإدارة. */
 export function evaluateScheduleChange(
   input: SimInput, schedules: import("../types").FSchedule[], courses: Map<number, AdCourse>, termId: number,
   revised: import("../types").FSchedule[], scheduleChanges: number,
+  scopes: ReadonlyArray<{ collegeId: number; sectionId: number }>, revealOutside = false,
 ): ChangeImpact {
   const responders = input.students.filter(student => student.wishes);
+  const inScope = (student: SimStudent) => scopes.some(scope => scope.collegeId === student.collegeId && scope.sectionId === student.sectionId);
+  const mine = new Set(responders.filter(inScope).map(student => student.fp));
   const base = simulateRegistration({ ...input, students: responders, offerings: buildSimulationOfferings(termId, schedules, courses).offerings, assessCapacity: true });
   const next = simulateRegistration({ ...input, students: responders, offerings: buildSimulationOfferings(termId, revised, courses).offerings, assessCapacity: true });
-  const tally = (result: SimResult) => result.capacity;
-  const conflicts = (result: SimResult) => result.tickets.reduce((sum, ticket) => sum + ticket.unmet.filter(item => item.reason === "conflict").length, 0);
+  const tally = (result: SimResult) => {
+    const value: SimResult["capacity"] = { canReach15: 0, canReach12To14: 0, below12: 0, graduatingBelow12: 0, unknown: 0 };
+    for (const ticket of result.tickets) if (mine.has(ticket.fp)) value[ticket.assessment || "unknown"] += 1;
+    return value;
+  };
+  const conflicts = (result: SimResult) => result.tickets.filter(ticket => mine.has(ticket.fp)).reduce((sum, ticket) => sum + ticket.unmet.filter(item => item.reason === "conflict").length, 0);
   const prior = new Map(base.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
-  let helped = 0, harmed = 0;
+  let helped = 0, harmed = 0, harmedOutside = 0;
   for (const ticket of next.tickets) {
     const a = BAND_RANK[prior.get(ticket.fp) || "unknown"], b = BAND_RANK[ticket.assessment || "unknown"];
     if (a === undefined || b === undefined) continue;
-    if (b > a) helped += 1; else if (b < a) harmed += 1;
+    if (mine.has(ticket.fp)) { if (b > a) helped += 1; else if (b < a) harmed += 1; }
+    else if (b < a) harmedOutside += 1;
   }
   const before = tally(base), after = tally(next);
   const reaches12 = (value: SimResult["capacity"]) => value.canReach15 + value.canReach12To14;
   const conflictsBefore = conflicts(base), conflictsAfter = conflicts(next);
-  const verdict: ChangeVerdict = harmed > 0 ? (helped > harmed ? "caution" : "avoid")
+  const harmAll = harmed + harmedOutside;
+  const verdict: ChangeVerdict = harmAll > 0 ? (helped > harmAll ? "caution" : "avoid")
     : helped > 0 || conflictsAfter < conflictsBefore ? "apply" : "neutral";
   return {
-    before, after, helped, harmed, unchanged: Math.max(0, responders.length - helped - harmed), responders: responders.length,
-    delta12: reaches12(after) - reaches12(before), delta15: after.canReach15 - before.canReach15, conflictsBefore, conflictsAfter, scheduleChanges, verdict, virtualCapacity: true,
+    before, after, helped, harmed, unchanged: Math.max(0, mine.size - helped - harmed), responders: mine.size,
+    delta12: reaches12(after) - reaches12(before), delta15: after.canReach15 - before.canReach15, conflictsBefore, conflictsAfter,
+    harmedOutside: revealOutside ? harmedOutside : Math.min(1, harmedOutside), scheduleChanges, verdict, virtualCapacity: true,
   };
 }
 

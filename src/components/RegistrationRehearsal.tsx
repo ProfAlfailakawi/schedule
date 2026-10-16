@@ -164,7 +164,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
       ) : (
         <>
           <SemesterReadiness bands={bands} wanted={wantedTotal} seated={seatedTotal} fullCourses={rows.filter(c => c.unmet.full > 0).length} notOffered={rows.filter(c => c.unmet["not-offered"] > 0).length}
-            onStart={decide.length ? () => { setView("decide"); window.scrollTo({ top: 0, behavior: "smooth" }); } : undefined} insight={insight} failed={insightFailed} />
+            onStart={decide.length ? () => { setView("decide"); window.scrollTo({ top: 0, behavior: "smooth" }); } : undefined} insight={scenario === "actual" ? insight : null} failed={scenario !== "actual" || insightFailed} />
           <div className="sm-views" role="tablist" aria-label="أقسام الرادار">
             <button type="button" role="tab" aria-selected={shownView === "decide"} onClick={() => setView("decide")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className={`sm-ic${decide.length ? " hot" : ""}`}><CircleAlert /></span><b>{decide.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>تحتاج قراراً</small></button>
             <button type="button" role="tab" aria-selected={shownView === "capacity"} onClick={() => setView("capacity")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><GraduationCap /></span><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>أقل من 12 وحدة</small></button>

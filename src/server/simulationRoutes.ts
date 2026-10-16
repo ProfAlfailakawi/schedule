@@ -89,11 +89,14 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     const power = deps.isPowerUser(req);
     const kind = String(req.body?.kind || "");
     try {
-      const loaded = await inputMemo.get(String(termId), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
+      /* المفتاحُ يحمل وسمَ «قديم» الذي ترفعه كلُّ كتابةٍ في الجدول أو الصحائف أو الرغبات: فلا يُقاس الأثرُ على حالٍ مضت. */
+      const run = await Repository.getRegistrationRun(termId);
+      const loaded = await inputMemo.get(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`, () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
       const rows = loaded.schedules as import("../types").FSchedule[];
       const dayFlags = (day: string) => ({ fsunday: day === "fsunday", fmonday: day === "fmonday", ftuesday: day === "ftuesday", fwednesday: day === "fwednesday", fthursday: day === "fthursday" });
       let revised: import("../types").FSchedule[];
       let changes = 0;
+      let scopes: Array<{ collegeId: number; sectionId: number }> = [];
       if (kind === "move" || kind === "swap") {
         const moves = (Array.isArray(req.body?.moves) ? req.body.moves : []).slice(0, 2) as Array<{ rowId: number; to: { day: string; start: string; end: string } }>;
         if (!moves.length || (kind === "swap" && moves.length !== 2)) { fail(res, 400, "حدّد الموعد المقترح."); return; }
@@ -103,6 +106,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
         if (!power && found.some(row => !deps.isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)))) { fail(res, 403, "خارج نطاق صلاحياتك.", "not-allowed"); return; }
         revised = rows.map(row => { const to = byId.get(Number(row.id)); return to ? { ...row, ...dayFlags(to.day), fstarttime: to.start, fendtime: to.end } : row; });
         changes = found.length;
+        scopes = [...new Map(found.map(row => [`${row.AdCollegeId}:${row.AdSectionId}`, { collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId) }] as const)).values()];
       } else if (kind === "opening") {
         const collegeId = Number(req.body?.collegeId), sectionId = Number(req.body?.sectionId), courseId = Number(req.body?.courseId), slot = req.body?.placement || {};
         if (!power && !deps.isScopeAllowed(req, collegeId, sectionId)) { fail(res, 403, "خارج نطاق صلاحياتك.", "not-allowed"); return; }
@@ -113,9 +117,10 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
           AdRoomCode: String(slot.roomCode || ""), AdRoomHall: String(slot.roomHall || ""), buildingId: slot.buildingId, roomId: slot.roomId, locationStatus: "VERIFIED" } as unknown as import("../types").FSchedule;
         revised = [...rows, added];
         changes = 1;
+        scopes = [{ collegeId, sectionId }];
       } else { fail(res, 400, "نوع الاقتراح غير معروف."); return; }
-      const impact = evaluateScheduleChange(loaded.input, rows, loaded.courses, termId, revised, changes);
-      res.json({ ok: true, impact, basis: "من أجابوا عن رغباتهم في هذا الفصل", stale: false });
+      const impact = evaluateScheduleChange(loaded.input, rows, loaded.courses, termId, revised, changes, scopes, power);
+      res.json({ ok: true, impact, basis: "من أجابوا من هذا القسم عن رغباتهم في هذا الفصل", stale: Boolean(run?.stale) });
     } catch (error) {
       console.error("[simulation] what-if:", error instanceof Error ? error.message : error);
       fail(res, 500, "تعذّر قياس الأثر الآن. يمكنك الاعتماد دونه أو إعادة المحاولة.");
@@ -139,12 +144,13 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
         short += scope.short; students += scope.students;
         for (const key of Object.keys(causes) as Array<keyof typeof causes>) causes[key] += scope.causes[key];
       }
+      const scopedQuality = insight.quality.filter(item => mine(item.collegeId, item.sectionId));
       const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
       res.json({
         ready: true, computedAt: insight.computedAt, stale: Boolean(run.stale) || (run.sourceFingerprint || "") !== insight.fingerprint,
         students, short, causes, scoped: !power,
-        quality: insight.quality.filter(item => mine(item.collegeId, item.sectionId)).map(item => ({ ...item, courseName: String(catalog.get(item.courseId)?.CourseName || ""), courseCode: String(catalog.get(item.courseId)?.CourseCode || "") })),
-        qualityTruncated: insight.qualityTruncated,
+        quality: scopedQuality.slice(0, 300).map(item => ({ ...item, courseName: String(catalog.get(item.courseId)?.CourseName || ""), courseCode: String(catalog.get(item.courseId)?.CourseCode || "") })),
+        qualityTruncated: scopedQuality.length > 300 || insight.qualityTruncated,
       });
     } catch (error) {
       console.error("[simulation] insight:", error instanceof Error ? error.message : error);

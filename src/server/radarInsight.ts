@@ -14,7 +14,8 @@ export interface InsightScope { collegeId: number; sectionId: number; students: 
 export interface QualityItem { offeringId: string; code: string; courseId: number; collegeId: number; sectionId: number; issue: string; rowId: number | null }
 export interface RadarInsight { fingerprint: string; computedAt: string; scopes: InsightScope[]; quality: QualityItem[]; qualityTruncated: boolean }
 
-const MAX_QUALITY_ITEMS = 300;
+/* سقفٌ للذاكرة فحسب؛ التقليلُ إلى ما يُعرض يقع بعد تطبيق نطاق القارئ (في المسار) لا قبله. */
+const MAX_QUALITY_ITEMS = 5000;
 const memo = new Map<string, { at: number; value: Promise<RadarInsight> }>();
 const TTL_MS = 10 * 60_000;
 

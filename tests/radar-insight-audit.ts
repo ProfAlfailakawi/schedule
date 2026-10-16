@@ -24,6 +24,11 @@ const up = async () => { try { return (await fetch(BASE + "/api/public/me/state"
   check(radar.includes("<CourseImpact courseId={c.courseId} />"), "W5 زرُّ «الأثر» على كل صفّ مقرر في الرادار");
   check(schedulesUi.includes("<RowHistory") && read("src/components/RowHistory.tsx").includes("/history"), "W6 «لماذا؟» في تفاصيل الموعد في الجدول");
   check(cells.includes("schedule-open-context-id") && cells.includes("writeSharedScope({ collegeId: cell.collegeId"), "W7 من الشعبة المستبعدة إلى خانتها في الجدول بنطاقها");
+  const simSrc = read("src/server/simulationRoutes.ts"), dataSrc = read("src/server/simulationData.ts"), insightSrc = read("src/server/radarInsight.ts");
+  check(simSrc.includes("evaluateScheduleChange(loaded.input, rows, loaded.courses, termId, revised, changes, scopes, power)") && dataSrc.includes("const mine = new Set(responders.filter(inScope)"), "W8 أثرُ «ماذا لو؟» يُقاس على طلبة نطاق الاقتراح وحدهم، وضررُ الخارج لا يُسرَّب عددُه");
+  check(simSrc.includes("`${termId}:${run?.staleAt || \"\"}:${run?.ranAt || \"\"}`") && simSrc.includes("stale: Boolean(run?.stale)"), "W9 ذاكرةُ الإدخال تتبع وسمَ «قديم»، فلا يُقاس الأثر على حالٍ مضت");
+  check(insightSrc.includes("MAX_QUALITY_ITEMS = 5000") && simSrc.includes("scopedQuality.slice(0, 300)"), "W10 تقليلُ قائمة الجودة بعد تطبيق نطاق القارئ لا قبله");
+  check(radar.includes('insight={scenario === "actual" ? insight : null}'), "W11 أسبابُ النقص لا تُخلط بسيناريو التوقعات");
   const sim = read("src/server/simulationRoutes.ts");
   check(sim.includes('app.post("/api/schedules/what-if"') && !/what-if[\s\S]{0,3000}Repository\.(updateSchedule|createSchedule|deleteSchedule)/.test(sim), "W4 مسار «ماذا لو؟» لا يستدعي أيّ كتابة في الجدول");
 }

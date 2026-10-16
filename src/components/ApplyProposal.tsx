@@ -31,7 +31,7 @@ export async function postScheduleProposal(body: unknown): Promise<any> {
 /** أثرُ الاقتراح على من أجابوا (من الخادم: إعادة محاكاة قبل/بعد). */
 export interface ChangeImpact {
   before: Bands; after: Bands; helped: number; harmed: number; responders: number; delta12: number; delta15: number;
-  conflictsBefore: number; conflictsAfter: number; verdict: "apply" | "caution" | "avoid" | "neutral";
+  conflictsBefore: number; conflictsAfter: number; harmedOutside?: number; verdict: "apply" | "caution" | "avoid" | "neutral";
 }
 interface Bands { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number }
 
@@ -70,6 +70,7 @@ function ImpactCard({ impact }: { impact: ChangeImpact }) {
       <ul className="ip-chips">
         <li className="up"><TrendingUp aria-hidden="true" /><b>{fmtN(impact.helped)}</b><span>يتحسن حالهم</span></li>
         <li className={impact.harmed ? "down" : ""}><TrendingDown aria-hidden="true" /><b>{fmtN(impact.harmed)}</b><span>يتضررون</span></li>
+        {impact.harmedOutside ? <li className="down"><TrendingDown aria-hidden="true" /><span>ويتضرر طلبةٌ من قسمٍ آخر</span></li> : null}
         {impact.conflictsBefore !== impact.conflictsAfter ? <li><Zap aria-hidden="true" /><span>تعارضات</span><b>{fmtN(impact.conflictsBefore)} ← {fmtN(impact.conflictsAfter)}</b></li> : null}
       </ul>
       <small className="ip-foot">قياسٌ على {fmtN(impact.responders)} ممن أجابوا؛ مقارنةُ حالتين لا ضمانٌ.</small>
