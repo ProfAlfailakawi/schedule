@@ -1,3 +1,6 @@
+# NOT the deploy path. Production deploys run from .github/workflows/deploy-schedule.yml
+# to the official service (gen-lang-client-0379571946 / schedule), which carries the
+# schedule.dr-alfailakawi.com domain mapping. No Cloud Build trigger uses this file.
 substitutions:
   # SCHEDULE is deployed to its own Google Cloud project. Billing may be shared
   # across projects; project IDs and Firestore databases must remain isolated.
