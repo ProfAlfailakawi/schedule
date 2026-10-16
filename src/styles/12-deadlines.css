@@ -653,12 +653,12 @@
 .rap-stat b{font-size:1.6rem;font-weight:800;line-height:1.1;color:var(--t);font-variant-numeric:tabular-nums}
 .rap-stat span{font-size:.78rem;font-weight:650;color:var(--muted)}
 .rap-stat.is-zero{opacity:.45}
-.rap .is-fix{--t:#2563EB}.rap .is-add{--t:#059669}.rap .is-link{--t:#7C3AED}.rap .is-skip{--t:#64748B}.rap .is-held{--t:#B45309}.rap .is-ok{--t:#059669}
-.rap-match{display:flex;align-items:center;gap:8px;margin:0;font-weight:700;color:#059669}.rap-match svg{width:18px;height:18px}
+.rap .is-fix{--t:var(--info)}.rap .is-add{--t:var(--success)}.rap .is-link{--t:var(--accent-ink)}.rap .is-skip{--t:var(--muted)}.rap .is-held{--t:var(--warning)}.rap .is-ok{--t:var(--success)}
+.rap-match{display:flex;align-items:center;gap:8px;margin:0;font-weight:700;color:var(--success)}.rap-match svg{width:18px;height:18px}
 .rap-sites{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin:0;padding:0;list-style:none}
 .rap-site{display:grid;gap:10px;align-content:start;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-soft,var(--surface))}
 .rap-site-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rap-site-head b{font-size:.92rem}.rap-site-head small{margin-inline-start:auto;color:var(--muted);font-size:.74rem}
-.rap-branch{font-size:.7rem;font-weight:750;padding:1px 9px;border-radius:999px;background:#EFF6FF;color:#1D4ED8}.rap-branch.is-012{background:#FDF2F8;color:#BE185D}
+.rap-branch{font-size:.7rem;font-weight:750;padding:1px 9px;border-radius:999px;background:var(--info-soft);color:var(--info)}.rap-branch.is-012{background:var(--accent-soft);color:var(--accent-ink)}
 .rap-chips{display:flex;flex-wrap:wrap;gap:6px}
 .rap-chip{--t:var(--muted);display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 9px;border-radius:999px;font-size:.84rem;font-weight:800;color:var(--t);background:color-mix(in srgb,var(--t) 10%,transparent);font-variant-numeric:tabular-nums;cursor:default}
 .rap-chip svg{width:14px;height:14px}
