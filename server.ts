@@ -7576,7 +7576,7 @@ const createScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
   const locationResult=await canonicalizeLocationForWrite({...req.body,AdCollegeId:collegeId,AdSectionId:sectionId},collegeId,sectionId);
   if(!locationResult.check.ok){res.status(400).json({error:locationResult.check.issues[0]?.message||"المكان غير صالح",issues:locationResult.check.issues});return;}
   const canonicalBody={...req.body,...locationResult.check.canonical,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:courseId,AdInstructorId:instructorId};
-  const conflicts=await scheduleConflicts(req,canonicalBody);
+  const conflicts=await scheduleConflicts(req,canonicalBody,0,(req as any).__hypotheticalWeek);
   // Soft warnings (e.g. a tight inter-campus transfer, Note 38) are surfaced by
   // the live check but never block the save.
   const blockingSave=conflicts.filter((c:any)=>!c.soft);
@@ -7705,7 +7705,7 @@ const updateScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
   const locationResult=await canonicalizeLocationForWrite({...req.body,AdCollegeId:collegeId,AdSectionId:sectionId},collegeId,sectionId,importedRoomId);
   if(!locationResult.check.ok){res.status(400).json({error:locationResult.check.issues[0]?.message||"المكان غير صالح",issues:locationResult.check.issues});return;}
   const canonicalBody={...req.body,...locationResult.check.canonical,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:courseId,AdInstructorId:instructorId};
-  const conflicts=await scheduleConflicts(req,canonicalBody,id);
+  const conflicts=await scheduleConflicts(req,canonicalBody,id,(req as any).__hypotheticalWeek);
   const blockingEdit=conflicts.filter((c:any)=>!c.soft);
   if(blockingEdit.length){res.status(409).json({error:blockingEdit[0].message||"يوجد تعارض يمنع التعديل",issues:blockingEdit});return;}
 
@@ -7716,6 +7716,8 @@ const updateScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
   const editLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);
   if (editLock) { res.status(409).json({ error: editLock, code: "schedule-locked" }); return; }
 
+  /* فحصٌ جافّ: كلُّ التحقّق (نطاق، قفل، تعارض) مرّ ولا كتابة. يستعمله «اعتماد الاقتراح» قبل أي خطوة. */
+  if ((req as any).__dryRun) { res.json({ ok: true, dryRun: true }); return; }
   try {
     const editVersion = await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
     const arrivalVersion = existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId
@@ -7747,7 +7749,7 @@ const updateScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
       sourceBuildingText: req.body?.sourceBuildingText,
       sourceRoomText: req.body?.sourceRoomText,
       fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday }),
-      ...(scheduleOriginOf(req) ? { origin: scheduleOriginOf(req) } : {}),
+      ...((req as any).__restoreOrigin ? { origin: (req as any).__restoreOrigin.value } : scheduleOriginOf(req) ? { origin: scheduleOriginOf(req) } : {}),
     },
     // The revision the editor was looking at, when they sent one. An older
     // client that sends nothing keeps the previous behaviour exactly.
@@ -7795,7 +7797,7 @@ const updateScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
 };
 app.put("/api/schedules/:id", requirePermission(7), updateScheduleHandler);
 
-app.delete("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+const deleteScheduleHandler = async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(req.params.id);
   const sched = await Repository.getScheduleById(id);
   if (sched && !isScopeAllowed(req, sched.AdCollegeId, sched.AdSectionId) && !req.user.IsAdminUser) {
@@ -7814,7 +7816,8 @@ app.delete("/api/schedules/:id", requirePermission(7), async (req: Authenticated
   await recordVersionAfter(deleteVersion, before => before.filter(row => Number(row.id) !== Number(id)));
   if (sched) await noteScheduleMutation(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, { kind: "delete", row: sched });
   res.json({ success: true });
-});
+};
+app.delete("/api/schedules/:id", requirePermission(7), deleteScheduleHandler);
 
 // --- COPY SCHEDULES API ---
 
@@ -7849,12 +7852,16 @@ interface InnerScheduleResult { status: number; body: any; headers: Record<strin
 async function runScheduleHandler(
   handler: (req: AuthenticatedRequest, res: Response) => Promise<void>,
   req: AuthenticatedRequest,
-  patch: { params?: Record<string, string>; body: any },
+  patch: { params?: Record<string, string>; body: any; hypotheticalWeek?: FSchedule[]; dryRun?: boolean; restoreOrigin?: { value: any } },
 ): Promise<InnerScheduleResult> {
   const result: InnerScheduleResult = { status: 200, body: undefined, headers: {} };
   const inner: any = Object.create(req);
   inner.body = patch.body;
   inner.params = patch.params || {};
+  /* أعلامٌ داخليةٌ لا يملكها طلبٌ قادمٌ من المتصفّح: تُضبط هنا وحدها. */
+  inner.__hypotheticalWeek = patch.hypotheticalWeek;
+  inner.__dryRun = Boolean(patch.dryRun);
+  inner.__restoreOrigin = patch.restoreOrigin;
   const sink: any = {
     locals: {}, headersSent: false, statusCode: 200,
     status(code: number) { result.status = code; this.statusCode = code; return this; },
@@ -7954,19 +7961,38 @@ async function applyProposalCore(req: AuthenticatedRequest, body: any): Promise<
       if (!(PROPOSAL_DAYS as readonly string[]).includes(move.to?.day) || !move.to?.start || !move.to?.end) return fail(400, { error: "وجهةُ النقل ناقصة." });
       originals.push(row);
     }
+    /* ── الحالةُ النهائية للموعدين معاً ──────────────────────────────────────────
+     * تبديلُ موعدين يُحكم عليه كما سيصير الجدولُ بعد الخطوتين، لا بعد الأولى وحدها: الأولى تُفحص
+     * والثانيةُ ما زالت في مكانها فتتعارض معها (أستاذٌ أو قاعةٌ أو دفعةٌ مشتركة) ولو كان التبديلُ كلُّه سليماً.
+     * فيُبنى أسبوعُ الفصل كما سيكون، ويُفحص كلُّ موعدٍ عليه فحصاً جافّاً (بلا كتابة) قبل أن تُكتب خطوةٌ واحدة. */
+    const termRows = await Repository.getSchedulesByScope({ termId: Number(originals[0].AdTermId) });
+    const targetOf = new Map(moves.map((move, i) => [Number(originals[i].id), move.to] as const));
+    const finalWeek: FSchedule[] = termRows.map(row => {
+      const to: any = targetOf.get(Number(row.id));
+      return to ? ({ ...row, ...dayFlagsOf(to.day), fstarttime: to.start, fendtime: to.end } as any) : row;
+    });
+    const useFinal = moves.length > 1 ? finalWeek : undefined;
+    for (let i = 0; i < moves.length; i += 1) {
+      const dry = await runScheduleHandler(updateScheduleHandler, req, {
+        params: { id: String(originals[i].id) }, body: editBodyFor(originals[i], moves[i].to, origin), hypotheticalWeek: useFinal, dryRun: true,
+      });
+      if (dry.status >= 400) return fail(dry.status, { ...(dry.body && typeof dry.body === "object" ? dry.body : { error: "تعذّر التنفيذ." }), applied: [], reverted: true });
+    }
     const applied: Array<{ action: string; row: any }> = [];
     let amendment: string | null = null;
     for (let i = 0; i < moves.length; i += 1) {
       const result = await runScheduleHandler(updateScheduleHandler, req, {
-        params: { id: String(originals[i].id) }, body: editBodyFor(originals[i], moves[i].to, origin),
+        params: { id: String(originals[i].id) }, body: editBodyFor(originals[i], moves[i].to, origin), hypotheticalWeek: useFinal,
       });
       if (result.status >= 400) {
-        /* الخطوةُ الثانية لم تُقبل: تُردّ الأولى كما كانت، فلا يبقى نصفُ تبديل. */
+        /* بعد أن مرّ الفحصُ الجافّ لا يُتوقّع هذا إلا لتغيّرٍ في اللحظة نفسها (إصدارٌ سبقنا أو قفل). تُردّ ما كُتب
+           ويُعاد مصدرُه الأول (أو يُمحى)؛ وما تبقّى من أثرٍ (رقمُ الإصدار ولقطةُ التاريخ) سجلٌّ يُقرأ لا بيانٌ فاسد. */
         let reverted = true;
         for (let j = applied.length - 1; j >= 0; j -= 1) {
           const back = await runScheduleHandler(updateScheduleHandler, req, {
             params: { id: String(originals[j].id) },
             body: editBodyFor({ ...originals[j], rev: applied[j].row.rev }, { day: dayOfRow(originals[j]), start: originals[j].fstarttime, end: originals[j].fendtime }, undefined),
+            restoreOrigin: { value: originals[j].origin },
           });
           if (back.status >= 400) reverted = false;
         }
@@ -16614,47 +16640,79 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
    * جديدةً تخلو من التعارض، قرارٌ بفتحها. فتُفتح هنا بالمسار نفسه الذي تفتح به الورشةُ (اعتماد
    * الاقتراح): فإن رُفضت لتعارضٍ أو قفلٍ لم تُسجَّل الموافقةُ، ولم يبقَ قرارٌ بلا جدول.
    * والحرسُ على حالة المقرّر يُسأل قبل الكتابة في الجدول لا بعدها، فلا يُكتب جدولٌ لقرارٍ سيُردّ. */
-  let opened: ProposalOutcome | null = null;
   const openSection = req.body?.openSection;
-  if (openSection && state === "awaiting-registration") {
+  const wantsOpening = Boolean(openSection) && state === "awaiting-registration";
+  const owner: any = allCourses.find(row => Number(row.AdCourseId) === courseId);
+  if (wantsOpening) {
     if (!(await grantedPermissions(req)).includes(7) && !req.user?.IsAdminUser) {
       res.status(403).json({ error: "فتحُ شعبةٍ في الجدول يحتاج صلاحيةَ الجدول الدراسي.", code: "no-schedule-permission" });
       return;
     }
-    const refusalNow = guardByState(((need as any).courseStates || []).find((row: any) => Number(row.courseId) === courseId));
-    if (refusalNow) { res.status(409).json({ error: refusalNow }); return; }
-    const owner: any = allCourses.find(row => Number(row.AdCourseId) === courseId);
     if (!owner) { res.status(400).json({ error: "مقرّرٌ زال من الكتالوج؛ لا شعبةَ تُفتح له." }); return; }
-    opened = await applyProposalCore(req, {
-      kind: "opening", collegeId: Number(owner.AdCollegeId), sectionId: Number(owner.AdSectionId), termId: Number(need.AdTermId),
-      courseId, placement: openSection,
-      origin: { kind: "student-case", refId: `need:${need.id}`, note: `موافقة اللجنة على طلب «${String(owner.CourseName || "")}»` },
-    });
-    if (opened.status >= 400) { res.status(opened.status).json({ ...opened.json, stateSaved: false }); return; }
   }
-  const openedRow = opened?.json?.applied?.[0]?.row;
+  /* مرجعُ الشعبة المفتوحة لهذا الطلب وهذا المقرّر: يجعل التنفيذَ **متكرّرَ الأثر بلا ازدواج** — موافقتان متزامنتان
+     (مستخدمان أو إعادةُ ضغطٍ أو إعادةُ محاولةٍ بعد فشل) تجدان الشعبةَ قد فُتحت فتتّفقان عليها ولا تفتحان ثانية. */
+  const openingRef = `need:${need.id}:course:${courseId}`;
 
-  let saved: any;
-  try{
-  saved = await Repository.setStudentCourseState(need.id, {
-    courseId,
-    state: state as any,
-    ...(state === "rejected" || state === "committee-rejected" ? { reasonCode: reasonCode as any } : {}),
-    ...(openedRow ? { scheduleId: Number(openedRow.id), sectionCode: String(openedRow.SCode) } : {}),
-    note: String(req.body?.note || "").trim().slice(0, 300) || (openedRow ? `فُتحت شعبة ${openedRow.SCode} في الجدول.` : undefined),
-    by: state === "registered" || state === "rejected" ? "registration" : "department",
-    byRole: roleLabel(req.user?.Role) || undefined,
-    at: new Date().toISOString(),
-  }, guardByState);
-  }catch(error:any){
-    if(error instanceof StudentCourseStateConflict){res.status(409).json({ error: error.message });return;}
-    throw error;
-  }
-  if (!saved) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  const commit = async (): Promise<{ status: number; json: any; audit?: string }> => {
+    let opened: ProposalOutcome | null = null;
+    let openedRow: any = null;
+    let createdNew = false;
+    if (wantsOpening) {
+      /* الحالةُ تُقرأ طازجةً داخل القفل: ما قرّره غيرُنا قبل لحظة يُحترم قبل أن يُكتب في الجدول شيء. */
+      const fresh: any = await Repository.getStudentNeedById(String(need.id));
+      if (!fresh) return { status: 404, json: { error: "لا يوجد طلبٌ بهذا المعرّف" } };
+      const refusalNow = guardByState((fresh.courseStates || []).find((row: any) => Number(row.courseId) === courseId));
+      if (refusalNow) return { status: 409, json: { error: refusalNow } };
+      const week = await Repository.getSchedulesByScope({ collegeId: Number(owner.AdCollegeId), sectionId: Number(owner.AdSectionId), termId: Number(need.AdTermId) });
+      openedRow = (week as any[]).find(row => row.origin?.refId === openingRef && Number(row.AdCourseId) === courseId) || null;
+      if (!openedRow) {
+        opened = await applyProposalCore(req, {
+          kind: "opening", collegeId: Number(owner.AdCollegeId), sectionId: Number(owner.AdSectionId), termId: Number(need.AdTermId),
+          courseId, placement: openSection,
+          origin: { kind: "student-case", refId: openingRef, note: `موافقة اللجنة على طلب «${String(owner.CourseName || "")}»` },
+        });
+        if (opened.status >= 400) return { status: opened.status, json: { ...opened.json, stateSaved: false } };
+        openedRow = opened.json?.applied?.[0]?.row;
+        createdNew = true;
+      }
+    }
 
-  if (opened?.audit) res.locals.auditChanges = opened.audit;
+    let saved: any;
+    try {
+      saved = await Repository.setStudentCourseState(need.id, {
+        courseId,
+        state: state as any,
+        ...(state === "rejected" || state === "committee-rejected" ? { reasonCode: reasonCode as any } : {}),
+        ...(openedRow ? { scheduleId: Number(openedRow.id), sectionCode: String(openedRow.SCode) } : {}),
+        note: String(req.body?.note || "").trim().slice(0, 300) || (openedRow ? `فُتحت شعبة ${openedRow.SCode} في الجدول.` : undefined),
+        by: state === "registered" || state === "rejected" ? "registration" : "department",
+        byRole: roleLabel(req.user?.Role) || undefined,
+        at: new Date().toISOString(),
+      }, guardByState);
+    } catch (error: any) {
+      /* القرارُ لم يُسجَّل: الشعبةُ التي فُتحت لأجله في هذه العملية تُحذف حتى لا يبقى صفٌّ بلا قرار. وإن تعذّر حذفُها
+         بقيت مرجعةً بـ openingRef فتلتقطها المحاولةُ التالية ولا تُنشئ ثانية. */
+      let rolledBack = !createdNew;
+      if (createdNew && openedRow) {
+        const back = await runScheduleHandler(deleteScheduleHandler, req, { params: { id: String(openedRow.id) }, body: {} }).catch(() => null);
+        rolledBack = Boolean(back && back.status < 400);
+      }
+      if (error instanceof StudentCourseStateConflict) return { status: 409, json: { error: error.message, stateSaved: false, rolledBack } };
+      console.error("[student-registration] تعذّر تسجيل القرار بعد فتح الشعبة:", error instanceof Error ? error.message : error);
+      return { status: 500, json: { error: "تعذّر تسجيل القرار.", stateSaved: false, rolledBack } };
+    }
+    if (!saved) return { status: 404, json: { error: "لا يوجد طلبٌ بهذا المعرّف" } };
+    return {
+      status: 200, audit: opened?.audit,
+      json: { ok: true, courseStates: saved.courseStates || [], ...(openedRow ? { opened: { id: openedRow.id, sectionCode: openedRow.SCode, amendment: opened?.json?.amendment || null, reused: !createdNew } } : {}) },
+    };
+  };
+
+  const outcome = wantsOpening ? await withSerialLock(`student-open:${need.id}:${courseId}`, commit) : await commit();
+  if (outcome.audit) res.locals.auditChanges = outcome.audit;
   res.setHeader("Cache-Control", "no-store");
-  res.json({ ok: true, courseStates: saved.courseStates || [], ...(openedRow ? { opened: { id: openedRow.id, sectionCode: openedRow.SCode, amendment: opened!.json.amendment || null } } : {}) });
+  res.status(outcome.status).json(outcome.json);
 });
 
 /**

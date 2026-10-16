@@ -226,7 +226,7 @@ const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 check(server.includes("scheduleLockRefusal"), "قفلُ الإرسال مُركَّب");
 for (const route of ['app.post("/api/schedules"', 'app.put("/api/schedules/:id"', 'app.delete("/api/schedules/:id"']) {
   /* إضافةُ الموعد وتعديلُه معالجان مسمّيان (يستعملهما «اعتماد الاقتراح» أيضاً): الجسمُ عند تعريفهما. */
-  const marker = route === 'app.post("/api/schedules"' ? "const createScheduleHandler = async" : route === 'app.put("/api/schedules/:id"' ? "const updateScheduleHandler = async" : route;
+  const marker = route === 'app.post("/api/schedules"' ? "const createScheduleHandler = async" : route === 'app.put("/api/schedules/:id"' ? "const updateScheduleHandler = async" : route === 'app.delete("/api/schedules/:id"' ? "const deleteScheduleHandler = async" : route;
   const at = server.indexOf(marker);
   const body = server.slice(at, at + 9000);
   check(at !== -1 && body.includes("scheduleLockRefusal"), `${route} يقرأ القفل قبل أن يكتب`);

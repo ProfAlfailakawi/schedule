@@ -63,6 +63,7 @@ check(guard.indexOf("AdTermClosed") < guard.indexOf("getScheduleApproval"),
 const DOOR_HANDLER: Record<string, string> = {
   'app.post("/api/schedules"': "const createScheduleHandler = async",
   'app.put("/api/schedules/:id"': "const updateScheduleHandler = async",
+  'app.delete("/api/schedules/:id"': "const deleteScheduleHandler = async",
 };
 for (const door of [
   'app.post("/api/schedules"',

@@ -99,6 +99,23 @@ try {
       check(swap.body?.applied?.length === 2, "W1 تبديلٌ صالح يُطبَّق بخطوتين", swap.body);
     }
 
+    /* تبديلٌ صالح: الموعدان لأستاذٍ واحد يتبادلان وقتيهما. الحالةُ النهائية سليمة، وأيُّ خطوةٍ وحدها تتعارض مع الأخرى. */
+    const swapPair = rows.filter(row => row.id !== base.id).reduce((found: any[] | null, row, _i, all) => {
+      if (found) return found;
+      const mate = all.find(other => other.id !== row.id && Number(other.AdInstructorId) === Number(row.AdInstructorId)
+        && (dayOf(other) !== dayOf(row) || other.fstarttime !== row.fstarttime) && other.fstarttime && Number(other.fendtime.slice(0, 2)) - Number(other.fstarttime.slice(0, 2)) === Number(row.fendtime.slice(0, 2)) - Number(row.fstarttime.slice(0, 2)));
+      return mate ? [row, mate] : null;
+    }, null) as any[] | null;
+    if (swapPair) {
+      const [x, y] = (await week()).filter(row => swapPair.some(item => item.id === row.id)).sort((l, r) => l.id - r.id);
+      const exchange = await call("POST", "/api/schedules/apply-proposal", { kind: "swap", ...scope, moves: [
+        { rowId: x.id, from: { day: dayOf(x), start: x.fstarttime, end: x.fendtime }, to: { day: dayOf(y), start: y.fstarttime, end: y.fendtime } },
+        { rowId: y.id, from: { day: dayOf(y), start: y.fstarttime, end: y.fendtime }, to: { day: dayOf(x), start: x.fstarttime, end: x.fendtime } },
+      ], origin });
+      const [x2, y2] = (await week()).filter(row => row.id === x.id || row.id === y.id).sort((l, r) => l.id - r.id);
+      check(exchange.status === 200 && exchange.body?.applied?.length === 2 && x2.fstarttime === y.fstarttime && dayOf(x2) === dayOf(y) && y2.fstarttime === x.fstarttime && dayOf(y2) === dayOf(x),
+        "W2 تبديلُ موعدين لأستاذٍ واحد يُقبل (الحالة النهائية سليمة) ولو تعارضت كلُّ خطوةٍ وحدها مع الأخرى", exchange);
+    } else check(true, "W2 (لا موعدان متكافئان لأستاذٍ واحد في بيانات التجربة)");
     /* ── فتحُ شعبة ── */
     const opening = await call("POST", "/api/schedules/apply-proposal", { kind: "opening", ...scope, courseId: base.AdCourseId, placement: {
       day: "fmonday", start: "18:30", end: "19:45", sectionCode: base.SCode, instructorId: base.AdInstructorId,
@@ -134,6 +151,29 @@ try {
       check(rejected.status === 409 && rejected.body?.stateSaved === false && stillOpen?.settled === false && (await week()).length === before + 1, "R4 شعبةٌ تتعارض مع ما فُتح للتوّ: تُردّ، ولا تُسجَّل الموافقة، ولا يُكتب شيء", rejected);
       const reject = await call("POST", `/api/student-registration/${target2.row.id}/course-state`, { courseId: target2.course.id, state: "committee-rejected", reasonCode: "prerequisite", openSection: slotFor({ day: "fthursday", start: "09:00", end: "10:15", sectionCode: "66" }) });
       check(reject.status === 200 && (await week()).length === before + 1, "R5 عدمُ الموافقة لا يفتح شعبةً ولو أُرسل معه اقتراح");
+    }
+
+    /* ── تكرارُ الأثر: إعادةُ الضغط لا تفتح ثانيةً، وموافقتان متزامنتان تتّفقان على شعبةٍ واحدة ── */
+    const again = await call("POST", `/api/student-registration/${target1.row.id}/course-state`, { courseId: target1.course.id, state: "awaiting-registration", openSection: slotFor({ start: "09:00", end: "10:15", day: "fthursday" }) });
+    check(again.status === 200 && again.body?.opened?.reused === true && again.body.opened.id === approve.body.opened.id && (await week()).length === before + 1, "R6 إعادةُ الموافقة لا تفتح شعبةً ثانية (تلتقط الشعبة المفتوحة لهذا الطلب)", again);
+    const target3 = pending[2];
+    if (target3) {
+      const rowsBefore = (await week()).length;
+      /* خانةٌ خاليةٌ فعلاً للأستاذ والقاعة معاً في الأسبوع كلِّه (كل الأقسام) */
+      const everything = (await call("GET", "/api/schedules")).body as any[];
+      const mins = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+      const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+      let free: { day: string; start: string; end: string } | null = null;
+      for (const day of ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"]) for (let start = 8 * 60; start + 75 <= 20 * 60 && !free; start += 30) {
+        const busy = everything.some(row => row[day] && mins(row.fstarttime) < start + 75 && mins(row.fendtime) > start
+          && (Number(row.AdInstructorId) === Number(teacherRow.AdInstructorId) || (row.roomId && row.roomId === teacherRow.roomId)));
+        if (!busy) free = { day, start: clock(start), end: clock(start + 75) };
+      }
+      const slot3 = slotFor({ ...free, sectionCode: "55" });
+      const [one, two] = await Promise.all([1, 2].map(() => call("POST", `/api/student-registration/${target3.row.id}/course-state`, { courseId: target3.course.id, state: "awaiting-registration", openSection: slot3 })));
+      const afterParallel = await week();
+      const mine = afterParallel.filter(row => row.origin?.refId === `need:${target3.row.id}:course:${target3.course.id}`);
+      check(one.status === 200 && two.status === 200 && mine.length === 1 && afterParallel.length === rowsBefore + 1, "R7 موافقتان متزامنتان على الحالة نفسها: شعبةٌ واحدة لا اثنتان، ونجاحٌ للاثنتين", [one.status, two.status, mine.length, one.body?.error, two.body?.error]);
     }
 
     /* ── الحدود ── */
