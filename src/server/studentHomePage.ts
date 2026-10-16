@@ -148,13 +148,6 @@ button,input{font:inherit;color:inherit}
 .opt.off{opacity:.55}
 .grp{margin:10px 2px 2px;font-size:12.5px;font-weight:700;color:var(--brass);letter-spacing:.02em}
 .track-picks{display:grid;gap:9px;margin-block-start:14px}
-.section-campus{margin-block-start:10px;border:1px solid var(--line);border-radius:16px;background:var(--card);overflow:hidden}
-.section-campus>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-block-size:54px;padding:10px 14px;cursor:pointer;font-weight:700;list-style:none}
-.section-campus>summary::-webkit-details-marker{display:none}
-.section-campus>summary::after{content:"＋";color:var(--accent);font-size:18px}
-.section-campus[open]>summary::after{content:"−"}
-.section-campus>summary small{margin-inline-start:auto;color:var(--muted);font-size:12px;font-weight:500}
-.section-campus>.list{padding:0 10px 10px}
 .grad-estimate{padding-block-start:8px;border-block-start:1px solid var(--line)}
 .srch{position:relative}
 .srch .i{position:absolute;inset-inline-start:14px;inset-block-start:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
@@ -247,6 +240,10 @@ button,input{font:inherit;color:inherit}
 .rp .ref{font:700 22px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;direction:ltr;text-align:center;padding:12px;border-radius:14px;background:var(--accent-soft);color:var(--accent)}
 
 .tk .fine{font-size:11.5px;color:var(--muted);line-height:1.7;margin:0}
+.tk .ticket-alt{display:grid;gap:5px;margin-inline-start:46px;margin-block-start:-7px}
+.tk .ticket-alt label{font-size:11px;color:var(--muted)}
+.tk .ticket-alt .inp{min-block-size:40px;padding:8px 11px;font-size:12px}
+@media(max-width:580px){.tk .ticket-alt{margin-inline-start:0}.tk .ln{gap:8px;padding:9px}}
 
 
 /* ── شريط سفلي لاصق ── */
@@ -373,7 +370,7 @@ function viewCreate(){
 function afterSignIn(){S.civil="";api("GET","/api/public/me/state").then(function(r){if(r.ok){S.state=r.d;setTop()}S.draft=null;S.offered=null;setView(S.state&&S.state.profile&&S.state.profile.setupDone?"home":"setup")})}
 
 /* ── إعداد الملف: القسم ← الصحيفة ← ما أنجزت ── */
-function ensureCatalog(cb){if(!S.track)return cb();if(S.catalog)return cb();api("GET","/api/public/me/catalog?track="+encodeURIComponent(S.track)).then(function(r){S.catalog=r.ok?r.d.colleges:[];cb()})}
+function ensureCatalog(cb){if(!S.track)return cb();if(S.catalog)return cb();api("GET","/api/public/me/catalog?track="+encodeURIComponent(S.track)).then(function(r){S.catalog=r.ok?r.d.specializations:[];cb()})}
 function startDraft(){var p=S.state.profile||{};S.draft={sectionId:p.sectionId||0,sectionName:p.sectionName||"",planId:p.planId||"",passed:(p.passedCourseIds||[]).slice(),step:1,q:"",filter:"all"};return S.draft}
 function viewSetup(){var d=S.draft||startDraft();ensureCatalog(function(){if(d.step===1)setupSection();else if(d.step===2)setupPlan();else setupPassed()})}
 function stepsBar(n,total){var h='<div class="steps" aria-hidden="true">';for(var i=1;i<=total;i++)h+='<i class="'+(i<n?"on":i===n?"now":"")+'"></i>';return h+'</div>'}
@@ -382,9 +379,9 @@ function setupSection(){var d=S.draft;
     app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">اختر مسار الدراسة</h1><p class="muted">اختر البنين أو البنات، ثم يظهر لك دليل الأقسام المناسب فقط.</p><div class="track-picks"><button type="button" class="opt" data-track="boys"><span class="tx"><b>مسار البنين</b><small>أقسام كلية التربية الأساسية</small></span>'+ic("back")+'</button><button type="button" class="opt" data-track="girls"><span class="tx"><b>مسار البنات</b><small>أقسام كلية التربية الأساسية</small></span>'+ic("back")+'</button></div>';
     app.querySelectorAll("[data-track]").forEach(function(b){b.addEventListener("click",function(){S.track=b.getAttribute("data-track");history.replaceState(null,"","/me?track="+encodeURIComponent(S.track));S.catalog=null;viewSetup()})});return;
   }
-  app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">ما قسمك العلمي؟</h1><p class="muted">اختر القسم الذي تدرس فيه.</p><div class="srch" style="margin-block-start:12px">'+ic("search")+'<input class="inp" id="q" type="search" placeholder="ابحث باسم القسم" aria-label="ابحث باسم القسم" autocomplete="off"></div><div id="lst" class="list" style="margin-block-start:12px"></div>';
+  app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">ما تخصصك؟</h1><p class="muted">اختر تخصصك العلمي للمتابعة.</p><div class="srch" style="margin-block-start:12px">'+ic("search")+'<input class="inp" id="q" type="search" placeholder="ابحث باسم التخصص" aria-label="ابحث باسم التخصص" autocomplete="off"></div><div id="lst" class="list" style="margin-block-start:12px"></div>';
   var lst=document.getElementById("lst"),q=document.getElementById("q");
-  function paint(){var t=q.value.trim(),h="",any=false;(S.catalog||[]).forEach(function(c){var items=c.sections.filter(function(s){return!t||(s.name+" "+c.campus).indexOf(t)>=0});if(!items.length)return;any=true;h+='<details class="section-campus"'+(t?' open':'')+'><summary>'+esc(c.campus)+'<small>'+countOf(items.length,AR.section)+'</small></summary><div class="list">';items.forEach(function(s){h+='<button type="button" class="opt" data-id="'+s.id+'" data-n="'+esc(s.name)+'" aria-pressed="'+(d.sectionId===s.id?"true":"false")+'"><span class="tx"><b>'+esc(s.name)+'</b></span>'+ic("back")+'</button>'});h+='</div></details>'});lst.innerHTML=any?h:'<p class="muted">لا قسم بهذا الاسم في هذا المسار.</p>'}
+  function paint(){var t=q.value.trim(),h="",items=(S.catalog||[]).filter(function(s){return!t||s.name.indexOf(t)>=0});items.forEach(function(s){h+='<button type="button" class="opt" data-id="'+s.id+'" data-n="'+esc(s.name)+'" aria-pressed="'+(d.sectionId===s.id?"true":"false")+'"><span class="tx"><b>'+esc(s.name)+'</b></span>'+ic("back")+'</button>'});lst.innerHTML=h||'<p class="muted">لا تخصص بهذا الاسم في هذا المسار.</p>'}
   q.addEventListener("input",paint);paint();
   lst.addEventListener("click",function(e){var b=e.target.closest(".opt");if(!b)return;var id=Number(b.getAttribute("data-id"));if(id!==d.sectionId){d.passed=[];d.planId=""}d.sectionId=id;d.sectionName=b.getAttribute("data-n");d.plans=null;
     api("GET","/api/public/me/plan?sectionId="+id).then(function(r){if(!r.ok){toast(r.d.error||"تعذّر تحميل القسم",true);return}S.plans=r.d.plans;S.planSource=r.d.source;
@@ -468,36 +465,48 @@ function loadCases(){var host=document.getElementById("cases");if(!host)return;
 function loadCaseRequest(){var host=document.getElementById("caseRequest");if(!host)return;
   api("GET","/api/public/me/request-context").then(function(r){if(!r.ok||!r.d.ready||!r.d.canRequest){host.innerHTML="";return}paintCaseRequest(host,r.d)})}
 function paintCaseRequest(host,d){
-  var options=function(list){return '<option value="">اختر المقرر</option>'+list.map(function(c){return '<option value="'+c.id+'">'+esc(c.code)+' · '+esc(c.name)+'</option>'}).join("")};
-  var h='<details class="card fade more"><summary>تعذّر تكوين جدول؟ اطلب مراجعة القسم</summary><div style="margin-block-start:10px"><p class="muted">يصل اختيارك للقسم للمراجعة. لا يثبت الأهلية، ولا يحجز مقعداً، ولا يؤكد وجود تعارض.</p>'
-    +'<div class="field"><label for="crtype">نوع الطلب</label><select class="inp" id="crtype"><option value="new-course">أحتاج طرح مقرر من صحيفتي</option><option value="course-conflict">أواجه تعارضاً بين مقررين</option></select></div>'
+  var options=function(list){return '<option value="">اختر المقرر</option>'+list.map(function(c){return '<option value="'+c.id+'">'+esc(c.code)+' · '+esc(c.name)+(c.sectionName?' · '+esc(c.sectionName):'')+'</option>'}).join("")};
+  var h='<details class="card fade more"><summary>تعذّر تكوين جدول؟ اطلب مراجعة القسم</summary><div style="margin-block-start:10px"><p class="muted">يصل اختيارك للقسم المختص للمراجعة. لا يثبت الأهلية ولا يحجز مقعداً. طلب التعارض لا يظهر إلا إذا لم نجد توليفة منشورة خالية منه.</p>'
+    +'<div class="field"><label for="crtype">نوع الطلب</label><select class="inp" id="crtype"><option value="new-course">أحتاج طرح مقررات من صحيفتي</option><option value="course-conflict">تعذّر حل تعارض بين مقررين</option></select></div>'
     +'<div class="field" id="crcourses"></div><div class="field"><label for="crdetails">سبب مختصر</label><textarea class="inp" id="crdetails" maxlength="600" rows="3" placeholder="اكتب ما يحتاج القسم معرفته"></textarea></div>'
     +'<label class="row" style="gap:10px;align-items:flex-start"><input type="checkbox" id="crconsent"><span>أوافق على إرسال اسمي ورقمي المدني إلى القسم لمراجعة هذا الطلب.</span></label>'
     +errBox("crerr")+'<button class="btn" id="crsend">أرسل طلب المراجعة</button><div id="crdone"></div></div></details>';
   host.innerHTML=h;
   var kind=document.getElementById("crtype"),courses=document.getElementById("crcourses");
+  if(!(d.conflictPairs||[]).length){var conflictOption=kind.querySelector('option[value="course-conflict"]');if(conflictOption)conflictOption.remove()}
   function draw(){var conflict=kind.value==="course-conflict";courses.innerHTML=conflict
-    ?'<label for="crone">المقرر من صحيفتك</label><select class="inp" id="crone">'+options(d.courses)+'</select><label for="crtwo" style="margin-block-start:8px">المقرر المتعارض معه في كليتك</label><select class="inp" id="crtwo">'+options(d.conflictCourses)+'</select>'
-    :'<label for="crone">المقرر المتبقي في صحيفتك</label><select class="inp" id="crone">'+options(d.courses)+'</select>'}
+    ?'<label for="crone">المقرر المتعثر في صحيفتك</label><select class="inp" id="crone">'+options(d.conflictOwnCourses||[])+'</select><label for="crtwo" style="margin-block-start:8px">المقرر الآخر · يظهر فقط عند ثبوت التعارض</label><select class="inp" id="crtwo">'+options([])+'</select>'
+    :'<label>المقررات المتبقية المتعذرة في المحاكاة · اختر ما يحتاج مراجعة (حتى 12)</label><div class="case-course-choices" style="display:grid;gap:7px;max-block-size:220px;overflow:auto">'+(d.courses||[]).map(function(c){return '<label class="case-course-choice" style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--line);border-radius:11px"><input type="checkbox" name="crcourse" value="'+c.id+'"><span><bdi>'+esc(c.code)+'</bdi> · '+esc(c.name)+'</span></label>'}).join("")+'</div>';
+    if(conflict){var own=document.getElementById("crone"),other=document.getElementById("crtwo");function fill(){var id=Number(own.value||0),list=(d.conflictCourses||[]).filter(function(c){return(d.conflictPairs||[]).some(function(p){return Number(p.ownCourseId)===id&&Number(p.otherCourseId)===Number(c.id)})});other.innerHTML=options(list)}own.addEventListener("change",fill);fill()}}
   kind.addEventListener("change",draw);draw();
-  document.getElementById("crsend").addEventListener("click",function(){var button=this,selected=[Number((document.getElementById("crone")||{}).value||0)];if(kind.value==="course-conflict")selected.push(Number((document.getElementById("crtwo")||{}).value||0));
+  document.getElementById("crcourses").addEventListener("change",function(e){if(e.target&&e.target.name==="crcourse"&&e.target.checked&&host.querySelectorAll('input[name="crcourse"]:checked').length>12){e.target.checked=false;showErr("crerr","يمكنك اختيار حتى 12 مقرراً في الطلب الواحد.")}});
+  document.getElementById("crsend").addEventListener("click",function(){var button=this,selected=[],checks=host.querySelectorAll('input[name="crcourse"]:checked');if(kind.value==="course-conflict")selected=[Number((document.getElementById("crone")||{}).value||0),Number((document.getElementById("crtwo")||{}).value||0)];else for(var ci=0;ci<checks.length;ci++)selected.push(Number(checks[ci].value));
     var consent=document.getElementById("crconsent").checked,details=document.getElementById("crdetails").value;button.disabled=true;showErr("crerr","");
     api("POST","/api/public/me/request",{requestType:kind.value,courseIds:selected,details:details,consent:consent}).then(function(r){button.disabled=false;if(!r.ok){showErr("crerr",r.d.error||"تعذّر إرسال الطلب");return}
-      document.getElementById("crdone").innerHTML='<p class="lead">وصل طلبك إلى القسم.</p><p class="muted">رقم الحالة</p><div class="ref">'+esc(r.d.caseRef)+'</div>';loadCases();toast("وصل طلب المراجعة")})})}
+      var cases=r.d.cases||[{sectionName:"القسم المختص",caseRef:r.d.caseRef}],done='<p class="lead">وصل طلبك للأقسام المعنية.</p>';cases.forEach(function(c){done+='<p class="muted">'+esc(c.sectionName)+' · رقم الحالة</p><div class="ref">'+esc(c.caseRef)+'</div>'});document.getElementById("crdone").innerHTML=done;loadCases();toast("وصل طلب المراجعة")})})}
 function loadTicket(){var host=document.getElementById("ticket");if(!host)return;
   api("GET","/api/public/me/ticket").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var t=r.d;S.ticket=t;S.tkPlan=S.tkPlan||"A";paintTicket(host)})}
-function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
+function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||{};t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
+  var activeItems=cur.items.map(function(i){return S.tkOverrides[cur.label+":"+i.courseId]||i}),visibleTimes=activeItems.length>0&&activeItems.every(function(i){return i.timesVisible}),daySet={},gapMinutes=0;if(visibleTimes){var byDay={};activeItems.forEach(function(i){(i.slots||[]).forEach(function(slot){(byDay[slot.day]||(byDay[slot.day]=[])).push(slot)})});Object.keys(byDay).forEach(function(day){daySet[day]=true;var slots=byDay[day].sort(function(a,b){return a.start-b.start});for(var n=1;n<slots.length;n++)gapMinutes+=Math.max(0,slots[n].start-slots[n-1].end)})}
   var w=t.window,when=w.name?(w.name+(w.start?" · "+fmtShort(w.start)+(w.end?" → "+fmtShort(w.end):""):"")):"يحدّد موعدَها صاحبُ القرار";
   var h='<section class="card tk fade"><div class="hd"><span class="win"><b>'+w.n+'</b><small>من '+w.of+'</small></span><div class="tx"><b>تذكرتي · نافذتي '+w.n+'</b><span class="muted">'+esc(when)+'</span></div></div><div class="perf"></div><div class="bd">';
   if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد آخر حساب — ستتحدّث تذكرتك في التحديث القادم</div>';
   if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
   h+='<div class="seg fit" role="group" aria-label="الخطة">'+t.plans.map(function(p){return '<button type="button" data-l="'+p.label+'" aria-pressed="'+(p.label===cur.label?"true":"false")+'">'+({A:"الخطة أ",B:"الخطة ب",C:"الخطة ج"})[p.label]+'</button>'}).join("")+'</div>';
   h+='<div class="row between"><span class="muted">'+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(cur.units,AR.unit)+'</span></div>';
+  if(visibleTimes)h+='<p class="fine">'+countOf(Object.keys(daySet).length,AR.day)+' حضور · '+(gapMinutes?('فراغات بين المحاضرات نحو '+countOf(Math.round(gapMinutes/6)/10,AR.hour)):'بلا فراغات طويلة')+' · التعديل معاينة شخصية لا تغيّر جدول القسم.</p>';
   if(!cur.items.length)h+='<p class="lead">لا مقرراتٍ تُناسب هذه الخطة الآن.</p>';
-  cur.items.forEach(function(i){h+='<div class="ln"><span class="ic">'+ic("book")+'</span><span class="tx"><b>'+esc(i.name)+'</b><small>'+(i.timesVisible?esc(i.section?"شعبة "+i.section+" · ":"")+slotsText(i.slots):ic("lock","")+" الموعد يظهر عند اعتماد جدول القسم")+'</small></span>'+(i.tight?'<span class="chip warn">مقاعد قليلة</span>':'')+'<span class="code">'+esc(i.code)+'</span></div>'});
+  cur.items.forEach(function(i){var key=cur.label+":"+i.courseId,alt=S.tkOverrides[key],chosen=alt||i,alternatives=i.alternatives||[];
+    h+='<div class="ln"><span class="ic">'+ic("book")+'</span><span class="tx"><b>'+esc(i.name)+'</b><small>'+(chosen.timesVisible?esc(chosen.section?"شعبة "+chosen.section+" · ":"")+slotsText(chosen.slots):ic("lock","")+" الموعد يظهر عند اعتماد جدول القسم")+'</small></span>'+(chosen.tight?'<span class="chip warn">مقاعد قليلة</span>':'')+'<span class="code">'+esc(i.code)+'</span></div>';
+    if(i.timesVisible&&alternatives.length){h+='<div class="ticket-alt"><label for="ta'+i.courseId+'">جرّب شعبة بديلة · معاينة شخصية</label><select class="inp ticket-alt-select" id="ta'+i.courseId+'" data-course="'+i.courseId+'"><option value="">الشعبة المقترحة · '+esc(i.section)+'</option>'+alternatives.map(function(a){return '<option value="'+esc(a.offeringId)+'"'+(alt&&alt.offeringId===a.offeringId?' selected':'')+'>شعبة '+esc(a.section)+(a.tight?' · مقاعد قليلة':'')+'</option>'}).join("")+'</select></div>'}
+  });
+  h+='<p class="fine" id="tkerr" role="status" aria-live="polite"></p>';
   if(t.unmet.length){h+='<details class="more"><summary>'+ic("down")+' ما لم نضعه ('+t.unmet.length+')</summary><div class="list" style="margin-block-start:6px">'+t.unmet.map(function(u){return '<div class="opt off"><span class="tx"><b>'+esc(u.name)+'</b><small>'+esc(WHY[u.reason]||"")+'</small></span></div>'}).join("")+'</div></details>'}
   h+='<p class="fine">'+ic("shield","")+' تقديرٌ تجريبي من بياناتٍ جمعناها — لا يحجز مقعداً ولا يُغني عن التسجيل الرسمي.</p></div></section>';
   host.innerHTML=h;
+  var alternatives=host.querySelectorAll(".ticket-alt-select");for(var ai=0;ai<alternatives.length;ai++)(function(select){select.addEventListener("change",function(){var courseId=Number(select.getAttribute("data-course")),item=cur.items.find(function(row){return Number(row.courseId)===courseId}),key=cur.label+":"+courseId,candidate=(item.alternatives||[]).filter(function(a){return a.offeringId===select.value})[0],next={};for(var overrideKey in S.tkOverrides)if(Object.prototype.hasOwnProperty.call(S.tkOverrides,overrideKey))next[overrideKey]=S.tkOverrides[overrideKey];if(candidate)next[key]=candidate;else delete next[key];
+      var chosen=cur.items.map(function(row){return next[cur.label+":"+row.courseId]||row}),clash=false;for(var x=0;x<chosen.length;x++)for(var y=x+1;y<chosen.length;y++){var a=chosen[x].slots||[],b=chosen[y].slots||[];if(a.some(function(l){return b.some(function(r){return l.day===r.day&&l.start<r.end&&r.start<l.end})}))clash=true}
+      if(clash){select.value=S.tkOverrides[key]?S.tkOverrides[key].offeringId:"";document.getElementById("tkerr").textContent="هذه الشعبة تتعارض مع مقرر آخر في خطتك؛ اختر شعبة أخرى.";return}S.tkOverrides=next;paintTicket(host)} )})(alternatives[ai]);
   host.querySelectorAll(".seg button").forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");paintTicket(host)})})}
 function loadReport(){var host=document.getElementById("report");if(!host)return;
   api("GET","/api/public/me/report").then(function(r){if(!r.ok||!r.d.ready||(!r.d.canReport&&!r.d.answers.length)||!r.d.courses.length){host.innerHTML="";return}S.report=r.d;S.rp={};r.d.answers.forEach(function(a){S.rp[a.courseId]={state:a.state,reason:a.reason||"other"}});S.rpHelp=false;paintReport(host)})}
