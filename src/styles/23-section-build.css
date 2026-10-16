@@ -1,0 +1,16 @@
+/* ── نزّل الشعب ── */
+.sb{display:grid;gap:10px;margin-block:14px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.sb-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.sb-head>div{flex:1;min-inline-size:200px;display:grid;gap:2px}.sb-head small{color:var(--muted);font-size:.78rem}
+.sb-ic{display:grid;place-items:center;inline-size:38px;block-size:38px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink)}.sb-ic svg{inline-size:20px;block-size:20px}
+.sb-totals{display:flex;gap:18px;flex-wrap:wrap;margin:0;font-size:.85rem;color:var(--muted)}.sb-totals b{font-size:1.25rem;color:var(--text)}.sb-totals .is-gap b{color:var(--warning)}.sb-totals .is-ok b{color:var(--success,var(--accent-ink))}
+.sb-rows{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.sb-row{display:grid;gap:5px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r-md,10px)}.sb-row.s-missing{border-color:var(--warning)}.sb-row.s-done{opacity:.8}
+.sb-row-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.sb-name{flex:1;min-inline-size:150px;display:grid}.sb-name small{color:var(--muted);font-size:.7rem}
+.sb-count{display:inline-flex;align-items:center;gap:4px;font-size:.8rem;color:var(--muted)}.sb-count svg{inline-size:14px;block-size:14px;color:var(--accent-ink)}
+.sb-dots{display:inline-flex;gap:3px}.sb-dot{inline-size:10px;block-size:10px;border-radius:50%;border:2px solid var(--line-strong,#9aa)}.sb-dot.have{background:var(--accent-ink);border-color:var(--accent-ink)}.sb-dot.will{background:var(--accent);border-color:var(--accent)}.sb-dot.gap{border-color:var(--warning);background:transparent}
+.sb-slot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 8px;border-radius:8px;background:var(--accent-softer);font-size:.82rem}.sb-slot small{color:var(--muted);margin-inline-start:auto}
+.sb-stuck{display:flex;align-items:flex-start;gap:6px;margin:0;font-size:.8rem;color:var(--warning)}.sb-stuck svg{flex:none;inline-size:16px;block-size:16px;margin-block-start:2px}
+.sb-days{display:flex;align-items:center;gap:6px;margin:0;font-size:.8rem;color:var(--muted)}.sb-days svg{inline-size:15px;block-size:15px}
+.sb-actions,.sb-confirm>div{display:flex;gap:8px;flex-wrap:wrap}
+.sb-confirm{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--accent-softer)}.sb-confirm p{margin:0;font-size:.85rem;line-height:1.7}
+.sb-done{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.sb-done svg{color:var(--accent-ink);inline-size:22px;block-size:22px}.sb-done p{flex:1;margin:0;font-size:.85rem}

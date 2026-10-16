@@ -9,6 +9,7 @@ import {
 } from "../utils/sectionCountSuggestion";
 import { manualRemainingValue, planRemainingApply, remainingOf, vacantValues, type RejectKind, type RejectMismatch, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
+import SectionBuild from "./SectionBuild";
 
 /**
  * ── تخطيط الشعب: كشفُ المتبقي ← مدىً يرسيه التاريخ ← تقرير ─────────────────
@@ -361,8 +362,12 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     ...foreignRows.map(row => ({ n: courseTail(row.printed), item: null, foreign: row.printed })),
   ].sort((a, b) => a.n - b.n);
 
+  /* ما يراه القسم في خانة «المختار» (ما كتبه، وإلا المقترح) هو ما يُنزَّل: أعدادٌ فقط تذهب إلى الخادم. */
+  const buildTargets = Object.fromEntries(planned.map(row => [row.key, row.pick as number]));
+
   return (
     <div className="section-plan">
+      <SectionBuild collegeId={collegeId} sectionId={sectionId} termId={termId} targets={buildTargets} />
       <div className="section-plan-import">
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
           <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي (لم يسجلوا)"}

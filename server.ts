@@ -111,6 +111,8 @@ import { loadSimulationInput, rankDemandRepairsBySimulation, rankSectionOpenings
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
+import { demandFromTargets, gapRows, hardestFirst, weekFingerprint, type GapRow } from "./src/utils/sectionBuild";
+import { courseLevelFromCode } from "./src/utils/curriculumRules";
 import { reasonForMove } from "./src/utils/appointmentStory";
 import { buildCalendar, calendarSpanForTerm, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
@@ -7514,7 +7516,7 @@ app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: Authe
 /* ── مصدرُ التغيير: من أين جاء هذا الموعد؟ ─────────────────────────────────────
  * يُكتب فقط حين يمرّ الحفظ من «اعتماد الاقتراح» (الرادار، حالة طالب، رغبة أستاذ). الحفظُ اليدويّ
  * لا يحمل مصدراً ولا يتغيّر. والقيم مقيّدة: نوعٌ من قائمةٍ مغلقة، ونصوصٌ قصيرة. */
-const SCHEDULE_ORIGIN_KINDS = new Set(["radar", "student-case", "instructor-request", "intelligence"]);
+const SCHEDULE_ORIGIN_KINDS = new Set(["radar", "student-case", "instructor-request", "intelligence", "planning"]);
 function scheduleOriginOf(req: AuthenticatedRequest): import("./src/types").ScheduleOrigin | undefined {
   const raw = (req.body as any)?.origin;
   if (!raw || !SCHEDULE_ORIGIN_KINDS.has(String(raw.kind))) return undefined;
@@ -7880,7 +7882,7 @@ async function runScheduleHandler(
 }
 
 const PROPOSAL_ORIGIN_LABEL: Record<string, string> = {
-  "radar": "رادار التسجيل", "student-case": "حالة طالب", "instructor-request": "رغبة أستاذ", "intelligence": "مركز الذكاء",
+  "radar": "رادار التسجيل", "student-case": "حالة طالب", "instructor-request": "رغبة أستاذ", "intelligence": "مركز الذكاء", "planning": "تخطيط الشعب",
 };
 const PROPOSAL_DAYS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const;
 const dayFlagsOf = (day: string) => Object.fromEntries(PROPOSAL_DAYS.map(key => [key, key === day]));
@@ -14896,6 +14898,136 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     history,
     lineage,
   });
+});
+
+/* ══ تنزيل الشعب: من العدد المختار في التخطيط إلى الجدول ═══════════════════════════
+ *
+ * القرار (عدد الشعب لكل مقرر) محفوظ في إحصاءات التسجيل (accepted). هنا يُقارَن بما في جدول الفصل فعلاً:
+ * المطلوب ٦ والموجود ٥ ⇒ باقٍ ١. والبناء يمرّ من محرّك التوصيات نفسه (نسجٌ على أسبوعٍ يتراكم، قاعات
+ * موثّقة، أستاذٌ درّس المقرر وله نصاب، دفعةٌ لا تتقاطع، وكلّ أقسام الفصل في الحسبان)، ثم يُكتب بالمسار
+ * المشترك (applyProposalCore) باسم المستخدم الحالي ومصدره «تخطيط الشعب». لا يُكتب شيء قبل ضغطة التأكيد،
+ * وبصمة الأسبوع تمنع الإنزال على جدولٍ تغيّر، والإنزال كلُّه أو لا شيء. */
+async function readSectionBuild(collegeId: number, sectionId: number, termId: number, given?: unknown) {
+  const [courses, stats, termWeek, history, people, registry] = await Promise.all([
+    Repository.getCoursesBySection(sectionId), Repository.getRegistrationStats(collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId }), Repository.getSchedulesByScope({ collegeId, sectionId }),
+    Repository.getInstructors().catch(() => []), readLocationRegistry(),
+  ]);
+  const week = termWeek.filter(row => Number(row.AdSectionId) === sectionId && Number(row.AdCollegeId) === collegeId);
+  /* ما يراه المستخدم على الشاشة (المختار، وإلا المقترح) يصل هنا أعداداً فقط؛ وبلا إرسالٍ يُقرأ المحفوظ. */
+  const accepted: Record<string, unknown> = given && typeof given === "object" ? given as Record<string, unknown> : (stats?.accepted || {});
+  const targets = new Map<number, number>();
+  for (const course of courses) { const value = accepted[String(course.AdCourseId)]; if (value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 40) targets.set(Number(course.AdCourseId), Math.floor(Number(value))); }
+  const courseById = new Map(courses.map(course => [Number(course.AdCourseId), course]));
+  const levelOf = (id: number) => courseLevelFromCode(courseById.get(id)?.CourseCode) || 0;
+  const gaps = gapRows(courses, targets, week);
+  /* قسمٌ بلا أي موعدٍ في الفصل «لم يبدأ»: لا نخترع جدولاً من العدم، يبدؤه القسم ثم يُكمله التنزيل. */
+  const started = week.length > 0;
+  const ordered = hardestFirst(gaps.filter(row => row.remaining > 0), levelOf);
+  const demand = demandFromTargets([...ordered, ...gaps.filter(row => row.remaining === 0 && row.target !== null)], id => Number(courseById.get(id)?.MaxStudent) || 0, levelOf);
+  const style = started && ordered.length ? await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId }) : null;
+  const reading = started && ordered.length
+    ? readSectionOpenings(week, termWeek, courses, people as any[], history, demand, null, style?.reading || null, style?.doorway || 0, 999, registry.rooms)
+    : { proposals: [], noCeiling: [], headline: "" };
+  const byCourse = new Map(reading.proposals.map(proposal => [proposal.courseId, proposal]));
+  const rows = gaps.map(row => {
+    const proposal = byCourse.get(row.courseId);
+    const placements = proposal?.placements || [];
+    let reason = "";
+    if (row.remaining > 0 && placements.length < row.remaining) {
+      reason = !started ? "القسم لم يبدأ جدول هذا الفصل بعد"
+        : !(Number(courseById.get(row.courseId)?.MaxStudent) > 0) ? "سعة الشعبة غير مسجّلة في المقرر"
+        : proposal?.unplacedReason || "لا شعبة قائمة ولا إيقاع معتاد لتحديد مدة المحاضرة";
+    }
+    return { ...row, placements, unplaced: Math.max(0, row.remaining - placements.length), reason };
+  });
+  return { rows, started, fingerprint: weekFingerprint(termWeek), courseCount: courses.length };
+}
+
+app.post("/api/section-build/preview", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  res.setHeader("Cache-Control", "no-store");
+  const built = await readSectionBuild(collegeId, sectionId, termId, req.body?.targets);
+  const totals = built.rows.reduce((sum, row) => ({
+    target: sum.target + (row.target ?? 0), existing: sum.existing + (row.target === null ? 0 : Math.min(row.existing, row.target)),
+    remaining: sum.remaining + row.remaining, placeable: sum.placeable + row.placements.length,
+  }), { target: 0, existing: 0, remaining: 0, placeable: 0 });
+  res.json({ ...built, totals });
+});
+
+app.post("/api/section-build/apply", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  /* المختار مفاتيحُ فقط (مقرر:رقم الشعبة). الموعد والقاعة والأستاذ يُعاد حسابها هنا فلا يُملي المتصفحُ موعداً. */
+  const picked = new Set<string>((Array.isArray(req.body?.pick) ? req.body.pick : []).map(String).slice(0, 200));
+  if (!picked.size) { res.status(400).json({ error: "لم تختر شعباً للتنزيل." }); return; }
+  const outcome = await withSerialLock(`section-build:${collegeId}:${sectionId}:${termId}`, async (): Promise<{ status: number; json: any; audit?: string }> => {
+    const built = await readSectionBuild(collegeId, sectionId, termId, req.body?.targets);
+    if (String(req.body?.fingerprint || "") !== built.fingerprint) {
+      return { status: 409, json: { error: "تغيّر جدول الفصل منذ المعاينة. أعد المعاينة قبل التنزيل.", code: "stale" } };
+    }
+    const todo = built.rows.flatMap(row => row.placements.filter(placement => picked.has(`${row.courseId}:${placement.sectionCode}`)).map(placement => ({ row, placement })));
+    if (!todo.length) return { status: 409, json: { error: "لا شيء من المختار قابلٌ للتنزيل الآن.", code: "stale" } };
+    const batchId = `plan:${termId}:${Date.now().toString(36)}`;
+    const created: any[] = [];
+    const rollback = async () => {
+      let ok = true;
+      for (const row of created.reverse()) {
+        const back = await runScheduleHandler(deleteScheduleHandler, req, { params: { id: String(row.id) }, body: {} }).catch(() => null);
+        if (!back || back.status >= 400) ok = false;
+      }
+      return ok;
+    };
+    let amendment: string | null = null;
+    for (const { row, placement } of todo) {
+      const done = await applyProposalCore(req, {
+        kind: "opening", collegeId, sectionId, termId, courseId: row.courseId, placement: { ...placement, days: [placement.day] },
+        origin: { kind: "planning", refId: `${batchId}:${row.courseId}:${placement.sectionCode}`, note: `تنزيل الشعب: ${row.name} (مطلوب ${row.target}، كان ${row.existing})` },
+      });
+      if (done.status >= 400) {
+        const reverted = await rollback();
+        return { status: done.status, json: { ...(done.json || {}), applied: [], reverted, error: `${done.json?.error || "تعذّر التنفيذ."}${reverted ? " — لم يُكتب شيء." : " — تعذّر ردّ بعض ما كُتب، راجع الجدول."}` } };
+      }
+      const newRow = done.json?.applied?.[0]?.row;
+      if (newRow) created.push(newRow);
+      amendment = done.json?.amendment || amendment;
+    }
+    return {
+      status: 200,
+      json: { ok: true, applied: created.map(row => ({ action: "add", row })), batchId, amendment },
+      audit: `تنزيل الشعب: ${countOf(created.length, AR.section)} — ${created.map(row => `${row.AdCourseName} ش${row.SCode}`).join("، ")}`,
+    };
+  });
+  if (outcome.audit) res.locals.auditChanges = outcome.audit;
+  res.locals.auditRowIds = ((outcome.json as any)?.applied || []).map((item: any) => Number(item?.row?.id)).filter(Number.isFinite);
+  res.status(outcome.status).json(outcome.json);
+});
+
+/* التراجع: يحذف الصفوف التي أنشأتها دفعةٌ بعينها، ولا يلمس صفّاً تغيّر بعد إنشائه (رقم الإصدار) أو حُجز للتسجيل. */
+app.post("/api/section-build/undo", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  const batchId = String(req.body?.batchId || "");
+  if (!collegeId || !sectionId || !termId || !batchId.startsWith("plan:")) { res.status(400).json({ error: "دفعةٌ غير معروفة." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const outcome = await withSerialLock(`section-build:${collegeId}:${sectionId}:${termId}`, async (): Promise<{ status: number; json: any; audit?: string }> => {
+    const week = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+    const mine = (week as any[]).filter(row => String(row.origin?.refId || "").startsWith(`${batchId}:`));
+    if (!mine.length) return { status: 404, json: { error: "لا شعب من هذه الدفعة في الجدول (ربما حُذفت)." } };
+    const changed = mine.filter(row => Number(row.rev || 0) > 1);
+    if (changed.length) return { status: 409, json: { error: "تغيّر بعضُ هذه الشعب بعد تنزيلها، فلا يُحذف شيء تلقائياً. احذفها من الجدول يدوياً.", code: "changed" } };
+    const removed: any[] = [];
+    for (const row of mine) {
+      const back = await runScheduleHandler(deleteScheduleHandler, req, { params: { id: String(row.id) }, body: {} });
+      if (back.status >= 400) return { status: back.status, json: { ...(back.body || {}), removed: removed.length, error: `${back.body?.error || "تعذّر الحذف"} — حُذف ${removed.length} من ${mine.length}.` } };
+      removed.push(row);
+    }
+    return { status: 200, json: { ok: true, removed: removed.length }, audit: `تراجع عن تنزيل الشعب: ${countOf(removed.length, AR.section)}` };
+  });
+  if (outcome.audit) res.locals.auditChanges = outcome.audit;
+  res.status(outcome.status).json(outcome.json);
 });
 
 /* ── الإنذار المبكر للفصل ────────────────────────────────────────────────────

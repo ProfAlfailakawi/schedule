@@ -107,17 +107,25 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
         revised = rows.map(row => { const to = byId.get(Number(row.id)); return to ? { ...row, ...dayFlags(to.day), fstarttime: to.start, fendtime: to.end } : row; });
         changes = found.length;
         scopes = [...new Map(found.map(row => [`${row.AdCollegeId}:${row.AdSectionId}`, { collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId) }] as const)).values()];
-      } else if (kind === "opening") {
-        const collegeId = Number(req.body?.collegeId), sectionId = Number(req.body?.sectionId), courseId = Number(req.body?.courseId), slot = req.body?.placement || {};
-        if (!power && !deps.isScopeAllowed(req, collegeId, sectionId)) { fail(res, 403, "خارج نطاق صلاحياتك.", "not-allowed"); return; }
-        const course = loaded.courses.get(courseId);
-        if (!course || !slot.day || !slot.start || !slot.end) { fail(res, 400, "حدّد المقرر والموعد."); return; }
-        const added = { id: Math.max(0, ...rows.map(row => Number(row.id) || 0)) + 1, AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdCourseId: courseId, AdCourseName: course.CourseName,
-          SCode: String(slot.sectionCode || "NEW"), AdInstructorId: Number(slot.instructorId) || 0, ...dayFlags(String(slot.day)), fstarttime: String(slot.start), fendtime: String(slot.end),
-          AdRoomCode: String(slot.roomCode || ""), AdRoomHall: String(slot.roomHall || ""), buildingId: slot.buildingId, roomId: slot.roomId, locationStatus: "VERIFIED" } as unknown as import("../types").FSchedule;
-        revised = [...rows, added];
-        changes = 1;
-        scopes = [{ collegeId, sectionId }];
+      } else if (kind === "opening" || kind === "openings") {
+        /* «openings»: دفعةٌ من الشعب معاً (تنزيل الشعب)؛ الأثر يُقاس على الجدول بعد إضافتها كلها لا واحدةً واحدة. */
+        const list: Array<{ collegeId: number; sectionId: number; courseId: number; slot: any }> = kind === "opening"
+          ? [{ collegeId: Number(req.body?.collegeId), sectionId: Number(req.body?.sectionId), courseId: Number(req.body?.courseId), slot: req.body?.placement || {} }]
+          : (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, 60).map((item: any) => ({ collegeId: Number(item?.collegeId), sectionId: Number(item?.sectionId), courseId: Number(item?.courseId), slot: item?.placement || {} }));
+        if (!list.length) { fail(res, 400, "حدّد المقرر والموعد."); return; }
+        const added: import("../types").FSchedule[] = [];
+        let nextId = Math.max(0, ...rows.map(row => Number(row.id) || 0)) + 1;
+        for (const item of list) {
+          if (!power && !deps.isScopeAllowed(req, item.collegeId, item.sectionId)) { fail(res, 403, "خارج نطاق صلاحياتك.", "not-allowed"); return; }
+          const course = loaded.courses.get(item.courseId);
+          if (!course || !item.slot.day || !item.slot.start || !item.slot.end) { fail(res, 400, "حدّد المقرر والموعد."); return; }
+          added.push({ id: nextId++, AdCollegeId: item.collegeId, AdSectionId: item.sectionId, AdTermId: termId, AdCourseId: item.courseId, AdCourseName: course.CourseName,
+            SCode: String(item.slot.sectionCode || "NEW"), AdInstructorId: Number(item.slot.instructorId) || 0, ...dayFlags(String(item.slot.day)), fstarttime: String(item.slot.start), fendtime: String(item.slot.end),
+            AdRoomCode: String(item.slot.roomCode || ""), AdRoomHall: String(item.slot.roomHall || ""), buildingId: item.slot.buildingId, roomId: item.slot.roomId, locationStatus: "VERIFIED" } as unknown as import("../types").FSchedule);
+        }
+        revised = [...rows, ...added];
+        changes = added.length;
+        scopes = [...new Map(list.map(item => [`${item.collegeId}:${item.sectionId}`, { collegeId: item.collegeId, sectionId: item.sectionId }] as const)).values()];
       } else { fail(res, 400, "نوع الاقتراح غير معروف."); return; }
       const impact = evaluateScheduleChange(loaded.input, rows, loaded.courses, termId, revised, changes, scopes, power);
       res.json({ ok: true, impact, basis: "من أجابوا من هذا القسم عن رغباتهم في هذا الفصل", stale: Boolean(run?.stale) });
