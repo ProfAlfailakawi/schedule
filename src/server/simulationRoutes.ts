@@ -13,7 +13,9 @@ import { createTtlMemo } from "./notificationCache";
 import { AR, countOf } from "../utils/arabicCount";
 import { pickDoorTerm, readStudentPhase } from "../utils/termStudentPhases";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
-import { runRegistrationSimulation } from "./simulationData";
+import { evaluateScheduleChange, loadSimulationInput, runRegistrationSimulation } from "./simulationData";
+import { radarInsightFor } from "./radarInsight";
+import { emptyCauseTotals } from "../utils/registrationCauses";
 
 export interface SimulationDeps {
   requireAuth: RequestHandler;
@@ -24,6 +26,8 @@ export interface SimulationDeps {
 
 let running = false;
 const outcomeMemo = createTtlMemo<RegistrationOutcomeShard[]>({ ttlMs: 30_000 });
+/* قراءةُ كل الملفات ثقيلة: تُشارَك دقيقةً بين طلبات «ماذا لو؟» المتتابعة. */
+const inputMemo = createTtlMemo<Awaited<ReturnType<typeof loadSimulationInput>>>({ ttlMs: 60_000 });
 
 export function registerSimulationRoutes(app: Express, deps: SimulationDeps): void {
   const fail = (res: Response, status: number, error: string, code?: string) => res.status(status).json({ error, ...(code ? { code } : {}) });
@@ -74,6 +78,84 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
       courses: inScope(run?.courses),
       projectedCourses: inScope(run?.projected?.courses),
     });
+  });
+
+  /* ── ماذا لو؟ أثرُ اقتراحٍ على الطلبة قبل اعتماده. لا يكتب شيئاً؛ أعدادٌ لا أسماء. ── */
+  app.post("/api/schedules/what-if", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    const termId = Number(req.body?.termId);
+    if (!term || Number(term.AdTermId) !== termId) { fail(res, 409, "الأثرُ يُقاس على فصل الرادار فقط.", "other-term"); return; }
+    const power = deps.isPowerUser(req);
+    const kind = String(req.body?.kind || "");
+    try {
+      /* المفتاحُ يحمل وسمَ «قديم» الذي ترفعه كلُّ كتابةٍ في الجدول أو الصحائف أو الرغبات: فلا يُقاس الأثرُ على حالٍ مضت. */
+      const run = await Repository.getRegistrationRun(termId);
+      const loaded = await inputMemo.get(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`, () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
+      const rows = loaded.schedules as import("../types").FSchedule[];
+      const dayFlags = (day: string) => ({ fsunday: day === "fsunday", fmonday: day === "fmonday", ftuesday: day === "ftuesday", fwednesday: day === "fwednesday", fthursday: day === "fthursday" });
+      let revised: import("../types").FSchedule[];
+      let changes = 0;
+      let scopes: Array<{ collegeId: number; sectionId: number }> = [];
+      if (kind === "move" || kind === "swap") {
+        const moves = (Array.isArray(req.body?.moves) ? req.body.moves : []).slice(0, 2) as Array<{ rowId: number; to: { day: string; start: string; end: string } }>;
+        if (!moves.length || (kind === "swap" && moves.length !== 2)) { fail(res, 400, "حدّد الموعد المقترح."); return; }
+        const byId = new Map(moves.map(move => [Number(move.rowId), move.to] as const));
+        const found = rows.filter(row => byId.has(Number(row.id)));
+        if (found.length !== byId.size) { fail(res, 409, "تغيّر الجدول: لم يعد أحد المواعيد موجوداً.", "stale"); return; }
+        if (!power && found.some(row => !deps.isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)))) { fail(res, 403, "خارج نطاق صلاحياتك.", "not-allowed"); return; }
+        revised = rows.map(row => { const to = byId.get(Number(row.id)); return to ? { ...row, ...dayFlags(to.day), fstarttime: to.start, fendtime: to.end } : row; });
+        changes = found.length;
+        scopes = [...new Map(found.map(row => [`${row.AdCollegeId}:${row.AdSectionId}`, { collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId) }] as const)).values()];
+      } else if (kind === "opening") {
+        const collegeId = Number(req.body?.collegeId), sectionId = Number(req.body?.sectionId), courseId = Number(req.body?.courseId), slot = req.body?.placement || {};
+        if (!power && !deps.isScopeAllowed(req, collegeId, sectionId)) { fail(res, 403, "خارج نطاق صلاحياتك.", "not-allowed"); return; }
+        const course = loaded.courses.get(courseId);
+        if (!course || !slot.day || !slot.start || !slot.end) { fail(res, 400, "حدّد المقرر والموعد."); return; }
+        const added = { id: Math.max(0, ...rows.map(row => Number(row.id) || 0)) + 1, AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdCourseId: courseId, AdCourseName: course.CourseName,
+          SCode: String(slot.sectionCode || "NEW"), AdInstructorId: Number(slot.instructorId) || 0, ...dayFlags(String(slot.day)), fstarttime: String(slot.start), fendtime: String(slot.end),
+          AdRoomCode: String(slot.roomCode || ""), AdRoomHall: String(slot.roomHall || ""), buildingId: slot.buildingId, roomId: slot.roomId, locationStatus: "VERIFIED" } as unknown as import("../types").FSchedule;
+        revised = [...rows, added];
+        changes = 1;
+        scopes = [{ collegeId, sectionId }];
+      } else { fail(res, 400, "نوع الاقتراح غير معروف."); return; }
+      const impact = evaluateScheduleChange(loaded.input, rows, loaded.courses, termId, revised, changes, scopes, power);
+      res.json({ ok: true, impact, basis: "من أجابوا من هذا القسم عن رغباتهم في هذا الفصل", stale: Boolean(run?.stale) });
+    } catch (error) {
+      console.error("[simulation] what-if:", error instanceof Error ? error.message : error);
+      fail(res, 500, "تعذّر قياس الأثر الآن. يمكنك الاعتماد دونه أو إعادة المحاولة.");
+    }
+  });
+
+  /* ── لماذا لم يبلغوا 12؟ وأيّ شعبةٍ بيانُها ناقص؟ ── يُحسب عند الطلب، بحدود النطاق. */
+  app.get("/api/simulation/insight", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    if (!term) { res.json({ ready: false }); return; }
+    const run = await Repository.getRegistrationRun(Number(term.AdTermId));
+    if (!run) { res.json({ ready: false }); return; }
+    try {
+      const insight = await radarInsightFor(term, run.rounds || 2);
+      const power = deps.isPowerUser(req);
+      const mine = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
+      const causes = emptyCauseTotals();
+      let short = 0, students = 0;
+      for (const scope of insight.scopes) if (mine(scope.collegeId, scope.sectionId)) {
+        short += scope.short; students += scope.students;
+        for (const key of Object.keys(causes) as Array<keyof typeof causes>) causes[key] += scope.causes[key];
+      }
+      const scopedQuality = insight.quality.filter(item => mine(item.collegeId, item.sectionId));
+      const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
+      res.json({
+        ready: true, computedAt: insight.computedAt, stale: Boolean(run.stale) || (run.sourceFingerprint || "") !== insight.fingerprint,
+        students, short, causes, scoped: !power,
+        quality: scopedQuality.slice(0, 300).map(item => ({ ...item, courseName: String(catalog.get(item.courseId)?.CourseName || ""), courseCode: String(catalog.get(item.courseId)?.CourseCode || "") })),
+        qualityTruncated: scopedQuality.length > 300 || insight.qualityTruncated,
+      });
+    } catch (error) {
+      console.error("[simulation] insight:", error instanceof Error ? error.message : error);
+      fail(res, 500, "تعذّر حساب أسباب النقص الآن. أعد المحاولة بعد قليل.");
+    }
   });
 
   /* ما قاله الطلبةُ بعد التسجيل («هل سجلت؟»): أعدادٌ لكل مقرر، بحدود النطاق. */

@@ -483,6 +483,8 @@ export interface AuditLogEntry {
    * none, and a handler that cannot describe its change omits it.
    */
   changes?: string;
+  /** صفوفُ الجدول التي مسّها الطلب (للمسارات التي لا تحمل معرّفها). */
+  rowIds?: number[];
   status: number;
 }
 

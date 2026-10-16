@@ -89,7 +89,15 @@ export interface SimInput {
   rounds: number;
   /** Capacity analysis tests the same reported constraints against a 15-unit target. */
   assessCapacity?: boolean;
+  /** سيناريو «لو زال القيد»: للمقارنة فقط. */
+  relax?: SimRelax;
 }
+
+/**
+ * مقارنةُ سيناريوهات: «لو زال هذا القيد، هل يبلغ الطالبُ 12 وحدة؟». يُرفع قيدٌ واحد عن الجميع
+ * معاً ثم يُقاس من يتغيّر حاله؛ لا يُستعمل في الاحتساب العادي.
+ */
+export interface SimRelax { capacity?: boolean; conflicts?: boolean; prereq?: boolean; constraints?: boolean }
 
 export type SimUnmetReason = "not-offered" | "conflict" | "full" | "prereq" | "units";
 
@@ -158,7 +166,8 @@ export function simulateRegistration(input: SimInput): SimResult {
     byCourse.set(offering.courseId, [...(byCourse.get(offering.courseId) || []), offering]);
   }
   for (const list of byCourse.values()) list.sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }) || a.id.localeCompare(b.id));
-  const ledger: Ledger = { capacity: new Map(input.offerings.map(o => [o.id, Math.max(0, o.capacity)])), taken: new Map() };
+  const relax = input.relax || {};
+  const ledger: Ledger = { capacity: new Map(input.offerings.map(o => [o.id, relax.capacity ? 1_000_000 : Math.max(0, o.capacity)])), taken: new Map() };
   const credit = (id: number) => input.credit.get(id) || 0;
 
   /* ── حاجةُ كلّ طالب ── */
@@ -182,7 +191,7 @@ export function simulateRegistration(input: SimInput): SimResult {
     const unmet = new Map<number, SimUnmetReason>();
     const candidates: Prepared["candidates"] = [];
     const rule = (id: number) => rules.find(r => r.courseId === id);
-    const prereqOk = (courseId: number) => prereqMet(rule(courseId)?.prereq, passed, passedUnits);
+    const prereqOk = (courseId: number) => relax.prereq || prereqMet(rule(courseId)?.prereq, passed, passedUnits);
     const coreqNeed = (courseId: number) => {
       const needed = new Set<number>();
       const visit = (id: number) => {
@@ -239,9 +248,9 @@ export function simulateRegistration(input: SimInput): SimResult {
   order.forEach((entry, index) => windowOf.set(entry.student.fp, Math.min(rounds, Math.floor((index * rounds) / Math.max(1, order.length)) + 1)));
 
   const fits = (picks: readonly Pick[], offering: SimOffering) =>
-    !picks.some(p => slotsConflict(offeringOf.get(p.offeringId)!.slots, offering.slots));
+    relax.conflicts || !picks.some(p => slotsConflict(offeringOf.get(p.offeringId)!.slots, offering.slots));
   const allowedByConstraints = (offering: SimOffering, c: NonNullable<SimStudent["wishes"]>["constraints"] | undefined) => {
-    if (!c) return true;
+    if (!c || relax.constraints) return true;
     if (c.noMorning && offering.slots.some(s => s.start < NOON)) return false;
     if (c.noAfternoon && offering.slots.some(s => s.end > NOON)) return false;
     return true;
@@ -337,7 +346,7 @@ export function simulateRegistration(input: SimInput): SimResult {
           const id = bundle[at];
           const options = (byCourse.get(id) || []).filter(offering => free(ledger, offering.id) > working.filter(p => p.offeringId === offering.id).length
             && fits(working, offering) && allowedByConstraints(offering, constraints)
-            && (!constraints?.freeDay || new Set([...working.flatMap(pick => offeringOf.get(pick.offeringId)!.slots.map(slot => slot.day)), ...offering.slots.map(slot => slot.day)]).size < 5));
+            && (relax.constraints || !constraints?.freeDay || new Set([...working.flatMap(pick => offeringOf.get(pick.offeringId)!.slots.map(slot => slot.day)), ...offering.slots.map(slot => slot.day)]).size < 5));
           for (const offering of options) {
             working.push({ courseId: id, offeringId: offering.id });
             placeBundle(at + 1);
