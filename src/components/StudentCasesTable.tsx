@@ -14,8 +14,8 @@
  * `tests/student-registration-audit.ts` refuses a second copy of the table.
  */
 import React, { useMemo, useState } from "react";
-import { ChevronDown, ListFilter, Printer } from "lucide-react";
-import { Badge, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
+import { ChevronDown, GraduationCap, ListFilter, Plus, Printer, Shuffle } from "lucide-react";
+import { PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 
@@ -63,7 +63,6 @@ export const GRADUATE_REASON_LABEL: Record<string, string> = {
 
 const typeOf = (item: StudentCaseView): StudentCaseType =>
   item.requestType === "graduate" || item.requestType === "course-conflict" ? item.requestType : "new-course";
-const typeTone = (type: StudentCaseType) => type === "graduate" ? "warning" : type === "course-conflict" ? "danger" : "success";
 const courseLabel = (course: StudentCaseCourseView) => `${course.name}${course.code ? ` (${course.code})` : ""}`;
 const caseMoment = (value: string) => {
   const date = new Date(value);
@@ -261,21 +260,23 @@ export default function StudentCasesTable({
               <tbody>{visible.map(item => {
                 const type = typeOf(item);
                 return (
-                  <tr key={item.id} className={`case-${type}${openMore.has(item.id) ? " is-more-open" : ""}`}>
-                    <td data-label="رقم الحالة" dir="ltr"><code>{item.caseRef || "—"}</code></td>
-                    <td data-label="الطالب"><strong>{item.name || "—"}</strong>
-                      {renderCaseAction ? <div className="student-case-row-action">{renderCaseAction(item)}</div> : null}
-                      <button type="button" className="student-case-more-toggle" aria-expanded={openMore.has(item.id)} onClick={() => toggleMore(item.id)} data-guide-ignore="طيّ التفاصيل الثانوية لبطاقة الحالة على الهاتف عرضٌ فقط">تفاصيل</button></td>
-                    <td className="student-case-secondary" data-label="الرقم المدني" dir="ltr">{item.civil || "—"}</td>
-                    <td className="student-case-secondary" data-label="قسم الطالب">{item.studentSectionName || "—"}{curriculumTag(item)}</td>
-                    <td className="student-case-secondary" data-label="نوع الطلب"><Badge tone={typeTone(type)}>{STUDENT_CASE_TYPE_LABEL[type]}</Badge></td>
+                  <tr key={item.id} className={`sc-card case-${type}${openMore.has(item.id) ? " is-more-open" : ""}`}>
+                    <td className="sc-head" data-label="الطالب">
+                      <span className="sc-av" aria-hidden="true">{(item.name || "؟").trim().charAt(0)}</span>
+                      <div className="sc-who"><strong>{item.name || "—"}</strong><small>{item.studentSectionName || "—"}{curriculumTag(item)}</small></div>
+                      <span className="sc-type" data-type={type}>{type === "graduate" ? <GraduationCap aria-hidden="true" /> : type === "course-conflict" ? <Shuffle aria-hidden="true" /> : <Plus aria-hidden="true" />}{STUDENT_CASE_TYPE_LABEL[type]}</span>
+                    </td>
                     <td data-label="المقررات / السبب" className="student-case-detail-cell">{detailCell(item)}</td>
-                    {showVerification ? (
-                      <td className="student-case-secondary" data-label="تحقق التخرج">{type === "graduate"
-                        ? <span className={item.eligibility === "eligible" ? "case-eligible" : "case-ineligible"}>{item.passedUnits ?? "—"} / {item.requiredUnits ?? "—"} {nounFor(Number(item.requiredUnits || 0), AR.unit)}</span>
-                        : null}</td>
-                    ) : null}
-                    <td className="student-case-secondary" data-label="التاريخ">{caseMoment(item.createdAt)}</td>
+                    <td className="sc-foot">
+                      {renderCaseAction ? <div className="student-case-row-action">{renderCaseAction(item)}</div> : <span />}
+                      <button type="button" className="student-case-more-toggle" aria-expanded={openMore.has(item.id)} onClick={() => toggleMore(item.id)} data-guide-ignore="طيّ التفاصيل الثانوية لبطاقة الحالة عرضٌ فقط">{openMore.has(item.id) ? "أقل" : "تفاصيل"}<ChevronDown aria-hidden="true" /></button>
+                    </td>
+                    <td className="student-case-secondary sc-more" data-label="تفاصيل">
+                      <span><small>رقم الحالة</small><code dir="ltr">{item.caseRef || "—"}</code></span>
+                      <span><small>الرقم المدني</small><bdi dir="ltr">{item.civil || "—"}</bdi></span>
+                      {showVerification && type === "graduate" ? <span><small>تحقق التخرج</small><b className={item.eligibility === "eligible" ? "case-eligible" : "case-ineligible"}>{item.passedUnits ?? "—"} / {item.requiredUnits ?? "—"} {nounFor(Number(item.requiredUnits || 0), AR.unit)}</b></span> : null}
+                      <span><small>التاريخ</small>{caseMoment(item.createdAt)}</span>
+                    </td>
                   </tr>
                 );
               })}</tbody>

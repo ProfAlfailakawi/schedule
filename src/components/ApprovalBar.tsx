@@ -16,8 +16,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, Check, ChevronDown, CornerUpLeft, FilePenLine, Flag, History,
-  Hourglass, Landmark, ListChecks, ListPlus, Lock, MessageSquareText, PenLine, Quote, Send, ShieldCheck, Undo2, X,
+  AlertTriangle, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, Check, ChevronDown, CornerUpLeft, DoorOpen, FilePenLine, Flag, History,
+  Hourglass, Users, Landmark, ListChecks, ListPlus, Lock, MessageSquareText, PenLine, Quote, Send, ShieldCheck, Undo2, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
@@ -643,14 +643,30 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       {showDetails ? (
         <div className="apb-expanded" data-reveal={revealSteps || undefined}>
           {state.dataReadiness ? (
-            <section className="apb-data-readiness" aria-label="بيانات تحتاج استكمالاً">
-              <div>{state.dataReadiness.ready ? <Check aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}<span><strong>{state.dataReadiness.ready ? "البيانات الأساسية مكتملة" : `${countOf(state.dataReadiness.count, AR.item)} تحتاج استكمالاً قبل التوقيع`}</strong><small>تأكد من الوحدات والساعات وسعة الشعبة والقاعة.</small></span></div>
-              {!state.dataReadiness.ready ? <ul>{state.dataReadiness.items.slice(0, 5).map(item => <li key={`${item.kind}:${item.id}`}>
-                {item.label} · {item.fields.join("، ")}
-              </li>)}</ul>
-              : null}
-              {state.dataReadiness.rooms?.length ? <div className="apb-room-capacities" aria-label="سعات القاعات المستخدمة"><strong>سعات القاعات المستخدمة</strong>{state.dataReadiness.rooms.map(room => <div key={room.id}><span>{room.label}</span><label><span className="sr-only">السعة</span><input inputMode="numeric" aria-label={`سعة ${room.label}`} value={roomCapacityDrafts[room.id] ?? String(room.capacity ?? "")} onChange={event => setRoomCapacityDrafts(current => ({ ...current, [room.id]: event.target.value.replace(/[^0-9]/g, "") }))} /></label><SecondaryButton type="button" disabled={savingRoomId === room.id} onClick={() => void saveRoomCapacity(room.id)} data-guide-ignore="حفظ سعة القاعة الفعلية ضمن نطاق القسم">{savingRoomId === room.id ? "يحفظ…" : "حفظ"}</SecondaryButton></div>)}</div> : null}
-              {onOpenCourses ? <SecondaryButton type="button" onClick={onOpenCourses} data-guide-ignore="فتح محرر مقررات القسم لاستكمال البيانات قبل التوقيع">مراجعة بيانات المقررات</SecondaryButton> : null}
+            <section className="apb-data-readiness" data-ready={state.dataReadiness.ready || undefined} aria-label="بيانات تحتاج استكمالاً">
+              <header title="تأكد من الوحدات والساعات وسعة الشعبة والقاعة.">
+                <span className="apb-dr-ic">{state.dataReadiness.ready ? <Check aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}</span>
+                <strong>{state.dataReadiness.ready ? "البيانات مكتملة" : `${countOf(state.dataReadiness.count, AR.item)} تحتاج استكمالاً قبل التوقيع`}</strong>
+                {onOpenCourses ? <button type="button" className="apb-dr-link" onClick={onOpenCourses} data-guide-ignore="فتح محرر مقررات القسم لاستكمال البيانات قبل التوقيع">مراجعة المقررات</button> : null}
+              </header>
+              {!state.dataReadiness.ready ? (() => {
+                const roomLabels = new Set((state.dataReadiness.rooms || []).map(room => room.label));
+                const rest = state.dataReadiness.items.filter(item => !roomLabels.has(item.label)).slice(0, 5);
+                return rest.length ? <div className="apb-dr-chips">{rest.map(item => <span key={`${item.kind}:${item.id}`}><b>{item.label}</b>{item.fields.length ? <small>{item.fields.join("، ")}</small> : null}</span>)}</div> : null;
+              })() : null}
+              {state.dataReadiness.rooms?.length ? <div className="apb-room-capacities" aria-label="سعات القاعات المستخدمة">{state.dataReadiness.rooms.map(room => {
+                const [first, ...others] = String(room.label).split(" · ").reverse();
+                const saved = String(room.capacity ?? "");
+                const draft = roomCapacityDrafts[room.id] ?? saved;
+                return (
+                  <div key={room.id} className="apb-room" data-missing={!saved || undefined}>
+                    <span className="apb-room-ic" aria-hidden="true"><DoorOpen /></span>
+                    <span className="apb-room-name"><b>{first}</b>{others.length ? <small>{others.reverse().join(" · ")}</small> : null}</span>
+                    <label><Users aria-hidden="true" /><span className="sr-only">السعة</span><input inputMode="numeric" placeholder="السعة" aria-label={`سعة ${room.label}`} value={draft} onChange={event => setRoomCapacityDrafts(current => ({ ...current, [room.id]: event.target.value.replace(/[^0-9]/g, "") }))} /></label>
+                    <button type="button" className="apb-room-save" disabled={savingRoomId === room.id || !draft || draft === saved} aria-label={`حفظ سعة ${room.label}`} onClick={() => void saveRoomCapacity(room.id)} data-guide-ignore="حفظ سعة القاعة الفعلية ضمن نطاق القسم">{savingRoomId === room.id ? <Hourglass aria-hidden="true" /> : <Check aria-hidden="true" />}</button>
+                  </div>
+                );
+              })}</div> : null}
             </section>
           ) : null}
           <div className="apb-expanded-row">
