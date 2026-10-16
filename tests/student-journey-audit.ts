@@ -369,7 +369,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const list = between(server, 'app.get("/api/student-registration"', 'app.post("/api/student-registration/:id/course-state"');
   check(list.includes("partnerCourses:") && (list.match(/details: String\(need\.details \|\| ""\)/g) || []).length === 2, "S16 الخادم يرسل الملاحظات والمقرّر الشريك");
   const sheet = read("src/components/StudentRegistration.tsx");
-  check(sheet.includes("REQUEST_TYPE_LABEL[row.requestType]") && sheet.includes("row.partnerCourses") && sheet.includes("ملاحظات الطالب: {row.details}"),
+  check(sheet.includes("REQUEST_TYPE_LABEL[row.requestType]") && sheet.includes("row.partnerCourses") && sheet.includes("ملاحظات الطالب: ${row.details}"),
     "S16 الكشف يعرض نوع الطلب والملاحظات و«يتعارض مع»");
   check(sheet.includes('"نوع الطلب"') && sheet.includes('"ملاحظات الطالب"'), "S16 والتصدير يحملها");
 }
