@@ -7508,7 +7508,24 @@ app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: Authe
   res.json({ ...answer, busyScope: "allColleges" });
 });
 
-app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+/* ── مصدرُ التغيير: من أين جاء هذا الموعد؟ ─────────────────────────────────────
+ * يُكتب فقط حين يمرّ الحفظ من «اعتماد الاقتراح» (الرادار، حالة طالب، رغبة أستاذ). الحفظُ اليدويّ
+ * لا يحمل مصدراً ولا يتغيّر. والقيم مقيّدة: نوعٌ من قائمةٍ مغلقة، ونصوصٌ قصيرة. */
+const SCHEDULE_ORIGIN_KINDS = new Set(["radar", "student-case", "instructor-request", "intelligence"]);
+function scheduleOriginOf(req: AuthenticatedRequest): import("./src/types").ScheduleOrigin | undefined {
+  const raw = (req.body as any)?.origin;
+  if (!raw || !SCHEDULE_ORIGIN_KINDS.has(String(raw.kind))) return undefined;
+  const text = (value: unknown, max: number) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max) || undefined;
+  return {
+    kind: raw.kind,
+    refId: text(raw.refId, 64),
+    note: text(raw.note, 160),
+    by: String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || "").slice(0, 80),
+    at: new Date().toISOString(),
+  };
+}
+
+const createScheduleHandler = async (req: AuthenticatedRequest, res: Response) => {
   const {
     AdCollegeId,
     AdSectionId,
@@ -7603,16 +7620,18 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
        range. Later edits preserve this value, so they can never become yellow
        merely because course/section happens to match an old PDF row. */
     sourceOrder: Math.max(1_000_000, Date.now()),
-    fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday })
+    fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday }),
+    ...(scheduleOriginOf(req) ? { origin: scheduleOriginOf(req) } : {}),
   });
 
   await recordVersionAfter(addVersion, before => [...before, newSched]);
   await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: newSched });
 
   res.status(201).json(newSched);
-});
+};
+app.post("/api/schedules", requirePermission(7), createScheduleHandler);
 
-app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+const updateScheduleHandler = async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(req.params.id);
   const {
     AdCollegeId,
@@ -7727,7 +7746,8 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
       locationStatus: canonicalBody.locationStatus,
       sourceBuildingText: req.body?.sourceBuildingText,
       sourceRoomText: req.body?.sourceRoomText,
-      fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday })
+      fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday }),
+      ...(scheduleOriginOf(req) ? { origin: scheduleOriginOf(req) } : {}),
     },
     // The revision the editor was looking at, when they sent one. An older
     // client that sends nothing keeps the previous behaviour exactly.
@@ -7772,7 +7792,8 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
     }
     res.status(404).json({ error: e.message });
   }
-});
+};
+app.put("/api/schedules/:id", requirePermission(7), updateScheduleHandler);
 
 app.delete("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(req.params.id);
@@ -7809,6 +7830,170 @@ app.get("/api/schedules/copy-preview", requireAuth, requirePowerAdmin, async (re
   const sourceIssues=[...new Set([...source.flatMap((row:any)=>schedulePayloadIssues(row)),...(archivedInSource.length?[`يتضمن الفصل ${countOf(archivedInSource.length, AR.appointment)} لمقررات أصبحت مؤرشفة أكاديمياً ولن تُنسخ إلى فصل جديد.`]:[])])];
   const courseById=new Map(courses.map(item=>[item.AdCourseId,item])); const instructorById=new Map(instructors.map(item=>[item.AdInstructorId,item]));
   res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:row.CourseCodeSnapshot||courseById.get(row.AdCourseId)?.CourseCode||"",courseName:row.CourseNameSnapshot||row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:formatScheduleTimeRange(row.fstarttime, row.fendtime),room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
+});
+
+/* ══ اعتمادُ اقتراحٍ في الجدول الأصلي ═════════════════════════════════════════════
+ *
+ * الرادارُ وكشفُ التسجيل ورغباتُ الأساتذة تنتهي كلُّها إلى سؤالٍ واحد: «هل أنفّذ هذا في الجدول؟».
+ * وهذا هو الجواب الواحد: لا مسارَ جانبياً يتجاوز الاعتماد. كلُّ تنفيذٍ يمرّ من **المسار نفسه** الذي
+ * تمرّ منه ورشةُ الجدول (`createScheduleHandler` و`updateScheduleHandler`) بتحقّقه كلِّه: النطاق،
+ * القفلُ عند التسجيل، تعارضُ القاعة والأستاذ والدفعة، تثبيتُ المكان، لقطةُ الإصدار قبل التغيير
+ * وبعده، وسجلُّ الاعتماد (جولةُ تعديلٍ إن كان الجدول مقبولاً). ما يُضاف هنا: مصدرُ التغيير
+ * (`origin`) على الصف، وجملةٌ في سجلّ التدقيق، وتراجعٌ كاملٌ لتبديلٍ تعذّرت خطوتُه الثانية.
+ *
+ * والحاكم أخيراً هو الخادم لا الشاشة: الاقتراحُ يُعاد فحصُه لحظةَ الاعتماد على الجدول كما هو
+ * الآن، فاقتراحٌ مضى عليه ما يغيّره يُردّ بسببه ولا يُكتب.
+ */
+interface InnerScheduleResult { status: number; body: any; headers: Record<string, string>; audit?: string }
+
+async function runScheduleHandler(
+  handler: (req: AuthenticatedRequest, res: Response) => Promise<void>,
+  req: AuthenticatedRequest,
+  patch: { params?: Record<string, string>; body: any },
+): Promise<InnerScheduleResult> {
+  const result: InnerScheduleResult = { status: 200, body: undefined, headers: {} };
+  const inner: any = Object.create(req);
+  inner.body = patch.body;
+  inner.params = patch.params || {};
+  const sink: any = {
+    locals: {}, headersSent: false, statusCode: 200,
+    status(code: number) { result.status = code; this.statusCode = code; return this; },
+    json(value: any) { result.body = value; this.headersSent = true; return this; },
+    setHeader(key: string, value: string) { result.headers[key] = String(value); return this; },
+    getHeader() { return undefined; },
+  };
+  inner.res = sink;
+  await handler(inner, sink as Response);
+  result.audit = sink.locals.auditChanges;
+  return result;
+}
+
+const PROPOSAL_ORIGIN_LABEL: Record<string, string> = {
+  "radar": "رادار التسجيل", "student-case": "حالة طالب", "instructor-request": "رغبة أستاذ", "intelligence": "مركز الذكاء",
+};
+const PROPOSAL_DAYS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const;
+const dayFlagsOf = (day: string) => Object.fromEntries(PROPOSAL_DAYS.map(key => [key, key === day]));
+const dayOfRow = (row: any): string => PROPOSAL_DAYS.find(key => Boolean(row?.[key])) || "";
+const dayLabelOf = (day: string) => SCHEDULE_DAYS.find(item => item.key === day)?.label || "";
+
+/** حقولُ الصفّ كما يطلبها مسارُ التعديل، مع تغيير اليوم والوقت وحدهما. */
+function editBodyFor(row: any, to: { day: string; start: string; end: string }, origin: any) {
+  return {
+    AdCollegeId: row.AdCollegeId, AdSectionId: row.AdSectionId, AdTermId: row.AdTermId, AdCourseId: row.AdCourseId,
+    SCode: row.SCode, AdInstructorId: row.AdInstructorId,
+    ...dayFlagsOf(to.day), fstarttime: to.start, fendtime: to.end,
+    AdRoomCode: row.AdRoomCode, AdRoomHall: row.AdRoomHall,
+    buildingId: row.buildingId, roomId: row.roomId, locationStatus: row.locationStatus,
+    sourceBuildingText: row.sourceBuildingText, sourceRoomText: row.sourceRoomText,
+    rev: row.rev, origin,
+  };
+}
+
+/** نتيجةُ اعتماد اقتراح: حالةٌ وجسمٌ وجملةٌ للتدقيق. يستعملها المسارُ المباشر وقرارُ لجنة كشف التسجيل معاً. */
+interface ProposalOutcome { status: number; json: any; audit?: string }
+
+async function applyProposalCore(req: AuthenticatedRequest, body: any): Promise<ProposalOutcome> {
+  const kind = String(body?.kind || "");
+  const origin = body?.origin;
+  const fail = (status: number, json: any): ProposalOutcome => ({ status, json });
+  if (!SCHEDULE_ORIGIN_KINDS.has(String(origin?.kind))) return fail(400, { error: "مصدر الاقتراح غير معروف.", code: "bad-origin" });
+  const where = PROPOSAL_ORIGIN_LABEL[String(origin.kind)];
+  const refuse = (result: InnerScheduleResult): ProposalOutcome => fail(result.status >= 400 ? result.status : 500, {
+    ...(result.body && typeof result.body === "object" ? result.body : { error: "تعذّر التنفيذ." }),
+    applied: [],
+  });
+
+  /* ── فتحُ شعبة: صفٌّ جديد بالشعبة والقاعة والأستاذ الذين أثبت المحرّك أنهم خالون ── */
+  if (kind === "opening") {
+    const collegeId = Number(body.collegeId), sectionId = Number(body.sectionId), termId = Number(body.termId), courseId = Number(body.courseId);
+    const slot = body.placement || {};
+    /* يوماً واحداً أو عدّة أيام (طلبُ أستاذٍ لمحاضرةٍ في الأحد والثلاثاء معاً). */
+    const days: string[] = [...new Set<string>((Array.isArray(slot.days) && slot.days.length ? slot.days : [slot.day]).map(String))].filter(day => (PROPOSAL_DAYS as readonly string[]).includes(day));
+    if (![collegeId, sectionId, termId, courseId].every(value => value > 0) || !days.length) {
+      return fail(400, { error: "اقتراحٌ ناقص: الكلية والقسم والفصل والمقرر واليوم مطلوبة." });
+    }
+    if (!(Number(slot.instructorId) > 0)) {
+      return fail(422, { error: "لا أستاذَ خالياً لهذا الموعد. اختر أستاذاً من ورشة الجدول ثم احفظ.", code: "needs-instructor" });
+    }
+    /* رقمُ الشعبة: ما اقترحه المحرّك إن لم يُستعمل لهذا المقرر في هذا الفصل، وإلا الأعلى + 1. */
+    const week = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+    const used = new Set(week.filter(row => Number(row.AdCourseId) === courseId).map(row => String(row.SCode)));
+    let code = String(slot.sectionCode || "").replace(/\D/g, "");
+    if (!code || used.has(code)) {
+      const numbers = [...used].map(Number).filter(Number.isFinite);
+      code = String((numbers.length ? Math.max(...numbers) : 500) + 1);
+    }
+    const result = await runScheduleHandler(createScheduleHandler, req, { body: {
+      AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdCourseId: courseId,
+      SCode: code, AdInstructorId: Number(slot.instructorId),
+      ...Object.fromEntries(PROPOSAL_DAYS.map(key => [key, days.includes(key)])), fstarttime: slot.start, fendtime: slot.end,
+      AdRoomCode: slot.roomCode || "", AdRoomHall: slot.roomHall || "",
+      buildingId: slot.buildingId, roomId: slot.roomId, locationStatus: slot.buildingId && slot.roomId ? "VERIFIED" : undefined,
+      origin,
+    } });
+    if (result.status >= 400) return refuse(result);
+    const row = result.body;
+    return {
+      status: 201,
+      json: { ok: true, applied: [{ action: "add", row }], amendment: result.headers["X-Approval-Amendment"] || null },
+      audit: `اعتماد اقتراح من ${where}: فُتحت شعبة ${row.SCode} لـ«${row.AdCourseName}» · ${days.map(dayLabelOf).join(" و")} ${formatScheduleTimeRange(row.fstarttime, row.fendtime)} · ${row.AdRoomCode}/${row.AdRoomHall}`,
+    };
+  }
+
+  /* ── نقلُ موعد، أو تبديلُ موعدين: يُفحص الموعدُ القائم أولاً ثم يُكتب ── */
+  if (kind === "move" || kind === "swap") {
+    const moves: Array<{ rowId: number; from: any; to: any }> = (Array.isArray(body.moves) ? body.moves : []).slice(0, 2);
+    if (!moves.length || (kind === "swap" && moves.length !== 2)) return fail(400, { error: "اقتراحٌ ناقص: المطلوب موعدٌ للنقل أو موعدان للتبديل." });
+    const originals: any[] = [];
+    for (const move of moves) {
+      const row: any = await Repository.getScheduleById(Number(move.rowId));
+      if (!row) return fail(404, { error: "لم يعد هذا الموعد موجوداً في الجدول.", code: "stale" });
+      if (!isScopeAllowed(req, row.AdCollegeId, row.AdSectionId) && !req.user?.IsAdminUser) return fail(403, { error: "خارج صلاحيات الأقسام المسموحة لك" });
+      const sameNow = dayOfRow(row) === move.from?.day && String(row.fstarttime) === String(move.from?.start) && String(row.fendtime) === String(move.from?.end);
+      if (!sameNow) return fail(409, { error: "تغيّر موعدُ هذا المقرر منذ بُني الاقتراح. حدّث الصفحة وانظر الاقتراح من جديد.", code: "stale" });
+      if (!(PROPOSAL_DAYS as readonly string[]).includes(move.to?.day) || !move.to?.start || !move.to?.end) return fail(400, { error: "وجهةُ النقل ناقصة." });
+      originals.push(row);
+    }
+    const applied: Array<{ action: string; row: any }> = [];
+    let amendment: string | null = null;
+    for (let i = 0; i < moves.length; i += 1) {
+      const result = await runScheduleHandler(updateScheduleHandler, req, {
+        params: { id: String(originals[i].id) }, body: editBodyFor(originals[i], moves[i].to, origin),
+      });
+      if (result.status >= 400) {
+        /* الخطوةُ الثانية لم تُقبل: تُردّ الأولى كما كانت، فلا يبقى نصفُ تبديل. */
+        let reverted = true;
+        for (let j = applied.length - 1; j >= 0; j -= 1) {
+          const back = await runScheduleHandler(updateScheduleHandler, req, {
+            params: { id: String(originals[j].id) },
+            body: editBodyFor({ ...originals[j], rev: applied[j].row.rev }, { day: dayOfRow(originals[j]), start: originals[j].fstarttime, end: originals[j].fendtime }, undefined),
+          });
+          if (back.status >= 400) reverted = false;
+        }
+        return fail(result.status, {
+          ...(result.body && typeof result.body === "object" ? result.body : { error: "تعذّر التنفيذ." }),
+          applied: [], reverted,
+          ...(reverted ? {} : { error: "تعذّر إتمام التبديل ولم يمكن ردّ خطوته الأولى. راجع موعد " + (originals[0].AdCourseName || "المقرر") + " في الجدول." }),
+        });
+      }
+      applied.push({ action: "move", row: result.body });
+      amendment = result.headers["X-Approval-Amendment"] || amendment;
+    }
+    return {
+      status: 200,
+      json: { ok: true, applied, amendment },
+      audit: `اعتماد اقتراح من ${where}: ` + applied.map((item, i) =>
+        `${item.row.AdCourseName} · شعبة ${item.row.SCode} من ${dayLabelOf(moves[i].from.day)} ${formatScheduleTimeRange(moves[i].from.start, moves[i].from.end)} إلى ${dayLabelOf(moves[i].to.day)} ${formatScheduleTimeRange(item.row.fstarttime, item.row.fendtime)}`).join(" ⇄ "),
+    };
+  }
+
+  return fail(400, { error: "نوعُ الاقتراح غير معروف.", code: "bad-kind" });
+}
+
+app.post("/api/schedules/apply-proposal", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const outcome = await applyProposalCore(req, req.body || {});
+  if (outcome.audit) res.locals.auditChanges = outcome.audit;
+  res.status(outcome.status).json(outcome.json);
 });
 
 app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -16287,6 +16472,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
           by: state?.by,
           byRole: state?.byRole,
           at: state?.at,
+          scheduleId: state?.scheduleId,
+          sectionCode: state?.sectionCode,
           /* «لم يقل أحدٌ شيئاً» يختلف عن «سلّمه القسم وينتظر»: الأولى غيابُ
              سجلّ، والثانيةُ قولٌ مكتوب. والفرقُ يهمّ من يقرأ. */
           settled: Boolean(state),
@@ -16421,13 +16608,40 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
     return;
   }
 
+  /* ── «موافق» تنتقل إلى الجدول الأصلي ──────────────────────────────────────
+   *
+   * موافقةُ اللجنة على طلبٍ تعذّر تسجيلُه لامتلاء المقرر أو غيابِ شعبته هي، حين يثبت أن شعبةً
+   * جديدةً تخلو من التعارض، قرارٌ بفتحها. فتُفتح هنا بالمسار نفسه الذي تفتح به الورشةُ (اعتماد
+   * الاقتراح): فإن رُفضت لتعارضٍ أو قفلٍ لم تُسجَّل الموافقةُ، ولم يبقَ قرارٌ بلا جدول.
+   * والحرسُ على حالة المقرّر يُسأل قبل الكتابة في الجدول لا بعدها، فلا يُكتب جدولٌ لقرارٍ سيُردّ. */
+  let opened: ProposalOutcome | null = null;
+  const openSection = req.body?.openSection;
+  if (openSection && state === "awaiting-registration") {
+    if (!(await grantedPermissions(req)).includes(7) && !req.user?.IsAdminUser) {
+      res.status(403).json({ error: "فتحُ شعبةٍ في الجدول يحتاج صلاحيةَ الجدول الدراسي.", code: "no-schedule-permission" });
+      return;
+    }
+    const refusalNow = guardByState(((need as any).courseStates || []).find((row: any) => Number(row.courseId) === courseId));
+    if (refusalNow) { res.status(409).json({ error: refusalNow }); return; }
+    const owner: any = allCourses.find(row => Number(row.AdCourseId) === courseId);
+    if (!owner) { res.status(400).json({ error: "مقرّرٌ زال من الكتالوج؛ لا شعبةَ تُفتح له." }); return; }
+    opened = await applyProposalCore(req, {
+      kind: "opening", collegeId: Number(owner.AdCollegeId), sectionId: Number(owner.AdSectionId), termId: Number(need.AdTermId),
+      courseId, placement: openSection,
+      origin: { kind: "student-case", refId: `need:${need.id}`, note: `موافقة اللجنة على طلب «${String(owner.CourseName || "")}»` },
+    });
+    if (opened.status >= 400) { res.status(opened.status).json({ ...opened.json, stateSaved: false }); return; }
+  }
+  const openedRow = opened?.json?.applied?.[0]?.row;
+
   let saved: any;
   try{
   saved = await Repository.setStudentCourseState(need.id, {
     courseId,
     state: state as any,
     ...(state === "rejected" || state === "committee-rejected" ? { reasonCode: reasonCode as any } : {}),
-    note: String(req.body?.note || "").trim().slice(0, 300) || undefined,
+    ...(openedRow ? { scheduleId: Number(openedRow.id), sectionCode: String(openedRow.SCode) } : {}),
+    note: String(req.body?.note || "").trim().slice(0, 300) || (openedRow ? `فُتحت شعبة ${openedRow.SCode} في الجدول.` : undefined),
     by: state === "registered" || state === "rejected" ? "registration" : "department",
     byRole: roleLabel(req.user?.Role) || undefined,
     at: new Date().toISOString(),
@@ -16438,8 +16652,9 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
   }
   if (!saved) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
 
+  if (opened?.audit) res.locals.auditChanges = opened.audit;
   res.setHeader("Cache-Control", "no-store");
-  res.json({ ok: true, courseStates: saved.courseStates || [] });
+  res.json({ ok: true, courseStates: saved.courseStates || [], ...(openedRow ? { opened: { id: openedRow.id, sectionCode: openedRow.SCode, amendment: opened!.json.amendment || null } } : {}) });
 });
 
 /**

@@ -34,6 +34,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     const term = pickDoorTerm(terms as any);
     if (!term) { res.json({ term: null, run: null, canRun: deps.isPowerUser(req) }); return; }
     const run = await Repository.getRegistrationRun(Number(term.AdTermId));
+    if (run?.stale) kickRadarRefresh();
     const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
     const power = deps.isPowerUser(req);
     const inScope = (rows: NonNullable<typeof run>["courses"] | undefined) => (rows || [])
@@ -169,13 +170,23 @@ export async function radarNoticeFor(req: any, deps: Pick<SimulationDeps, "isSco
  * الطلبة كلَّها (قراءةً لكل ملف)، فلا يُجعل أقصرَ من ذلك بلا حاجة. RADAR_AUTO=false يُوقفه. */
 export const RADAR_RUN_MODES = new Set(["wishes", "frozen", "report"]);
 
-export function radarDue(input: { mode: string; wishesClose?: string; today: string; ranAt?: string; now: number; everyMs: number }): boolean {
+export function radarDue(input: {
+  mode: string; wishesClose?: string; today: string; ranAt?: string; now: number; everyMs: number;
+  /** الرادار عُلِّم قديماً بتعديلٍ في الجدول أو الصحائف: يُحدَّث بعد هدوءٍ قصير لا بعد ٢٤ ساعة. */
+  stale?: boolean; staleAt?: string; quietMs?: number; minGapMs?: number;
+}): boolean {
   if (!RADAR_RUN_MODES.has(input.mode)) return false;
   if (!input.ranAt) return true;
   const ranMs = Date.parse(input.ranAt);
   if (!Number.isFinite(ranMs)) return true;
   /* أُغلقت الرغباتُ بعد آخر تحديث: تحديثٌ أخيرٌ بالرغبات النهائية. */
   if (input.wishesClose && input.today > input.wishesClose && kuwaitDateISO(new Date(ranMs)) <= input.wishesClose) return true;
+  /* قديمٌ بتعديل: بعد أن يهدأ التعديل (quiet) كي لا يُعاد الحساب مع كل صفٍّ في استيرادٍ كبير، وبفاصلٍ أدنى بين تشغيلين. */
+  if (input.stale) {
+    const staleMs = Date.parse(input.staleAt || "");
+    const quiet = input.quietMs ?? 120_000, gap = input.minGapMs ?? 600_000;
+    if (Number.isFinite(staleMs) ? input.now - staleMs >= quiet && input.now - ranMs >= gap : input.now - ranMs >= gap) return true;
+  }
   return input.now - ranMs >= input.everyMs;
 }
 
@@ -184,31 +195,48 @@ export function radarAutoSettings(): { enabled: boolean; everyHours: number } {
   return { enabled: String(process.env.RADAR_AUTO ?? "").trim().toLowerCase() !== "false", everyHours: Number.isFinite(hours) && hours >= 1 ? Math.floor(hours) : 24 };
 }
 
-export function scheduleRadarAutoRun(log: (message: string) => void = console.log): void {
+/** فحصٌ واحد: هل الرادارُ مستحقُّ التحديث؟ فإن كان حدّثه بقفل قاعدة البيانات (خادمٌ واحدٌ فقط يعمل). */
+export async function refreshRadarIfDue(log: (message: string) => void = console.log): Promise<boolean> {
   const { enabled, everyHours } = radarAutoSettings();
-  if (!enabled) return;
-  const tick = async () => {
-    if (running || Repository.isDemoMode()) return;
-    running = true;
-    let lease: { termId: number; holder: string } | null = null;
-    try {
-      const term = pickDoorTerm((await Repository.getTerms()) as any);
-      if (!term) return;
-      const reading = readStudentPhase(term.AdTermStudentPhases);
-      const run = await Repository.getRegistrationRun(Number(term.AdTermId));
-      if (!radarDue({ mode: reading.mode, wishesClose: term.AdTermStudentPhases?.wishesClose, today: kuwaitDateISO(), ranAt: run?.ranAt, now: Date.now(), everyMs: everyHours * 3_600_000 })) return;
-      const holder = `auto-${process.pid}-${Date.now()}`;
-      if (!(await Repository.acquireRegistrationRunLease(Number(term.AdTermId), holder))) return; // خادمٌ آخر يعمل
-      lease = { termId: Number(term.AdTermId), holder };
-      const done = await runRegistrationSimulation(term, "تلقائي");
-      log(`[radar] تحديثٌ تلقائي: ${countOf(done.students, AR.profile)}`);
-    } catch (error) {
-      console.error("[radar] auto:", error instanceof Error ? error.message : error);
-    } finally {
-      running = false;
-      if (lease) await Repository.releaseRegistrationRunLease(lease.termId, lease.holder).catch(() => undefined);
-    }
-  };
-  setTimeout(() => void tick(), 2 * 60_000).unref();
-  setInterval(() => void tick(), 60 * 60_000).unref();
+  if (!enabled || running || Repository.isDemoMode()) return false;
+  running = true;
+  let lease: { termId: number; holder: string } | null = null;
+  try {
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    if (!term) return false;
+    const reading = readStudentPhase(term.AdTermStudentPhases);
+    const run = await Repository.getRegistrationRun(Number(term.AdTermId));
+    if (!radarDue({
+      mode: reading.mode, wishesClose: term.AdTermStudentPhases?.wishesClose, today: kuwaitDateISO(), ranAt: run?.ranAt, now: Date.now(), everyMs: everyHours * 3_600_000,
+      stale: Boolean(run?.stale), staleAt: run?.staleAt,
+    })) return false;
+    const holder = `auto-${process.pid}-${Date.now()}`;
+    if (!(await Repository.acquireRegistrationRunLease(Number(term.AdTermId), holder))) return false; // خادمٌ آخر يعمل
+    lease = { termId: Number(term.AdTermId), holder };
+    const done = await runRegistrationSimulation(term, "تلقائي");
+    log(`[radar] تحديثٌ تلقائي${run?.stale ? " بعد تعديل" : ""}: ${countOf(done.students, AR.profile)}`);
+    return true;
+  } catch (error) {
+    console.error("[radar] auto:", error instanceof Error ? error.message : error);
+    return false;
+  } finally {
+    running = false;
+    if (lease) await Repository.releaseRegistrationRunLease(lease.termId, lease.holder).catch(() => undefined);
+  }
+}
+
+/** من يفتح الرادار وهو قديم يُوقظ التحديث ولا ينتظره (مرةً في الدقيقة على الأكثر): الخطّ الذي لا يعتمد على مؤقّتٍ قد لا يعمل بين الطلبات. */
+let lastKickAt = 0;
+export function kickRadarRefresh(log: (message: string) => void = console.log): void {
+  const now = Date.now();
+  if (now - lastKickAt < 60_000) return;
+  lastKickAt = now;
+  void refreshRadarIfDue(log);
+}
+
+export function scheduleRadarAutoRun(log: (message: string) => void = console.log): void {
+  if (!radarAutoSettings().enabled) return;
+  setTimeout(() => void refreshRadarIfDue(log), 2 * 60_000).unref();
+  /* كل خمس دقائق فحصٌ رخيص (وثيقةٌ واحدة)؛ التشغيلُ الفعليّ لا يقع إلا حين يستحقّ. */
+  setInterval(() => void refreshRadarIfDue(log), 5 * 60_000).unref();
 }

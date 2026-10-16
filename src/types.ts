@@ -291,6 +291,23 @@ export interface FSchedule {
    * is valid as it stands and takes its first number on its next write.
    */
   rev?: number;
+  /**
+   * مصدرُ آخر تغييرٍ جاء من اقتراحٍ لا من يدٍ في الورشة: الرادار، أو حالة طالب، أو رغبة أستاذ.
+   * اختياريّ: كل صفٍّ قائم صالحٌ بدونه، ويُكتب فقط حين يمرّ التغيير من «اعتماد الاقتراح».
+   */
+  origin?: ScheduleOrigin;
+}
+
+export type ScheduleOriginKind = "radar" | "student-case" | "instructor-request" | "intelligence";
+
+export interface ScheduleOrigin {
+  kind: ScheduleOriginKind;
+  /** معرّفُ ما انطلق منه: مقرر الرادار، أو طلب الطالب، أو طلب الأستاذ. */
+  refId?: string;
+  /** سطرٌ يقرؤه من يفتح الصف لاحقاً: لماذا وُجد هنا. */
+  note?: string;
+  by: string;
+  at: string;
 }
 
 export interface AdRoom {
@@ -628,6 +645,9 @@ export interface StudentCourseState {
   /** حذف الطالبُ هذا المقرّر من طلبه بعد أن قيل فيه شيء — يبقى القرارُ مقروءاً. */
   droppedByStudent?: boolean;
   droppedAt?: string;
+  /** موافقةُ اللجنة فتحت شعبةً في الجدول الأصلي: معرّفُ صفّها ورقمُها، ليُقرأ الربطُ في الكشف. */
+  scheduleId?: number;
+  sectionCode?: string;
 }
 
 /**
