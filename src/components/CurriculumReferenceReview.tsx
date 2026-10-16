@@ -1,5 +1,5 @@
 import { AR, countOf } from "../utils/arabicCount";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, BookOpen, Check, ChevronDown, GraduationCap, Layers3, Link2, Search } from "lucide-react";
 import type { compareCurriculumReference } from "../utils/curriculumReference";
 import type { CurriculumReference } from "../data/technologyEducationCurricula";
@@ -17,7 +17,13 @@ const statusLabels: Record<string, string> = { matched: "مطابق", different:
 const statusIcon = (state: string) => state === "matched" ? <Check size={14} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />;
 const plainCode = (value: string) => String(value || "").replace(/\s+/g, "").toUpperCase();
 
-export default function CurriculumReferenceReview({ sectionId, onCatalogAction, canApply }: { sectionId: number; onCatalogAction?: (action: CatalogAction) => void; canApply?: boolean }) {
+export default function CurriculumReferenceReview({ sectionId, onCatalogAction, canApply, onPick, others, onPickOther }: {
+  sectionId: number; onCatalogAction?: (action: CatalogAction) => void; canApply?: boolean;
+  /** اختيارُ موقعٍ أو نسخةٍ هنا يقود الصفحةَ كلَّها: لا منتقيَ ثانياً فوقها. */
+  onPick?: (sectionId: number, referenceId: string, planId: string | null) => void;
+  /** أقسامٌ ليس لها مرجع (للانتقال إليها من القائمة نفسها). */
+  others?: Array<{ sectionId: number; label: string }>; onPickOther?: (sectionId: number) => void;
+}) {
   const [sections, setSections] = useState<SectionResult[]>([]);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("new");
@@ -31,8 +37,13 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
   const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
   const [reload, setReload] = useState(0);
 
+  const loadedAt = useRef(-1);
   useEffect(() => {
-    let active = true; setSections([]); setSelectedSectionId(sectionId); setError(""); setFocusedCode("");
+    let active = true; setError(""); setFocusedCode("");
+    /* الموقعُ المطلوب ضمن ما حُمّل: لا إعادة جلب (يقود المنتقي الواحد الصفحةَ). */
+    if (sections.some(row => row.sectionId === sectionId) && loadedAt.current === reload) { setSelectedSectionId(sectionId); return; }
+    loadedAt.current = reload;
+    setSections([]); setSelectedSectionId(sectionId);
     if (!sectionId) return;
     fetch(`/api/plan-review/reference?sectionId=${sectionId}`, { cache: "no-store" }).then(async response => {
       const body = await response.json(); if (!response.ok) throw new Error(body.error || "تعذرت مقارنة الصحيفة");
@@ -103,11 +114,19 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
         <h2>صحيفة التخرج</h2><p>{reference.program} · مقارنة مرجعية لا تغيّر البيانات أو تعتمدها.</p>
       </div></div>
       <div className="curriculum-reference-controls">
-        {sections.length > 1 ? <label>القسم والكلية <select aria-label="القسم والكلية" value={selectedSectionId} onChange={event => { setSelectedSectionId(Number(event.target.value)); setFocusedCode(""); }}>
+        {sections.length > 1 || others?.length ? <label>القسم والكلية <select aria-label="القسم والكلية" value={selectedSectionId} onChange={event => {
+          const value = event.target.value;
+          if (value.startsWith("other:")) { onPickOther?.(Number(value.slice(6))); return; }
+          const id = Number(value);
+          setSelectedSectionId(id); setFocusedCode("");
+          const next = sections.find(row => row.sectionId === id)?.references.find(row => row.id === selected) || sections.find(row => row.sectionId === id)?.references[0];
+          onPick?.(id, selected, next?.planId || null);
+        }}>
           {sections.map(row => <option key={row.sectionId} value={row.sectionId}>{row.collegeName} · {row.sectionName}</option>)}
+          {others?.length ? <optgroup label="أقسام أخرى">{others.map(row => <option key={row.sectionId} value={`other:${row.sectionId}`}>{row.label}</option>)}</optgroup> : null}
         </select></label> : null}
         <div className="curriculum-reference-tabs" role="tablist" aria-label="نسخة الصحيفة">
-          {references.map(row => <button key={row.id} type="button" role="tab" aria-selected={row.id === selected} onClick={() => { setSelected(row.id); setFocusedCode(""); }} data-guide-ignore="اختيار الصحيفة المصدرية داخل مراجعة الصحيفة">{row.name}</button>)}
+          {references.map(row => <button key={row.id} type="button" role="tab" aria-selected={row.id === selected} onClick={() => { setSelected(row.id); setFocusedCode(""); onPick?.(selectedSectionId, row.id, row.planId); }} data-guide-ignore="اختيار الصحيفة المصدرية داخل مراجعة الصحيفة">{row.name}</button>)}
         </div>
       </div>
     </header>

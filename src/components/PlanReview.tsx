@@ -9,6 +9,9 @@
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
+import { arabicMatchKey } from "../utils/arabicText";
+/* اسمُ القسم في القائمة يحمل كليته («قسم تكنولوجيا التعليم · التربية الأساسية - بنات»): يُطابَق بالاحتواء. */
+const isTechnologyEducation = (label: string) => arabicMatchKey(label).includes(arabicMatchKey("تكنولوجيا التعليم"));
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, BookOpenCheck, CheckCircle2, ChevronDown, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
@@ -220,6 +223,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
+  const isTechSection = isTechnologyEducation(status?.sections.find(s => s.sectionId === sectionId)?.sectionName || "");
   const sel = view?.courses.find(c => c.id === selected);
 
   return (
@@ -229,20 +233,25 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
       {status?.canImport ? <ImportPanel onDone={() => { void loadStatus().then(() => window.dispatchEvent(new Event("schedule:plan-review-updated"))); }} /> : null}
       {!status?.sections.length ? <EmptyState title="لا صحائف في نطاقك" detail="تظهر هنا صحائف الأقسام التي تملك نطاقها." /> : (
         <>
-          <div className="pr-pickers">
-            {status.sections.length > 1 ? (
-              <select aria-label="القسم" value={sectionId} onChange={e => { const s = status.sections.find(x => x.sectionId === Number(e.target.value)); setSectionId(Number(e.target.value)); setPlanId(s?.plans[0]?.id || ""); }}>
-                {status.sections.map(s => <option key={s.sectionId} value={s.sectionId}>{s.sectionName}{status.pending.some(p => p.sectionId === s.sectionId) ? " • بانتظار المراجعة" : ""}</option>)}
-              </select>
-            ) : <strong className="pr-sec">{status.sections[0].sectionName}</strong>}
-            <div className="pr-plans" role="tablist">
-              {sectionPlans.map(p => (
-                <button key={p.id} type="button" role="tab" aria-selected={p.id === planId} className={`pr-plan${p.id === planId ? " on" : ""}`} onClick={() => setPlanId(p.id)} data-guide-ignore="تبديلُ الصحيفة داخل شاشةٍ مسجّلة في المرشد باسم page.planReview">{p.name}</button>
-              ))}
+          {!isTechSection ? (
+            <div className="pr-pickers">
+              {status.sections.length > 1 ? (
+                <select aria-label="القسم" value={sectionId} onChange={e => { const s = status.sections.find(x => x.sectionId === Number(e.target.value)); setSectionId(Number(e.target.value)); setPlanId(s?.plans[0]?.id || ""); setSelected(0); }}>
+                  {status.sections.map(s => <option key={s.sectionId} value={s.sectionId}>{s.sectionName}{status.pending.some(p => p.sectionId === s.sectionId) ? " • بانتظار المراجعة" : ""}</option>)}
+                </select>
+              ) : <strong className="pr-sec">{status.sections[0].sectionName}</strong>}
+              <div className="pr-plans" role="tablist">
+                {sectionPlans.map(p => (
+                  <button key={p.id} type="button" role="tab" aria-selected={p.id === planId} className={`pr-plan${p.id === planId ? " on" : ""}`} onClick={() => setPlanId(p.id)} data-guide-ignore="تبديلُ الصحيفة داخل شاشة مراجعة الصحيفة؛ لا يكتب شيئاً">{p.name}{p.pending ? " • قيد المراجعة" : ""}</button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
-          <CurriculumReferenceReview sectionId={sectionId} canApply={Boolean(status?.canImport)} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
+          <CurriculumReferenceReview sectionId={sectionId} canApply={Boolean(status?.canImport)}
+            onPick={(id, _ref, plan) => { setSectionId(id); const own = status.sections.find(x => x.sectionId === id); setPlanId(plan || own?.plans[0]?.id || ""); setSelected(0); }}
+            others={status.sections.filter(x => !isTechnologyEducation(x.sectionName)).map(x => ({ sectionId: x.sectionId, label: x.sectionName }))}
+            onPickOther={id => { const own = status.sections.find(x => x.sectionId === id); setSectionId(id); setPlanId(own?.plans[0]?.id || ""); setSelected(0); }} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
           {!planId ? <EmptyState title="لم تُجهّز صحيفة تشغيلية بعد" detail="المرجع المرفق متاح للمطابقة. إنشاء الصحيفة وربط مقرراتها يسبق اعتماد قواعدها." /> : !view ? <MicroLoader /> : (
             <>
               <div className={`pr-state ${view.state.status}`}>
