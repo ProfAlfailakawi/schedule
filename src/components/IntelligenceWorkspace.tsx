@@ -2399,12 +2399,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               },
             ]
           : []),
-        ...(canPublishSheets && sheetSummary?.total
+        /* البطاقةُ تظهر لمن ينشر دائماً، لا بعد أن توجد صحيفةٌ معتمدة فقط: وإلا بحث رئيسُ اللجنة عنها فلم يجدها
+           ولم يعرف أنها تنتظر اعتماد الصحيفة. */
+        ...(canPublishSheets
           ? [{
               value: "sheet" as const,
               label: "الصحيفة",
-              detail: "رابطٌ تفاعلي وQR وPDF للجميع",
-              metric: `${sheetSummary.published}/${sheetSummary.total}`,
+              detail: sheetSummary?.total ? "رابطٌ تفاعلي وQR وPDF للجميع" : "تظهر بعد اعتماد الصحيفة",
+              metric: sheetSummary?.total ? `${sheetSummary.published}/${sheetSummary.total}` : "—",
               icon: <Workflow />,
             }]
           : []),
@@ -3847,7 +3849,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           ) : null}
           {activeInsightKey === "sheet" ? (
             <div className="content-stack insight-scene-panel" id="insight-panel-sheet" role="tabpanel" aria-labelledby="insight-tab-sheet" tabIndex={0}>
-              <PlanSheetPublisher onChanged={loadSheetSummary} />
+              <PlanSheetPublisher onChanged={loadSheetSummary} focusSectionId={Number(sectionId) || 0} />
             </div>
           ) : null}
           {activeInsightKey === "predict" ? (
