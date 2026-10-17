@@ -28,7 +28,13 @@ html.fit #plan{min-width:0}
 #fitbtn{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom,0));left:14px;z-index:8;display:flex;align-items:center;gap:6px;border:0;background:#0B2545;color:#fff;font:inherit;font-size:14px;font-weight:700;padding:8px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(11,37,69,.28);cursor:pointer}
 #fitbtn svg{width:17px;height:17px}
 @media (min-width:1200px){#fitbtn{display:none}}
-.card{cursor:pointer;transition:opacity .2s}
+.card{cursor:pointer;transition:opacity .2s,transform .3s cubic-bezier(.2,.8,.2,1);transform-box:fill-box;transform-origin:center}
+/* The chosen course lifts out of the plan */
+#plan{--pop:1.15}
+@media (max-width:1199px){#plan{--pop:1.35}}
+.card.pick{transform:scale(var(--pop));animation:pop .34s ease-out}
+.card.pick>rect:first-child{filter:drop-shadow(0 10px 18px rgba(11,37,69,.28))}
+@keyframes pop{0%{transform:scale(1)}60%{transform:scale(calc(var(--pop) * 1.08))}100%{transform:scale(var(--pop))}}
 .edge{transition:opacity .2s}
 .dim{opacity:.12}
 .card:focus{outline:none}
@@ -60,7 +66,7 @@ html.fit #plan{min-width:0}
 .card:hover rect{stroke-opacity:1;stroke-width:2.5}
 .edge.on path[marker-end]{stroke-width:3.4;stroke-dasharray:9 6;animation:flow .9s linear infinite}
 @keyframes flow{to{stroke-dashoffset:-15}}
-@media (prefers-reduced-motion:reduce){.edge.on path[marker-end]{animation:none;stroke-dasharray:none}#sheet{transition:none}}
+@media (prefers-reduced-motion:reduce){.edge.on path[marker-end]{animation:none;stroke-dasharray:none}#sheet{transition:none}.card,.card.pick{transition:none;animation:none}}
 @media (max-width:1199px){#sheet{max-height:46vh}}
 @media (max-width:640px){#sheet{margin:0;border-radius:24px 24px 0 0}#sheet .cols{grid-template-columns:1fr}#hint{font-size:13px}}
 @page{size:420mm 297mm;margin:0}
@@ -98,6 +104,8 @@ function paint(c){
 }
 function render(){
  paint(sel??hov);
+ plan.querySelectorAll('.card.pick').forEach(g=>g.classList.remove('pick'));
+ if(sel!=null){const g=plan.querySelector(`.card[data-c="${sel}"]`);if(g){const f=document.activeElement===g;g.parentNode.appendChild(g);if(f)g.focus({preventScroll:true});g.classList.add('pick')}}
  if(sel==null){sh.classList.remove('open');return}
  hint.classList.add('gone');
  const pre=E.filter(e=>e[1]==sel).map(e=>e[0]),nx=E.filter(e=>e[0]==sel).map(e=>e[1]);
