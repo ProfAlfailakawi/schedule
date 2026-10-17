@@ -82,6 +82,14 @@ try {
       const before = await rowNow(Number(item.rowId));
       const want = slotTimeGroups(item.slots)[0];
       const url = `/api/instructor-requests/${request.id}/apply`;
+      /* بياناتُ التجربة تتغيّر: يُفرَّغ الوقتُ المطلوب من مواعيد الأستاذ نفسه وقاعته (في البيئة المؤقتة)
+         كي يقيس الاختبارُ التثبيتَ لا مصادفةَ البيانات. والرفضُ عند التعارض يقيسه B3. */
+      const toMin = (t: string) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + m; };
+      const clash = ((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).filter(row =>
+        row.id !== before.id && (Number(row.AdInstructorId) === Number(before.AdInstructorId) || (before.roomId && row.roomId === before.roomId)) && want.days.some(d => row[d])
+        && toMin(row.fstarttime) < toMin(want.end) && toMin(want.start) < toMin(row.fendtime));
+      for (const row of clash) await call("DELETE", `/api/schedules/${row.id}`);
+      before.rev = (await rowNow(before.id)).rev;
 
       const preview = await call("POST", url, { itemIndex: index, preview: true, revs: { [item.rowId]: before.rev } });
       const untouched = await rowNow(before.id);
