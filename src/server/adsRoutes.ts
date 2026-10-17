@@ -12,6 +12,7 @@
  * العدّاداتُ تُجمَّع في الذاكرة وتُكتب دفعةً كل نصف دقيقة، فلا تُكلّف كتابةً لكل ظهور.
  * الحملاتُ تُقرأ من ذاكرةٍ مؤقتة عمرها ١٥ ثانية: إيقافُ حملةٍ يسري خلال ثوانٍ.
  */
+import { AUDIENCE_BASELINE } from "../utils/audienceBaseline";
 import { randomBytes, randomUUID } from "crypto";
 import express from "express";
 import type { Express, NextFunction, Request, Response } from "express";
@@ -342,7 +343,7 @@ async function heavyInputs(): Promise<Heavy> {
 
 async function audienceInputs(requestedTermId: number) {
   const h = await heavyInputs();
-  const [days, camps] = await Promise.all([Repository.listAudienceDays(120), campaigns()]);
+  const [days, camps] = await Promise.all([Repository.listAudienceDays(Math.max(120, Math.ceil((Date.now() - Date.parse(`${AUDIENCE_BASELINE.asOf}T00:00:00Z`)) / 86_400_000) + 7)), campaigns()]);
   if (!adStatsCache || Date.now() - adStatsCache.at > 60_000) adStatsCache = { at: Date.now(), rows: await Repository.listAdStats() };
   const recent = [...h.terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).slice(0, 12);
   const withAnswers = recent.find(term => (h.needsByTerm.get(Number(term.AdTermId)) || []).length > 0);
@@ -354,9 +355,24 @@ async function audienceInputs(requestedTermId: number) {
     if (hit && Date.now() - hit.at < HEAVY_TTL_MS) requests = hit.rows;
     else { requests = await Repository.getInstructorRequests(0, 0, currentTermId); h.requests.set(currentTermId, { at: Date.now(), rows: requests }); }
   }
+  /* «مرّات الفتح» منذ الرصيد: من كل فصلٍ يمتد إلى ما بعد تاريخه (الفصل الجاري عند التاريخ فما بعده)، لا من الفصل المعروض وحده،
+     وإلا نقص العدّاد حين يبدّل المدير الفصل أو يبدأ فصلٌ جديد. */
+  const byIdDesc = [...h.terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId));
+  const atBaseline = byIdDesc.findIndex(t => t.AdTermStart && t.AdTermStart <= AUDIENCE_BASELINE.asOf);
+  const spanning = byIdDesc.slice(0, Math.min(8, atBaseline >= 0 ? atBaseline + 1 : 2));
+  const openRequests: InstructorRequest[] = [];
+  for (const term of spanning) {
+    const id = Number(term.AdTermId);
+    if (id === currentTermId) { openRequests.push(...requests); continue; }
+    const hit = h.requests.get(id);
+    if (hit && Date.now() - hit.at < HEAVY_TTL_MS) { openRequests.push(...hit.rows); continue; }
+    const rows = await Repository.getInstructorRequests(0, 0, id);
+    h.requests.set(id, { at: Date.now(), rows });
+    openRequests.push(...rows);
+  }
   return {
     termChoices: recent.map(term => ({ id: Number(term.AdTermId), name: term.AdTermName })),
-    input: { now: new Date(), terms: h.terms, currentTermId, needsByTerm: h.needsByTerm, instructorRequests: requests, profiles: h.profiles, courses: h.courses, days, campaigns: camps, adStats: adStatsCache.rows },
+    input: { now: new Date(), terms: h.terms, currentTermId, needsByTerm: h.needsByTerm, instructorRequests: requests, openRequests, profiles: h.profiles, courses: h.courses, days, campaigns: camps, adStats: adStatsCache.rows },
   };
 }
 

@@ -766,6 +766,27 @@ async function main() {
     await new Promise<void>(r => server.close(() => r()));
   }
 
+  /* الرصيد الافتتاحي: كل رقمٍ يزيد بما يأتي بعد تاريخه، ولا يعدّ القديم مرتين. */
+  {
+    const { AUDIENCE_BASELINE: B } = await import("../src/utils/audienceBaseline");
+    const nd = (fp: string, day: string) => ({ fingerprint: fp, createdAt: `${day}T08:00:00Z`, courseIds: [], requestType: "new-course", AdCollegeId: 1 });
+    const stats = buildAudienceStats({
+      now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 9, AdTermName: "ف" }] as any[], currentTermId: 9,
+      needsByTerm: new Map([[9, [nd("old", "2026-09-01"), nd("old", "2026-10-25"), nd("new1", "2026-10-20"), nd("new1", "2026-10-21")] as any[]]]),
+      profiles: [{ fingerprint: "new2", createdAt: "2026-11-01T00:00:00Z", lastSeenAt: "2026-11-02T00:00:00Z", AdCollegeId: 1 }, { fingerprint: "old", createdAt: "2026-08-01T00:00:00Z", lastSeenAt: "2026-11-02T00:00:00Z", AdCollegeId: 1 }] as any[],
+      instructorRequests: [{ AdCollegeId: 1, status: "sent", createdAt: "2026-09-01T00:00:00Z", linkOpenedAt: "2026-09-05T00:00:00Z" }, { AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z", linkOpenedAt: "2026-10-30T00:00:00Z" }, { AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z" }] as any[],
+      days: [{ day: B.asOf, visits: { me: 100 } }, { day: "2026-10-18", visits: { me: 40, schedule: 10 } }, { day: "2026-10-19", visits: { me: 5 } }] as any[],
+    });
+    check(stats.reach.newSinceBaseline === 2, "الرصيد: طالبان جديدان فقط بعد التاريخ (القديم لا يُعدّ مرتين)", stats.reach.newSinceBaseline);
+    check(B.students + stats.reach.newSinceBaseline === B.students + 2, "الرصيد: الطلبة = الرصيد + الجدد");
+    check(stats.visits.afterBaseline === 55, "الرصيد: الزيارات بعد التاريخ فقط (يوم الرصيد نفسه لا يُعاد)", stats.visits.afterBaseline);
+    check(stats.instructors.openedAfterBaseline === 1, "الرصيد: بطاقة واحدة فُتحت بعد التاريخ", stats.instructors.openedAfterBaseline);
+    const crossTerm = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 9, AdTermName: "ف" }] as any[], currentTermId: 9, needsByTerm: new Map(), profiles: [], instructorRequests: [],
+      openRequests: [{ AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z", linkOpenedAt: "2026-10-19T00:00:00Z" }, { AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z", linkOpenedAt: "2026-11-02T00:00:00Z" }] as any[] });
+    check(crossTerm.instructors.openedAfterBaseline === 2, "الرصيد: مرّات الفتح تُعدّ من كل فصلٍ بعد التاريخ لا من الفصل المعروض وحده", crossTerm.instructors.openedAfterBaseline);
+    check(B.instructorOpens === 75_000 && B.students === 60_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
+  }
+
   console.log(`\n${failed ? "\x1b[31m" : "\x1b[32m"}${passed} نجح، ${failed} فشل\x1b[0m`);
   fs.rmSync(dir, { recursive: true, force: true });
   process.exit(failed ? 1 : 0);

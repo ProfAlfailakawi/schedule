@@ -10,6 +10,7 @@
  * يتضخّم بتكرار الطلبات ولا يصحّ أن يُسمّى «زوّاراً».
  */
 import type { AdCampaign, AdCourse, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
+import { AUDIENCE_BASELINE } from "./audienceBaseline";
 import { addDays, endingSoon, isLive, kuwaitDay, totalsOf } from "./adsEngine";
 
 export interface TermPoint { termId: number; termName: string; answers: number; students: number }
@@ -29,7 +30,7 @@ export interface AudienceStats {
     current: { answers: number; students: number; byType: { newCourse: number; conflict: number; graduate: number }; byCollege: CollegePoint[]; byDay: DayPoint[] };
   };
   /** الأساتذة: بطاقاتٌ أُرسلت، وفُتحت، وأُرسل منها طلب. */
-  instructors: { invited: number; opened: number; submitted: number; openRate: number; submitRate: number; byCollege: CollegePoint[] };
+  instructors: { invited: number; opened: number; /** بطاقاتٌ فُتحت بعد `AUDIENCE_BASELINE.asOf`. */ openedAfterBaseline: number; submitted: number; openRate: number; submitRate: number; byCollege: CollegePoint[] };
   /** الزيارات المقيسة منذ تشغيل القياس. `since` = أول يومٍ فيه بيانات. */
   visits: {
     since: string;
@@ -39,6 +40,8 @@ export interface AudienceStats {
     last7: number;
     last30: number;
     total: number;
+    /** مجموع الأيام المقيسة بعد تاريخ الرصيد الافتتاحي (`AUDIENCE_BASELINE.asOf`). */
+    afterBaseline: number;
     bySource: Array<{ source: string; count: number }>;
     returningRate: number;
     mobileRate: number;
@@ -51,7 +54,7 @@ export interface AudienceStats {
   /** ما يطلبه الطلبة هذا الفصل (رغباتهم وطلباتهم)، مجمّعاً بالمقرر. مقرراتٌ بأقل من `DEMAND_MIN_STUDENTS` طلاب لا تظهر أبداً. */
   demand: { top: Array<{ name: string; students: number }>; hidden: number; minStudents: number };
   /** الجمهور الكلي المقدَّر: أدنى عددٍ مؤكد من الطلبة (الأكبر من الاستبيان وملفات مساري). */
-  reach: { studentsMin: number; instructors: number };
+  reach: { studentsMin: number; instructors: number; /** طلبةٌ ظهروا لأول مرة بعد `AUDIENCE_BASELINE.asOf` (بصمات فريدة). */ newSinceBaseline: number };
 }
 
 /** حدُّ الخصوصية: مقرر لا يطلبه عشرةُ طلابٍ مختلفين على الأقل لا يُعرض ولا يُعدّ ظاهراً، فلا يُستدلّ منه على طالبٍ بعينه. */
@@ -64,6 +67,8 @@ export interface AudienceInput {
   currentTermId: number;
   needsByTerm: ReadonlyMap<number, readonly StudentNeed[]>;
   instructorRequests: readonly InstructorRequest[];
+  /** كل بطاقات الفصول التي قد تُفتح فيها بطاقةٌ بعد الرصيد؛ تُستعمل لعدّاد «مرّات الفتح» وحده (الافتراضي: بطاقات الفصل الجاري). */
+  openRequests?: readonly InstructorRequest[];
   profiles: readonly StudentProfile[];
   days?: readonly AudienceDay[];
   campaigns?: readonly AdCampaign[];
@@ -124,6 +129,18 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
     if (now - seen <= 7 * DAY_MS) active7++;
     if (now - seen <= 30 * DAY_MS) active30++;
   }
+
+  /* طلبةٌ جدد بعد الرصيد الافتتاحي: بصمةٌ أول ظهورٍ لها (استبيان أو ملف) بعد التاريخ. */
+  const firstSeen = new Map<string, string>();
+  const see = (fp: string, iso: string) => {
+    const day = dayKey(iso);
+    if (!fp || !day) return;
+    const cur = firstSeen.get(fp);
+    if (!cur || day < cur) firstSeen.set(fp, day);
+  };
+  for (const rows of input.needsByTerm.values()) for (const r of rows) see(r.fingerprint, r.createdAt);
+  for (const profile of input.profiles) see(profile.fingerprint, profile.createdAt);
+  const newSinceBaseline = [...firstSeen.values()].filter(day => day > AUDIENCE_BASELINE.asOf).length;
 
   const requests = input.instructorRequests;
   const opened = requests.filter(r => Boolean(r.linkOpenedAt)).length;
@@ -198,6 +215,7 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
     instructors: {
       invited: requests.length,
       opened,
+      openedAfterBaseline: (input.openRequests || requests).filter(r => dayKey(r.linkOpenedAt || "") > AUDIENCE_BASELINE.asOf).length,
       submitted,
       openRate: ratio(opened, requests.length),
       submitRate: ratio(submitted, requests.length),
@@ -211,6 +229,7 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
       last7: sum(series.slice(-7).map(p => p.count)),
       last30: sum(series.map(p => p.count)),
       total,
+      afterBaseline: sum(measured.filter(d => d.day > AUDIENCE_BASELINE.asOf).map(dayTotal)),
       bySource: [...sources.entries()].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count),
       returningRate: ratio(returning, returning + fresh),
       mobileRate: ratio(mobile, mobile + desktop),
@@ -225,7 +244,7 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
       clicks: adTotals.clicks,
       ctr: adTotals.ctr,
     },
-    reach: { studentsMin: Math.max(everyone.size, input.profiles.length), instructors: opened },
+    reach: { studentsMin: Math.max(everyone.size, input.profiles.length), instructors: opened, newSinceBaseline },
     demand: { top: demandTop, hidden: demandHidden, minStudents: DEMAND_MIN_STUDENTS },
   };
 }
