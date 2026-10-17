@@ -19,7 +19,7 @@ const LeadCard: React.FC<{ lead: Lead; data: Payload; busy: boolean; onContacted
   const season = lead.season ? data.seasons.find(s => s.id === lead.season)?.label || lead.season : "";
   const done = lead.status === "contacted";
   return (
-    <article className={`ad-lead${done ? " done" : ""}`}>
+    <article className={`ad-leadcard${done ? " done" : ""}`}>
       <Avatar name={lead.company} size={44} />
       <div className="ad-lead-main">
         <header>

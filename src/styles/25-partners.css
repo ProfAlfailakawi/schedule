@@ -372,12 +372,12 @@
 
 /* طلبات الحملات من الشركات */
 .ad-leads{display:grid;gap:12px}
-.ad-lead{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:16px;border:1px solid var(--line);border-radius:20px;background:var(--surface);box-shadow:var(--shadow-sm)}
-.ad-lead.done{opacity:.7}
-.ad-lead header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px}
-.ad-lead header b{font-size:17px}
+.ad-leadcard{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:16px;border:1px solid var(--line);border-radius:20px;background:var(--surface);box-shadow:var(--shadow-sm)}
+.ad-leadcard.done{opacity:.7}
+.ad-leadcard header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px}
+.ad-leadcard header b{font-size:17px}
 .ad-lead-who{color:var(--muted);font-size:14px}
-.ad-lead header time{margin-inline-start:auto;color:var(--muted);font-size:12.5px}
+.ad-leadcard header time{margin-inline-start:auto;color:var(--muted);font-size:12.5px}
 .ad-lead-tags{display:flex;flex-wrap:wrap;gap:6px;margin-block-start:8px}
 .ad-lead-tags span{font-size:12.5px;padding:3px 12px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:600}
 .ad-lead-tags .when{background:var(--surface-3,var(--line));color:var(--ink)}
@@ -388,4 +388,4 @@
 .ad-empty-leads{display:grid;justify-items:center;gap:6px;padding:44px 16px;text-align:center;border:1px dashed var(--line);border-radius:20px;color:var(--muted)}
 .ad-empty-leads .ic{display:grid;place-items:center;inline-size:54px;block-size:54px;border-radius:18px;background:var(--accent-soft);color:var(--accent)}
 .ad-empty-leads b{color:var(--ink);font-size:16px}.ad-empty-leads p{margin:0;max-inline-size:44ch}
-@media (max-width:560px){.ad-lead{grid-template-columns:1fr}.ad-lead header time{margin-inline-start:0}}
+@media (max-width:560px){.ad-leadcard{grid-template-columns:1fr}.ad-leadcard header time{margin-inline-start:0}}
