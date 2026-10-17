@@ -31,7 +31,7 @@ html.fit #plan{min-width:0}
 .card{cursor:pointer;transition:opacity .2s,transform .3s cubic-bezier(.2,.8,.2,1);transform-box:fill-box;transform-origin:center}
 /* The chosen course lifts out of the plan */
 #plan{--pop:1.15}
-@media (max-width:1199px){#plan{--pop:1.35}}
+@media (max-width:1199px){#plan{--pop:1.5}}
 .card.pick{transform:scale(var(--pop));animation:pop .34s ease-out}
 .card.pick>rect:first-child{filter:drop-shadow(0 10px 18px rgba(11,37,69,.28))}
 @keyframes pop{0%{transform:scale(1)}60%{transform:scale(calc(var(--pop) * 1.08))}100%{transform:scale(var(--pop))}}
@@ -105,7 +105,7 @@ function paint(c){
 function render(){
  paint(sel??hov);
  plan.querySelectorAll('.card.pick').forEach(g=>g.classList.remove('pick'));
- if(sel!=null){const g=plan.querySelector(`.card[data-c="${sel}"]`);if(g){const f=document.activeElement===g;g.parentNode.appendChild(g);if(f)g.focus({preventScroll:true});g.classList.add('pick')}}
+ if(sel!=null){const g=plan.querySelector(`.card[data-c="${sel}"]`);if(g){const f=document.activeElement===g,o=popBox(g.getBBox(),popOf());g.parentNode.appendChild(g);if(f)g.focus({preventScroll:true});g.style.transformOrigin=`${o.ox*100}% ${o.oy*100}%`;g.classList.add('pick')}}
  if(sel==null){sh.classList.remove('open');return}
  hint.classList.add('gone');
  const pre=E.filter(e=>e[1]==sel).map(e=>e[0]),nx=E.filter(e=>e[0]==sel).map(e=>e[1]);
@@ -124,16 +124,28 @@ const small=matchMedia('(max-width:1199px)'),box=document.querySelector('.scroll
 let autoFit=null;
 const view=()=>({fit:document.documentElement.classList.contains('fit'),w:plan.style.width,sl:box.scrollLeft,sy:scrollY});
 function setW(w){plan.style.width=w||'';plan.style.minWidth=w?'0':'';plan.style.maxWidth=w?'none':''}
+// The chosen card grows by --pop around its centre, shifted inward near the plan's edges so it never leaves the plan.
+const popOf=()=>parseFloat(getComputedStyle(plan).getPropertyValue('--pop'))||1;
+function popBox(b,f){
+ const W=plan.viewBox.baseVal.width,H=plan.viewBox.baseVal.height,w=b.width*f,h=b.height*f;
+ const x=Math.min(Math.max(b.x-(w-b.width)/2,8),W-8-w),y=Math.min(Math.max(b.y-(h-b.height)/2,8),H-8-h);
+ return {x,y,width:w,height:h,ox:(x-b.x)/(b.width-w||1),oy:(y-b.y)/(b.height-h||1)};
+}
 // Zoom so the selected course's whole chain fills the space above the sheet.
 function zoomToChain(){
  if(autoFit==null)autoFit=view();
  const S=new Set([...up(sel),...dn(sel),sel]),P=24;
  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
- plan.querySelectorAll('.card').forEach(g=>{if(!S.has(+g.dataset.c))return;const b=g.getBBox();x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.width);y1=Math.max(y1,b.y+b.height)});
- x0-=P;y0-=P;x1+=P;y1+=P;
- const full=plan.viewBox.baseVal.width,cw=box.clientWidth,ah=innerHeight-sh.offsetHeight;
+ // Frame the chosen card at its enlarged size, or it can spill off screen.
+ const pop=popOf();
+ plan.querySelectorAll('.card').forEach(g=>{const c=+g.dataset.c;if(!S.has(c))return;const b=c==sel?popBox(g.getBBox(),pop):g.getBBox();x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.width);y1=Math.max(y1,b.y+b.height)});
+ const full=plan.viewBox.baseVal.width,fullH=plan.viewBox.baseVal.height;
+ x0=Math.max(0,x0-P);y0=Math.max(0,y0-P);x1=Math.min(full,x1+P);y1=Math.min(fullH,y1+P);
+ const cw=box.clientWidth,ah=innerHeight-sh.offsetHeight;
  const W=Math.max(full*Math.min(cw/(x1-x0),ah/(y1-y0),1),cw),k=W/full;
  setFit(false,false);setW(W+'px');
+ // Room to scroll a low chain up above the sheet, even when the zoomed plan is shorter than the screen.
+ box.style.paddingBottom=innerHeight+'px';
  // RTL: scrollLeft is 0 at the right edge and negative leftwards.
  box.scrollLeft=Math.max(cw-W,Math.min(0,-(W-(x0+x1)/2*k-cw/2)));
  window.scrollTo(0,Math.max(0,plan.getBoundingClientRect().top+scrollY+(y0+y1)/2*k-ah/2));
@@ -142,7 +154,7 @@ function zoomToChain(){
 }
 function pick(c){
  sel=(c==null||c==sel)?null:c;hov=null;
- if(sel==null)sh.style.removeProperty('max-height');
+ if(sel==null){sh.style.removeProperty('max-height');box.style.removeProperty('padding-bottom')}
  if(small.matches&&sel==null&&autoFit!=null){const v=autoFit;autoFit=null;setFit(v.fit,false);setW(v.w);box.scrollLeft=v.sl;window.scrollTo(0,v.sy)}
  render();
  if(small.matches&&sel!=null)zoomToChain();
