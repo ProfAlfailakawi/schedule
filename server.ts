@@ -109,7 +109,7 @@ import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { loadSimulationInput, rankDemandRepairsBySimulation, rankSectionOpeningsBySimulation } from "./src/server/simulationData";
-import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, headlineReasonOf, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
 import { demandFromTargets, gapRows, hardestFirst, weekFingerprint, type GapRow } from "./src/utils/sectionBuild";
@@ -20171,9 +20171,9 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   /* القاعاتُ المرشّحة لا تُرسل: هذا المسار يخاطب صفحةَ الأستاذ. */
   res.json({
     kind: item.verdict || "clear",
-    headline: item.reasons?.[0]?.text || (item.verdict === "conflict" ? "هذا الموعد غير متاح." : item.verdict === "exception" ? "يحتاج سبب استثناء." : "الوقت متاح"),
+    headline: headlineReasonOf(item.reasons)?.text || (item.verdict === "conflict" ? "هذا الموعد غير متاح." : item.verdict === "exception" ? "يحتاج سبب استثناء." : "الوقت متاح"),
     computedEnd: item.slots?.[0]?.end || "",
-    roomAvailable: item.verdict === "conflict" ? false : true,
+    roomAvailable: !(item.reasons || []).some((reason: any) => reason.source === "room"),
     nearestTimes: (item.nearestTimes || []).map(slot => ({ day: slot.day, days: slot.days, start: slot.start, end: slot.end })),
   });
 });

@@ -229,5 +229,8 @@ check(server.includes("const requestLinks = (await Promise.all(requestRows.map("
 check(formatScheduleTimeRange("08:00", "09:20") === "⁦08:00 – 09:20⁩",
   "«08:00 – 09:20»: البدايةُ أولاً، معزولاً عن اتجاه السطر العربي");
 
+/* تصادمٌ مع محاضرةٍ أخرى لنفس الأستاذ: يُقال بأخصّ عبارة، ولا تُختلق «لا قاعة». */
+check(server.includes("headline: headlineReasonOf(item.reasons)?.text") && server.includes('reason.source === "room"') && !server.includes('roomAvailable: item.verdict === "conflict" ? false : true'),
+  "فحص الموعد: العنوان بأخصّ سبب مانع (محاضرتك الأخرى قبل «تتابع مرتفع») ولا قاعةَ مفقودة إلا بسبب قاعة فعلي");
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
