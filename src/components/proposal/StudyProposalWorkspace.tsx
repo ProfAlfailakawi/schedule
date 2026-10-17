@@ -41,6 +41,12 @@ function useMedia(query: string) {
 
 /** popstate الذي نُحدثه نحن بسحب مدخلنا عند الإغلاق: لا يُعامل كأنّه رجوعٌ من المستخدم. */
 let ownPops = 0;
+/* يُستهلك الحدثُ الذاتيّ في مستمعٍ واحدٍ دائم يُسجَّل قبل مستمعي المكوّن: لو استهلكه مستمعُ المكوّن لبقي العدّاد عالقاً
+   إن أُزيل المستمع قبل وصول popstate (الإغلاق بالزرّ)، فابتلع أول رجوعٍ حقيقي بعد إعادة الفتح. */
+let ownPopNow = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => { ownPopNow = ownPops > 0; if (ownPopNow) ownPops -= 1; });
+}
 
 type Dialog = null | "send" | "commit" | "close" | "withdraw";
 
@@ -104,7 +110,7 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
     let ownsEntry = false;
     try { window.history.pushState({ ...(window.history.state || {}), studyProposalWorkspace: true }, ""); ownsEntry = true; } catch { /* بلا سجلّ: يعمل الزرّ وحده */ }
     const onPop = () => {
-      if (ownPops > 0) { ownPops -= 1; return; }
+      if (ownPopNow) return;
       if (!ownsEntry) return;
       ownsEntry = false;
       if (wsRef.current.dirty || dialogRef.current) {

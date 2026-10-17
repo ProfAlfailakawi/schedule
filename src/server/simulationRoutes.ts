@@ -23,6 +23,8 @@ export interface SimulationDeps {
   isScopeAllowed: (req: any, collegeId: number, sectionId: number) => boolean;
   isPowerUser: (req: any) => boolean;
   actorName: (req: any) => string;
+  /* مفتاحُ الذاكرة يحمل عالَمه (real| أو demo:<الجلسة>|) — القاعدة في dataContextCache.ts؛ فلا يقرأ صندوقٌ تجريبي ذاكرةَ آخر. */
+  dataContextKey?: (key: string | number) => string;
 }
 
 let running = false;
@@ -31,6 +33,7 @@ const outcomeMemo = createTtlMemo<RegistrationOutcomeShard[]>({ ttlMs: 30_000 })
 const inputMemo = createTtlMemo<Awaited<ReturnType<typeof loadSimulationInput>>>({ ttlMs: 60_000 });
 
 export function registerSimulationRoutes(app: Express, deps: SimulationDeps): void {
+  const ctxKey = (key: string | number): string => (deps.dataContextKey ? deps.dataContextKey(key) : String(key));
   const fail = (res: Response, status: number, error: string, code?: string) => res.status(status).json({ error, ...(code ? { code } : {}) });
 
   app.get("/api/simulation/summary", deps.requireAuth, async (req: Request, res: Response) => {
@@ -92,7 +95,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     try {
       /* المفتاحُ يحمل وسمَ «قديم» الذي ترفعه كلُّ كتابةٍ في الجدول أو الصحائف أو الرغبات: فلا يُقاس الأثرُ على حالٍ مضت. */
       const run = await Repository.getRegistrationRun(termId);
-      const loaded = await inputMemo.get(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`, () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
+      const loaded = await inputMemo.get(ctxKey(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
       const rows = loaded.schedules as import("../types").FSchedule[];
       const dayFlags = (day: string) => ({ fsunday: day === "fsunday", fmonday: day === "fmonday", ftuesday: day === "ftuesday", fwednesday: day === "fwednesday", fthursday: day === "fthursday" });
       let revised: import("../types").FSchedule[];
@@ -178,10 +181,10 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
       const run = await Repository.getRegistrationRun(termId);
       const power = deps.isPowerUser(req);
       const allowed = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
-      const loaded = await inputMemo.get(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`, () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
+      const loaded = await inputMemo.get(ctxKey(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
       /* مفتاحُ الذاكرة يشمل صاحبَ الطلب: نطاقُه لا يُستنتج من شعب الفصل وحدها، فلا يشارك قارئٌ ذاكرةَ آخر. */
       const scopeKey = power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`;
-      const reading = await predictiveMemo.get(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`, () => predictiveReadingFor({ term, run, loaded, allowed }));
+      const reading = await predictiveMemo.get(ctxKey(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`), () => predictiveReadingFor({ term, run, loaded, allowed }));
       res.json({ ready: true, scoped: !power, reading });
     } catch (error) {
       console.error("[simulation] predictive:", error instanceof Error ? error.message : error);
@@ -196,7 +199,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     const term = pickDoorTerm(terms as any);
     if (!term) { res.json({ term: null, answered: 0, courses: [] }); return; }
     const termId = Number(term.AdTermId);
-    const shards = await outcomeMemo.get(String(termId), () => Repository.getRegistrationOutcome(termId));
+    const shards = await outcomeMemo.get(ctxKey(termId), () => Repository.getRegistrationOutcome(termId));
     const merged = new Map<number, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>();
     let answered = 0;
     for (const shard of shards) {
@@ -251,12 +254,12 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
  * ما يخصّ الجرسَ من الرادار وأجوبة «هل سجلت؟»: عددٌ واحدٌ لكل منهما بحدود نطاق الحساب.
  * يقرأ الملخّصَ المحفوظ والعدّاداتِ المشاظِرة فقط — لا يحسب شيئاً ولا يقرأ ملفّات الطلبة.
  */
-export async function radarNoticeFor(req: any, deps: Pick<SimulationDeps, "isScopeAllowed" | "isPowerUser">): Promise<{ radar: { ranAt: string; needsDecision: number; scoped: boolean } | null; outcome: { answered: number; stuck: number; scoped: boolean } | null; termId: number; termName: string }> {
+export async function radarNoticeFor(req: any, deps: Pick<SimulationDeps, "isScopeAllowed" | "isPowerUser" | "dataContextKey">): Promise<{ radar: { ranAt: string; needsDecision: number; scoped: boolean } | null; outcome: { answered: number; stuck: number; scoped: boolean } | null; termId: number; termName: string }> {
   const none = { radar: null, outcome: null, termId: 0, termName: "" };
   const term = pickDoorTerm((await Repository.getTerms()) as any);
   if (!term) return none;
   const termId = Number(term.AdTermId), power = deps.isPowerUser(req);
-  const [run, shards] = await Promise.all([Repository.getRegistrationRun(termId), outcomeMemo.get(String(termId), () => Repository.getRegistrationOutcome(termId))]);
+  const [run, shards] = await Promise.all([Repository.getRegistrationRun(termId), outcomeMemo.get(deps.dataContextKey ? deps.dataContextKey(termId) : String(termId), () => Repository.getRegistrationOutcome(termId))]);
   const mine = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
   const radar = run ? {
     ranAt: run.ranAt, scoped: !power,

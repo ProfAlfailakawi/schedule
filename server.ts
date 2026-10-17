@@ -11762,7 +11762,7 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
      لا يُسقط الجرس. */
   try {
     const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
-    const scopeDeps = { isScopeAllowed: (r: any, c: number, s: number) => isScopeAllowed(r, c, s), isPowerUser: (r: any) => isPowerUser(r) };
+    const scopeDeps = { isScopeAllowed: (r: any, c: number, s: number) => isScopeAllowed(r, c, s), isPowerUser: (r: any) => isPowerUser(r), dataContextKey: dataContextCacheKey };
     const [reviews, radar] = await Promise.all([pendingPlanReviews(req, scopeDeps), radarNoticeFor(req, scopeDeps)]);
     const extra = buildFeatureNotifications({ role, planReviews: reviews, radar: radar.radar, outcome: radar.outcome, termId: radar.termId || termId, termName: radar.termName || termName });
     if (extra.length) {
@@ -18588,7 +18588,11 @@ async function requestRulesForScope(
   });
   const rowKeys = scopeRows.map(row => roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall)).filter(Boolean);
   const knownRoomKeys = [...new Set(registryKeys.length ? registryKeys : rowKeys)];
-  return { scopeRows, cohortPairs: cohortPairs(demand), startLadder, knownRoomKeys, roomAliases };
+  /* تفاصيلُ القاعة (مبنى وقاعة ومعرّفاها) لكل مفتاحٍ من السجلّ: قاعةٌ خاليةٌ لم تظهر يوماً في صفوف القسم لا تُوجد في scopeRows،
+     فكانت خياراتُ نموذج الإضافة السريع تخرج فارغةً مع أن الحكم وجد لها قاعة. */
+  const hallByKey = new Map<string, { room: string; hall: string; buildingId: unknown; roomId: unknown }>();
+  halls.forEach((hall, index) => hallByKey.set(registryKeys[index], { room: String(hall.room || ""), hall: String(hall.hall || ""), buildingId: hall.buildingId, roomId: hall.roomId }));
+  return { scopeRows, cohortPairs: cohortPairs(demand), startLadder, knownRoomKeys, roomAliases, hallByKey };
 }
 /**
  * يُعيد حساب حُكم كل بند من الجدول الحقيقي.
@@ -18691,6 +18695,8 @@ async function judgeRequestItems(request: InstructorRequest, options: { forDepar
       roomCandidates: verdict.roomCandidates,
       /* تفاصيلُ أولى القاعات الخالية (مبنى وقاعة) ليُملأ بها نموذجُ الإضافة السريع: للقسم وحده. */
       roomOptions: verdict.roomCandidates.slice(0, 3).map(key => {
+        const registered = rules.hallByKey.get(key);
+        if (registered) return { key, room: registered.room, hall: registered.hall, buildingId: registered.buildingId, roomId: registered.roomId };
         const known: any = rules.scopeRows.find(row => row.roomId && roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall) === key);
         return known ? { key, room: String(known.AdRoomCode || ""), hall: String(known.AdRoomHall || ""), buildingId: known.buildingId, roomId: known.roomId } : null;
       }).filter(Boolean) as any,
@@ -20562,6 +20568,7 @@ registerSimulationRoutes(app, {
   isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
   isPowerUser: req => isPowerUser(req),
   actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
+  dataContextKey: dataContextCacheKey,
 });
 registerInsightRoutes(app, {
   requireAuth,
