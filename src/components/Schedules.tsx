@@ -10206,6 +10206,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
              لا يقرأ إلا عند تبدّل القسم أو الفصل — فيبقى يقول «معتمد» بعد أن
              زال الاعتماد، وهو بالضبط الخبرُ الذي وُجد ليقوله. */
           refreshSignal={liveFeedSerial}
+          canEditCourses={permissions.includes(6)}
+          onOpenRow={id => { const target = rows.find(item => Number(item.id) === id); if (target) openEdit(target); }}
           onChanged={() => setLiveFeedSerial(value => value + 1)}
           onLockChange={setApprovalLock}
           onOpenNotes={onNavigate ? () => onNavigate("scheduleChanges") : undefined}

@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, Check, ChevronDown, CornerUpLeft, DoorOpen, FilePenLine, Flag, History,
   Hourglass, Users, Landmark, ListChecks, ListPlus, Lock, MessageSquareText, PenLine, Quote, Send, ShieldCheck, Undo2, X,
+  Hash, Clock, Layers, Type as TypeIcon, Pencil,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
@@ -31,6 +32,11 @@ import { approvalScopeKey, createScopeGuard } from "../utils/approvalScope";
 import { journeyAlreadyPlayed, markPlayed, reducedMotion } from "./dna/useJourneyReveal";
 import { deadlineDateLong, departmentDeadlineLine, lastExtensionRejection } from "../utils/submissionDeadlines";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
+import { BuildingPicker, RoomPicker } from "./LocationPicker";
+import {
+  buildCourseUpdateBody, buildRoomLinkBody, courseFixFieldsOf, isPermissionDenial, readinessFixMode, validateCourseFix,
+  type CourseFixKey,
+} from "../utils/readinessFix";
 
 interface DeadlineShape {
   effective?: string; past: boolean; daysLeft?: number; tone: string;
@@ -69,6 +75,10 @@ interface Props {
   powerAdmin?: boolean;
   /** يتغيّر كلّما تغيّر الجدول تحته، فيُعاد قراءةُ الحال. */
   refreshSignal?: number;
+  /** أيملك صاحب الحساب صلاحية تعديل المقررات؟ وإلا عُطّلت خاناتها وظهر القفل. */
+  canEditCourses?: boolean;
+  /** يفتح محرّر الموعد نفسه (للنواقص التي تتشابك مع التعارضات: أيام، وقت، أستاذ، رمز شعبة). */
+  onOpenRow?: (id: number) => void;
   onChanged?: () => void;
   /**
    * يُبلَّغ به سببُ منع التعديل كلّما تغيّر (أو null حين يُفتح)، فتعرف الورشةُ
@@ -79,6 +89,15 @@ interface Props {
   onOpenNotes?: () => void;
   onOpenCourses?: () => void;
 }
+
+/** مثل request، لكن يُبقي رمز الحالة ليميّز الصلاحية من الخطأ. */
+const requestWithStatus = async (url: string, init?: RequestInit) => {
+  const response = await fetch(url, init);
+  const body = await response.text();
+  let data: any = {};
+  if (body) { try { data = JSON.parse(body); } catch { data = {}; } }
+  return { ok: response.ok, status: response.status, data };
+};
 
 const request = async (url: string, init?: RequestInit) => {
   const response = await fetch(url, init);
@@ -95,7 +114,7 @@ const arabicDate = (iso?: string) => {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
-export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, onChanged, onLockChange, onOpenNotes, onOpenCourses }: Props) {
+export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, canEditCourses = false, onOpenRow, onChanged, onLockChange, onOpenNotes, onOpenCourses }: Props) {
   const [state, setState] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -106,6 +125,12 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [historyOpen, setHistoryOpen] = useState(false);
   const [roomCapacityDrafts, setRoomCapacityDrafts] = useState<Record<string, string>>({});
   const [savingRoomId, setSavingRoomId] = useState<string | null>(null);
+  /* إصلاح المقرر والقاعة في مكانه: مسوّداتٌ بمفتاح المقرر:الحقل، وقفلٌ لا خطأ عند رفض الصلاحية. */
+  const [courseDrafts, setCourseDrafts] = useState<Record<string, string>>({});
+  const [roomPicks, setRoomPicks] = useState<Record<string, { buildingId: string; buildingCode: string; roomId?: string; hall: string; locationStatus?: string }>>({});
+  const [savingFixKey, setSavingFixKey] = useState<string | null>(null);
+  const [fixErrors, setFixErrors] = useState<Record<string, string>>({});
+  const [coursesLocked, setCoursesLocked] = useState<string | null>(null);
   /* تلميحٌ واحد مثبَّتٌ بالنقر في كل لحظة؛ يُطوى بـ Esc أو بنقرةٍ خارج الشريط. */
   const [openTip, setOpenTip] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -171,6 +196,60 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       await load(); onChanged?.();
     } catch (reason: any) { setError(reason?.message || "تعذر حفظ سعة القاعة"); }
     finally { setSavingRoomId(null); }
+  };
+
+  const saveCourseFix = async (itemKey: string, courseId: string) => {
+    const item = state?.dataReadiness?.items.find(row => `${row.kind}:${row.id}` === itemKey);
+    if (!item) return;
+    const fields = courseFixFieldsOf(item);
+    const patch: Partial<Record<CourseFixKey, string>> = {};
+    for (const field of fields) {
+      const raw = courseDrafts[`${courseId}:${field.key}`];
+      if (raw === undefined || raw === "") continue;
+      const issue = validateCourseFix(field, raw);
+      if (issue) { setFixErrors(current => ({ ...current, [itemKey]: issue })); return; }
+      patch[field.key] = raw;
+    }
+    if (!Object.keys(patch).length) return;
+    setSavingFixKey(itemKey); setFixErrors(current => { const next = { ...current }; delete next[itemKey]; return next; });
+    try {
+      /* الصفّ القائم يُقرأ طازجاً لحظة الحفظ: PUT يطلب الجسم كاملاً ولا يجوز إرسال نسخةٍ قديمة. */
+      const list = await request(`/api/courses?sectionId=${sectionId}`);
+      const course = (Array.isArray(list) ? list : []).find((row: any) => String(row.AdCourseId) === courseId);
+      if (!course) throw new Error("لم يُعثر على المقرر في هذا القسم");
+      const result = await requestWithStatus(`/api/courses/${encodeURIComponent(courseId)}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildCourseUpdateBody(course, patch)),
+      });
+      if (!result.ok) {
+        const message = String(result.data?.error || "تعذّر حفظ المقرر");
+        if (isPermissionDenial(result.status, message)) { setCoursesLocked(message); return; }
+        throw new Error(message);
+      }
+      setCourseDrafts(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${courseId}:`))));
+      await load(); onChanged?.();
+    } catch (reason: any) { setFixErrors(current => ({ ...current, [itemKey]: reason?.message || "تعذّر الحفظ" })); }
+    finally { setSavingFixKey(null); }
+  };
+
+  const saveRoomLink = async (itemKey: string, rowId: string) => {
+    const pick = roomPicks[rowId];
+    if (!pick?.buildingId || (!pick.roomId && pick.locationStatus !== "PENDING_ROOM")) return;
+    setSavingFixKey(itemKey); setFixErrors(current => { const next = { ...current }; delete next[itemKey]; return next; });
+    try {
+      const list = await request(`/api/schedules?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`);
+      const row = (Array.isArray(list) ? list : []).find((item: any) => String(item.id) === rowId);
+      if (!row) throw new Error("لم يُعثر على الموعد");
+      const result = await requestWithStatus(`/api/schedules/${encodeURIComponent(rowId)}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildRoomLinkBody(row, pick)),
+      });
+      if (!result.ok) {
+        const issues = Array.isArray(result.data?.issues) ? result.data.issues.map((issue: any) => issue?.message).filter(Boolean) : [];
+        throw new Error(String(issues[0] || result.data?.error || "تعذّر ربط القاعة"));
+      }
+      setRoomPicks(current => { const next = { ...current }; delete next[rowId]; return next; });
+      await load(); onChanged?.();
+    } catch (reason: any) { setFixErrors(current => ({ ...current, [itemKey]: reason?.message || "تعذّر الحفظ" })); }
+    finally { setSavingFixKey(null); }
   };
 
   useEffect(() => { void load(); }, [load]);
@@ -480,21 +559,59 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             <ul className="apb-dr-list">
               {list.map(item => {
                 const ItemIcon = ITEM_ICON[item.kind] || ListChecks;
+                const mode = readinessFixMode(item);
+                const itemKey = `${item.kind}:${item.id}`;
                 const canJump = item.kind !== "course" || Boolean(onOpenCourses);
                 /* بندُ سعة القاعة يحمل إصلاحه فيه: خانةٌ وحفظ، لا بطاقةٌ ثانية أسفل القائمة. */
-                const capacityRoom = item.kind === "room" && item.fields.includes("سعة القاعة")
+                const capacityRoom = mode === "room-capacity"
                   ? state.dataReadiness?.rooms?.find(room => room.id === item.id) : undefined;
                 const saved = capacityRoom ? String(capacityRoom.capacity ?? "") : "";
                 const draft = capacityRoom ? (roomCapacityDrafts[capacityRoom.id] ?? saved) : "";
+                const courseFields = mode === "course-fields" ? courseFixFieldsOf(item) : [];
+                const courseDirty = courseFields.some(field => (courseDrafts[`${item.id}:${field.key}`] ?? "") !== "");
+                const courseLocked = !canEditCourses || Boolean(coursesLocked);
+                const pick = roomPicks[item.id];
+                const lockedTip = coursesLocked || "لا تملك صلاحية تعديل المقررات";
+                const FIELD_ICON: Record<string, LucideIcon> = { CourseCredit: Layers, CourseHours: Clock, MaxStudent: Users, CourseCode: Hash, CourseName: TypeIcon };
                 return (
-                  <li key={`${item.kind}:${item.id}`} data-kind={item.kind}>
+                  <li key={itemKey} data-kind={item.kind} data-fix={mode}>
                     <span className="apb-dr-ic" aria-hidden="true"><ItemIcon /></span>
-                    <span className="apb-dr-txt"><b>{item.label}</b>{item.fields.length ? <small>{item.fields.join("، ")}</small> : null}</span>
+                    <span className="apb-dr-txt"><b>{item.label}</b>{item.fields.length ? <small>{item.fields.join("، ")}</small> : null}{fixErrors[itemKey] ? <small className="apb-dr-err" role="alert">{fixErrors[itemKey]}</small> : null}</span>
                     {capacityRoom ? (
                       <span className="apb-dr-fix">
                         <label className="apb-dr-cap"><Users aria-hidden="true" /><span className="sr-only">السعة</span><input data-room-input={capacityRoom.id} inputMode="numeric" placeholder="السعة" aria-label={`سعة ${capacityRoom.label}`} value={draft} onChange={event => setRoomCapacityDrafts(current => ({ ...current, [capacityRoom.id]: event.target.value.replace(/[^0-9]/g, "") }))} onKeyDown={event => { if (event.key === "Enter" && draft && draft !== saved) void saveRoomCapacity(capacityRoom.id); }} /></label>
                         <button type="button" className="apb-room-save" disabled={savingRoomId === capacityRoom.id || !draft || draft === saved} aria-label={`حفظ سعة ${capacityRoom.label}`} onClick={() => void saveRoomCapacity(capacityRoom.id)} data-guide-ignore="حفظ سعة القاعة الفعلية ضمن نطاق القسم">{savingRoomId === capacityRoom.id ? <Hourglass aria-hidden="true" /> : <Check aria-hidden="true" />}</button>
                       </span>
+                    ) : mode === "course-fields" ? (
+                      <span className="apb-dr-fix" data-locked={courseLocked ? "true" : undefined} title={courseLocked ? lockedTip : undefined}>
+                        {courseFields.map(field => {
+                          const FieldIcon = FIELD_ICON[field.key] || Pencil;
+                          const text = field.type === "text";
+                          return (
+                            <label key={field.key} className="apb-dr-cap" data-text={text || undefined}>
+                              <FieldIcon aria-hidden="true" /><span className="sr-only">{field.label}</span>
+                              <input data-course-input={`${item.id}:${field.key}`} dir={text ? "ltr" : undefined} inputMode={text ? "text" : field.type === "decimal" ? "decimal" : "numeric"}
+                                placeholder={field.label} aria-label={`${field.label} — ${item.label}`} disabled={courseLocked}
+                                value={courseDrafts[`${item.id}:${field.key}`] ?? ""}
+                                onChange={event => { const v = event.target.value; setCourseDrafts(current => ({ ...current, [`${item.id}:${field.key}`]: text ? v : v.replace(field.type === "decimal" ? /[^0-9.]/g : /[^0-9]/g, "") })); }}
+                                onKeyDown={event => { if (event.key === "Enter" && courseDirty) { event.preventDefault(); void saveCourseFix(itemKey, item.id); } }} />
+                            </label>
+                          );
+                        })}
+                        {courseLocked
+                          ? <span className="apb-dr-lock" role="img" aria-label={lockedTip} title={lockedTip}><Lock aria-hidden="true" /></span>
+                          : <button type="button" className="apb-room-save" disabled={savingFixKey === itemKey || !courseDirty} aria-label={`حفظ ${item.label}`} onClick={() => void saveCourseFix(itemKey, item.id)} data-guide-ignore="حفظ بيانات المقرر الناقصة من القائمة">{savingFixKey === itemKey ? <Hourglass aria-hidden="true" /> : <Check aria-hidden="true" />}</button>}
+                      </span>
+                    ) : mode === "room-link" ? (
+                      <span className="apb-dr-fix apb-dr-link" onKeyDown={event => { if (event.key === "Enter" && (event.target as HTMLElement).tagName !== "BUTTON") { event.preventDefault(); void saveRoomLink(itemKey, item.id); } }}>
+                        <BuildingPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={pick?.buildingId}
+                          onChange={building => setRoomPicks(current => ({ ...current, [item.id]: { buildingId: building?.id || "", buildingCode: building?.officialCode || "", hall: "" } }))} />
+                        <RoomPicker collegeId={collegeId} sectionId={sectionId} termId={termId} buildingId={pick?.buildingId} roomId={pick?.roomId} locationStatus={pick?.locationStatus} allowPending={false}
+                          onChange={({ roomId, canonicalCode, locationStatus }) => setRoomPicks(current => ({ ...current, [item.id]: { ...(current[item.id] || { buildingId: "", buildingCode: "" }), roomId, hall: canonicalCode, locationStatus } }))} />
+                        <button type="button" className="apb-room-save" disabled={savingFixKey === itemKey || !pick?.roomId} aria-label={`حفظ قاعة ${item.label}`} onClick={() => void saveRoomLink(itemKey, item.id)} data-guide-ignore="ربط الموعد بقاعة معتمدة من القائمة">{savingFixKey === itemKey ? <Hourglass aria-hidden="true" /> : <Check aria-hidden="true" />}</button>
+                      </span>
+                    ) : mode === "open-row" && onOpenRow ? (
+                      <button type="button" className="apb-dr-go" onClick={() => onOpenRow(Number(item.id))} data-guide-ignore="فتح محرّر الموعد لاستكمال بياناته">افتح الموعد<Pencil aria-hidden="true" /></button>
                     ) : canJump ? <button type="button" className="apb-dr-go" onClick={() => jumpToItem(item)} data-guide-ignore="قفزٌ إلى مكان إصلاح البند الناقص">{ITEM_ACTION[item.kind] || "افتح"}<ArrowLeft aria-hidden="true" /></button> : null}
                   </li>
                 );

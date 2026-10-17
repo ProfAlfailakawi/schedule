@@ -1538,3 +1538,16 @@
 .apb-dr-cap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
 .apb-dr-cap svg{inline-size:15px;block-size:15px;flex:none}
 .apb-dr-cap input{inline-size:58px;min-block-size:34px;border:0;background:transparent;font:inherit;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);padding:0;outline:none}
+
+/* إصلاح المقرر والقاعة في مكانهما: صفٌّ يلتفّ على الجوال، وقفلٌ هادئ بدل الخطأ */
+.apb-dr-list li{flex-wrap:wrap}
+.apb-dr-fix{flex-wrap:wrap;justify-content:flex-end}
+.apb-dr-cap[data-text] input{inline-size:92px;text-align:start}
+.apb-dr-fix[data-locked] .apb-dr-cap{opacity:.55;background:var(--surface-2,transparent)}
+.apb-dr-fix[data-locked] .apb-dr-cap input{cursor:not-allowed}
+.apb-dr-lock{display:grid;place-items:center;inline-size:34px;block-size:34px;border-radius:var(--r-full);color:var(--muted);cursor:help}
+.apb-dr-lock svg{inline-size:16px;block-size:16px}
+.apb-dr-err{color:var(--danger,#b3261e)}
+.apb-dr-link select{min-block-size:36px;max-inline-size:150px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit;font-size:.8rem;padding-inline:8px}
+.apb-dr-link select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
+@media (max-width:560px){.apb-dr-list li{align-items:flex-start}.apb-dr-fix{inline-size:100%;justify-content:flex-start}.apb-dr-link select{flex:1 1 40%;max-inline-size:none}}
