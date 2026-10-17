@@ -670,11 +670,11 @@
 /* خريطة المستويات: كل شيء مفتوح، والخيوط تربط المسبقات، وعند التحديد تُضاء السلسلة */
 .pr-map{position:relative}
 .pr-col{position:relative}
-.pr-card{position:relative;z-index:1}
+.pr-card{position:relative;z-index:2}
 .pr-level-head{cursor:default}
 .pr-card.dim{opacity:.38}
 .pr-card.sel{border-color:var(--accent)}
-.pr-lines{position:absolute;inset-block-start:0;left:0;z-index:2;pointer-events:none;overflow:visible}
+.pr-lines{position:absolute;inset-block-start:0;left:0;z-index:1;pointer-events:none;overflow:visible}
 .pr-line path{fill:none;stroke:var(--line-strong);stroke-width:1.5;opacity:.7;transition:opacity .18s,stroke .18s,stroke-width .18s}
 .pr-line circle{fill:var(--line-strong);opacity:.8}
 .pr-line.opt path{stroke-dasharray:5 4}
