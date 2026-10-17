@@ -2470,7 +2470,9 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 
 /* ── قسمٌ واحد في مواقع عدّة (inboxAudience) ─────────────────────────────
    يُقال اسمُ القسم مرّةً فوق القائمة، وتُسمّى السطورُ بكلياتها. */
-.changes-inbox-multisite{margin:0 0 2px;color:var(--muted);font-size:13px}
+.changes-inbox-multisite{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:0 0 2px;padding:8px var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--muted);font-size:13px}
+.changes-inbox-multisite svg{inline-size:16px;block-size:16px;flex:none;color:var(--accent)}
+.changes-inbox-multisite span{padding-inline-start:10px;border-inline-start:1px solid var(--line)}
 .changes-inbox-multisite strong{color:var(--ink);font-weight:700}
 .course-bootstrap-ok{display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:600;cursor:pointer}.course-bootstrap-ok input{width:16px;height:16px;accent-color:var(--accent)}
 .course-plan-line{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:var(--muted)}.course-plan-line svg{width:15px;height:15px}
@@ -2613,3 +2615,23 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 @keyframes heat-in{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.travel-edge{animation:none;stroke-dasharray:none;stroke-dashoffset:0}.travel-heat-cell{animation:none}}
 @media print{.travel-edge{animation:none!important;stroke-dasharray:none!important;stroke-dashoffset:0!important}.travel-heat-cell{animation:none!important}}
+
+/* ── «تغيّر الجدول بعد هذه النسخة»: عدّادٌ كبير، مقررٌ في سطر، أرقام الشعب رقائق ── */
+.so-body{display:grid;gap:10px}
+.so-count{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:var(--r-md);background:var(--danger-soft);color:var(--danger)}
+.so-count b{font-size:38px;line-height:1;font-weight:800;font-variant-numeric:tabular-nums}
+.so-count span{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:14px}
+.so-count svg{inline-size:18px;block-size:18px}
+.so-courses{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.so-course{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.so-course strong{min-inline-size:0;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.so-chips{display:inline-flex;flex-wrap:wrap;gap:4px;flex:none}
+.so-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:var(--r-full);background:var(--warning-soft);color:var(--warning);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.so-chip[data-kind="added"]{background:var(--success-soft);color:var(--success)}
+.so-chip[data-kind="removed"]{background:var(--danger-soft);color:var(--danger)}
+.so-chip svg{inline-size:12px;block-size:12px}
+.so-more{justify-self:start;display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px dashed var(--line-strong);border-radius:var(--r-full);background:transparent;color:var(--ink-2);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.so-more svg{inline-size:14px;block-size:14px}
+.so-warn{margin:0;color:var(--warning);font-size:12px;font-weight:700}
+.btn.so-destroy{background:transparent;border:1.5px solid var(--warning);color:var(--warning)}
+.btn.so-destroy:hover{background:var(--warning-soft)}
