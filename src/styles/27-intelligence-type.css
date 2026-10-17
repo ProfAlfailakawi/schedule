@@ -292,3 +292,25 @@
   .sm-page{--ix-metric:28px;--ix-metric-sm:20px}
   .sm-page.sm-page .rd-ring b{font-size:30px}
 }
+
+
+/* ── Registration radar: heading, term bar, frozen ribbon (>=13px) ──────── */
+.sm-page.sm-page>.page-heading :is(.page-eyebrow,.page-heading-copy p){font-size:var(--ix-caption);line-height:1.6}
+.sm-page.sm-page>.page-heading .page-eyebrow{font-weight:600;color:var(--brass)}
+.sm-page.sm-page .sm-actions :is(.btn,button){font-size:var(--ix-caption)}
+.sm-page.sm-page .sm-termbar .field>label{font-size:var(--ix-caption)}
+.sm-page.sm-page .term-frozen-ribbon :is(b,small,button,span){font-size:var(--ix-caption)}
+/* an odd last tile (3 in a 2-column grid) fills the row instead of floating */
+@media (max-width:560px){
+  .sm-page.sm-page .sm-views button:last-child:nth-child(odd){grid-column:1/-1}
+}
+
+/* The decision-scope label never wraps: the copy column keeps its own width and
+   the fields wrap among themselves instead of squeezing it. */
+.intel-context.intel-context .intel-context-copy{min-width:max-content}
+@media (min-width:769px) and (max-width:1100px){
+  .intel-context.intel-context{grid-template-columns:minmax(0,1fr);gap:var(--s3)}
+  .intel-context.intel-context .intel-context-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .intel-context.intel-context .intel-context-fields .field{min-width:0}
+}
+.intel-context.intel-context .intel-context-copy strong{white-space:nowrap}

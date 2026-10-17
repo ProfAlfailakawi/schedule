@@ -514,12 +514,9 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const showDetails = expanded && presence.details;
 
   /* ── قائمة البيانات الناقصة: كلُّ بندٍ وفعلُه ─────────────────────────────
-     المقرر ← محرر المقررات، الموعد ← بطاقته في الشاشة، القاعة ← خانة سعتها هنا. */
+     المقرر ← محرر المقررات، الموعد والقاعة ← بطاقة الموعد في الشاشة. */
   const jumpToItem = (item: { kind: string; id: string }) => {
-    if (item.kind === "room") {
-      const input = document.querySelector<HTMLInputElement>(`[data-room-input="${CSS.escape(item.id)}"]`);
-      input?.scrollIntoView({ behavior: "smooth", block: "center" }); input?.focus();
-    } else if (item.kind === "course") {
+    if (item.kind === "course") {
       onOpenCourses?.();
     } else {
       const card = document.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(item.id)}"], #schedule-row-${CSS.escape(item.id)}`);
@@ -527,7 +524,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
     }
   };
   const ITEM_ICON: Record<string, LucideIcon> = { course: Landmark, schedule: CalendarClock, location: DoorOpen, room: DoorOpen };
-  const ITEM_ACTION: Record<string, string> = { course: "افتح المقررات", schedule: "اذهب للموعد", location: "اذهب للموعد", room: "أدخل السعة" };
+  const ITEM_ACTION: Record<string, string> = { course: "افتح المقررات", schedule: "اذهب للموعد", location: "اذهب للموعد", room: "اذهب للموعد" };
   const readinessPanel = state.dataReadiness ? (
     <section className="apb-data-readiness" data-ready={state.dataReadiness.ready || undefined} aria-label="بيانات تحتاج استكمالاً">
       <header>
