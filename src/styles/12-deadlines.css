@@ -718,3 +718,17 @@
 .pr-card.off{opacity:.3;filter:grayscale(1);cursor:not-allowed;box-shadow:none}
 .pr-line.off path,.pr-line.off .pr-head{opacity:.05}.pr-line.off .pr-dot{display:none}
 @media(max-width:640px){.pr-cats{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;padding-block-end:4px}.pr-cat{flex:0 0 auto}}
+/* الاختياري بجمال الصحيفة: شريطٌ ذهبي، وبطاقاتٌ بالأسلوب نفسه، وتحت كل بطاقة أسهمُ متطلباتها بلون كل مسبق */
+.pr-groups .pr-group-list{grid-template-columns:minmax(0,1fr);gap:14px}
+.pr-groups .pr-group{--lvl:var(--brass);gap:14px;padding:16px;border:1.5px solid color-mix(in srgb,var(--brass) 45%,var(--surface));border-radius:20px;background:color-mix(in srgb,var(--brass) 8%,var(--surface))}
+.pr-group-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.pr-group-head>div:first-child{display:grid;gap:2px}
+.pr-groups .pr-group-head h4{margin:0;font-size:1.02rem;color:var(--brass)}
+.pr-group-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(250px,100%),1fr));gap:16px}
+.pr-groups .pr-group>.pr-group-cards{display:grid}
+.pr-opt-card{display:grid;gap:6px;align-content:start}
+.pr-opt-card>.pr-card{inline-size:100%}
+.pr-pre{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:flex-end}
+.pr-pre-item{display:inline-flex;flex-direction:column;align-items:center;color:var(--src,var(--muted))}
+.pr-pre-item svg{stroke-width:3}.pr-pre-item b{font-size:.95rem;font-weight:800;font-variant-numeric:tabular-nums}
+.pr-pre-sep{align-self:flex-end;padding-block-end:2px;font-style:normal;font-weight:700;color:var(--muted);font-size:.85rem}

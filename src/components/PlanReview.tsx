@@ -15,7 +15,7 @@ import { arabicMatchKey } from "../utils/arabicText";
 const isTechnologyEducation = (label: string) => arabicMatchKey(label).includes(arabicMatchKey("تكنولوجيا التعليم"));
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowUp, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, courseLevelFromCode, dependentsOf, describePrereq } from "../utils/curriculumRules";
@@ -206,7 +206,9 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const nameOf = (id: number) => names.get(id)?.name || `مقرر ${id}`;
   const ruleOf = (id: number) => view?.rules.find(r => r.courseId === id);
 
-  const levels = useMemo(() => view ? byLevel(view.courses.map(c => c.id), view.rules, new Map(view.courses.map(c => [c.id, c.code]))) : new Map<number, number[]>(), [view]);
+  /* مقررات المجموعات الاختيارية تُعرض في شريطها (لا مرتين): تخرج من أعمدة المستويات وتُرسم متطلباتها أسهماً صغيرة تحت بطاقاتها. */
+  const grouped = useMemo(() => new Set<number>((view?.groups || []).flatMap(g => g.courseIds)), [view]);
+  const levels = useMemo(() => view ? byLevel(view.courses.filter(c => !grouped.has(c.id)).map(c => c.id), view.rules, new Map(view.courses.map(c => [c.id, c.code]))) : new Map<number, number[]>(), [view, grouped]);
   const upstream = useMemo(() => {
     if (!view || !focus) return new Set<number>();
     const out = new Set<number>();
@@ -233,8 +235,8 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     const codeOf = new Map(view.courses.map(c => [c.id, c.code] as const));
     const sources = [...new Set(raw.map(e => Number(e.from)))].sort((a, b) => String(codeOf.get(a)).localeCompare(String(codeOf.get(b)), "en", { numeric: true }));
     const map = new Map(sources.map((id, i) => [id, i % 10 + 1] as const));
-    return { edges: raw.map(e => ({ ...e, hue: map.get(Number(e.from)) })), series: map };
-  }, [view]);
+    return { edges: raw.filter(e => !grouped.has(Number(e.from)) && !grouped.has(Number(e.to))).map(e => ({ ...e, hue: map.get(Number(e.from)) })), series: map };
+  }, [view, grouped]);
 
   /* الفلتر: مقررات القسم نفسه في التصنيف المختار فعّالة، وما سواها (تصنيفٌ آخر أو مقررات أقسامٍ أخرى) غير فعال. */
   const deptCourses = view ? view.courses.filter(c => c.sectionId === view.plan.sectionId && !c.external) : [];
@@ -388,7 +390,8 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 onSaveCourse={values => saveCourseDetails(sel, values)}
                 onSave={rule => act("/api/plan-review/rule", "PUT", { rule })} /> : null}
 
-              <GroupsPanel view={view} nameOf={nameOf} busy={busy}
+              <GroupsPanel view={view} nameOf={nameOf} busy={busy} series={series}
+                isOff={id => { const c = view.courses.find(x => x.id === id); return Boolean(cat && c && !isActive(c)); }} onOpen={id => setSelected(id)}
                 onSave={group => act("/api/plan-review/group", "PUT", { group })}
                 onDelete={groupId => act("/api/plan-review/group/delete", "POST", { groupId })} />
             </>
@@ -507,7 +510,7 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave, onSav
   return createPortal(editor, document.body);
 }
 
-function GroupsPanel({ view, nameOf, busy, onSave, onDelete }: { view: View; nameOf: (id: number) => string; busy: boolean; onSave: (g: ElectiveGroup) => void; onDelete: (id: string) => void }) {
+function GroupsPanel({ view, nameOf, busy, series, isOff, onOpen, onSave, onDelete }: { view: View; nameOf: (id: number) => string; busy: boolean; series: Map<number, number>; isOff: (id: number) => boolean; onOpen: (id: number) => void; onSave: (g: ElectiveGroup) => void; onDelete: (id: string) => void }) {
   const [draft, setDraft] = useState<ElectiveGroup | null>(null);
   const electives = [...view.courses].sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }));
   return (
@@ -517,15 +520,37 @@ function GroupsPanel({ view, nameOf, busy, onSave, onDelete }: { view: View; nam
       <div className="pr-group-list">
         {view.groups.map(g => (
           <article key={g.id} className="pr-group">
-            <b>{g.name}</b>
-            <small>اختر {countOf(g.minCourses, AR.course)} · لا يقل عن {countOf(g.minUnits, AR.unit)}</small>
-            <div>{g.courseIds.map(id => <span key={id} className="pr-chip">{nameOf(id)}</span>)}</div>
+            <header className="pr-group-head">
+              <div><h4>{g.name}</h4><small>اختر {countOf(g.minCourses, AR.course)} · لا يقل عن {countOf(g.minUnits, AR.unit)}</small></div>
             {view.can.edit ? (
-              <div className="pr-group-actions">
-                <SecondaryButton onClick={() => setDraft(g)} data-guide-ignore="تعديلُ مجموعةٍ اختيارية داخل شاشةٍ مسجّلة في المرشد باسم page.planReview">تعديل</SecondaryButton>
-                <SecondaryButton disabled={busy} onClick={() => onDelete(g.id)} data-guide-ignore="حذفُ مجموعةٍ اختيارية داخل شاشةٍ مسجّلة في المرشد باسم page.planReview"><Trash2 size={14} /></SecondaryButton>
-              </div>
-            ) : null}
+                <div className="pr-group-actions">
+                  <SecondaryButton onClick={() => setDraft(g)} data-guide-ignore="تعديلُ مجموعةٍ اختيارية داخل شاشةٍ مسجّلة في المرشد باسم page.planReview">تعديل</SecondaryButton>
+                  <SecondaryButton disabled={busy} onClick={() => onDelete(g.id)} data-guide-ignore="حذفُ مجموعةٍ اختيارية داخل شاشةٍ مسجّلة في المرشد باسم page.planReview"><Trash2 size={14} /></SecondaryButton>
+                </div>
+              ) : null}
+            </header>
+            <div className="pr-group-cards">
+              {g.courseIds.map(id => {
+                const c = view.courses.find(x => x.id === id);
+                const pre = view.rules.find(r => r.courseId === id)?.prereq;
+                const codeOf = (x: number) => view.courses.find(y => y.id === x)?.code || view.referenced.find(y => y.id === x)?.code || "";
+                const item = (x: number) => <span key={x} className="pr-pre-item" style={{ ["--src" as string]: series.has(x) ? `var(--series-${series.get(x)})` : undefined }}><ArrowUp size={15} aria-hidden="true" /><b>{codeOf(x)}</b></span>;
+                const parts: React.ReactNode[] = [];
+                (pre?.all || []).forEach((x, k) => { if (k) parts.push(<i key={`p${x}`} className="pr-pre-sep">+</i>); parts.push(item(x)); });
+                (pre?.anyOf || []).forEach((grp, gi) => { if (parts.length) parts.push(<i key={`a${gi}`} className="pr-pre-sep">+</i>); grp.forEach((x, k) => { if (k) parts.push(<i key={`o${gi}-${x}`} className="pr-pre-sep">أو</i>); parts.push(item(x)); }); });
+                return (
+                  <div key={id} className="pr-opt-card">
+                    <button type="button" className={`pr-card pr-elective${isOff(id) ? " off" : ""}`} disabled={isOff(id)} onClick={() => onOpen(id)} style={{ ["--src" as string]: series.has(id) ? `var(--series-${series.get(id)})` : undefined }} data-guide-ignore="فتح بطاقة مقرر اختياري من شريط المجموعة لتعديل قواعده">
+                      <i className="pr-credit" aria-hidden="true">{c?.credit ?? ""}</i>
+                      <span className="pr-name">{c?.name || nameOf(id)}</span>
+                      <b className="pr-code">{c?.code || codeOf(id)}</b>
+                      {c ? <span className="sr-only">{countOf(c.credit, AR.unit)}</span> : null}
+                    </button>
+                    {parts.length ? <div className="pr-pre" aria-label="يتطلب">{parts}</div> : null}
+                  </div>
+                );
+              })}
+            </div>
           </article>
         ))}
       </div>
