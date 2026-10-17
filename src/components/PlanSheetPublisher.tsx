@@ -33,9 +33,9 @@ export default function PlanSheetPublisher({ onChanged, focusSectionId = 0 }: { 
   const [copied, setCopied] = useState("");
 
   const load = useCallback(async () => {
-    try { setState(await call("/api/plan-sheets")); setError(""); }
+    try { setState(await call(focusSectionId ? `/api/plan-sheets?section=${focusSectionId}` : "/api/plan-sheets")); setError(""); }
     catch (e: any) { setError(e?.message || "تعذّر تحميل الصحائف."); setState({ sections: [], canPublish: false }); }
-  }, []);
+  }, [focusSectionId]);
   useEffect(() => { void load(); }, [load]);
 
   /* قسمُ نطاق القرار المختار: رمزُ QR لصفحته يظهر في أعلى اللوحة بلا بحثٍ ولا ضغط. */
@@ -142,10 +142,10 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
                 <SecondaryButton disabled={!focusQr} onClick={() => printPoster({ title: focus.sectionName, url: focus.deptUrl, svg: focusQr })} data-guide-ignore="طباعة ملصق A4 برمز QR لصفحة القسم"><Printer /> اطبع ملصقاً</SecondaryButton>
               </span>
             </> : <>
-              <small>لم تُنشر صحيفة هذا القسم بعد. انشرها فيظهر رمز QR ورابطها هنا.</small>
-              <span className="psh-focus-actions">
+              <small>{focus.sheets.length ? "لم تُنشر صحيفة هذا القسم بعد. انشرها فيظهر رمز QR ورابطها هنا." : "لا صحيفة معتمدة لهذا القسم بعد. يعتمد رئيس لجنة الجدول قواعدها في «مراجعة الصحيفة» ثم تُنشر هنا."}</small>
+              {focus.sheets.length ? <span className="psh-focus-actions">
                 <PrimaryButton disabled={Boolean(busy)} onClick={() => publish({ sectionId: focus.sectionId }, `s${focus.sectionId}`)} data-guide-ignore="نشر صحيفة القسم المختار">{busy === `s${focus.sectionId}` ? "جارٍ النشر…" : "انشر صحيفة القسم"}</PrimaryButton>
-              </span>
+              </span> : null}
             </>}
           </div>
         </section>
