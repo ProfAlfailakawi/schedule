@@ -17,7 +17,32 @@ import type { AdCourse, CurriculumCourseRule, ElectiveGroup, StudentProfile } fr
 import { pickDoorTerm } from "../utils/termStudentPhases";
 import { runRegistrationSimulation } from "./simulationData";
 
-const NAMES = ["نورة محمد العتيبي", "فهد عبدالله الرشيدي", "مريم خالد المطيري", "خالد سعد العنزي", "هند يوسف الكندري", "سلمان ناصر الدوسري", "دانة فيصل الصباح", "بدر أحمد الهاجري", "لولوة جاسم الشمري", "عبدالرحمن علي الفضلي", "شهد مبارك العجمي", "يوسف حمد الخالدي"];
+/** أسماءٌ محايدة حتميّة (لا أسماء عائلات ولا أسماء واقعية): الوضع التجريبي حسّاس. */
+export const demoStudentName = (index: number): string => `${index % 2 === 0 ? "طالب تجريبي" : "طالبة تجريبية"} ${index + 1}`;
+
+/**
+ * أنماطُ الطلبة التجريبيين: كلُّ قسمٍ يحوي كلَّ نمطٍ (يُوزَّع بالترتيب لا بالصدفة)،
+ * فلا شاشةَ تُفتح على حالةٍ فارغة: مستجد، متقدّم، على أعتاب التخرج، متخرّج،
+ * مُعطَّل بمتطلّبٍ سابق، متعثّر.
+ */
+export const DEMO_STUDENT_ARCHETYPES = ["new", "early", "mid", "advanced", "graduating", "graduated", "blocked", "struggling"] as const;
+export type DemoStudentArchetype = typeof DEMO_STUDENT_ARCHETYPES[number];
+export const demoArchetypeOf = (index: number, sectionCount: number): DemoStudentArchetype =>
+  DEMO_STUDENT_ARCHETYPES[Math.floor(index / Math.max(1, sectionCount)) % DEMO_STUDENT_ARCHETYPES.length];
+/** المقرراتُ المنجزة لنمطٍ في صحيفة قسمه (مرتّبة بالمستوى). */
+export function demoPassedFor(kind: DemoStudentArchetype, courses: readonly AdCourse[]): number[] {
+  const ids = courses.map(c => Number(c.AdCourseId)), n = ids.length;
+  switch (kind) {
+    case "new": return [];
+    case "early": return ids.slice(0, Math.max(1, Math.floor(n * 0.25)));
+    case "mid": return ids.slice(0, Math.max(2, Math.floor(n * 0.5)));
+    case "advanced": return ids.slice(0, Math.max(3, Math.floor(n * 0.75)));
+    case "graduating": return ids.slice(0, Math.max(0, n - 1));
+    case "graduated": return ids;
+    case "blocked": return ids.slice(1, Math.max(2, Math.floor(n * 0.5))); // ينقصه الأول فيُعطَّل ما يشترطه
+    case "struggling": return ids.slice(0, 1);
+  }
+}
 
 const addDaysISO = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
@@ -74,7 +99,7 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
   }
 
   /* ── ملفّاتُ الطلبة ── */
-  const fps: Array<{ fp: string; sectionId: number }> = [];
+  const fps: Array<{ fp: string; sectionId: number; kind: DemoStudentArchetype }> = [];
   const total = 320;
   for (let i = 0; i < total; i += 1) {
     const section = sections[i % sections.length];
@@ -83,11 +108,12 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
     const courses = plan?.courses || ((await Repository.getCoursesBySection(sectionId)) as AdCourse[]);
     if (!courses.length) continue;
     const fp = createHash("sha256").update(`demo-student-${i}`).digest("hex").slice(0, 32);
-    const year = Math.floor(random() * 4);
-    const passed = courses.slice(0, Math.floor((courses.length * year) / 4)).map(c => Number(c.AdCourseId));
+    random(); // يحفظ تسلسل المولّد كما كان
+    const kind = demoArchetypeOf(i, sections.length);
+    const passed = demoPassedFor(kind, courses);
     const credit = new Map(courses.map(c => [Number(c.AdCourseId), Number(c.CourseCredit) || 0]));
     const iso = new Date().toISOString();
-    const wishes = random() < 0.7 ? {
+    const wishes = (kind === "graduating" || kind === "struggling" || kind === "blocked" || random() < 0.7) && kind !== "graduated" ? {
       termId, targetUnits: pick([12, 15, 15, 18]), courseIds: [] as number[], updatedAt: iso,
       constraints: { noMorning: random() < 0.2, noAfternoon: random() < 0.1, freeDay: random() < 0.3 },
     } : undefined;
@@ -96,11 +122,11 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
       id: fp, fingerprint: fp, AdCollegeId: collegeId, AdSectionId: sectionId, curriculumPlanId: plan?.id,
       passedCourseIds: passed, passedUnits: passed.reduce((s, id) => s + (credit.get(id) || 0), 0),
       updatedAt: new Date(Date.now() - 86_400_000).toISOString(), ...base, deleteAt: addDaysISO(opts.today, 900), deleteReason: "initial",
-      nameCipher: await opts.sealIdentity(NAMES[i % NAMES.length]), civilCipher: await opts.sealIdentity(String(300000000000 + i)),
+      nameCipher: await opts.sealIdentity(demoStudentName(i)), civilCipher: await opts.sealIdentity(String(300000000000 + i)),
       ...(wishes ? { wishes } : {}),
     };
     await Repository.updateStudentProfile(fp, () => profile);
-    fps.push({ fp, sectionId });
+    fps.push({ fp, sectionId, kind });
   }
 
   /* ── الرادار ── */
@@ -111,18 +137,23 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
   const courseOf = new Map(((await Repository.getCourses()) as AdCourse[]).map(c => [Number(c.AdCourseId), c] as const));
   const REASONS = ["full", "full", "full", "conflict", "conflict", "prereq", "other"] as const;
   let cases = 0;
-  for (const { fp } of fps) {
-    if (random() > 0.5) continue;
+  for (const { fp, kind } of fps) {
+    const forced = kind === "struggling" || kind === "blocked" || kind === "graduating";
+    if (random() > 0.5 && !forced) continue;
     const ticket = await Repository.getRegistrationTicket(Number(fresh.AdTermId), fp);
     const items = ticket?.plans.find(p => p.label === "A")?.items || [];
     if (!items.length) continue;
-    const answers = items.map(item => random() < 0.8
+    const answers = items.map((item, at) => kind === "struggling" || kind === "blocked" ? (at === 0 || random() < 0.5
+      ? { courseId: item.courseId, state: "stuck" as const, reason: kind === "blocked" ? "prereq" as const : pick(REASONS) }
+      : { courseId: item.courseId, state: "registered" as const })
+      : kind === "graduating" ? { courseId: item.courseId, state: "registered" as const }
+      : random() < 0.8
       ? { courseId: item.courseId, state: "registered" as const }
       : { courseId: item.courseId, state: "stuck" as const, reason: pick(REASONS) });
     const iso = new Date().toISOString();
     await Repository.recordRegistrationAnswers(fp, Number(fresh.AdTermId), current => (current ? { ...current, registration: { termId: Number(fresh.AdTermId), at: iso, answers } } : undefined));
     const stuck = answers.filter(a => a.state === "stuck");
-    if (stuck.length && cases < 14 && random() < 0.6) {
+    if (stuck.length && cases < 40 && (kind === "struggling" || kind === "blocked" || random() < 0.6)) {
       const first = courseOf.get(stuck[0].courseId);
       const profile = await Repository.getStudentProfile(fp);
       if (first && profile) {

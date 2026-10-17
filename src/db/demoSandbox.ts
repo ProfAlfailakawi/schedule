@@ -7,13 +7,8 @@ import { generateSyntheticCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
 import { ACADEMIC_ROLES, roleDefinition, type AcademicRole } from "../utils/academicRoles";
 
-const instructorNames = [
-  "د. سالم فهد", "د. نورة خالد", "د. محمد عبدالله", "د. سارة محمود",
-  "د. يوسف إبراهيم", "د. ريم حسن", "د. خالد ناصر", "د. مريم علي",
-  "د. عبدالله راشد", "د. هدى فهد", "د. فيصل عمر", "د. دانة بدر",
-  /* قسم الرياضيات (DEMO_MATH): ثلاثةُ أساتذته، ثم منتدبةٌ من خارج الكلية. */
-  "د. عبدالعزيز الرشيدي", "د. لطيفة العنزي", "د. بدر المطيري", "أ. هيا الشمري",
-];
+/* أسماءٌ محايدة بالترقيم فقط (لا أسماء عائلات ولا أسماء كاملة واقعية): الوضع التجريبي حسّاس. */
+const instructorNames = Array.from({ length: 16 }, (_, index) => `عضو هيئة تدريس تجريبي ${index + 1}`);
 
 const colleges: AdCollege[] = [
   { AdCollegeId: 1, AdCollegeCode: "SCI", AdCollegeName: "كلية العلوم التطبيقية" },
