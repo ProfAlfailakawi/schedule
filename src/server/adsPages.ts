@@ -38,9 +38,9 @@ export const approx = (n: number): string => {
 
 const PHASE_LABEL: Record<AdPhase, string> = { draft: "مسودة", paused: "موقوفة", scheduled: "مجدولة", live: "تعمل الآن", ended: "منتهية" };
 
+const BASE_DARK = `@media (prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#17201c;--ink:#eef3ef;--muted:#9baba3;--line:#27342e;--accent:#4fc29a;--accent2:#e3a557;--soft:#12261e;--shadow:0 1px 2px rgba(0,0,0,.4),0 14px 40px rgba(0,0,0,.35)}}`;
 const BASE_CSS = `
 :root{--bg:#f6f4ef;--card:#fff;--ink:#17201c;--muted:#5f6b65;--line:#e4e0d6;--accent:#0f6b4f;--accent2:#c9822b;--soft:#e8f3ee;--shadow:0 1px 2px rgba(20,30,25,.06),0 14px 40px rgba(20,30,25,.07)}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#17201c;--ink:#eef3ef;--muted:#9baba3;--line:#27342e;--accent:#4fc29a;--accent2:#e3a557;--soft:#12261e;--shadow:0 1px 2px rgba(0,0,0,.4),0 14px 40px rgba(0,0,0,.35)}}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",system-ui,sans-serif;line-height:1.75}
 .wrap{max-width:980px;margin:0 auto;padding:22px 16px 60px}
@@ -83,12 +83,13 @@ footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
 @media print{body{background:#fff;color:#000}.btn,.noprint{display:none!important}.hero,.card,.kpi{box-shadow:none}.wrap{padding:0}}
 `;
 
-const page = (title: string, nonce: string, body: string, extraCss = ""): string => `<!doctype html>
+/** `light`: صفحةٌ تبقى فاتحةً مهما كان تفضيل الجهاز (ملف الشراكة وثيقةٌ تُعرض وتُطبع). */
+const page = (title: string, nonce: string, body: string, extraCss = "", light = false): string => `<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="${light ? "light" : "light dark"}">
 <title>${esc(title)}</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
-<style>${BASE_CSS}${extraCss}</style></head><body><div class="wrap">${body}</div>
+<style>${BASE_CSS}${light ? "" : BASE_DARK}${extraCss}</style></head><body><div class="wrap">${body}</div>
 <script nonce="${nonce}">(function(){var b=document.getElementById("print");if(b)b.addEventListener("click",function(){window.print()})})();</script>
 </body></html>`;
 
@@ -472,7 +473,6 @@ ${banner}
   <h1>جمهورك في لحظة الجدول</h1>
   <p>طلبةٌ وأساتذة يفتحون جداولهم بأنفسهم، كل فصل.</p>
   <a class="k-cta noprint" href="#new">${icon("plus")}${NEW_CAMPAIGN}</a>
-  <button class="btn noprint" id="print" type="button">طباعة / PDF</button>
 </section>
 <div class="k-stats">
   <div class="k-stat"><span class="badge">${icon("students")}</span><small class="note" style="margin:0">حوالي</small><b>${fmt(head.students)}</b><span>إجمالي الطلبة المستفيدين</span></div>
@@ -491,8 +491,7 @@ ${lead}
 <div class="k-tools"><div>${icon("chart")}<span>تقرير حيّ</span></div><div>${icon("ab")}<span>اختبار A/B</span></div><div>${icon("ticket")}<span>كود خصم</span></div><div>${icon("flask")}<span>تجربة قبل الالتزام</span></div></div>
 <h2 class="k-h2">${icon("shield")}شروطنا</h2>
 <ul class="k-rules">${AD_RULES.map(r => `<li>${icon("check")}<span>${esc(r)}</span></li>`).join("")}</ul>
-<a class="k-fab noprint" href="#new">${icon("plus")}${NEW_CAMPAIGN}</a>
-<footer>SCHEDULE · ${esc(dateAr(today))} · الأرقام مُقرَّبة ومجمّعة ولا تحمل أي هوية. الإجماليات منذ ${AUDIENCE_BASELINE.since} بحسب إدارة النظام حتى ${esc(dateAr(AUDIENCE_BASELINE.asOf))}، ثم يُضاف إليها ما يُقاس بعدها.</footer>`, KIT_CSS);
+<a class="k-fab noprint" href="#new">${icon("plus")}${NEW_CAMPAIGN}</a>`, KIT_CSS, true);
 }
 
 /** سياسةُ القياس والإعلانات: صفحةٌ عامة بلا رمز، يصل إليها الطالب من السطر تحت كل إعلان. كلُّ سطرٍ فيها يصف ما يفعله الكود فعلاً. */
