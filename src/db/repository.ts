@@ -2430,6 +2430,7 @@ export const studentNeedKind = (need: { requestType?: string; details?: string }
       : /^من «مساري» بعد التسجيل/.test(String(need.details || "")) ? "after-registration"
         : "course";
 
+const localApplyLeases = new Map<string, { until: number; holder: string }>();
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
   /** السرّ المشترك بين نسخ الخادم، مقروءاً خارج صندوق العرض دائماً: مفتاحُ
@@ -5453,6 +5454,56 @@ export const Repository = {
       return;
     }
     if (localRunLeases.get(termId)?.holder === holder) localRunLeases.delete(termId);
+  },
+  /**
+   * قفلُ تثبيت رغبات الأساتذة في الجدول، لكل فصل، في قاعدة البيانات: تثبيتان متزامنان على
+   * نسختين من الخادم (أو منطقتين) يفحص كلٌّ منهما أسبوعاً لا يرى ما يكتبه الآخر، فقد يحجزان
+   * القاعةَ أو الأستاذَ نفسَه. قفلُ الذاكرة لا يرى إلا نسختَه. ينتهي وحدَه إن مات الخادم.
+   */
+  acquireScheduleApplyLease: async (key: string, holder: string, ttlMs = 2 * 60_000): Promise<boolean> => {
+    const now = Date.now();
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleApplyLocks").doc(key.replace(/[^\w-]/g, "_"));
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        const until = snap.exists ? Number((snap.data() as any).until) || 0 : 0;
+        if (until > now) return false;
+        transaction.set(ref, { until: now + ttlMs, holder });
+        return true;
+      });
+    }
+    const held = localApplyLeases.get(key);
+    if (held && held.until > now) return false;
+    localApplyLeases.set(key, { until: now + ttlMs, holder });
+    return true;
+  },
+  /** يمدّ أجلَ القفل ما دام صاحبُه يعمل (تثبيتٌ طويل لا يفقد قفله في منتصفه). */
+  renewScheduleApplyLease: async (key: string, holder: string, ttlMs = 2 * 60_000): Promise<boolean> => {
+    const now = Date.now();
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleApplyLocks").doc(key.replace(/[^\w-]/g, "_"));
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        if (!snap.exists || (snap.data() as any).holder !== holder) return false;
+        transaction.set(ref, { until: now + ttlMs, holder });
+        return true;
+      });
+    }
+    const held = localApplyLeases.get(key);
+    if (!held || held.holder !== holder) return false;
+    localApplyLeases.set(key, { until: now + ttlMs, holder });
+    return true;
+  },
+  releaseScheduleApplyLease: async (key: string, holder: string): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleApplyLocks").doc(key.replace(/[^\w-]/g, "_"));
+      await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        if (snap.exists && (snap.data() as any).holder === holder) transaction.delete(ref);
+      });
+      return;
+    }
+    if (localApplyLeases.get(key)?.holder === holder) localApplyLeases.delete(key);
   },
   getRegistrationRun: async (termId: number): Promise<RegistrationRun | undefined> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {

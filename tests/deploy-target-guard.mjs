@@ -14,7 +14,9 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const OFFICIAL_PROJECT = "gen-lang-client-0379571946";
-const OFFICIAL_REGIONS = ["europe-west1", "europe-west2"];
+const OFFICIAL_REGIONS = ["europe-west1"];
+/* حُذفت خدمة لندن (europe-west2) بقرار المالك في 2026-10-17: لا يُنشر عليها مجدداً (النشر كان سيعيد إنشاءها). */
+const RETIRED_REGIONS = ["europe-west2"];
 const failures = [];
 
 /* ١. سير النشر ينشر على الخدمة الرسمية، والصورة وحدها. */
@@ -30,6 +32,9 @@ for (const block of deploys) {
 }
 for (const region of OFFICIAL_REGIONS) {
   if (!workflow.includes(region)) failures.push(`النشر لا يشمل المنطقة الرسمية ${region}.`);
+}
+for (const region of RETIRED_REGIONS) {
+  if (deploys.some(block => block.includes(region)) || new RegExp(`for region[^\\n]*${region}`).test(workflow)) failures.push(`النشر يعود إلى المنطقة المحذوفة ${region} (يعيد إنشاء الخدمة).`);
 }
 if (!/schedule\.dr-alfailakawi\.com/.test(workflow)) failures.push("سير النشر لا يتحقق من الدومين الرسمي بعد النشر.");
 

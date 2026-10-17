@@ -62,6 +62,20 @@ check(/requestType === "graduate" && Number\(need\.surveySectionId/.test(read("s
     "M2 الضمّ يُبقي رقم الحالة نفسه ويجمع المقررات", merged);
 }
 
+{
+  const a = await Repository.acquireScheduleApplyLease("term-7", "A");
+  const b = await Repository.acquireScheduleApplyLease("term-7", "B");
+  await Repository.releaseScheduleApplyLease("term-7", "B");
+  const stillHeld = !(await Repository.acquireScheduleApplyLease("term-7", "C"));
+  await Repository.releaseScheduleApplyLease("term-7", "A");
+  const free = await Repository.acquireScheduleApplyLease("term-7", "D");
+  const expired = await Repository.acquireScheduleApplyLease("term-8", "E", -1) && await Repository.acquireScheduleApplyLease("term-8", "F");
+  const renewedByOwner = await Repository.renewScheduleApplyLease("term-8", "F");
+  const renewedByOther = await Repository.renewScheduleApplyLease("term-8", "G");
+  check(renewedByOwner && !renewedByOther, "L يمدّ صاحبُ القفل أجلَه وحده");
+  check(a && !b && stillHeld && free && expired, "L قفل التثبيت: واحدٌ في الفصل، لا يفكّه غيرُ صاحبه، ويُفكّ وحده إن انتهى أجله");
+}
+
 /* ── 2. استبيان الأستاذ ← الجدول ───────────────────────────────────────── */
 const server = read("server.ts");
 const decideRoute = server.slice(server.indexOf('app.post("/api/instructor-requests/:id/decide"'), server.indexOf('app.post("/api/instructor-requests/:id/reply"'));
