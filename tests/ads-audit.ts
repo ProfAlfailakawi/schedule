@@ -794,13 +794,29 @@ async function main() {
     const head = headlineTotals(stats);
     check(head.students === B.students + 2 && head.visits === B.visits + 55 && head.instructorOpens === B.instructorOpens + 1 && head.instructorOpenRate === 90, "الرصيد: headlineTotals = الرصيد + ما بعده، والنسبة حدٌّ أدنى 90", head);
     const kitPage = (await import("../src/server/adsPages")).partnerKitPage({ stats: stats as any, liveBySlot: {}, today: "2026-11-20", nonce: "N" });
-    check(kitPage.includes("60,000+") && kitPage.includes("5,300,000+") && kitPage.includes("90%+"), "الرصيد: ملف الشراكة يعرض الأرقام نفسها (60,000+ و5,300,000+ و90%+)");
-    check(kitPage.includes("رصيداً افتتاحياً"), "الرصيد: ملف الشراكة يذكر الرصيد الافتتاحي في ذيله");
+    check(kitPage.includes("80,000+") && kitPage.includes("5,300,000+") && kitPage.includes("90%+"), "الرصيد: ملف الشراكة يعرض الأرقام نفسها (80,000+ و5,300,000+ و90%+)");
+    check(kitPage.includes("تقديراتٌ تقريبية"), "الرصيد: ملف الشراكة يذكر أن الإجماليات تقديراتٌ تقريبية من الإدارة في ذيله");
     const fp = (n: number, pre: string) => Array.from({ length: n }, (_, i) => nd(`${pre}${i}`, "2026-05-01"));
-    const t1 = [...fp(10, "a"), ...fp(10, "b")], t2 = [...fp(10, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
+    const t1 = [...fp(20, "a"), ...fp(20, "b")], t2 = [...fp(20, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
     const cont = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }] as any[], currentTermId: 2, profiles: [], instructorRequests: [],
       needsByTerm: new Map([[1, t1 as any[]], [2, t2 as any[]]]) });
-    check(cont.continuity.length === 1 && cont.continuity[0].before === 20 && cont.continuity[0].stayed === 10 && cont.continuity[0].rate === 50, "الاستمرارية: 10 من 20 = 50% بين فصلين", cont.continuity);
+    check(cont.continuity.length === 1 && cont.continuity[0].before === 40 && cont.continuity[0].stayed === 20 && cont.continuity[0].rate === 50, "الاستمرارية: 20 من 40 = 50% بين فصلين متتاليين", cont.continuity);
+    const tiny = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }] as any[], currentTermId: 2, profiles: [], instructorRequests: [],
+      needsByTerm: new Map([[1, fp(10, "a") as any[]], [2, fp(10, "a").map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" })) as any[]]]) });
+    check(tiny.continuity.length === 0, "الاستمرارية: عيّنة أقل من 30 طالباً لا تُنتج نسبة (لا 0% من طالبٍ واحد)", tiny.continuity);
+    const gap = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }, { AdTermId: 3, AdTermName: "صيف" }] as any[], currentTermId: 3, profiles: [], instructorRequests: [],
+      needsByTerm: new Map([[1, fp(40, "a") as any[]], [3, fp(40, "a").map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" })) as any[]]]) });
+    check(gap.continuity.length === 0, "الاستمرارية: فصلٌ بلا إجابات بينهما يقطع التتالي فلا تُقارَن فصلان غير متتاليين", gap.continuity);
+    /* ترتيب الفصول أكاديمي لا برقم المعرّف: A(1) ثم B(3) ثم C(2) — لا يقطع C الفارغ التتالي بين A وB */
+    const termsOutOfOrder = [{ AdTermId: 1, AdTermName: "الفصل الأول 2020/2021" }, { AdTermId: 3, AdTermName: "الفصل الثاني 2020/2021" }, { AdTermId: 2, AdTermName: "الفصل الأول 2021/2022" }];
+    const chrono = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: termsOutOfOrder as any[], currentTermId: 2, profiles: [], instructorRequests: [],
+      needsByTerm: new Map([[1, fp(40, "a") as any[]], [3, fp(40, "a").map(r => ({ ...r, createdAt: "2021-02-01T08:00:00Z" })) as any[]]]) });
+    check(chrono.continuity.length === 1 && chrono.continuity[0].fromTerm === "الفصل الأول 2020/2021" && chrono.continuity[0].toTerm === "الفصل الثاني 2020/2021" && chrono.continuity[0].rate === 100, "الاستمرارية: الترتيب بالتسلسل الأكاديمي لا برقم المعرّف", chrono.continuity);
+    const { pickDashboardTerm } = await import("../src/utils/audienceStats");
+    const dashTerms = [{ AdTermId: 1, AdTermName: "الفصل الأول 2025/2026", AdTermClosed: true }, { AdTermId: 2, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: true }, { AdTermId: 3, AdTermName: "الفصل الأول 2026/2027", AdTermClosed: false }, { AdTermId: 4, AdTermName: "الفصل الثاني 2026/2027" }] as any[];
+    const newestFirst = [...dashTerms].reverse();
+    check(pickDashboardTerm(newestFirst, dashTerms, 0, Date.parse("2026-10-17T00:00:00Z"))?.AdTermId === 3, "اللوحة: الافتراضي هو الفصل الجاري تشغيلياً (غير المنتهي) لا الأحدث ولا آخر فصلٍ فيه إجابات");
+    check(pickDashboardTerm(newestFirst, dashTerms, 2)?.AdTermId === 2, "اللوحة: الفصل المطلوب صراحةً يُقدَّم على الافتراضي");
     const adSlotStats = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [], currentTermId: 0, needsByTerm: new Map(), profiles: [], instructorRequests: [],
       campaigns: [{ id: "c1", slot: "me", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }, { id: "c2", slot: "schedule", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }] as any[],
       adStats: [{ id: "1", campaignId: "c1", creativeId: "x", day: "2026-10-05", impressions: 1000, uniques: 500, clicks: 30, filteredClicks: 0 }, { id: "2", campaignId: "c2", creativeId: "x", day: "2026-10-05", impressions: 400, uniques: 300, clicks: 4, filteredClicks: 0 }, { id: "3", campaignId: "gone", creativeId: "x", day: "2026-10-05", impressions: 99, uniques: 9, clicks: 9, filteredClicks: 0 }] as any[] });
@@ -822,7 +838,7 @@ async function main() {
     check(!!r1?.first && r2 === null && !!r3 && !r3.first, "عدّ الفتح في المخزن: الأول first، وإعادة التحميل null، والعودة بعد نصف ساعة تُعدّ", { r1, r2, r3 });
     check(saved.linkOpenDays["2026-10-20"] === 2 && saved.timeline.filter((e: any) => e.kind === "link-opened").length === 1 && saved.status === "sent", "عدّ الفتح في المخزن: عدّان في اليوم، وحدثٌ واحد في الخط الزمني، وحالة الطلب لم تُمسّ", saved);
     check(await Repo.recordInstructorRequestOpen("missing", "2026-10-20T11:00:00Z") === null, "عدّ الفتح في المخزن: طلبٌ غير موجود لا يُنشأ");
-    check(B.instructorOpens === 75_000 && B.students === 60_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
+    check(B.instructorOpens === 75_000 && B.currentStudents === 28_000 && B.instructors === 786 && B.students === 80_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
   }
 
   console.log(`\n${failed ? "\x1b[31m" : "\x1b[32m"}${passed} نجح، ${failed} فشل\x1b[0m`);

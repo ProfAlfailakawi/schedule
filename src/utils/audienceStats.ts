@@ -11,6 +11,7 @@
  */
 import type { AdCampaign, AdCourse, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
 import { AUDIENCE_BASELINE } from "./audienceBaseline";
+import { currentTermId, sortTermsNewest } from "./termSequence";
 import { addDays, ctrOf, endingSoon, isLive, kuwaitDay, slotById, totalsOf } from "./adsEngine";
 
 export interface TermPoint { termId: number; termName: string; answers: number; students: number }
@@ -66,6 +67,8 @@ export interface AudienceStats {
 /** حدُّ الخصوصية: مقرر لا يطلبه عشرةُ طلابٍ مختلفين على الأقل لا يُعرض ولا يُعدّ ظاهراً، فلا يُستدلّ منه على طالبٍ بعينه. */
 export const DEMAND_MIN_STUDENTS = 10;
 const DEMAND_TOP = 8;
+/** أقل عددٍ من طلبة الفصل السابق تُحسب له استمرارية؛ دونه لا تظهر نسبة. */
+export const CONTINUITY_MIN_STUDENTS = 30;
 
 export interface AudienceInput {
   now: Date;
@@ -207,13 +210,14 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
   const demandTop = ranked.filter(r => r.students >= DEMAND_MIN_STUDENTS).slice(0, DEMAND_TOP);
   const demandHidden = ranked.filter(r => r.students < DEMAND_MIN_STUDENTS).length;
 
-  /* ── استمرارية الطلبة: كل فصلٍ مع الفصل السابق له (من الفصول التي فيها إجابات) ── */
-  const withRows = [...input.terms].sort((a, b) => Number(a.AdTermId) - Number(b.AdTermId))
-    .map(t => ({ term: t, people: new Set((input.needsByTerm.get(Number(t.AdTermId)) || []).map(r => r.fingerprint).filter(Boolean)) }))
-    .filter(x => x.people.size > 0);
+  /* ── استمرارية الطلبة: فصلان متتاليان في تسلسل الفصول فقط، وبعيّنةٍ كافية ── */
+  const sequence = sortTermsNewest(input.terms).reverse()
+    .map(t => ({ term: t, people: new Set((input.needsByTerm.get(Number(t.AdTermId)) || []).map(r => r.fingerprint).filter(Boolean)) }));
   const continuity: ContinuityPair[] = [];
-  for (let i = 1; i < withRows.length; i++) {
-    const prev = withRows[i - 1], cur = withRows[i];
+  for (let i = 1; i < sequence.length; i++) {
+    const prev = sequence[i - 1], cur = sequence[i];
+    /* فصلٌ بلا إجابات بينهما يقطع التتالي، وعيّنةٌ صغيرة تُنتج نسبةً مضللة (0% من طالبٍ واحد). */
+    if (prev.people.size < CONTINUITY_MIN_STUDENTS || cur.people.size === 0) continue;
     let stayed = 0;
     for (const fp of prev.people) if (cur.people.has(fp)) stayed++;
     continuity.push({ fromTerm: prev.term.AdTermName, toTerm: cur.term.AdTermName, before: prev.people.size, stayed, rate: ratio(stayed, prev.people.size) });
@@ -303,4 +307,13 @@ export function headlineTotals(s: AudienceStats) {
     /** حدٌّ أدنى: يظهر المقيس إن زاد عليه. */
     instructorOpenRate: Math.max(AUDIENCE_BASELINE.instructorOpenRate, s.instructors.openRate || 0),
   };
+}
+
+/**
+ * الفصل الذي تعرضه اللوحة: المطلوب إن وُجد، وإلا الفصل **الجاري تشغيلياً** (`currentTermId`)، لا آخر فصلٍ فيه إجابات.
+ * بعد حذف قائمة اختيار الفصل لا مهرب من هذا الافتراضي، فلو سقط إلى «آخر فصلٍ فيه إجابات» لعرضت اللوحة فصلاً قديماً باسم «هذا الفصل».
+ */
+export function pickDashboardTerm<T extends AdTerm>(recent: readonly T[], allTerms: readonly AdTerm[], requestedId = 0, now = Date.now()): T | undefined {
+  const operational = currentTermId(allTerms as any, now);
+  return recent.find(t => Number(t.AdTermId) === requestedId) || recent.find(t => Number(t.AdTermId) === operational) || recent[0];
 }
