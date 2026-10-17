@@ -47,6 +47,8 @@ if(!document.getElementById("adx-css")){
  var css=document.createElement("style");css.id="adx-css";
  css.textContent=
  ".adx{display:none;max-width:640px;margin:18px auto;padding:0 16px;box-sizing:border-box;font-family:inherit}"+
+ /* داخل «مساري» الصفحةُ نفسها تضع هوامش البطاقات؛ فلا حشوةَ إضافية تُضيّق الإعلانَ عنها. */
+ "#adx-me-box.adx,#adx-break-box.adx{padding-inline:0}"+
  ".adx.on{display:block}"+
  ".adx .adx-main,.adx .adx-sp{position:relative;border-radius:14px;overflow:hidden;border:1px solid rgba(127,127,127,.28);background:rgba(127,127,127,.08)}"+
  ".adx .adx-sp{margin-bottom:8px;border-radius:12px}"+
@@ -140,7 +142,8 @@ fetch("/_ads/serve?slot="+encodeURIComponent(slot)+(tok?"&t="+encodeURIComponent
  if(!d)return;
  var day2=day,items=(d.items||[]).filter(function(it){return (parseInt(get("adx:n:"+it.c+":"+day2)||"0",10)||0)<40});
  if(!items.length)items=d.items||[];
- var sponsor=d.sponsor||null;
+ /* الراعي شريطٌ واحد للصفحة: محطة الاستراحة تقع في «تذكرتي» وفي الصفحة نفسها إعلانُ «مساري» بشريطه، فلا يتكرر الراعي (ولا يُحتسب ظهورُه مرتين). */
+ var sponsor=slot==="break"?null:(d.sponsor||null);
  if(!items.length&&!sponsor)return;
  box.textContent="";
  if(opt&&opt.intro){box.classList.add("brk");box.appendChild(el("p","adx-intro",opt.intro))}
