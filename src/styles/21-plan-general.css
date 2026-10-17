@@ -10,3 +10,4 @@
 /* ── صحيفة التخرج: قائمةٌ واحدة مرتّبة بالمستوى بدل أعمدة المستويات المطويّة ── */
 .reference-flat{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
 .reference-level-pill{display:inline-grid;place-items:center;min-inline-size:34px;padding:1px 8px;border-radius:999px;background:var(--accent-softer);color:var(--accent-ink);font-style:normal;font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums}
+.reference-course-group{display:block;color:var(--muted);font-size:.72rem;line-height:1.5}

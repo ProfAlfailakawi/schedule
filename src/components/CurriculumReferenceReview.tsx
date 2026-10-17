@@ -169,14 +169,15 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
     {!reference.planId ? <Notice type="info" inline>لا توجد صحيفة تشغيلية مرتبطة بهذه النسخة؛ هذه المقارنة للمرجع فقط.</Notice> : null}
     {!visibleEntries.length ? <div className="reference-empty"><Search size={19} /><b>لا توجد مقررات بهذا الاختيار</b><span>غيّر المرشحات أو امسح البحث لعرض الصحيفة كاملة.</span><button type="button" onClick={() => { setQuery(""); setCategory("all"); setGroupKind("all"); setLevelFilter("all"); setStatusFilter("all"); }} data-guide-ignore="مسح مرشحات صحيفة التخرج وإظهار كل المقررات">مسح المرشحات</button></div> : (
       <div className="reference-flat" aria-label="مقررات القسم مرتبة بالمستوى">
-        {[...visibleEntries].sort((x, y) => (x.level || 9999) - (y.level || 9999) || x.course.code.localeCompare(y.course.code)).map(({ course, level, category }) => {
+        {[...visibleEntries].sort((x, y) => (x.level || 9999) - (y.level || 9999) || x.course.code.localeCompare(y.course.code)).map(({ course, level, category, groupName, elective, requiredUnits }) => {
           const key = plainCode(course.code), selectedCourse = focusedCode === course.code;
           const tone = ancestry.up.has(key) ? "prereq" : ancestry.down.has(key) ? "next" : "";
           return <article key={course.code} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}`}>
             <button type="button" className="reference-course-main" aria-pressed={selectedCourse} onClick={() => setFocusedCode(selectedCourse ? "" : course.code)} data-guide-ignore="إظهار روابط المتطلبات للمقرر في الصحيفة">
-              <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi>{level ? <i className="reference-level-pill" title={`المستوى ${level}`}>{level}</i> : null}<span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
+              <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi><i className="reference-level-pill" title={level ? `المستوى ${level}` : "تمهيدي / غير مصنف"}>{level || "غير مصنف"}</i><span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
               <strong>{course.name}</strong>
               <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)} · {category}</span>
+              <span className="reference-course-group">{groupName} · {elective ? `اختياري · المطلوب ${countOf(requiredUnits, AR.unit)}` : "إجباري"}</span>
               {course.prerequisites.length ? <span className="reference-prereq-summary"><Link2 size={13} /> يسبقه {course.prerequisites.length} {course.prerequisites.length === 1 ? "متطلب" : "متطلبات"}</span> : null}
             </button>
             {course.current ? <small className="reference-course-capacity">السعة المسجلة: {course.current.capacity === null ? "غير محددة" : countOf(course.current.capacity, AR.student)}</small> : null}

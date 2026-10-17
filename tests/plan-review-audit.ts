@@ -117,6 +117,8 @@ const ctx = (plan: number[]) => ({
     "R6 تبويب أقسام الصحيفة (ثقافة عامة/تخصصية/مهنية/تدريب) والمجموعة وحالة المطابقة قابلة للوصول");
   check(source.includes("reference-guide") && !source.includes("reference-level-toggle") && !source.includes("expandedLevels"),
     "R6 القراءة البصرية مختصرة: دليل الربط مطوي ولا أعمدة مستوياتٍ تُفتح وتُطوى");
+  check(source.includes("reference-course-group") && source.includes("requiredUnits") && source.includes("غير مصنف"),
+    "R6 كل بطاقة تحمل مجموعتها (إجباري/اختياري والمطلوب) ووسمَ المستوى أو «غير مصنف»");
   check(source.includes("course.ownerSectionId === selectedSectionId"),
     "R6 مقررات القسم المحدد وحدها (لا مقررات كليةٍ عامة)");
   const approveUi = read("src/components/PlanReview.tsx");
