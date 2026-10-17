@@ -80,4 +80,21 @@ const asRows: FSchedule[] = emptyReading.proposals.flatMap(p => p.placements.map
   fsunday: pl.day === "fsunday", fmonday: pl.day === "fmonday", ftuesday: pl.day === "ftuesday", fwednesday: pl.day === "fwednesday", fthursday: pl.day === "fthursday", fendtime: pl.end,
 })));
 check(asRows.every(a => asRows.every(b => !physical(a, b))), "ولا تعارض بين الشعب المبنية في الفصل الفارغ");
+// ⑦ شعبٌ بوقتٍ تاريخي وقاعةٍ بانتظار التثبيت
+import { placePending, templatesFromHistory, facultyPlaceholderOf } from "../src/utils/sectionPending";
+const pastTpl: FSchedule[] = [
+  { ...row(1, 1, "1", "r1", "08:00", 1), AdTermId: 6, fsunday: true, ftuesday: true, fendtime: "09:00" },
+  { ...row(2, 1, "2", "r1", "10:00", 1), AdTermId: 6, fmonday: true, fsunday: false, fwednesday: true, fendtime: "11:00" },
+  { ...row(3, 2, "1", "r2", "08:00", 2), AdTermId: 6, fsunday: true, ftuesday: true, fendtime: "09:00" },
+];
+const tpl = templatesFromHistory(pastTpl.filter(r => r.AdCourseId === 1), [6]);
+check(tpl.length === 2 && tpl[0].days.length === 2 && tpl[0].start === "08:00", "قوالب الفصل المماثل: شعبةٌ لكل قالب بأيامها");
+let nid = -5000;
+const working: FSchedule[] = [{ ...pastTpl[2], id: 77, AdTermId: 7 }];
+const pend = placePending({ course: courses[0], count: 2, firstCode: 7, templates: tpl, seed: pastTpl[0], working, pairs: new Set(["1|2"]), doorway: 0, rhythm, termId: 7, instructorId: 9, instructorName: "هيئة تدريسية", fallbackLength: 60, draftId: () => nid-- });
+check(pend.length === 2 && pend.every(p => p.pending && p.roomId === "" && p.instructorName === "هيئة تدريسية"), "بلا قاعة وأستاذها «هيئة تدريسية»");
+check(!(pend[0].start === "08:00" && pend[0].days.includes("fsunday")), "القالب المتعارض مع مقررٍ من مستواه (الزوج 1|2) لا يُستعمل بل يُنقل إلى وقتٍ خالٍ");
+check(new Set(pend.map(p => `${p.days.join()}${p.start}`)).size === 2, "لا شعبتان بالوقت نفسه");
+check(pend.map(p => p.sectionCode).join() === "7,8", "أرقام الشعب تكمل ترقيم المقرر");
+check(facultyPlaceholderOf([{ AdInstructorId: 5, AdInstructorName: "هيئة  تدريسية" }, { AdInstructorId: 6, AdInstructorName: "هيئة تدريسية" }], new Set([6]))?.AdInstructorId === 6, "سجلّ «هيئة تدريسية» من أساتذة القسم وحده");
 console.log("section-build ✓");

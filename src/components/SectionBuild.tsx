@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CalendarCheck, CircleAlert, CheckCircle2, Layers, Undo2, UserRoundX } from "lucide-react";
+import { CalendarCheck, CircleAlert, CheckCircle2, ClipboardPenLine, DoorClosed, Layers, Undo2, UserRoundX } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import { ImpactCard, postWhatIf, type ChangeImpact } from "./ApplyProposal";
@@ -12,9 +12,9 @@ import { ImpactCard, postWhatIf, type ChangeImpact } from "./ApplyProposal";
  * المشترك (النطاق، القفل، التعارض)، كلّها أو لا شيء، ولها تراجعٌ بضغطة.
  */
 
-interface Placement { index: number; day: string; dayLabel: string; start: string; end: string; roomCode: string; roomHall: string; instructorName: string; sectionCode: string; buildingId: string; roomId: string; instructorId: number }
+interface Placement { pending?: boolean; days?: string[]; index: number; day: string; dayLabel: string; start: string; end: string; roomCode: string; roomHall: string; instructorName: string; sectionCode: string; buildingId: string; roomId: string; instructorId: number }
 interface BuildRow { courseId: number; name: string; code: string; target: number | null; existing: number; remaining: number; state: "done" | "missing" | "over" | "unset"; placements: Placement[]; unplaced: number; reason: string }
-interface Built { rows: BuildRow[]; started: boolean; fingerprint: string; totals: { target: number; existing: number; remaining: number; placeable: number } }
+interface Built { rows: BuildRow[]; started: boolean; fingerprint: string; totals: { target: number; existing: number; remaining: number; placeable: number; pending: number } }
 
 /** ما يفعله القسم لكل سببٍ يمنع البناء: يُستخرج من نصّ السبب القادم من الخادم. */
 const FIX_FOR = (reason: string) => /قاعة/.test(reason) ? "أضِف سعة القاعات في سجلّ القاعات"
@@ -41,8 +41,10 @@ function Dots({ row, picked }: { row: BuildRow; picked: Set<string> }) {
   return <span className="sb-dots" aria-hidden="true">{dots.map((kind, i) => <i key={i} className={`sb-dot ${kind}`} />)}</span>;
 }
 
-export default function SectionBuild({ collegeId, sectionId, termId, targets, onBuilt }: {
+export default function SectionBuild({ collegeId, sectionId, termId, targets, onBuilt, onReview }: {
   key?: React.Key; collegeId: number; sectionId: number; termId: number; targets: Record<string, number>; onBuilt?: () => void;
+  /** صفوفٌ بشكل نموذج الاستيراد تُفتح في شاشة المراجعة نفسها. */
+  onReview?: (rows: any[]) => void;
 }) {
   const [built, setBuilt] = useState<Built | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -59,10 +61,15 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
     try {
       const data: Built = await call("/api/section-build/preview", base);
       setBuilt(data);
-      setPicked(new Set(data.rows.flatMap(row => row.placements.map(p => `${row.courseId}:${p.sectionCode}`))));
-      const items = data.rows.flatMap(row => row.placements.map(p => ({ collegeId, sectionId, courseId: row.courseId, placement: p })));
+      setPicked(new Set(data.rows.flatMap(row => row.placements.filter(p => !p.pending).map(p => `${row.courseId}:${p.sectionCode}`))));
+      const items = data.rows.flatMap(row => row.placements.filter(p => !p.pending).map(p => ({ collegeId, sectionId, courseId: row.courseId, placement: p })));
       if (items.length) postWhatIf({ kind: "openings", termId, items }).then(setImpact).catch(() => setImpact(null));
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  const review = async () => {
+    setBusy(true); setError("");
+    try { const data = await call("/api/section-build/review-rows", base); setBuilt(null); onReview?.(data.rows || []); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const toggle = (key: string) => setPicked(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const apply = async () => {
@@ -118,15 +125,20 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
             {built.rows.filter(row => row.state !== "unset").map(row => (
               <li key={row.courseId} className={`sb-row s-${row.state}`}>
                 <div className="sb-name"><b>{row.name}</b><small dir="ltr">{row.code}</small></div>
-                <div className="sb-gap" aria-label={`مطلوب ${row.target}، موجود ${row.existing}، باقٍ ${row.remaining}`}>
+                <div className="sb-gap" aria-label={row.state === "over" ? `مطلوب ${row.target}، موجود ${row.existing}، زائد ${row.existing - (row.target ?? 0)}` : `مطلوب ${row.target}، موجود ${row.existing}، باقٍ ${row.remaining}`}>
                   <span><b>{row.target}</b><small>مطلوبة</small></span>
                   <span><b>{row.existing}</b><small>في الجدول</small></span>
-                  <span className={row.remaining ? "is-gap" : "is-ok"}>{row.state === "done" ? <CheckCircle2 aria-hidden="true" /> : <b>{row.remaining}</b>}<small>{row.state === "done" ? "مكتمل" : row.state === "over" ? "زائدة" : "باقية"}</small></span>
+                  <span className={row.remaining ? "is-gap" : "is-ok"}>{row.state === "done" ? <CheckCircle2 aria-hidden="true" /> : <b>{row.state === "over" ? row.existing - (row.target ?? 0) : row.remaining}</b>}<small>{row.state === "done" ? "مكتمل" : row.state === "over" ? "زائدة" : "باقية"}</small></span>
                   <Dots row={row} picked={picked} />
                 </div>
                 {row.placements.map(p => {
                   const key = `${row.courseId}:${p.sectionCode}`;
-                  return (
+                  return p.pending ? (
+                    <div key={key} className="sb-slot is-pending">
+                      <span><b>شعبة {p.sectionCode}</b> · {p.dayLabel} {p.start}–{p.end}</span>
+                      <small><DoorClosed aria-hidden="true" /> قاعة؟ · {p.instructorName || "أستاذ؟"}</small>
+                    </div>
+                  ) : (
                     <label key={key} className="sb-slot">
                       <input type="checkbox" checked={picked.has(key)} onChange={() => toggle(key)} />
                       <span><b>شعبة {p.sectionCode}</b> · {p.dayLabel} {p.start}–{p.end}</span>
@@ -142,13 +154,20 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
           {impact ? <ImpactCard impact={impact} /> : null}
           {!totals.placeable && totals.remaining ? <Notice type="warning" inline><CircleAlert aria-hidden="true" /> لا شعبة قابلة للبناء الآن؛ أسباب كل مقرر أعلاه.</Notice> : null}
           {!totals.remaining ? <Notice type="success" inline>كل ما اخترته موجودٌ في الجدول.</Notice> : null}
+          {totals.pending > 0 && onReview ? (
+            <div className="sb-review">
+              <ClipboardPenLine aria-hidden="true" />
+              <p><b>{countOf(totals.pending, AR.section)}</b> بأوقات الفصل المماثل، بانتظار القاعة والأستاذ. تُثبَّت في شاشة المراجعة نفسها التي بعد الاستيراد.</p>
+              <PrimaryButton type="button" disabled={busy} onClick={review} data-guide-ignore="فتح الشعب الباقية في شاشة مراجعة الاستيراد لتثبيت القاعة والأستاذ قبل النشر">راجع وعدّل</PrimaryButton>
+            </div>
+          ) : null}
           {chosenCount ? (
             asking ? (
               <div className="sb-confirm" role="alertdialog" aria-modal="false" aria-label="تأكيد تنزيل الشعب">
                 <p>ستُكتب <b>{countOf(chosenCount, AR.section)}</b> في جدول الفصل باسم حسابك، بعد فحص التعارض من جديد. لا تُكتب شعبةٌ واحدة إن تعذّرت إحداها، ويمكنك التراجع بعدها.</p>
                 <div><PrimaryButton type="button" disabled={busy} onClick={apply} data-guide-ignore="تأكيد كتابة الشعب في الجدول">{busy ? "جارٍ الكتابة…" : "نعم، نزّلها"}</PrimaryButton><SecondaryButton type="button" onClick={() => setAsking(false)} data-guide-ignore="إلغاء التنزيل">لا</SecondaryButton></div>
               </div>
-            ) : <div className="sb-actions"><PrimaryButton type="button" onClick={() => setAsking(true)} data-guide-ignore="طلب تأكيد تنزيل الشعب">نزّل {countOf(chosenCount, AR.section)}</PrimaryButton><SecondaryButton type="button" onClick={() => setBuilt(null)} data-guide-ignore="إغلاق المعاينة دون كتابة">إغلاق</SecondaryButton></div>
+            ) : <div className="sb-actions"><PrimaryButton type="button" onClick={() => setAsking(true)} data-guide-ignore="طلب تأكيد تنزيل الشعب">نزّل {countOf(chosenCount, AR.section)} مباشرة</PrimaryButton><SecondaryButton type="button" onClick={() => setBuilt(null)} data-guide-ignore="إغلاق المعاينة دون كتابة">إغلاق</SecondaryButton></div>
           ) : <div className="sb-actions"><SecondaryButton type="button" onClick={() => setBuilt(null)} data-guide-ignore="إغلاق المعاينة">إغلاق</SecondaryButton></div>}
         </div>
       ) : null}

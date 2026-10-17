@@ -17,7 +17,9 @@ import {
   Info,
   Library,
   LogOut,
+  Megaphone,
   Menu,
+  TrendingUp,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -72,6 +74,8 @@ const loadSchedules = () => import("./components/Schedules");
 const loadReports = () => import("./components/Reports");
 const loadAdminUsers = () => import("./components/AdminUsers");
 const loadAbout = () => import("./components/About");
+const AudienceDashboard = safeLazy(() => import("./components/AudienceDashboard"));
+const AdsManager = safeLazy(() => import("./components/AdsManager"));
 const loadIntelligence = () => import("./components/IntelligenceWorkspace");
 /**
  * The board's first question, asked before the board exists. The scope is the
@@ -125,6 +129,7 @@ const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
 import { MicroLoader, PrimaryButton } from "./components/ui";
 import SmartGuide from "./components/SmartGuide";
+import AdSlot, { usePulse } from "./components/AdSlot";
 import { canProactivelyHint, allAllowedGuideFeatures, guideUnreadSummary, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureEvent, recordFeatureDwell, recordRoute, setGuideTask, setLauncherIntroduced, evaluateGuideFriction, classifyGuideReason, predictedNextFeature, canAccessGuideFeature } from "./guide/smartGuide";
 
 type View =
@@ -143,6 +148,8 @@ type View =
   | "studentRegistration"
   | "planReview"
   | "simulation"
+  | "audience"
+  | "ads"
   | ReportMode
   | AdminMode
   | "about";
@@ -299,6 +306,8 @@ const pathByView: Record<View, string> = {
   studentRegistration: "/FSchedule/StudentRegistration",
   planReview: "/FSchedule/PlanReview",
   simulation: "/FSchedule/Rehearsal",
+  audience: "/System/Audience",
+  ads: "/System/Ads",
   about: "/Public/Aboutus",
 };
 /**
@@ -583,6 +592,7 @@ export default function App() {
     [sessionRole, setSessionRole] = useState<SessionRole>(DEFAULT_SESSION_ROLE),
     [scopes, setScopes] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
+  usePulse(Boolean(user && !user.IsDemo));
   /* النطاق الواحد (src/utils/sharedScope.ts) مفتاحه صاحب الجلسة: يُضبط هنا، في
      الرسم نفسه، لأن الشاشات تقرؤه في أوّل رسمٍ لها — قبل أن يجري أيّ effect هنا. */
   setSharedScopeUser(Number(user?.SystemUserId || 0));
@@ -1715,6 +1725,7 @@ export default function App() {
     switch (activeView) {
       case "dashboard":
         return (
+          <>
           <Dashboard
             user={user}
             scopes={scopes}
@@ -1723,6 +1734,8 @@ export default function App() {
             reportView={smartReportView}
             onNavigate={(view: string) => go(view as View)}
           />
+          {!user.IsDemo ? <AdSlot slot="dashboard" /> : null}
+          </>
         );
       case "terms":
       case "colleges":
@@ -1980,6 +1993,11 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "audience":
+        /* أرقام الجمهور للعرض على الشركاء: لحساب الإدارة الرئيسي وحده. */
+        return user.IsRootAdmin && !user.IsDemo ? <AudienceDashboard onNavigate={(view) => go(view as View)} /> : unauthorized();
+      case "ads":
+        return user.IsRootAdmin && !user.IsDemo ? <AdsManager /> : unauthorized();
       case "about":
         return isPowerAdmin ? <About /> : unauthorized();
       default:
@@ -2431,6 +2449,14 @@ export default function App() {
               </NavSection>
             ) : null}
             {planReviewVisible ? <NavButton activeView={activeView} onGo={go} view="planReview" icon={<ListChecks />} label="مراجعة الصحيفة" badge={planReviewCount} data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.planReview" /> : null}
+            {user?.IsRootAdmin && !user?.IsDemo ? (
+              <NavSection navGroups={navGroups} onToggle={(id) => setNavGroups(current => ({ ...current, [id]: !current[id] }))}
+                id="partners" title="الشركاء" icon={<Megaphone />} rail="partners"
+                holdsActive={activeView === "audience" || activeView === "ads"}>
+                <NavButton activeView={activeView} onGo={go} view="audience" icon={<TrendingUp />} label="لوحة الجمهور" data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" />
+                <NavButton activeView={activeView} onGo={go} view="ads" icon={<Megaphone />} label="الإعلانات" data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" />
+              </NavSection>
+            ) : null}
             {/* ── ورشةُ الجدول لمن يبني ─────────────────────────────────────
                 مركزُ الذكاء وورشةُ الجدول أدواتُ بناءٍ لمن يبني — اللجنةُ
                 والمدير. ورئيسُ القسم لا يبني: يقرأ ويعلّق ويوقّع، وكلُّ ذلك في

@@ -70,7 +70,7 @@ const fold = (value: string) => String(value || "").normalize("NFKC")
 const asText = (map: Record<string, number> | undefined) => Object.fromEntries(Object.entries(map || {}).map(([k, v]) => [k, String(v)]));
 const asNumbers = (map: Record<string, string>, min = 0) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).map(([k, v]) => [k, Math.max(min, Math.floor(Number(v)))]));
 
-export default function SectionPlanning({ collegeId, sectionId, termId }: { collegeId: number; sectionId: number; termId: number }) {
+export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows }: { collegeId: number; sectionId: number; termId: number; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[]) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -101,6 +101,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [edits, setEdits] = useState(0);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const timer = useRef<number | null>(null);
+  /* النطاق الذي حُمِّلت أرقامه فعلاً: لا يُكتب شيءٌ بأرقام نطاقٍ في سجلّ نطاقٍ آخر (قسمٌ بدّلته قبل أن يكتمل تحميل الجديد). */
+  const loadedScope = useRef("");
   useDialogDismiss(report, () => setReport(false));
   useDialogDismiss(Boolean(preview), () => setPreview(null));
 
@@ -114,6 +116,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
       .then(async response => { const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error || "تعذّر تحميل تخطيط الشعب"); return body as Payload; })
       .then(body => {
         if (cancelled) return;
+        loadedScope.current = `${collegeId}:${sectionId}:${termId}`;
         setData(body);
         setRemaining(asText(body.remaining));
         setChosen(asText(body.accepted));
@@ -139,6 +142,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   }), [collegeId, sectionId, termId]);
   const persist = useCallback(async () => {
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null; }
+    if (loadedScope.current !== `${collegeId}:${sectionId}:${termId}`) return;
     setSaveState("saving");
     try {
       const response = await fetch("/api/registration-stats", { method: "PUT", headers: { "Content-Type": "application/json" }, body: body() });
@@ -147,7 +151,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
       setSavedAt(saved?.updatedAt || new Date().toISOString()); setSavedBy(saved?.updatedBy || "");
       setSaveState("saved");
     } catch { setSaveState("error"); }
-  }, [body]);
+  }, [body, collegeId, sectionId, termId]);
   const persistRef = useRef(persist);
   persistRef.current = persist;
   useEffect(() => {
@@ -159,11 +163,12 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     const flush = () => {
       if (!timer.current) return;
       window.clearTimeout(timer.current); timer.current = null;
+      if (loadedScope.current !== `${collegeId}:${sectionId}:${termId}`) return;
       try { void fetch("/api/registration-stats", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: body() }); } catch { /* the page is going away */ }
     };
     window.addEventListener("pagehide", flush);
     return () => { window.removeEventListener("pagehide", flush); flush(); };
-  }, [body]);
+  }, [body, collegeId, sectionId, termId]);
   const edit = (setter: React.Dispatch<React.SetStateAction<Record<string, string>>>, key: string, value: string) => {
     setter(current => ({ ...current, [key]: value }));
     setEdits(n => n + 1);
@@ -364,10 +369,14 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
 
   /* ما يراه القسم في خانة «المختار» (ما كتبه، وإلا المقترح) هو ما يُنزَّل: أعدادٌ فقط تذهب إلى الخادم. */
   const buildTargets = Object.fromEntries(planned.map(row => [row.key, row.pick as number]));
+  /* لا تظهر إلا والكل مضبوط: كشفٌ مستورد بلا رفض، وخطةٌ محفوظة، وفيها شعب. */
+  const buildReady = !importError && saveState !== "error" && saveState !== "saving" && Boolean(source) && planned.length > 0 && total > 0;
 
   return (
     <div className="section-plan">
-      <SectionBuild collegeId={collegeId} sectionId={sectionId} termId={termId} targets={buildTargets} />
+      {buildReady
+        ? <SectionBuild collegeId={collegeId} sectionId={sectionId} termId={termId} targets={buildTargets} onReview={onReviewRows} />
+        : <p className="sb-hint"><Layers aria-hidden="true" /> {importError ? "عالج رفض الكشف أولاً، فتظهر «نزّل الشعب»." : saveState === "error" ? "تعذّر حفظ الخطة؛ أعد المحاولة لتظهر «نزّل الشعب»." : "تظهر «نزّل الشعب» بعد استيراد كشف المتبقي وحفظ خطةٍ فيها شعب."}</p>}
       <div className="section-plan-import">
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
           <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي (لم يسجلوا)"}

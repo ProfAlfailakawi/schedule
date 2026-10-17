@@ -1,6 +1,6 @@
 import { AR, countOf } from "../utils/arabicCount";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BookOpen, Check, ChevronDown, GraduationCap, Layers3, Link2, Search } from "lucide-react";
+import { AlertCircle, BookOpen, Check, GraduationCap, Layers3, Link2, Search } from "lucide-react";
 import type { compareCurriculumReference } from "../utils/curriculumReference";
 import type { CurriculumReference } from "../data/technologyEducationCurricula";
 import { courseLevelFromCode } from "../utils/curriculumRules";
@@ -34,7 +34,6 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [focusedCode, setFocusedCode] = useState("");
-  const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
   const [reload, setReload] = useState(0);
 
   const loadedAt = useRef(-1);
@@ -98,15 +97,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
       && (!q || `${row.course.name} ${row.course.code}`.toLocaleLowerCase("ar").includes(q)));
   }, [entries, activeCategory, groupKind, levelFilter, statusFilter, query]);
 
-  const levels = useMemo(() => {
-    const result = new Map<number, CourseEntry[]>();
-    visibleEntries.forEach(row => result.set(row.level, [...(result.get(row.level) || []), row]));
-    return [...result.entries()].sort((a, b) => (a[0] || Number.MAX_SAFE_INTEGER) - (b[0] || Number.MAX_SAFE_INTEGER));
-  }, [visibleEntries]);
 
-  useEffect(() => {
-    setExpandedLevels([]);
-  }, [selectedSectionId, selected, activeCategory, groupKind, levelFilter, statusFilter, query]);
 
   if (error) return <Notice type="error">{error}</Notice>;
   if (!reference) return null;
@@ -183,43 +174,32 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
     </aside> : null}
 
     {!reference.planId ? <Notice type="info" inline>لا توجد صحيفة تشغيلية مرتبطة بهذه النسخة؛ هذه المقارنة للمرجع فقط.</Notice> : null}
-    {!visibleEntries.length ? <div className="reference-empty"><Search size={19} /><b>لا توجد مقررات بهذا الاختيار</b><span>غيّر المرشحات أو امسح البحث لعرض الصحيفة كاملة.</span><button type="button" onClick={() => { setQuery(""); setCategory(""); setGroupKind("all"); setLevelFilter("all"); setStatusFilter("all"); }} data-guide-ignore="مسح مرشحات صحيفة التخرج وإظهار كل المقررات">مسح المرشحات</button></div> : (
-      <div className="reference-level-map" aria-label="المقررات مرتبة حسب المستوى">
-        {levels.map(([level, rows]) => {
-          const expanded = expandedLevels.includes(level);
-          const byGroupMap = new Map<string, { name: string; category: string; requiredUnits: number; elective: boolean }>();
-          rows.forEach(row => byGroupMap.set(row.groupId, { name: row.groupName, category: row.category, requiredUnits: row.requiredUnits, elective: row.elective }));
-          const byGroup = [...byGroupMap.entries()];
-          return <section className={`reference-level-column${expanded ? " is-open" : ""}`} key={level}>
-          <button type="button" className="reference-level-toggle" aria-expanded={expanded} data-guide-ignore="طي وفتح مجموعة مستوى المقررات داخل مراجعة الصحيفة" onClick={() => setExpandedLevels(current => expanded ? current.filter(value => value !== level) : [...current, level])}>
-            <span><b>{level ? `المستوى ${level}` : "تمهيدي / غير مصنف"}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small></span><i>{level || "—"}</i><ChevronDown size={17} aria-hidden="true" />
-          </button>
-          {expanded ? <div className="reference-level-groups">{byGroup.map(([groupId, info]) => <section className="reference-course-group-block" key={groupId}>
-          <header><span>{info.name}</span><small>{info.category} · {info.elective ? `اختياري · المطلوب ${countOf(info.requiredUnits, AR.unit)}` : "إجباري"}</small></header>
-          <div className="reference-level-courses">{rows.filter(row => row.groupId === groupId).map(({ course }) => {
-            const key = plainCode(course.code), selectedCourse = focusedCode === course.code;
-            const tone = ancestry.up.has(key) ? "prereq" : ancestry.down.has(key) ? "next" : "";
-            return <article key={course.code} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}`}>
-              <button type="button" className="reference-course-main" aria-pressed={selectedCourse} onClick={() => setFocusedCode(selectedCourse ? "" : course.code)} data-guide-ignore="إظهار روابط المتطلبات للمقرر في الصحيفة">
-                <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi><span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
-                <strong>{course.name}</strong>
-                <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)} · {info.category}</span>
-                {course.prerequisites.length ? <span className="reference-prereq-summary"><Link2 size={13} /> يسبقه {course.prerequisites.length} {course.prerequisites.length === 1 ? "متطلب" : "متطلبات"}</span> : null}
-              </button>
-              {course.current ? <small className="reference-course-capacity">السعة المسجلة: {course.current.capacity === null ? "غير محددة" : countOf(course.current.capacity, AR.student)}</small> : null}
-              {course.current && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
-                <button type="button" className="reference-fix" data-guide-ignore="فتح بيانات المقرر المملوك للقسم لتعديل الوحدات والساعات والسعة" onClick={() => onCatalogAction({ kind: "edit", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, courseId: course.current!.id, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>تعديل الوحدات والساعات والسعة</button>
-              ) : null}
-              {course.state === "different" && course.current ? <small className="reference-course-diff">المطلوب: {course.differences.map(field => ({ name: "الاسم", credit: "الوحدات", hours: "الساعات", membership: "عضوية الصحيفة" }[field] || field)).join("، " )}.</small> : null}
-              {course.state === "different" && course.current && course.ownerSectionId !== selectedSectionId && course.ownerSectionName ? <small className="reference-course-owner">السجل مملوك لقسم {course.ownerSectionName}؛ يتولى القسم المالك تصحيحه.</small> : null}
-              {course.state === "missing" ? <small className="reference-course-owner">{course.ownerSectionName ? `غير موجود في كتالوج قسم ${course.ownerSectionName}.` : "لم تُحسم ملكية المقرر بعد."}</small> : null}
-              {course.state === "ambiguous" ? <small className="reference-course-owner">الرمز يطابق أكثر من سجل؛ يلزم حسم الهوية قبل التعديل.</small> : null}
-              {course.state === "missing" && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
-                <button type="button" className="reference-fix" data-guide-ignore="بدء إضافة المقرر الناقص إلى سجل القسم" onClick={() => onCatalogAction({ kind: "create", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>أضف المقرر إلى القسم</button>
-              ) : null}
-            </article>;
-          })}</div></section>)}</div> : null}
-        </section>})}
+    {!visibleEntries.length ? <div className="reference-empty"><Search size={19} /><b>لا توجد مقررات بهذا الاختيار</b><span>غيّر المرشحات أو امسح البحث لعرض الصحيفة كاملة.</span><button type="button" onClick={() => { setQuery(""); setCategory("all"); setGroupKind("all"); setLevelFilter("all"); setStatusFilter("all"); }} data-guide-ignore="مسح مرشحات صحيفة التخرج وإظهار كل المقررات">مسح المرشحات</button></div> : (
+      <div className="reference-flat" aria-label="مقررات القسم مرتبة بالمستوى">
+        {[...visibleEntries].sort((x, y) => (x.level || 9999) - (y.level || 9999) || x.course.code.localeCompare(y.course.code)).map(({ course, level, category, groupName, elective, requiredUnits }) => {
+          const key = plainCode(course.code), selectedCourse = focusedCode === course.code;
+          const tone = ancestry.up.has(key) ? "prereq" : ancestry.down.has(key) ? "next" : "";
+          return <article key={course.code} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}`}>
+            <button type="button" className="reference-course-main" aria-pressed={selectedCourse} onClick={() => setFocusedCode(selectedCourse ? "" : course.code)} data-guide-ignore="إظهار روابط المتطلبات للمقرر في الصحيفة">
+              <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi><i className="reference-level-pill" title={level ? `المستوى ${level}` : "تمهيدي / غير مصنف"}>{level || "غير مصنف"}</i><span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
+              <strong>{course.name}</strong>
+              <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)} · {category}</span>
+              <span className="reference-course-group">{groupName} · {elective ? `اختياري · المطلوب ${countOf(requiredUnits, AR.unit)}` : "إجباري"}</span>
+              {course.prerequisites.length ? <span className="reference-prereq-summary"><Link2 size={13} /> يسبقه {course.prerequisites.length} {course.prerequisites.length === 1 ? "متطلب" : "متطلبات"}</span> : null}
+            </button>
+            {course.current ? <small className="reference-course-capacity">السعة المسجلة: {course.current.capacity === null ? "غير محددة" : countOf(course.current.capacity, AR.student)}</small> : null}
+            {course.current && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
+              <button type="button" className="reference-fix" data-guide-ignore="فتح بيانات المقرر المملوك للقسم لتعديل الوحدات والساعات والسعة" onClick={() => onCatalogAction({ kind: "edit", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, courseId: course.current!.id, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>تعديل الوحدات والساعات والسعة</button>
+            ) : null}
+            {course.state === "different" && course.current ? <small className="reference-course-diff">المطلوب: {course.differences.map(field => ({ name: "الاسم", credit: "الوحدات", hours: "الساعات", membership: "عضوية الصحيفة" }[field] || field)).join("، " )}.</small> : null}
+            {course.state === "different" && course.current && course.ownerSectionId !== selectedSectionId && course.ownerSectionName ? <small className="reference-course-owner">السجل مملوك لقسم {course.ownerSectionName}؛ يتولى القسم المالك تصحيحه.</small> : null}
+            {course.state === "missing" ? <small className="reference-course-owner">{course.ownerSectionName ? `غير موجود في كتالوج قسم ${course.ownerSectionName}.` : "لم تُحسم ملكية المقرر بعد."}</small> : null}
+            {course.state === "ambiguous" ? <small className="reference-course-owner">الرمز يطابق أكثر من سجل؛ يلزم حسم الهوية قبل التعديل.</small> : null}
+            {course.state === "missing" && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
+              <button type="button" className="reference-fix" data-guide-ignore="بدء إضافة المقرر الناقص إلى سجل القسم" onClick={() => onCatalogAction({ kind: "create", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>أضف المقرر إلى القسم</button>
+            ) : null}
+          </article>;
+        })}
       </div>
     )}
     <footer className="reference-footer"><span><Layers3 size={14} />{countOf(visibleEntries.length, AR.course)} من {countOf(entries.length, AR.course)}</span><span>المستوى مستنتج من آخر ثلاثة أرقام في رمز المقرر؛ راجع القسم عند اختلاف الرمز عن الصحيفة.</span></footer>

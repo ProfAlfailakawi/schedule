@@ -76,6 +76,10 @@ export interface Placement {
    */
   sectionCode: string;
   note: string;
+  /** أيامٌ عدّة لشعبةٍ واحدة (قالبٌ من الفصل المماثل)؛ `day` أولها. */
+  days?: DayKey[];
+  /** بانتظار التثبيت: بلا قاعة، وأستاذها «هيئة تدريسية». */
+  pending?: boolean;
 }
 
 export interface SectionProposal {
