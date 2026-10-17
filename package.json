@@ -51,7 +51,7 @@
     "test:blocker-oracle": "tsx tests/blocker-oracle-audit.ts",
     "test:one-blocker-number": "tsx tests/one-blocker-number-audit.ts",
     "test:post-review-fixes": "tsx tests/post-review-fixes-audit.ts",
-    "test:data-gaps": "tsx tests/data-gaps-nonblocking-audit.ts",
+    "test:data-gaps": "tsx tests/data-gaps-nonblocking-audit.ts && tsx tests/readiness-inline-fix-audit.ts",
     "test:sound-schedule": "tsx tests/sound-schedule-zero-blockers-audit.ts",
     "test:blockers-stream": "tsx tests/blockers-stream-audit.ts",
     "test:linked": "tsx tests/linked-requests-audit.ts",
