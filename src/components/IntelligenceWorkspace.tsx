@@ -1,4 +1,5 @@
 import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
+import PredictiveInsightPanel from "./PredictiveInsightPanel";
 import { mergeDemandReadings, mergeOperationsReadings, mergeDecisionReadings, scopedReadingList, sameIntelligenceScope, type IntelligenceScope, type ScopedReading } from "../utils/intelligenceReadingScope";
 import { DEMO_STAGE_SECTION_ID, isDemoSession } from "../utils/demoSession";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -211,6 +212,8 @@ type InsightScene =
   | "professors"
   | "health"
   | "genome"
+  /* قراءةُ الفصل القادم: اللوحةُ نفسها في رادار التسجيل، لا نسخة. */
+  | "predict"
   /* Carved out of the quality panel, which was the last reading still holding
      two cards. One reading, one card, one screen — a panel that stacks two is
      exactly the thing this strip exists to end. */
@@ -2366,6 +2369,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               },
             ]
           : []),
+        {
+          value: "predict" as const,
+          label: "تنبّؤ الفصل القادم",
+          detail: "ما سيحتاجه الفصل، وبأي ثقة",
+          metric: "—",
+          icon: <Sparkles />,
+        },
       ]
     : [];
   /* Escape closes an open reading, exactly as it closes every other overlay
@@ -3781,6 +3791,21 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </span>
               </div>
             </Surface>
+            </div>
+          ) : null}
+          {activeInsightKey === "predict" ? (
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-predict"
+              role="tabpanel"
+              aria-labelledby="insight-tab-predict"
+              tabIndex={0}
+            >
+              <PredictiveInsightPanel
+                canSchedule
+                onChanged={() => undefined}
+                scope={{ mode: readingMode === "department" ? "department" : "college", collegeId: Number(collegeId) || 0, sectionId: Number(sectionId) || 0 }}
+              />
             </div>
           ) : null}
           </section>

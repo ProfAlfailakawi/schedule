@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Brain, CheckCircle2, AlertTriangle, DoorOpen, UserCheck, FileDown, ClipboardList, Layers, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Brain, CheckCircle2, AlertTriangle, DoorOpen, UserCheck, ClipboardList, Layers, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ScheduleOrigin } from "../types";
 
 /**
@@ -22,39 +22,42 @@ const iconOf = (action: string) => /إضافة/.test(action) ? <Plus aria-hidden
 export interface RowFact { tone: "good" | "warn"; kind: "room" | "instructor" | "clear" | "conflict"; label: string }
 const FACT_ICON = { room: <DoorOpen aria-hidden="true" />, instructor: <UserCheck aria-hidden="true" />, clear: <CheckCircle2 aria-hidden="true" />, conflict: <AlertTriangle aria-hidden="true" /> };
 
+/** «لماذا؟» تظهر فقط إن وُجد ما يُقال: سجلّ تغييرات، أو مصدر، أو حقائق محسوبة. بلا بيانات = لا شيء على الشاشة. */
+export const hasRowExplanation = (eventCount: number, origin?: ScheduleOrigin | null, facts: RowFact[] = []) => eventCount > 0 || Boolean(origin && ORIGIN[origin.kind]) || facts.length > 0;
+
 export default function RowHistory({ rowId, origin, facts = [] }: { key?: React.Key; rowId: number; origin?: ScheduleOrigin | null; facts?: RowFact[] }) {
   const [state, setState] = useState<"idle" | "loading" | "open" | "failed">("idle");
-  const [events, setEvents] = useState<EventRow[]>([]);
+  const [events, setEvents] = useState<EventRow[] | null>(null);
   const [more, setMore] = useState(false);
   const src = origin ? ORIGIN[origin.kind] : null;
-  const toggle = async () => {
-    if (state === "open") { setState("idle"); return; }
-    setState("loading");
-    try {
-      const response = await fetch(`/api/schedules/${rowId}/history`, { cache: "no-store" });
-      if (!response.ok) throw new Error("history");
-      const body = await response.json();
-      setEvents(body.events || []); setMore(Boolean(body.truncated)); setState("open");
-    } catch { setState("failed"); }
-  };
+  /* يُقرأ السجلّ بصمت عند فتح الموعد لنعرف أهناك ما يُعرض؛ فشله = لا بيانات. */
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/schedules/${rowId}/history`, { cache: "no-store" })
+      .then(response => response.ok ? response.json() : Promise.reject(new Error("history")))
+      .then(body => { if (!alive) return; setEvents(Array.isArray(body.events) ? body.events : []); setMore(Boolean(body.truncated)); })
+      .catch(() => { if (alive) setEvents([]); });
+    return () => { alive = false; };
+  }, [rowId]);
+  const count = events?.length || 0;
+  if (!hasRowExplanation(count, origin, facts)) return null;
   return (
     <div className="rh-wrap">
       <div className="rh-row">
         {src && origin ? <span className="rh-origin" title={origin.note || undefined}>{src.icon}<b>{src.label}</b><small>{origin.by} · {stamp(origin.at)}</small></span> : null}
-        <button type="button" className="rh-btn" aria-expanded={state === "open"} onClick={toggle} data-guide-ignore="يعرض سجلّ هذا الموعد: من أوجده ومن عدّله ولماذا؛ قراءةٌ فقط">
-          <History aria-hidden="true" /> {state === "loading" ? "…" : "لماذا؟"}
-        </button>
+        {count ? (
+          <button type="button" className="rh-btn" aria-expanded={state === "open"} onClick={() => setState(state === "open" ? "idle" : "open")} data-guide-ignore="يعرض سجلّ هذا الموعد: من أوجده ومن عدّله ولماذا؛ قراءةٌ فقط">
+            <History aria-hidden="true" /> لماذا؟ <small>{count}{more ? "+" : ""}</small>
+          </button>
+        ) : null}
       </div>
       {facts.length ? <div className="rh-facts">{facts.map((f, i) => <span key={i} className={`rh-chip is-${f.tone}`}>{FACT_ICON[f.kind]}{f.label}</span>)}</div> : null}
       {origin?.note ? <small className="rh-note">{origin.note}</small> : null}
-      {state === "failed" ? <small className="rh-fail">تعذّرت قراءة السجلّ.</small> : null}
-      {state === "open" ? (
-        events.length ? (
-          <ol className="rh-list">
-            {events.map((event, i) => <li key={i}><span className="rh-dot">{iconOf(event.action)}</span><div><b>{event.what || event.action}</b><small>{event.who} · {stamp(event.at)}</small></div></li>)}
-            {more ? <li className="rh-more">وأقدم من ذلك…</li> : null}
-          </ol>
-        ) : <span className="rh-chip is-muted" title="لا سجلّ تغييرات لهذا الموعد؛ أُدخل قبل بدء التسجيل أو بالاستيراد"><FileDown aria-hidden="true" />مستورد · بلا سجل</span>
+      {state === "open" && count ? (
+        <ol className="rh-list">
+          {events!.map((event, i) => <li key={i}><span className="rh-dot">{iconOf(event.action)}</span><div><b>{event.what || event.action}</b><small>{event.who} · {stamp(event.at)}</small></div></li>)}
+          {more ? <li className="rh-more">وأقدم من ذلك…</li> : null}
+        </ol>
       ) : null}
     </div>
   );

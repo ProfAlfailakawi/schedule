@@ -350,6 +350,16 @@ export function weeklyLoadOf(rows: FSchedule[], courses: Map<number, AdCourse>):
  * وسلّمُ البدايات من إيقاع القسم. ما يضيفه هذا الملف هو الترتيبُ والصياغة —
  * وأن يُقال كلُّ ذلك للأستاذ قبل أن يضغط إرسال، لا للقسم بعد أسبوع.
  */
+/* الأخصّ يُقال أولاً: تصادمٌ مع محاضرته هو أوضحُ للأستاذ من «تتابع مرتفع» وإن سبقه في القائمة. */
+const HEADLINE_ORDER: RequestReasonSource[] = ["window", "shape", "instructor", "cohort", "room"];
+export function headlineReasonOf(list: ReadonlyArray<RequestReason> | undefined): RequestReason | undefined {
+  const all = list || [];
+  const blocking = all.filter(reason => reason.blocking);
+  const pool = blocking.length ? blocking : all;
+  for (const source of HEADLINE_ORDER) { const hit = pool.find(reason => reason.source === source); if (hit) return hit; }
+  return pool[0];
+}
+
 export function judgeRequest(inbound: RequestedRow, context: VerdictContext): RequestVerdict {
   const reasons: RequestReason[] = [];
   /* اللقاءُ الممتدّ يُعرف من صفّه القائم في الجدول، فلا يُصدَّق ما تقوله الصفحة عنه. */
@@ -386,7 +396,7 @@ export function judgeRequest(inbound: RequestedRow, context: VerdictContext): Re
       kind, reasons, sendable: !blocking, needsExcuse: kind === "exception",
       roomAvailable: null, roomCandidates: [], nearestTimes: [], computedEnd,
       headline: blocking
-        ? reasons.find(reason => reason.blocking)!.text
+        ? headlineReasonOf(reasons)!.text
         : reasons.length ? "يحتاج استثناءً من القسم" : "الوقت متاح",
     };
   };

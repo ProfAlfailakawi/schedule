@@ -196,14 +196,15 @@ await (async () => {
 {
   const demo = createDemoSandboxState();
   const opts = { placeholderInstructorIds: placeholderInstructorIds(demo.instructors) };
-  const scopeRows = (collegeId: number, sectionId: number) => demo.schedules.filter(r => r.AdCollegeId === collegeId && r.AdSectionId === sectionId);
+  /* النطاقُ فصلُه جزءٌ منه: للقسم جدولٌ في الجاري وآخرُ في السابق (تاريخٌ معتمد)، والمانعُ يُحسب على الفصل الذي يخصّه الاعتماد. */
+  const scopeRows = (collegeId: number, sectionId: number, termId = 1) => demo.schedules.filter(r => r.AdCollegeId === collegeId && r.AdSectionId === sectionId && Number(r.AdTermId) === termId);
   const sectionKeys = demo.schedules.map(r => `${r.AdTermId}:${r.AdCourseId}:${r.SCode}`);
   check(new Set(sectionKeys).size === sectionKeys.length, "B15 لا شعبة مكرّرة (المقرر نفسه والشعبة نفسها مرتين)");
   for (const approval of demo.scheduleApprovals) {
-    const count = approvalBlockerCount(scopeRows(approval.AdCollegeId, approval.AdSectionId), demo.schedules, opts);
+    const count = approvalBlockerCount(scopeRows(approval.AdCollegeId, approval.AdSectionId, Number(approval.AdTermId)), demo.schedules, opts);
     check(count === 0, `B15 نطاق «${approval.status}» ${approval.scopeKey} بلا مانع اعتماد (${count})`);
   }
-  check(!demo.scheduleApprovals.some((a: any) => a.AdSectionId === DEMO_CONFLICT_SECTION_ID), "B15 قسم الاستعراض ما زال في طور الإعداد");
+  check(!demo.scheduleApprovals.some((a: any) => a.AdSectionId === DEMO_CONFLICT_SECTION_ID && Number(a.AdTermId) === 1), "B15 قسم الاستعراض ما زال في طور الإعداد (في الفصل الجاري؛ وتاريخُه في الفصل السابق معتمدٌ بلا الحالتين المقصودتين)");
   const showcase = scopeRows(2, DEMO_CONFLICT_SECTION_ID);
   const clashes = blockingConflicts(showcase, demo.schedules, opts);
   check(clashes.length >= 1 && clashes.length <= 2, `B15 تعارضٌ أو اثنان مقصودان في قسم الاستعراض (${clashes.length})`);

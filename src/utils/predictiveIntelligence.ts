@@ -44,6 +44,8 @@ export interface Confidence {
   sameSeason: number;
   /** سببٌ واحد بالعربية يشرح الدرجة، يُعرض عند الحاجة. */
   caveat: string;
+  /** الخطأ النسبيّ المقيس بالاختبار الرجعي على فصولٍ مضت (٠–١+)؛ غائبٌ = لم يُختبر بعد. */
+  backtestError?: number | null;
 }
 
 /** كم فصلاً يكفي لتغطيةٍ كاملة: أربعة (عامان بموسمَين). دونها تُحسب التغطيةُ جزئية. */
@@ -63,7 +65,17 @@ export interface ConfidenceInput {
   agreement?: number | null;
   /** ٠–١: جودة المدخلات الأخرى (اكتمال الجدول، نسبة الطلبة القابلين للتقييم). */
   quality?: number | null;
+  /**
+   * الخطأ النسبيّ الرجعي: متوسطُ |المتوقَّع − الفعلي| ÷ متوسط الفعلي حين تنبّأ المحرّكُ بفصلٍ مضى بما قبله فقط.
+   * يخفّض الثقةَ بحتى النصف (عند ١٠٠٪ خطأ)، ولا يرفعها أبداً. null = لا فصلَ يكفي للاختبار فلا أثر.
+   */
+  backtestError?: number | null;
 }
+
+/** أقصى ما يخصمه الخطأ الرجعي من الدرجة (نصفها). */
+export const BACKTEST_MAX_PENALTY = 0.5;
+/** خطأٌ رجعيٌّ فوقه يُذكر صراحةً في سبب الثقة. */
+export const BACKTEST_CAVEAT_AT = 0.25;
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -96,9 +108,15 @@ export function confidenceFrom(input: ConfidenceInput): Confidence {
   if (termsUsed <= 1) { score = Math.min(score, THIN_HISTORY_CAP); caveat = termsUsed === 0 ? "لا يكفي التاريخ." : "فصلٌ واحدٌ فقط في التاريخ."; }
   else if (termsUsed < 3 && !caveat) caveat = "تاريخٌ قصير.";
   if (input.quality !== undefined && input.quality !== null && input.quality < 0.6 && !caveat) caveat = "المدخلاتُ غير مكتملة.";
+  const backtestError = input.backtestError !== undefined && input.backtestError !== null && Number.isFinite(input.backtestError)
+    ? Math.max(0, input.backtestError) : null;
+  if (backtestError !== null) {
+    score *= 1 - clamp01(backtestError) * BACKTEST_MAX_PENALTY;
+    if (backtestError >= BACKTEST_CAVEAT_AT && !caveat) caveat = `أخطأ التنبّؤ الرجعي بنحو ${Math.round(backtestError * 100)}٪.`;
+  }
   const level: ConfidenceLevel = termsUsed === 0 && (input.agreement === undefined || input.agreement === null)
     ? "insufficient" : score >= CONFIDENCE_HIGH ? "high" : score >= CONFIDENCE_MEDIUM ? "medium" : "low";
-  return { level, score: Math.round(score * 100), termsUsed, sameSeason, caveat };
+  return { level, score: Math.round(score * 100), termsUsed, sameSeason, caveat, backtestError };
 }
 
 export const CONFIDENCE_LABEL: Record<ConfidenceLevel, string> = { high: "عالية", medium: "متوسطة", low: "منخفضة", insufficient: "لا يكفي التاريخ" };
@@ -232,8 +250,78 @@ function weightedStats(values: readonly number[]): { mean: number; sd: number; s
   return { mean, sd: Math.sqrt(variance), slope };
 }
 
-export function predictDemand(input: PredictiveInput): DemandPrediction[] {
+/** قيمةُ الطلب في فصلٍ مضى: شعبُه + ⌈(الباقي − الشاغر) ÷ السعة⌉ (قاعدة «الإنذار المبكر»). */
+function termDemandValue(sections: number, stat: PredStats | undefined, courseId: number, cap: number): { value: number; hasStat: boolean } {
+  const remaining = Number(stat?.remaining?.[String(courseId)]);
+  const vacant = Number(stat?.vacant?.[String(courseId)]) || 0;
+  const hasStat = Number.isFinite(remaining);
+  const extra = hasStat && cap > 0 && remaining > 0 ? Math.ceil(Math.max(0, remaining - vacant) / cap) : 0;
+  return { value: sections + extra, hasStat };
+}
+
+export interface BacktestStep { termId: number; name: string; predicted: number; actual: number; error: number }
+export interface CourseBacktest { courseId: number; steps: BacktestStep[]; meanAbsError: number; relError: number }
+export interface DemandBacktest {
+  /** كم فصلاً اختُبر (له فصلٌ سابقٌ واحدٌ على الأقل). */
+  termsTested: number;
+  byCourse: Map<number, CourseBacktest>;
+  /** متوسطُ الخطأ المطلق على كل المقررات والخطوات (شعبة). */
+  meanAbsError: number;
+  /** الخطأ المطلق الكلي ÷ مجموع الفعلي. */
+  relError: number | null;
+}
+
+/**
+ * ── الاختبار الرجعي: تنبّأ بفصلٍ مضى بما قبله فقط ───────────────────────────
+ * لكل فصلٍ N له تاريخٌ سابق: يُحجب كلُّ فصلٍ ≥ N ثم يُشغَّل `predictDemand` ويُقارَن بما حدث فعلاً في N
+ * (شعبٌ + شُعبٌ إضافية يقتضيها كشف N). بلا رغباتٍ حيّة (لا أرشيف لها)، فهو يقيس نموذجَ التاريخ وحده.
+ * حتميّ. **لا يدّعي دقةً على بيانات حقيقية** — يقيس ما في المدخلات الممرَّرة فقط.
+ */
+export function backtestDemand(input: PredictiveInput): DemandBacktest {
+  const booked = bookTerms(input);
+  const past = [...booked.all.values()]
+    .filter(book => book.termId !== input.target.termId && book.order < booked.target.order)
+    .sort((x, y) => x.order - y.order);
+  const catalog = new Map(input.courses.map(course => [Number(course.AdCourseId), course] as const));
+  const statsByTerm = new Map((input.stats || []).map(stat => [Number(stat.termId), stat] as const));
+  const byCourse = new Map<number, CourseBacktest>();
+  let termsTested = 0, absTotal = 0, actualTotal = 0, cells = 0;
+  for (let index = 1; index < past.length; index += 1) {
+    const book = past[index];
+    const earlier = new Set(past.slice(0, index).map(item => item.termId));
+    const sub: PredictiveInput = {
+      ...input, target: { termId: book.termId, name: book.name || input.terms.find(term => Number(term.AdTermId) === book.termId)?.AdTermName || "" },
+      rows: input.rows.filter(row => earlier.has(Number(row.AdTermId))),
+      stats: (input.stats || []).filter(stat => earlier.has(Number(stat.termId))),
+      liveWanted: null, students: undefined, plans: undefined,
+    };
+    const predictions = new Map(predictDemand(sub, { backtest: false }).map(item => [item.courseId, item] as const));
+    termsTested += 1;
+    const ids = new Set<number>([...predictions.keys(), ...book.codes.keys()]);
+    for (const courseId of ids) {
+      const cap = capacityOf(catalog.get(courseId));
+      const actual = termDemandValue(book.codes.get(courseId)?.size || 0, statsByTerm.get(book.termId), courseId, cap).value;
+      const predicted = predictions.get(courseId)?.expected ?? 0;
+      /* مقررٌ لم يُتوقَّع ولم يقع لا يُحتسب؛ ومقررٌ لم يكن له تاريخٌ فلم يُتوقَّع يُحتسب خطأً كاملاً. */
+      if (!predicted && !actual) continue;
+      const entry = byCourse.get(courseId) || { courseId, steps: [], meanAbsError: 0, relError: 0 };
+      entry.steps.push({ termId: book.termId, name: book.name, predicted, actual, error: predicted - actual });
+      byCourse.set(courseId, entry);
+      absTotal += Math.abs(predicted - actual); actualTotal += actual; cells += 1;
+    }
+  }
+  for (const entry of byCourse.values()) {
+    const abs = entry.steps.reduce((sum, step) => sum + Math.abs(step.error), 0);
+    const actual = entry.steps.reduce((sum, step) => sum + step.actual, 0);
+    entry.meanAbsError = abs / entry.steps.length;
+    entry.relError = abs / Math.max(1, actual);
+  }
+  return { termsTested, byCourse, meanAbsError: cells ? absTotal / cells : 0, relError: cells ? absTotal / Math.max(1, actualTotal) : null };
+}
+
+export function predictDemand(input: PredictiveInput, options: { backtest?: boolean } = {}): DemandPrediction[] {
   const { target, past } = bookTerms(input);
+  const backtest = options.backtest === false ? null : backtestDemand(input);
   const catalog = new Map(input.courses.map(course => [Number(course.AdCourseId), course] as const));
   const statsByTerm = new Map((input.stats || []).map(stat => [Number(stat.termId), stat] as const));
   const wanted = input.liveWanted || {};
@@ -256,12 +344,9 @@ export function predictDemand(input: PredictiveInput): DemandPrediction[] {
     for (const book of pool) {
       const codes = book.codes.get(courseId);
       const stat = statsByTerm.get(book.termId);
-      const remaining = Number(stat?.remaining?.[String(courseId)]);
-      const vacant = Number(stat?.vacant?.[String(courseId)]) || 0;
       const sections = codes ? codes.size : 0;
-      const hasStat = Number.isFinite(remaining);
-      const extra = hasStat && cap > 0 && remaining > 0 ? Math.ceil(Math.max(0, remaining - vacant) / cap) : 0;
-      entries.push({ value: sections + extra, seasonMatch: Boolean(target.season && book.season === target.season), evidence: sections > 0 || hasStat });
+      const { value, hasStat } = termDemandValue(sections, stat, courseId, cap);
+      entries.push({ value, seasonMatch: Boolean(target.season && book.season === target.season), evidence: sections > 0 || hasStat });
     }
     const first = entries.findIndex(entry => entry.evidence);
     const used = first < 0 ? [] : entries.slice(first);
@@ -297,7 +382,7 @@ export function predictDemand(input: PredictiveInput): DemandPrediction[] {
     }
     const agreement = histExpected !== null && liveSections !== null
       ? clamp01(1 - Math.abs(histExpected - liveSections) / Math.max(1, histExpected, liveSections)) : null;
-    const confidence = confidenceFrom({ termsUsed, sameSeason, values: series, agreement });
+    const confidence = confidenceFrom({ termsUsed, sameSeason, values: series, agreement, backtestError: backtest?.byCourse.get(courseId)?.relError ?? null });
     if (termsUsed === 0 && liveSections === null) continue;
     const delta = expected - planned;
     const reason = demandReason({ expected, planned, delta, termsUsed, trend, wantedNow, liveSections, agreement });
