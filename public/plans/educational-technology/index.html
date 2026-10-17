@@ -49,6 +49,8 @@ html.fit #plan{min-width:0}
 .chip b{color:var(--k);font-size:17px;font-weight:900;min-width:34px}
 .chip:hover,.chip:focus-visible{border-color:var(--k);background:color-mix(in srgb,var(--k) 7%,#fff);transform:translateX(-3px);outline:none}
 .chip.x{cursor:default;background:#F8FAFC;color:#64748b}.chip.x:hover{transform:none;border-color:#E2E8F0}
+.l.far{margin-top:12px;font-size:12px}
+.chip.sm{padding:5px 12px;font-size:13px;border-style:dashed}.chip.sm b{font-size:15px}
 .none{font-size:14px;color:#64748b;font-weight:700;padding:6px 2px}
 .x2{position:absolute;left:14px;top:14px;border:0;background:#EEF4FF;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;color:var(--ink)}
 #hint{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0B2545;color:#fff;font-size:14.5px;font-weight:700;padding:10px 20px;border-radius:999px;box-shadow:0 10px 30px rgba(11,37,69,.3);z-index:8;white-space:nowrap;transition:opacity .4s,transform .4s;pointer-events:none}
@@ -97,11 +99,12 @@ function render(){
  if(sel==null){sh.classList.remove('open');return}
  hint.classList.add('gone');
  const pre=E.filter(e=>e[1]==sel).map(e=>e[0]),nx=E.filter(e=>e[0]==sel).map(e=>e[1]);
+ const far=[...up(sel)].filter(c=>!pre.includes(c)).sort((a,b)=>b-a);
  const chip=c=>`<button class="chip" style="--k:${hc(c)}" data-go="${c}"><b>${c}</b>${name(c)}</button>`;
  sh.style.setProperty('--c',hc(sel)==='#64748B'&&C[sel]?D.YC[C[sel][0]][0]:hc(sel));
  sh.innerHTML=`<button class="x2" aria-label="إغلاق">✕</button>
  <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}</div></div></div>
- <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${pre.map(chip).join('')}${pre.length?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
+ <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${pre.map(chip).join('')}${far.length?'<div class="l far">وقبلها في السلسلة</div>'+far.map(c=>chip(c).replace('class="chip"','class="chip sm"')).join(''):''}${pre.length?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
  <div><div class="l"><i>→</i>يفتح بعده</div>${nx.map(chip).join('')||'<div class="none">لا يفتح مقررات أخرى</div>'}</div></div>`;
  sh.classList.add('open');
 }
