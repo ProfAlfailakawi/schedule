@@ -30,10 +30,17 @@ html.fit #plan{min-width:0}
 @media (min-width:1200px){#fitbtn{display:none}}
 .card{cursor:pointer;transition:opacity .2s,transform .3s cubic-bezier(.2,.8,.2,1);transform-box:fill-box;transform-origin:center}
 /* The chosen course lifts out of the plan */
-#plan{--pop:1.15}
-@media (max-width:1199px){#plan{--pop:1.5}}
+#plan{--pop:1.08}
 .card.pick{transform:scale(var(--pop));animation:pop .34s ease-out}
-.card.pick>rect:first-child{filter:drop-shadow(0 10px 18px rgba(11,37,69,.28))}
+.card.pick>rect:first-child{filter:drop-shadow(0 0 10px var(--glow,rgba(11,37,69,.35)));animation:glow 1.4s ease-in-out 2}
+@keyframes glow{50%{filter:drop-shadow(0 0 22px var(--glow,rgba(11,37,69,.35)))}}
+/* Floating name tag for the chosen course on phones: readable at any zoom without covering the arrows */
+#tag{position:fixed;left:0;top:0;z-index:8;pointer-events:none;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 16px);background:#fff;color:var(--ink);border:2px solid var(--k);border-radius:14px;padding:6px 12px;font-size:15px;font-weight:800;line-height:1.35;box-shadow:0 10px 26px rgba(11,37,69,.22);opacity:0;transform:translateY(6px) scale(.96);transition:opacity .25s,transform .25s}
+#tag.on{opacity:1;transform:none}
+#tag b{color:var(--k);font-size:17px;font-weight:900}
+#tag::after{content:"";position:absolute;left:var(--tx,50%);bottom:-8px;width:12px;height:12px;background:#fff;border:2px solid var(--k);border-top:0;border-left:0;transform:translateX(-50%) rotate(45deg)}
+#tag.below::after{bottom:auto;top:-8px;transform:translateX(-50%) rotate(225deg)}
+@media (min-width:1200px){#tag{display:none}}
 @keyframes pop{0%{transform:scale(1)}60%{transform:scale(calc(var(--pop) * 1.08))}100%{transform:scale(var(--pop))}}
 .edge{transition:opacity .2s}
 .dim{opacity:.12}
@@ -72,7 +79,7 @@ html.fit #plan{min-width:0}
 @page{size:420mm 297mm;margin:0}
 @media print{
  html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
- #sheet,#hint,#fitbtn{display:none!important}
+ #sheet,#hint,#fitbtn,#tag{display:none!important}
  .scroll{overflow:visible;padding:0}
  #plan [filter]{filter:none}
  .card,.edge{opacity:1!important}
@@ -111,7 +118,10 @@ function render(){
  const pre=E.filter(e=>e[1]==sel).map(e=>e[0]),nx=E.filter(e=>e[0]==sel).map(e=>e[1]);
  const far=[...up(sel)].filter(c=>!pre.includes(c)).sort((a,b)=>b-a);
  const chip=c=>`<button class="chip" style="--k:${hc(c)}" data-go="${c}"><b>${c}</b>${name(c)}</button>`;
- sh.style.setProperty('--c',hc(sel)==='#64748B'&&C[sel]?D.YC[C[sel][0]][0]:hc(sel));
+ const col=hc(sel)==='#64748B'&&C[sel]?D.YC[C[sel][0]][0]:hc(sel);
+ sh.style.setProperty('--c',col);
+ plan.querySelector(`.card[data-c="${sel}"]`)?.style.setProperty('--glow',col+'aa');
+ tag.style.setProperty('--k',col);tag.innerHTML=`<b>${sel}</b>${name(sel)}`;
  sh.innerHTML=`<button class="x2" aria-label="إغلاق">✕</button>
  <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}</div></div></div>
  <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${pre.map(chip).join('')}${far.length?'<div class="l far">وقبلها في السلسلة</div><div class="pills">'+far.map(c=>chip(c).replace('class="chip"','class="chip sm"')).join('')+'</div>':''}${pre.length?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
@@ -145,11 +155,8 @@ function zoomToChain(){
   x0=Math.max(0,x0-P);y0=Math.max(0,y0-P);x1=Math.min(full,x1+P);y1=Math.min(fullH,y1+P);
   return {x0,y0,x1,y1,W:Math.max(full*Math.min(cw/(x1-x0),ah/(y1-y0),1),cw)};
  };
- // Enlarge the chosen card until its name reads at about 12px (names are 14 units), between 1.5x and 3.2x.
- let pop=1.5,f=frame(pop);
- for(let i=0;i<3;i++){pop=Math.min(3.2,Math.max(1.5,12/(14*f.W/full)));f=frame(pop)}
+ let f=frame(popOf());
  const {x0,y0,x1,y1,W}=f,k=W/full;
- plan.style.setProperty('--pop',pop.toFixed(2));
  if(g)placePop(g);
  setFit(false,false);setW(W+'px');
  // Room to scroll a low chain up above the sheet, even when the zoomed plan is shorter than the screen.
@@ -160,13 +167,31 @@ function zoomToChain(){
  // A wide, short chain leaves room below it: let the sheet grow up to the chain.
  sh.style.maxHeight=Math.max(innerHeight*.46,innerHeight-(plan.getBoundingClientRect().top+y1*k)-8)+'px';
 }
+const tag=document.createElement('div');tag.id='tag';tag.setAttribute('aria-hidden','true');document.body.appendChild(tag);
+// Put the tag above or below the chosen card, on whichever side covers fewer of its chain, and keep it clear of the sheet.
+function placeTag(){
+ const g=sel!=null&&small.matches&&plan.querySelector(`.card[data-c="${sel}"]`);
+ if(!g){tag.classList.remove('on');return}
+ tag.style.left='0px';// measure at full width, not squeezed against the screen edge
+ const r=g.querySelector('rect').getBoundingClientRect(),tw=tag.offsetWidth,th=tag.offsetHeight,limit=innerHeight-sh.offsetHeight-6;
+ const S=new Set([...up(sel),...dn(sel)]),chain=[...plan.querySelectorAll('.card')].filter(e=>S.has(+e.dataset.c)).map(e=>e.querySelector('rect').getBoundingClientRect());
+ const x=Math.min(Math.max(r.left+r.width/2-tw/2,8),innerWidth-8-tw);
+ const hits=y=>chain.filter(o=>o.right>x&&o.left<x+tw&&o.bottom>y&&o.top<y+th).length;
+ const sides=[{y:r.top-th-12,below:false},{y:r.bottom+12,below:true}].filter(c=>c.y>=6&&c.y+th<=limit).sort((a,b)=>hits(a.y)-hits(b.y));
+ const c=sides[0]||{y:Math.max(6,r.top-th-12),below:false};
+ tag.style.transform='';tag.style.left=x+'px';tag.style.top=c.y+'px';tag.classList.toggle('below',c.below);
+ tag.style.setProperty('--tx',Math.min(Math.max(r.left+r.width/2-x,16),tw-16)+'px');
+ tag.classList.add('on');
+}
+let tagRaf=0;const follow=()=>{cancelAnimationFrame(tagRaf);tagRaf=requestAnimationFrame(placeTag)};
+addEventListener('scroll',follow,{passive:true});addEventListener('resize',follow);box.addEventListener('scroll',follow,{passive:true});
 function pick(c){
  sel=(c==null||c==sel)?null:c;hov=null;
- if(sel==null){sh.style.removeProperty('max-height');box.style.removeProperty('padding-bottom');plan.style.removeProperty('--pop')}
+ if(sel==null){sh.style.removeProperty('max-height');box.style.removeProperty('padding-bottom')}
  if(small.matches&&sel==null&&autoFit!=null){const v=autoFit;autoFit=null;setFit(v.fit,false);setW(v.w);box.scrollLeft=v.sl;window.scrollTo(0,v.sy)}
  render();
  if(small.matches&&sel!=null)zoomToChain();
- placeSheet()}
+ placeSheet();follow()}
 // Pinch-zoom scales fixed elements too; keep the sheet at its natural size inside the visible area.
 const vv=window.visualViewport;
 function placeSheet(){
