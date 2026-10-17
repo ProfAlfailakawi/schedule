@@ -314,3 +314,20 @@
   .intel-context.intel-context .intel-context-fields .field{min-width:0}
 }
 .intel-context.intel-context .intel-context-copy strong{white-space:nowrap}
+
+/* ── بطاقات القراءات والتجربة والاعتماد على الشاشات الواسعة: بطاقةٌ أفقيةٌ واحدة ──────
+   أيقونة | الاسم | الرقم، بارتفاعٍ وعرضٍ متساويين. فلا فراغَ وسط بطاقةٍ بلا رقم،
+   ولا بطاقةَ أخيرة تمتدّ أعرضَ من أخواتها. الجوال (≤640) يبقى كما هو أعلاه. */
+@media (min-width:641px){
+  .intelligence-page .insight-preview-rail .insight-preview-list{grid-template-columns:repeat(auto-fill,minmax(min(100%,232px),1fr));gap:var(--s3)}
+  .intelligence-page .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(n){grid-column:auto}
+  .intelligence-page .insight-preview-list>.insight-preview{
+    display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:none;
+    align-items:center;justify-items:stretch;text-align:start;gap:var(--s3);
+    min-height:84px;padding:var(--s3) var(--s4);
+  }
+  .intelligence-page .insight-preview-list>.insight-preview>.insight-preview-icon{grid-row:1;grid-column:auto;order:0;margin:0}
+  .intelligence-page .insight-preview-list>.insight-preview>.insight-preview-copy{grid-row:1;grid-column:auto;order:0;justify-items:start;text-align:start}
+  .intelligence-page .insight-preview-list>.insight-preview>b{grid-row:1;grid-column:auto;order:0;justify-self:end;margin:0;min-height:0}
+  .intelligence-page .insight-preview-list>.insight-preview>b.insight-preview-ring{min-height:46px}
+}
