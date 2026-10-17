@@ -41,7 +41,7 @@ import { PUBLIC_FONT_FACES, PUBLIC_KIT_CSS, PUBLIC_KIT_SCRIPT } from "./src/serv
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
-import { termPhase } from "./src/utils/termSequence";
+import { termPhase, termIsFrozen, TERM_FROZEN_MESSAGE } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
 import { runApprovalAttempts, type ApprovalOnce } from "./src/server/approvalAttempts";
 import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueueEntry } from "./src/server/notificationCache";
@@ -10522,8 +10522,25 @@ async function refuseIfTermClosed(res: Response, termId: number): Promise<boolea
   /* فصلٌ صار أرشيفاً (أُغلق أو انقضى وليس الجاري) لا توقيعَ فيه ولا مواعيد. */
   const terms = await Repository.getTerms();
   const term = terms.find(row => Number(row.AdTermId) === Number(termId));
-  if (!(await termIsClosed(termId)) && !termIsArchive(term as any, terms as any)) return false;
+  if (!(await termIsClosed(termId)) && !termIsArchive(term as any, terms as any)) {
+    /* فصلٌ أقدمُ من الجاري يُجمَّد أيضاً وإن لم يُعلَن منتهياً (انظر termIsFrozen). */
+    if (!termIsFrozen(termId, terms as any)) return false;
+    res.status(409).json({ error: TERM_FROZEN_MESSAGE, code: "term-frozen" });
+    return true;
+  }
   res.status(409).json({ error: TERM_CLOSED_APPROVAL_MESSAGE, code: "term-closed" });
+  return true;
+}
+
+
+/**
+ * ── فصلٌ سابق: للعرض فقط ────────────────────────────────────────────────────
+ * كشفُ التسجيل ورغباتُ الأساتذة وتغييراتُ الجدول تُقرأ في أي فصل، وتُكتب في
+ * الجاري (والقادم) وحدهما. القاعدةُ في `termIsFrozen` نفسِها التي تقرؤها الشاشة.
+ */
+async function refuseIfTermFrozen(res: Response, termId: number): Promise<boolean> {
+  if (!termIsFrozen(termId, (await Repository.getTerms()) as any)) return false;
+  res.status(409).json({ error: TERM_FROZEN_MESSAGE, code: "term-frozen" });
   return true;
 }
 
@@ -16401,7 +16418,10 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
     passedUnits:need.passedUnits,requiredUnits:need.requiredUnits,degreeUnits:need.degreeUnits,eligibility:need.eligibility||"not-checked",
-    courses:(need.courseIds||[]).map((id:number)=>{const course:any=courseNameById.get(Number(id))||{name:`مقرر ${id}`,code:"",sectionId:0};return{id,...course,sectionName:sectionNameById.get(Number(course.sectionId||0))||""};}),
+    /* القرارُ نفسُه الذي يقرؤه «كشف التسجيل» (انظر /api/student-registration): السجلّان شاشةٌ واحدة، فتصل الحالةُ هنا أيضاً لتُقرأ بلا أزرار. */
+    caseLevel:isCaseLevelNeed(need),caseStatus:isCaseLevelNeed(need)?studentCaseStatus(need.caseState):undefined,
+    caseReasonCode:(need.caseState?.registrar||need.caseState?.committee)?.reasonCode,caseNote:(need.caseState?.registrar||need.caseState?.committee)?.note,
+    courses:(need.courseIds||[]).map((id:number)=>{const course:any=courseNameById.get(Number(id))||{name:`مقرر ${id}`,code:"",sectionId:0};const said:any=(need.courseStates||[]).find((row:any)=>Number(row.courseId)===Number(id));return{id,...course,sectionName:sectionNameById.get(Number(course.sectionId||0))||"",state:String(said?.state||"awaiting-registration"),settled:Boolean(said),reasonCode:said?.reasonCode,note:said?.note,droppedByStudent:Boolean(said?.droppedByStudent),readOnly:Number(course.sectionId||0)!==sectionId&&Boolean(course.sectionId)};}),
   })))).sort((a:any,b:any)=>String(b.createdAt).localeCompare(String(a.createdAt)));
   res.setHeader("Cache-Control", "no-store");
   res.json({
@@ -16698,6 +16718,7 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
 
   const need = await Repository.getStudentNeedById(String(req.params.id || ""));
   if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (await refuseIfTermFrozen(res, Number(need.AdTermId || 0))) return;
   /* النطاقُ يُحرس هنا أيضاً: المعرّفُ يُرسله المتصفّح، ولا يُصدَّق لأنه وصل.
      وبالاشتقاق نفسِه الذي تقرأ به الشاشةُ، وإلا عُرض ما لا يُكتب فيه. */
   /* الكتابةُ تُحرس بالقاعدة نفسها التي تُعرض بها: أيُّ قسمٍ في نطاق الحساب
@@ -16885,6 +16906,7 @@ app.post("/api/student-registration/:id/case-state", requireAuth, async (req: Au
   }
   const need = await Repository.getStudentNeedById(String(req.params.id || ""));
   if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (await refuseIfTermFrozen(res, Number(need.AdTermId || 0))) return;
   if (!isCaseLevelNeed(need)) { res.status(400).json({ error: "هذا الطلب يُقرَّر مقرّراً مقرّراً." }); return; }
   const owningSectionsInScope = await owningSectionsInScopeFor(req, need, await Repository.getCourses() as any[]);
   if (!owningSectionsInScope.length) { res.status(403).json({ error: "هذا الطلب خارج نطاقك." }); return; }
@@ -18617,6 +18639,7 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
   const sectionId = Number(req.body?.sectionId || 0);
   const termId = Number(req.body?.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الكلية والقسم والفصل." }); return; }
+  if (await refuseIfTermFrozen(res, termId)) return;
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "هذا القسم خارج نطاقك." }); return; }
   /* ── ولا تُفتح دورةٌ على فصلٍ لا تُغلق فيها ──────────────────────────────
    *
@@ -18830,6 +18853,7 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
 app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
   if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (await refuseIfTermFrozen(res, Number(stored.AdTermId || 0))) return;
 
   const index = Number(req.body?.itemIndex);
   const item = (stored.items || [])[index];
@@ -18963,6 +18987,7 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
 app.post("/api/instructor-requests/:id/reply", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
   if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (await refuseIfTermFrozen(res, Number(stored.AdTermId || 0))) return;
   const index = Number(req.body?.itemIndex);
   const item = (stored.items || [])[index];
   if (!item) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }

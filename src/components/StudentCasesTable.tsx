@@ -14,10 +14,12 @@
  * `tests/student-registration-audit.ts` refuses a second copy of the table.
  */
 import React, { useMemo, useState } from "react";
-import { ChevronDown, GraduationCap, ListFilter, Plus, Printer, Shuffle } from "lucide-react";
+import { ChevronDown, Download, GraduationCap, ListFilter, Plus, Printer, Shuffle } from "lucide-react";
 import { PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
+import type { StudentCaseStatus } from "../utils/studentCaseDecision";
+import { CASE_STATUS_LABEL, CaseStatusReadout, courseStateLabel, reasonLabel } from "./StudentCaseStatus";
 
 export type StudentCaseType = "new-course" | "course-conflict" | "graduate";
 type TypeFilter = "all" | StudentCaseType;
@@ -29,6 +31,17 @@ export interface StudentCaseCourseView {
   /** Owning department of the course; «own» when it is the screen's department. */
   sectionId?: number;
   sectionName?: string;
+  /** The decision layer, when the screen knows it (both screens do): same fields the registration sheet reads. */
+  state?: string;
+  settled?: boolean;
+  readOnly?: boolean;
+  droppedByStudent?: boolean;
+  droppedLabel?: string;
+  decidedBySectionName?: string;
+  reasonCode?: string;
+  note?: string;
+  /** The other side of a conflict pair: shown stacked, never decided here, never exported as a row of its own. */
+  partner?: boolean;
 }
 
 export interface StudentCaseView {
@@ -47,6 +60,11 @@ export interface StudentCaseView {
   passedUnits?: number | null;
   requiredUnits?: number | null;
   eligibility?: string;
+  /** A graduate case is decided as a whole. */
+  caseLevel?: boolean;
+  caseStatus?: StudentCaseStatus;
+  caseReasonCode?: string;
+  caseNote?: string;
   courses: StudentCaseCourseView[];
 }
 
@@ -83,6 +101,27 @@ const graduateReasonText = (item: StudentCaseView) => {
   return [reason, String(item.details||"").trim()].filter(Boolean).join(" — ") || "—";
 };
 
+/** One Excel file for both screens: what is on screen, one line per course (or per graduate case), with its decision. */
+export async function exportStudentCasesXlsx(cases: StudentCaseView[], fileName: string, sheetName = "كشف التسجيل"): Promise<void> {
+  const XLSX = await import("xlsx");
+  const headers = ["رقم الحالة", "اسم الطالب", "الرقم المدني", "نوع الطلب", "رمز المقرر", "المقرر", "الحالة", "السبب", "ملاحظة", "ملاحظات الطالب"];
+  const body = cases.flatMap(row => row.caseLevel
+    ? [[
+        row.caseRef, row.name || "", row.civil || "", STUDENT_CASE_TYPE_LABEL[typeOf(row)], "", `حالة خريج — ${GRADUATE_REASON_LABEL[row.graduateReason || ""] || ""}`,
+        CASE_STATUS_LABEL[row.caseStatus || "pending"], reasonLabel(row.caseReasonCode), row.caseNote || "", row.details || "",
+      ]]
+    : (row.courses || []).filter(course => !course.partner).map(course => [
+        row.caseRef, row.name || "", row.civil || "", STUDENT_CASE_TYPE_LABEL[typeOf(row)], course.code || "", course.name || "",
+        course.settled !== undefined || course.readOnly || course.droppedByStudent ? courseStateLabel(course) : "",
+        reasonLabel(course.reasonCode), course.note || "", row.details || "",
+      ]));
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...body]);
+  (sheet as any)["!cols"] = [{ wch: 11 }, { wch: 26 }, { wch: 14 }, { wch: 16 }, { wch: 11 }, { wch: 30 }, { wch: 26 }, { wch: 22 }, { wch: 24 }, { wch: 30 }];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, sheetName);
+  XLSX.writeFile(book, fileName.replace(/[\\/*?:"<>|]/g, "_"));
+}
+
 const PRINT_TITLE: Record<TypeFilter, string> = {
   all: "حالات استبيان الطلبة — التقرير الشامل",
   "new-course": "حالات فتح مقرر جديد",
@@ -115,11 +154,17 @@ interface Props {
   /** A status column on the printed sheet (registration decisions). */
   printStatus?: (item: StudentCaseView) => string;
   print: { scope: string; college?: string };
+  /** File name for the shared Excel export; the button is part of the table so both screens have it. */
+  exportName?: string;
+  /** The screen's own export (it filters courses by the status chosen); defaults to exporting what is shown. */
+  onExport?: () => void;
+  /** The term is a previous one: the table reads normally, nothing on it writes. */
+  readOnly?: boolean;
 }
 
 export default function StudentCasesTable({
   cases, sectionId, total, heading = "طلبات الطلبة بالتفاصيل", emptyText, toolbarExtra, toolbarOutside, activeFilterCount = 0,
-  renderCourseDecision, renderCaseDecision, renderCaseNote, renderCaseAction, printStatus, print,
+  renderCourseDecision, renderCaseDecision, renderCaseNote, renderCaseAction, printStatus, print, exportName, onExport, readOnly = false,
 }: Props) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   /* On a phone the filter chips and print buttons sit behind one «تصفية» button. */
@@ -137,7 +182,7 @@ export default function StudentCasesTable({
   const visible = useMemo(() => typeFilter === "all" ? cases : cases.filter(item => typeOf(item) === typeFilter), [cases, typeFilter]);
   const showVerification = visible.some(item => typeOf(item) === "graduate");
   const grand = Math.max(total ?? cases.length, cases.length);
-  const decisions = Boolean(renderCourseDecision || renderCaseDecision);
+  const decisions = Boolean(renderCourseDecision || renderCaseDecision || cases.some(item => item.caseLevel || item.courses?.some(course => course.settled !== undefined)));
 
   const printCases = (mode: TypeFilter) => {
     if (showPwaPrintHelp()) return;
@@ -159,7 +204,8 @@ export default function StudentCasesTable({
       <span key={`${course.id}-${index}`} className={`student-case-course ${other ? "other" : "own"}`}>
         <b>{courseLabel(course)}</b>
         {other && course.sectionName ? <small>{course.sectionName}</small> : null}
-        {renderCourseDecision ? renderCourseDecision(item, course) : null}
+        {renderCourseDecision ? renderCourseDecision(item, course) : (!course.partner && (course.settled !== undefined || course.droppedByStudent)
+          ? <CaseStatusReadout course={course} /> : null)}
       </span>
     );
   };
@@ -170,7 +216,7 @@ export default function StudentCasesTable({
       return (
         <div className="student-case-detail">
           <span className="student-case-reason">{graduateReasonText(item)}</span>
-          {renderCaseDecision ? renderCaseDecision(item) : null}
+          {renderCaseDecision ? renderCaseDecision(item) : item.caseLevel ? <CaseStatusReadout caseStatus={item.caseStatus} reason={item.caseReasonCode} note={item.caseNote} /> : null}
         </div>
       );
     }
@@ -200,7 +246,7 @@ export default function StudentCasesTable({
   const stamp = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
 
   return (
-    <section className={`student-cases-register${decisions ? " student-cases-register--decisions" : ""}`}>
+    <section className={`student-cases-register${decisions ? " student-cases-register--decisions" : ""}${readOnly ? " is-term-frozen" : ""}`} data-term-frozen-scope={readOnly || undefined}>
       <header>
         <div>
           <span className="surface-kicker">سجل الحالات</span>
@@ -236,6 +282,9 @@ export default function StudentCasesTable({
               ><span>{label}</span><b>{counts[value].toLocaleString("ar-KW-u-nu-latn")}</b></button>
             ))}
           </div>
+          {exportName || onExport ? <SecondaryButton type="button" className="student-case-export" disabled={!visible.length}
+            data-guide-ignore="تصدير ما يُعرض إلى Excel — لا يغيّر شيئاً"
+            onClick={() => (onExport ? onExport() : void exportStudentCasesXlsx(visible, exportName || "كشف_التسجيل.xlsx"))}><Download aria-hidden="true" />تصدير Excel</SecondaryButton> : null}
           <details className="student-case-print-menu">
           <summary data-guide-ignore="فتح قائمة الطباعة — عرضٌ فقط"><Printer aria-hidden="true" />طباعة<ChevronDown aria-hidden="true" /></summary>
           <div className="student-case-print-actions" aria-label="خيارات طباعة حالات الطلبة">
