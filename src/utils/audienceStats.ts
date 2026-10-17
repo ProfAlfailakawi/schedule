@@ -10,6 +10,7 @@
  * يتضخّم بتكرار الطلبات ولا يصحّ أن يُسمّى «زوّاراً».
  */
 import type { AdCampaign, AdCourse, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
+import { AUDIENCE_BASELINE } from "./audienceBaseline";
 import { addDays, endingSoon, isLive, kuwaitDay, totalsOf } from "./adsEngine";
 
 export interface TermPoint { termId: number; termName: string; answers: number; students: number }
@@ -39,6 +40,8 @@ export interface AudienceStats {
     last7: number;
     last30: number;
     total: number;
+    /** مجموع الأيام المقيسة بعد تاريخ الرصيد الافتتاحي (`AUDIENCE_BASELINE.asOf`). */
+    afterBaseline: number;
     bySource: Array<{ source: string; count: number }>;
     returningRate: number;
     mobileRate: number;
@@ -211,6 +214,7 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
       last7: sum(series.slice(-7).map(p => p.count)),
       last30: sum(series.map(p => p.count)),
       total,
+      afterBaseline: sum(measured.filter(d => d.day > AUDIENCE_BASELINE.asOf).map(dayTotal)),
       bySource: [...sources.entries()].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count),
       returningRate: ratio(returning, returning + fresh),
       mobileRate: ratio(mobile, mobile + desktop),

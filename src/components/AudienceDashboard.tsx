@@ -10,12 +10,13 @@ import { Expand, Megaphone, Minimize, Printer, RefreshCw } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton, PrimaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import type { AudienceStats } from "../utils/audienceStats";
+import { AUDIENCE_BASELINE } from "../utils/audienceBaseline";
 
 type Payload = AudienceStats & { termChoices: Array<{ id: number; name: string }> };
 
 const nf = new Intl.NumberFormat("ar-KW-u-nu-latn");
 const fmt = (n: number) => nf.format(Math.round(n));
-const pct = (n: number) => `${new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits: 1 }).format(n)}٪`;
+const pct = (n: number) => `${new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits: 1 }).format(n)}%`;
 const prefersReduced = () => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 
 /** رقمٌ يصعد من الصفر إلى قيمته، ويقفز إليها فوراً لمن يفضّل قلّة الحركة. */
@@ -148,10 +149,11 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
       </section>
 
       <div className="pt-kpis">
-        <div className="pt-kpi"><b><CountUp value={s.reach.studentsMin} /></b><span>طالب مؤكَّد</span><small>أجابوا الاستبيان أو أنشأوا ملفّهم في «مساري»</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={Math.max(AUDIENCE_BASELINE.students, s.reach.studentsMin)} /></b><span>طالب استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.visits + (visits?.afterBaseline || 0)} /></b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
         <div className="pt-kpi"><b><CountUp value={s.instructors.opened} /></b><span>عضو هيئة تدريس فتح بطاقته</span><small>في {s.term?.name || "الفصل الجاري"}</small></div>
         <div className="pt-kpi"><b>{pct(s.instructors.openRate)}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ عالٍ يعني جمهوراً منتبهاً</small></div>
-        <div className="pt-kpi"><b>{hasVisits ? <CountUp value={visits!.last30} /> : "—"}</b><span>زيارة آخر ٣٠ يوماً</span><small>{hasVisits ? `مقيسة منذ ${visits!.since}` : "القياس يبدأ بأول زيارة بعد التفعيل"}</small></div>
+        <div className="pt-kpi"><b>{hasVisits ? <CountUp value={visits!.last30} /> : "—"}</b><span>زيارة آخر 30 يوماً</span><small>{hasVisits ? `مقيسة منذ ${visits!.since}` : "القياس يبدأ بأول زيارة بعد التفعيل"}</small></div>
       </div>
 
       <div className="pt-grid2">
@@ -159,10 +161,10 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <h3>الزيارات اليومية</h3>
           <p className="pt-sub">متصفحٌ واحد = زيارةٌ واحدة في اليوم لكل نوع صفحة (تقدير مجهول).</p>
           {hasVisits ? <>
-            <Bars label="الزيارات اليومية آخر ٣٠ يوماً" points={visits!.series.map(p => ({ key: p.day.slice(5), value: p.count, tip: `${p.day} · ${fmt(p.count)}` }))} />
+            <Bars label="الزيارات اليومية آخر 30 يوماً" points={visits!.series.map(p => ({ key: p.day.slice(5), value: p.count, tip: `${p.day} · ${fmt(p.count)}` }))} />
             <div className="pt-legend">
               <span style={{ ["--c" as any]: "var(--accent)" }}>اليوم {fmt(visits!.today)}</span>
-              <span style={{ ["--c" as any]: "var(--brass,#c9822b)" }}>٧ أيام {fmt(visits!.last7)}</span>
+              <span style={{ ["--c" as any]: "var(--brass,#c9822b)" }}>7 أيام {fmt(visits!.last7)}</span>
               <span style={{ ["--c" as any]: "var(--info,#3b82c4)" }}>جوال {pct(visits!.mobileRate)}</span>
               <span style={{ ["--c" as any]: "var(--success,#1f9d6b)" }}>عائدون {pct(visits!.returningRate)}</span>
               {visits!.installs ? <span style={{ ["--c" as any]: "var(--ink)" }}>تثبيت التطبيق {fmt(visits!.installs)}</span> : null}
@@ -231,14 +233,14 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <h3>التوزيع على الكليات</h3>
           <p className="pt-sub">أرقام فقط، بلا أسماء. مرتّبة بالحجم.</p>
           <HBars rows={s.survey.current.byCollege.length ? s.survey.current.byCollege : s.students.byCollege} />
-          <p className="pt-note">ملفات «مساري»: {fmt(s.students.profiles)} · نشط خلال ٧ أيام {fmt(s.students.active7)} · خلال ٣٠ يوماً {fmt(s.students.active30)}.</p>
+          <p className="pt-note">ملفات «مساري»: {fmt(s.students.profiles)} · نشط خلال 7 أيام {fmt(s.students.active7)} · خلال 30 يوماً {fmt(s.students.active30)}.</p>
         </section>
       </div>
 
       <section className="pt-card">
         <h3>الإعلانات</h3>
         <p className="pt-sub">ملخص الحملات الجارية.</p>
-        {s.ads.endingSoon ? <div className="pt-alert" role="status"><Megaphone aria-hidden="true" size={18} /> {countOf(s.ads.endingSoon, AR.campaign)} تنتهي خلال ٧ أيام؛ تواصل مع أصحابها للتجديد.</div> : null}
+        {s.ads.endingSoon ? <div className="pt-alert" role="status"><Megaphone aria-hidden="true" size={18} /> {countOf(s.ads.endingSoon, AR.campaign)} تنتهي خلال 7 أيام؛ تواصل مع أصحابها للتجديد.</div> : null}
         <div className="pt-kpis" style={{ marginTop: 12 }}>
           <div className="pt-kpi"><b>{fmt(s.ads.live)}</b><span>الحملات العاملة الآن</span></div>
           <div className="pt-kpi"><b>{fmt(s.ads.impressions)}</b><span>ظهور مرئي</span></div>
@@ -255,6 +257,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <li><b>الزيارات:</b> إشارةٌ مجهولة واحدة لكل متصفحٍ في اليوم لكل نوع صفحة. تقدير؛ فمن يمسح بيانات متصفحه قد يُعدّ مرتين، ومن يمنع التخزين يُعدّ كل مرة.</li>
           <li><b>العائدون والجوال:</b> من الإشارة نفسها؛ لا تُحفظ أي هوية أو عنوان.</li>
           <li><b>الكليات:</b> مرتّبة بالحجم ومسمّاة بأرقام؛ لا تُكشف أسماؤها.</li>
+          <li><b>منذ {AUDIENCE_BASELINE.since}:</b> «الطلبة» و«الزيارات» الإجماليان يشملان رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه المقيس.</li>
           <li>القياس يبدأ من يوم تفعيله ولا يرجع إلى الماضي؛ أما الاستبيان وبطاقات الأساتذة فمن سجلات التشغيل كاملة.</li>
         </ul>
       </details>
