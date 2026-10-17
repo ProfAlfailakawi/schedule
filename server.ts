@@ -19091,11 +19091,14 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
     return;
   }
   /* تثبيتان متزامنان للطلب نفسه (منسّقان، أو نقرةٌ مزدوجة) كانا يُنشئان صفّين: واحدٌ في كل مرة. */
-  if (APPLYING_REQUESTS.has(String(stored.id))) {
-    res.status(409).json({ error: "يجري الآن تثبيتُ بندٍ من هذا الطلب. انتظر لحظة ثم حدّث الصفحة.", code: "apply-busy" });
+  /* والقفلُ على الفصل كلِّه: تثبيتان متزامنان في الفصل نفسه قد يحجزان القاعةَ أو الأستاذَ
+     نفسَه في اللحظة نفسها، وكلٌّ منهما يفحص أسبوعاً لا يرى الآخر. */
+  const applyLock = `term:${termId}`;
+  if (APPLYING_REQUESTS.has(applyLock)) {
+    res.status(409).json({ error: "يجري الآن تثبيتٌ آخر في هذا الفصل. انتظر لحظة ثم أعد المحاولة.", code: "apply-busy" });
     return;
   }
-  APPLYING_REQUESTS.add(String(stored.id));
+  APPLYING_REQUESTS.add(applyLock);
   try {
 
   const instructor = await Repository.getInstructorById(Number(stored.AdInstructorId));
@@ -19172,17 +19175,18 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
   }
 
   /* ── الأسبوعُ كما سيصير ─────────────────────────────────────────────────── */
-  const termRows = await Repository.getSchedulesByScope({ termId });
+  let termRows = await Repository.getSchedulesByScope({ termId });
   const removed = new Set(ops.filter(op => op.kind === "delete").map(op => (op as any).rowId));
   const updatedBy = new Map(ops.filter(op => op.kind === "update").map(op => [(op as any).rowId, op] as const));
   const created = ops.filter(op => op.kind === "create") as Array<Extract<ApplyOp, { kind: "create" }>>;
-  const finalWeek: FSchedule[] = [
-    ...termRows.filter(row => !removed.has(Number(row.id))).map(row => {
+  const buildWeek = (rows: FSchedule[]): FSchedule[] => [
+    ...rows.filter(row => !removed.has(Number(row.id))).map(row => {
       const op: any = updatedBy.get(Number(row.id));
       return op ? ({ ...row, ...op.body } as any) : row;
     }),
     ...created.map(op => ({ ...op.body, id: op.tempId } as any)),
   ];
+  let finalWeek: FSchedule[] = buildWeek(termRows);
   const weekFor = (op: ApplyOp) => op.kind === "create" ? finalWeek.filter(row => Number(row.id) !== op.tempId) : finalWeek;
 
   /* ── فحصٌ جافّ لكل خطوة على الأسبوع النهائي ─────────────────────────────── */
@@ -19214,6 +19218,9 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
   if (preview) { res.json({ ok: true, preview: true, plan, warnings }); return; }
 
   /* ── الكتابة، والتراجعُ إن تغيّر شيءٌ في اللحظة نفسها ─────────────────────── */
+  /* يُعاد بناءُ الأسبوع من الجدول الحيّ لحظةَ الكتابة: موعدٌ أضافه زميلٌ أثناء الفحص يُرى. */
+  termRows = await Repository.getSchedulesByScope({ termId });
+  finalWeek = buildWeek(termRows);
   const ordered = [...ops.filter(op => op.kind === "update"), ...ops.filter(op => op.kind === "create"), ...ops.filter(op => op.kind === "delete")];
   const done: Array<{ op: ApplyOp; row?: any }> = [];
   const scheduleIdOf = new Map<number, number>();
@@ -19224,6 +19231,19 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
         ? await runScheduleHandler(createScheduleHandler, req, { body: op.body, hypotheticalWeek: weekFor(op) })
         : await runScheduleHandler(deleteScheduleHandler, req, { params: { id: String(op.rowId) }, body: {} });
     if (result.status >= 400) {
+      const reverted = await rollback();
+      res.status(result.status).json({
+        ...(result.body && typeof result.body === "object" ? result.body : { error: "تعذّر التثبيت." }),
+        itemIndex: op.itemIndex, applied: [], reverted,
+        ...(reverted ? {} : { error: "تعذّر إتمام التثبيت ولم يمكن ردّ كل خطواته. راجع مواعيد الأستاذ في الجدول." }),
+      });
+      return;
+    }
+    done.push({ op, row: result.body });
+    const rowId = op.kind === "delete" ? op.rowId : Number(result.body?.id);
+    if (rowId && !scheduleIdOf.has(op.itemIndex)) scheduleIdOf.set(op.itemIndex, rowId);
+  }
+  async function rollback(): Promise<boolean> {
       let reverted = true;
       for (let j = done.length - 1; j >= 0; j -= 1) {
         const step = done[j];
@@ -19237,16 +19257,7 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
             : await runScheduleHandler(createScheduleHandler, req, { body: { ...rowBodyOf(step.op.original), origin: step.op.original.origin }, hypotheticalWeek: originalWeek });
         if (back.status >= 400) reverted = false;
       }
-      res.status(result.status).json({
-        ...(result.body && typeof result.body === "object" ? result.body : { error: "تعذّر التثبيت." }),
-        itemIndex: op.itemIndex, applied: [], reverted,
-        ...(reverted ? {} : { error: "تعذّر إتمام التثبيت ولم يمكن ردّ كل خطواته. راجع مواعيد الأستاذ في الجدول." }),
-      });
-      return;
-    }
-    done.push({ op, row: result.body });
-    const rowId = op.kind === "delete" ? op.rowId : Number(result.body?.id);
-    if (rowId && !scheduleIdOf.has(op.itemIndex)) scheduleIdOf.set(op.itemIndex, rowId);
+      return reverted;
   }
 
   /* ── القرارُ لكل البنود معاً ─────────────────────────────────────────────── */
@@ -19263,13 +19274,21 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
   }
   const decided = requestFullySettled(items);
   if (decided) timeline.push({ kind: "settled" as InstructorRequestEventKind, at: now, by });
-  const saved = await Repository.saveInstructorRequest({ ...fresh, items, timeline, status: decided ? "settled" : "in-review" });
+  let saved: Awaited<ReturnType<typeof Repository.saveInstructorRequest>>;
+  try {
+    saved = await Repository.saveInstructorRequest({ ...fresh, items, timeline, status: decided ? "settled" : "in-review" });
+  } catch {
+    /* كُتب الجدولُ وتعذّر حفظُ القرار: يُردّ الجدول، فلا يبقى صفٌّ بلا قرار تُكرّره الإعادة. */
+    const reverted = await rollback();
+    res.status(503).json({ error: reverted ? "تعذّر حفظ القرار، فأُعيد الجدول كما كان. أعد المحاولة." : "تعذّر حفظ القرار ولم يمكن ردّ كل خطوات الجدول. راجع مواعيد الأستاذ.", code: "decision-save-failed", reverted });
+    return;
+  }
 
   res.locals.auditChanges = `تثبيت رغبة أستاذ (${String(instructor?.AdInstructorName || "")}): ` + plan.map(step =>
     `${step.action === "delete" ? "حذف" : step.action === "create" ? "إضافة" : "نقل"} ${step.days.map(dayLabelOf).join(" و")} ${formatScheduleTimeRange(step.start, step.end)}`).join(" · ");
   res.locals.auditRowIds = done.map(step => Number(step.op.kind === "delete" ? step.op.rowId : step.row?.id)).filter(Number.isFinite);
   res.json({ ...(await judgeRequestItems(saved, { forDepartment: true })), applied: plan, warnings });
-  } finally { APPLYING_REQUESTS.delete(String(stored.id)); }
+  } finally { APPLYING_REQUESTS.delete(applyLock); }
 });
 
 /* ── حوارُ البند: ردُّ القسم واقتراحُه ─────────────────────────────────────
