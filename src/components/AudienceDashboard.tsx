@@ -113,8 +113,6 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
   const s = data;
   const head = headlineTotals(s);
   const sinceDate = new Date(`${AUDIENCE_BASELINE.asOf}T00:00:00Z`).toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
-  /** سطرٌ صغير يظهر حين تُضيف الفترةُ المقيسة شيئاً: يبيّن أن الرقم حيّ ويزيد. */
-  const grew = (n: number) => (n > 0 ? <small>+{fmt(n)} منذ التفعيل</small> : null);
   const hasVisits = (visits?.days || 0) > 0;
   const typeTotal = s.survey.current.byType.newCourse + s.survey.current.byType.conflict + s.survey.current.byType.graduate;
   const typeBars = [
@@ -148,11 +146,10 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
         <h3>الجمهور منذ {AUDIENCE_BASELINE.since}</h3>
         <p className="pt-sub">بحسب إدارة النظام حتى {sinceDate}، ويُضاف إليها ما يُقاس بعدها.</p>
         <div className="pt-kpis">
-          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.students} /></b><span>إجمالي الطلبة المستفيدين</span>{grew(s.reach.newSinceBaseline)}</div>
-          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.visits} /></b><span>إجمالي دخول الطلبة</span>{grew(visits?.afterBaseline || 0)}</div>
-          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={AUDIENCE_BASELINE.currentStudents} /></b><span>الطلبة الحاليون</span></div>
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.students} /></b><span>إجمالي الطلبة المستفيدين</span></div>
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.visits} /></b><span>إجمالي دخول الطلبة</span></div>
           <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={AUDIENCE_BASELINE.instructors} /></b><span>أعضاء هيئة التدريس</span></div>
-          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.instructorOpens} /></b><span>إجمالي دخول أعضاء هيئة التدريس</span>{grew(s.instructors.openedAfterBaseline)}</div>
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.instructorOpens} /></b><span>إجمالي دخول أعضاء هيئة التدريس</span></div>
         </div>
       </section>
 
@@ -285,7 +282,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <li><b>الاستمرارية:</b> نسبة طلبة فصلٍ ما (ببصمات الاستبيان) الذين أجابوا أيضاً في الفصل التالي له مباشرةً، وبعيّنةٍ لا تقل عن {countOf(CONTINUITY_MIN_STUDENTS, AR.student)}؛ دونها لا تظهر نسبة.</li>
           <li><b>أداء المواقع:</b> ظهورٌ ونقراتٌ صحيحة لكل موقع إعلاني، من حملاته كلها.</li>
           <li><b>الكليات:</b> مرتّبة بالحجم ومسمّاة بأرقام؛ لا تُكشف أسماؤها.</li>
-          <li><b>الجمهور منذ {AUDIENCE_BASELINE.since}:</b> أرقامٌ بحسب إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ويُضاف إلى الطلبة المستفيدين وإلى مرّات الدخول ما يُقاس بعده؛ أما الطلبة الحاليون وأعضاء هيئة التدريس فرقمان ثابتان لا يتغيران بالقياس. ونسبة فتح البطاقات حدٌّ أدنى 90% يظهر المقيس إن زاد عليه.</li>
+          <li><b>الجمهور منذ {AUDIENCE_BASELINE.since}:</b> أرقامٌ بحسب إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ويُضاف إلى الطلبة المستفيدين وإلى مرّات الدخول ما يُقاس بعده؛ أما أعضاء هيئة التدريس فرقمٌ ثابت لا يتغير بالقياس. ونسبة فتح البطاقات حدٌّ أدنى 90% يظهر المقيس إن زاد عليه.</li>
           <li>القياس يبدأ من يوم تفعيله ولا يرجع إلى الماضي؛ أما الاستبيان وبطاقات الأساتذة فمن سجلات التشغيل كاملة.</li>
         </ul>
       </details>

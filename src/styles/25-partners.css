@@ -65,11 +65,10 @@
 .pt-stage{background:var(--canvas);padding:clamp(16px,3vw,40px);overflow:auto}
 .pt-stage .pt-tools .pt-hide-in-stage{display:none}
 .pt-stage .pt-kpi b{font-size:clamp(20px,10cqi,56px)}
-/* «الجمهور منذ 2016»: صفٌّ علوي لأهم رقمين بحجمٍ أكبر، وصفٌّ سفلي لثلاثةٍ متساوية؛ وعلى الشاشة الضيقة بطاقةٌ تحت بطاقة */
+/* «الجمهور منذ 2016»: شبكة 2×2 متساوية؛ وعلى الشاشة الضيقة بطاقةٌ تحت بطاقة */
 @media (min-width:900px){
   .pt-estimates .pt-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
-  .pt-estimates .pt-kpi{grid-column:span 2}
-  .pt-estimates .pt-kpi:nth-child(-n+2){grid-column:span 3}
+  .pt-estimates .pt-kpi{grid-column:span 3}
 }
 .pt-slots{display:grid;gap:6px;font-size:13.5px}
 .pt-slots>div{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 1fr 70px;gap:10px;align-items:center;padding:6px 0;border-block-end:1px solid var(--line)}

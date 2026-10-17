@@ -838,7 +838,7 @@ async function main() {
     check(!!r1?.first && r2 === null && !!r3 && !r3.first, "عدّ الفتح في المخزن: الأول first، وإعادة التحميل null، والعودة بعد نصف ساعة تُعدّ", { r1, r2, r3 });
     check(saved.linkOpenDays["2026-10-20"] === 2 && saved.timeline.filter((e: any) => e.kind === "link-opened").length === 1 && saved.status === "sent", "عدّ الفتح في المخزن: عدّان في اليوم، وحدثٌ واحد في الخط الزمني، وحالة الطلب لم تُمسّ", saved);
     check(await Repo.recordInstructorRequestOpen("missing", "2026-10-20T11:00:00Z") === null, "عدّ الفتح في المخزن: طلبٌ غير موجود لا يُنشأ");
-    check(B.instructorOpens === 75_000 && B.currentStudents === 28_000 && B.instructors === 786 && B.students === 80_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
+    check(B.instructorOpens === 75_000 && B.instructors === 786 && B.students === 80_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
   }
 
   console.log(`\n${failed ? "\x1b[31m" : "\x1b[32m"}${passed} نجح، ${failed} فشل\x1b[0m`);
