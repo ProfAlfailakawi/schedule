@@ -451,7 +451,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
           {/* قسمٌ واحد في مواقع عدّة: يُقال مرّةً في رأس القائمة، وتُسمّى السطورُ
               بمواقعها — لا اسمُ القسم نفسه مكرّراً بعدد الكليات. */}
           {audience.multiSite ? (
-            <p className="changes-inbox-multisite"><strong>{audience.multiSite.name}</strong> — {multiSiteHeadline(audience.multiSite)}</p>
+            <p className="changes-inbox-multisite"><MapPin aria-hidden="true" /><strong>{audience.multiSite.name}</strong><span>{multiSiteHeadline(audience.multiSite)}</span></p>
           ) : null}
           {visible.map(row => (
             <div key={`${row.collegeId}:${row.sectionId}`} className="changes-inbox-row" data-status={row.status} data-late={row.late || undefined}>

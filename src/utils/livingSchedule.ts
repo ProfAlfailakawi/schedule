@@ -51,7 +51,7 @@ function computeConflictTopology(rows:FSchedule[], universe:FSchedule[], courses
     activeDays(row).forEach(day=>{const time=`time:${day}:${row.fstarttime}`;addNode(time,"time",`${DAY_LABEL.get(day)||day} ${scheduleClockForDisplay(row.fstarttime)}`,formatScheduleTimeRange(row.fstarttime, row.fendtime),row.id);addEdge(section,time,row)});
   });
   const ranked=[...nodes.values()].map(node=>({...node,centrality:node.weight+node.issues*2})).sort((a,b)=>b.centrality-a.centrality);
-  return {nodes:ranked.slice(0,90),edges:edges.filter(edge=>ranked.slice(0,90).some(n=>n.id===edge.source)&&ranked.slice(0,90).some(n=>n.id===edge.target)).slice(0,220),hotspots:ranked.slice(0,8),conflicts:conflicts.length};
+  return {nodes:ranked.slice(0,90),edges:edges.filter(edge=>ranked.slice(0,90).some(n=>n.id===edge.source)&&ranked.slice(0,90).some(n=>n.id===edge.target)).slice(0,220),hotspots:ranked.slice(0,8),conflicts:conflicts.filter(isBlockingConflict).length,advisories:conflicts.filter(item=>!isBlockingConflict(item)).length};
 }
 
 

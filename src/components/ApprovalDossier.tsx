@@ -13,7 +13,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, CheckCircle2, CircleDashed, FileCheck, Hourglass,
+  AlertTriangle, ArrowLeft, BadgeCheck, CalendarClock, CalendarDays, Clock3, MapPin, Pencil, UsersRound, CalendarPlus, CalendarX, CheckCircle2, CircleDashed, FileCheck, Hourglass,
   PenLine, Printer, Send, ShieldCheck, Undo2, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -22,7 +22,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import { approvalScopeKey, createScopeGuard } from "../utils/approvalScope";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 import {
-  buildApprovalDossier, type ApprovalDossierModel, type DossierKind, type DossierReadiness, type DossierReport, type DossierTimelineStep,
+  buildApprovalDossier, compactDays, type ApprovalDossierModel, type DossierKind, type DossierReadiness, type DossierReport, type DossierTimelineStep,
 } from "../utils/approvalDossier";
 
 interface Props {
@@ -46,6 +46,8 @@ const KIND_ICON: Record<DossierKind, LucideIcon> = { added: CalendarPlus, modifi
 const STEP_ICON: Record<DossierTimelineStep["kind"], LucideIcon> = {
   submitted: Send, returned: Undo2, accepted: BadgeCheck, signed: PenLine, "head-returned": Undo2,
 };
+
+const MOVE_ICON: Record<string, LucideIcon> = { room: MapPin, instructor: UsersRound, days: CalendarDays, time: Clock3 };
 
 const NotAvailable = () => <span className="ad-na">غير متوفر</span>;
 
@@ -179,16 +181,47 @@ export function ApprovalDossierSheet({ model }: { model: ApprovalDossierModel })
           <div className="ad-courses">
           {model.groups.map(group => (
             <div className="ad-course" key={group.key}>
-              <h3>{group.code ? <code dir="ltr">{group.code}</code> : null} {group.course}</h3>
+              <h3>
+                {group.code ? <code className="ad-code" dir="ltr">{group.code}</code> : null}
+                <span className="ad-course-name">{group.course}</span>
+                <span className="ad-course-count" title={countOf(group.items.length, AR.section)}>{group.items.length}</span>
+              </h3>
               <ul>
                 {group.items.map(item => {
                   const Icon = KIND_ICON[item.kind];
+                  const days = compactDays(item.days);
                   return (
                     <li key={`${item.kind}:${item.scheduleId}`} data-kind={item.kind}>
                       <span className="ad-item-icon" aria-hidden="true"><Icon /></span>
-                      <div>
-                        <strong>{item.section ? <>شعبة <bdi>{item.section}</bdi></> : null}{item.section && item.where ? " · " : ""}{item.where}</strong>
-                        {item.lines.map((line, index) => <small key={index}>{line}</small>)}
+                      <div className="ad-item-body">
+                        <div className="ad-item-head">
+                          {item.section ? <span className="ad-chip" title={`شعبة ${item.section}`}><bdi>{item.section}</bdi></span> : null}
+                          {item.renumber ? (
+                            <span className="ad-chip ad-renum" title={`رقم الشعبة: ${item.renumber.before} ← ${item.renumber.after}`}>
+                              <s><bdi>{item.renumber.before}</bdi></s><ArrowLeft aria-hidden="true" /><bdi>{item.renumber.after}</bdi>
+                            </span>
+                          ) : null}
+                          {days || item.time ? (
+                            <span className="ad-when" title={item.where}>
+                              <CalendarDays aria-hidden="true" />{days}{days && item.time ? " · " : ""}{item.time ? <bdi dir="ltr">{item.time}</bdi> : null}
+                            </span>
+                          ) : null}
+                        </div>
+                        {item.moves.map(move => {
+                          const MoveIcon = MOVE_ICON[move.field] || Pencil;
+                          return (
+                            <div className="ad-move" key={move.field + move.label} title={`${move.label}: ${move.before} ← ${move.after}`}>
+                              <MoveIcon aria-hidden="true" />
+                              <s dir="ltr">{move.before}</s><ArrowLeft aria-hidden="true" /><b dir="ltr">{move.after}</b>
+                            </div>
+                          );
+                        })}
+                        {item.kind !== "modified" && (item.room || item.instructor) ? (
+                          <div className="ad-move ad-move-plain">
+                            {item.room ? <span title="القاعة"><MapPin aria-hidden="true" /><bdi dir="ltr">{item.room}</bdi></span> : null}
+                            {item.instructor ? <span title="الأستاذ"><UsersRound aria-hidden="true" /><bdi>{item.instructor}</bdi></span> : null}
+                          </div>
+                        ) : null}
                       </div>
                     </li>
                   );
