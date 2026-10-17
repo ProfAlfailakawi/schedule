@@ -47,6 +47,8 @@ if(!document.getElementById("adx-css")){
  var css=document.createElement("style");css.id="adx-css";
  css.textContent=
  ".adx{display:none;max-width:640px;margin:18px auto;padding:0 16px;box-sizing:border-box;font-family:inherit}"+
+ /* داخل «مساري» الصفحةُ نفسها تضع هوامش البطاقات؛ فلا حشوةَ إضافية تُضيّق الإعلانَ عنها. */
+ "#adx-me-box.adx,#adx-break-box.adx{padding-inline:0}"+
  ".adx.on{display:block}"+
  ".adx .adx-main,.adx .adx-sp{position:relative;border-radius:14px;overflow:hidden;border:1px solid rgba(127,127,127,.28);background:rgba(127,127,127,.08)}"+
  ".adx .adx-sp{margin-bottom:8px;border-radius:12px}"+
