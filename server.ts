@@ -15075,23 +15075,43 @@ app.post("/api/section-build/apply", requirePermission(7), async (req: Authentic
 });
 
 /* «راجع وعدّل»: صفوفٌ بشكل نموذج الاستيراد نفسه، فتُفتح في شاشة المراجعة ذاتها (منتقيات الأستاذ والقاعة، فحص التعارض الحي، النشر).
-   النشر هناك يستبدل جدول القسم في الفصل، فلا يُعرض هذا الطريق إلا لفصلٍ فارغ؛ وغيره يمرّ بالتنزيل المباشر الذي لا يستبدل شيئاً. */
+   النشر هناك يستبدل جدول القسم في الفصل، فإن كان في الفصل مواعيد حُملت معها في الشاشة نفسها (موعدٌ بموعد، بأستاذه وقاعته)
+   ثم تُضاف المبنيّة بعدها؛ فلا يُمحى شيءٌ بالنشر إلا ما يحذفه القسم بيده في المراجعة. لا شيء يُكتب قبل النشر هناك. */
 app.post("/api/section-build/review-rows", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const occupied = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
-  if (occupied.length) { res.status(409).json({ error: "في هذا الفصل مواعيد للقسم: المراجعة في شاشة الاستيراد تستبدل الجدول كله، فاستعمل «نزّل مباشرة».", code: "term-occupied" }); return; }
   res.setHeader("Cache-Control", "no-store");
-  const built = await readSectionBuild(collegeId, sectionId, termId, req.body?.targets);
-  const rows = built.rows.flatMap(row => row.placements.map(p => ({
+  const [built, occupied, people, allCourses] = await Promise.all([
+    readSectionBuild(collegeId, sectionId, termId, req.body?.targets),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getInstructors().catch(() => []), Repository.getCoursesBySection(sectionId),
+  ]);
+  /* المحدَّد في المعاينة فقط (مفاتيح مقرر:شعبة)؛ وبلا إرسالٍ تُفتح كل المبنيّة. */
+  const picked = Array.isArray(req.body?.pick) ? new Set<string>(req.body.pick.map(String)) : null;
+  const personById = new Map((people as any[]).map(person => [Number(person.AdInstructorId), person]));
+  const courseById = new Map((allCourses as any[]).map(course => [Number(course.AdCourseId), course]));
+  const existingRows = (occupied as any[]).map(row => {
+    const start = String(row.fstarttime || ""), end = String(row.fendtime || "");
+    return {
+      "القاعة": row.AdRoomHall || "", "المبنى": row.AdRoomCode || "", "الوقت": `${start}-${end}`, fstarttime: start, fendtime: end,
+      "الأيام": PROPOSAL_DAYS.filter(key => Boolean(row[key])).map(key => dayLabelOf(key)).join(" - "),
+      "الرقم المدني": personById.get(Number(row.AdInstructorId))?.AdInstructorCivil || "",
+      "أستاذ المقرر": personById.get(Number(row.AdInstructorId))?.AdInstructorName || "",
+      "الشعبة": row.SCode, "المقرر الدراسي": row.AdCourseName || courseById.get(Number(row.AdCourseId))?.CourseName || "",
+      "رمز المقرر": courseById.get(Number(row.AdCourseId))?.CourseCode || "",
+    };
+  });
+  const added = built.rows.flatMap(row => row.placements.filter(p => !picked || picked.has(`${row.courseId}:${p.sectionCode}`)).map(p => ({ p, row })));
+  const newRows = added.map(({ p, row }) => ({
     "القاعة": p.roomHall || "", "المبنى": p.roomCode || "", "الوقت": `${p.start}-${p.end}`,
     /* القارئ يقرأ نصّ «الوقت» بترتيب العرض العربي (النهاية أولاً)، فالبداية والنهاية تُرسلان صريحتين فلا تنقلبان. */
     fstarttime: p.start, fendtime: p.end,
     "الأيام": ((p as any).days || [p.day]).map((day: string) => dayLabelOf(day)).join(" - "),
     "الرقم المدني": "", "أستاذ المقرر": p.instructorName || "", "الشعبة": p.sectionCode, "المقرر الدراسي": row.name, "رمز المقرر": row.code,
-  })));
-  res.json({ rows, count: rows.length, pending: built.rows.reduce((sum, row) => sum + row.placements.filter(p => (p as any).pending).length, 0) });
+  }));
+  res.json({ rows: [...existingRows, ...newRows], count: existingRows.length + newRows.length, existing: existingRows.length, added: newRows.length,
+    pending: added.filter(({ p }) => (p as any).pending).length });
 });
 
 /* التراجع: يحذف الصفوف التي أنشأتها دفعةٌ بعينها، ولا يلمس صفّاً تغيّر بعد إنشائه (رقم الإصدار) أو حُجز للتسجيل. */

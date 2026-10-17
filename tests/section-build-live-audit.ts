@@ -67,7 +67,13 @@ try {
     check(((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).length === before.length, "الجدول عاد كما كان");
 
     /* ── فصلٌ فارغ: وقتٌ من الفصل المماثل وقاعةٌ بانتظار التثبيت، ومراجعةٌ في شاشة الاستيراد نفسها ── */
-    check((await call("POST", "/api/section-build/review-rows", { collegeId: 1, sectionId: 2, termId: 1, targets: { "1": 1 } })).status === 409, "قسمٌ فيه مواعيد: المراجعة (التي تستبدل الجدول) مرفوضة");
+    /* قسمٌ فيه مواعيد: تُفتح المراجعة وتحمل مواعيده الحالية كلها ثم المبنيّة، فلا يمحو النشر هناك شيئاً بلا علم القسم. */
+    const occupiedReview = await call("POST", "/api/section-build/review-rows", base);
+    check(occupiedReview.status === 200 && occupiedReview.body.existing === before.length && occupiedReview.body.added === preview.body.totals.placeable && occupiedReview.body.count === before.length + preview.body.totals.placeable, "قسمٌ فيه مواعيد: المراجعة تحمل مواعيده الحالية والمبنيّة معاً", { status: occupiedReview.status, existing: occupiedReview.body?.existing, added: occupiedReview.body?.added, before: before.length });
+    const occupiedImp = await call("POST", "/api/intelligence/import-preview", { ...scope, rows: occupiedReview.body.rows });
+    check(occupiedImp.status === 200 && occupiedImp.body.count === occupiedReview.body.count, "وشاشة الاستيراد تقرأها كلها", { status: occupiedImp.status, error: occupiedImp.body?.error, count: occupiedImp.body?.count, expected: occupiedReview.body?.count });
+    const onlyPicked = await call("POST", "/api/section-build/review-rows", { ...base, pick: [pick[0]] });
+    check(onlyPicked.status === 200 && onlyPicked.body.added === 1, "المحدَّد في المعاينة وحده يُضاف", onlyPicked.body?.added);
     for (const row of before) await call("DELETE", `/api/schedules/${row.id}`);
     /* «لا قاعة موثّقة»: القاعات موقوفة، فيُبنى الوقت من الفصل المماثل وتنتظر القاعة تثبيتها. */
     for (const room of (await call("GET", "/api/location-registry")).body.rooms) await call("PUT", `/api/admin/location-registry/rooms/${room.id}`, { active: false });
