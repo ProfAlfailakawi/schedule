@@ -1816,3 +1816,70 @@ export interface StudyProposal {
   /** عدّاد تزامن: كل كتابةٍ تقارنه بما قرأته. */
   rev: number;
 }
+
+/**
+ * ── الإعلانات والجمهور ───────────────────────────────────────────────────────
+ *
+ * حملةٌ إعلانية = شركةٌ + موقعٌ + صورةٌ (أو صورتان للمقارنة A/B) + تاريخا بدايةٍ ونهاية.
+ * لا أسعار هنا عمداً: الشاشة للتتبع. التواريخ أيامٌ بتوقيت الكويت (YYYY-MM-DD) والنهاية شاملة.
+ */
+export type AdStatus = "draft" | "approved" | "paused";
+export interface AdCampaign {
+  id: string;
+  company: string;
+  /** فئة النشاط: لا تظهر حملتان من فئةٍ واحدة معاً في موقعٍ واحد. */
+  category: string;
+  slot: string;
+  creativeIds: string[];
+  linkUrl: string;
+  /** كودُ خصمٍ خاصٌّ بالشركة يظهر تحت الإعلان ويقيس التحويل عندها. */
+  coupon?: string;
+  startDay: string;
+  endDay: string;
+  status: AdStatus;
+  /** حملةٌ تجريبية مجانية: تُوسَم في تقريرها. */
+  trial?: boolean;
+  /** رمزُ رابط تقرير الشركة (يرى حملته وحدها). */
+  reportToken: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt?: string;
+}
+export interface AdCreative {
+  id: string;
+  campaignId: string;
+  label: string;
+  mime: "image/png" | "image/jpeg" | "image/webp";
+  width: number;
+  height: number;
+  bytes: number;
+  /** base64 بلا بادئة data: */
+  data: string;
+  createdAt: string;
+}
+/** عدّادُ يومٍ لإعلانٍ واحد: ظهورٌ مرئي، ومشاهدون فريدون تقريبياً، ونقراتٌ صحيحة، ونقراتٌ مُرشَّحة. */
+export interface AdStatsDay {
+  id: string;
+  campaignId: string;
+  creativeId: string;
+  day: string;
+  impressions: number;
+  uniques: number;
+  clicks: number;
+  filteredClicks: number;
+}
+/** نبضُ الزوار اليومي، مجهولٌ كلياً: أعدادٌ فقط. */
+export interface AudienceDay {
+  id: string;
+  day: string;
+  /** زياراتٌ فريدة تقريبية (متصفحٌ واحد = مرةً في اليوم لكل نوع صفحة). */
+  visits: Record<string, number>;
+  returning: number;
+  fresh: number;
+  mobile: number;
+  desktop: number;
+  installed: number;
+  /** ساعة الكويت "0".."23" → عدد. */
+  hours: Record<string, number>;
+}

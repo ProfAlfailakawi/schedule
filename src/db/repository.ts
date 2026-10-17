@@ -36,6 +36,10 @@ import {
   FSchedule,
   AdRoom,
   AuditLogEntry,
+  AdCampaign,
+  AdCreative,
+  AdStatsDay,
+  AudienceDay,
   ScheduleVersion,
   ScheduleDraft,
   ScheduleOpenDecision,
@@ -225,6 +229,12 @@ interface DBState {
   scheduleDrafts?: ScheduleDraft[];
   scheduleOpenDecisions?: ScheduleOpenDecision[];
   clientTelemetry?: ClientTelemetryEntry[];
+  adCampaigns?: AdCampaign[];
+  adCreatives?: AdCreative[];
+  adStats?: AdStatsDay[];
+  audienceDaily?: AudienceDay[];
+  /** رمز رابط «ملف الشراكة» العام (يُدار من شاشة الإعلانات). */
+  partnerKitToken?: string;
   scheduleComments?: ScheduleComment[];
   instructorRequests?: InstructorRequest[];
   studyProposals?: StudyProposal[];
@@ -4142,6 +4152,135 @@ export const Repository = {
     db.scheduleOpenDecisions[index] = { ...db.scheduleOpenDecisions[index], ...fields, updatedAt };
     saveDatabase();
     return db.scheduleOpenDecisions[index];
+  },
+
+
+  /* ── الإعلانات والجمهور ─────────────────────────────────────────────────────
+   * مجموعاتٌ خاصة بالإدارة: الحملات والصور والعدّادات اليومية ونبض الزوار.
+   * العدّاداتُ تُكتب دفعاتٍ مجمَّعة (انظر server/adsStore) لا مرةً لكل ظهور. */
+  listAdCampaigns: async (): Promise<AdCampaign[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("adCampaigns").limit(500).get();
+      return snap.docs.map(doc => doc.data() as AdCampaign);
+    }
+    return [...(db.adCampaigns || [])];
+  },
+  saveAdCampaign: async (row: AdCampaign): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("adCampaigns").doc(row.id).set(row); return; }
+    db.adCampaigns = [...(db.adCampaigns || []).filter(item => item.id !== row.id), row];
+    saveDatabase();
+  },
+  deleteAdCampaign: async (id: string): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const creatives = await firestoreDb.collection("adCreatives").where("campaignId", "==", id).get();
+      const batch = firestoreDb.batch();
+      creatives.docs.forEach(doc => batch.delete(doc.ref));
+      batch.delete(firestoreDb.collection("adCampaigns").doc(id));
+      await batch.commit();
+      return;
+    }
+    db.adCampaigns = (db.adCampaigns || []).filter(item => item.id !== id);
+    db.adCreatives = (db.adCreatives || []).filter(item => item.campaignId !== id);
+    saveDatabase();
+  },
+  getAdCreative: async (id: string): Promise<AdCreative | null> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("adCreatives").doc(id).get();
+      return doc.exists ? (doc.data() as AdCreative) : null;
+    }
+    return (db.adCreatives || []).find(item => item.id === id) || null;
+  },
+  /** رؤوسُ الصور بلا بياناتها: القوائم لا تحمل مئات الكيلوبايتات. */
+  listAdCreativeHeads: async (campaignId?: string): Promise<Array<Omit<AdCreative, "data">>> => {
+    const strip = (row: AdCreative): Omit<AdCreative, "data"> => { const { data: _data, ...head } = row; return head; };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const query = campaignId ? firestoreDb.collection("adCreatives").where("campaignId", "==", campaignId) : firestoreDb.collection("adCreatives");
+      const snap = await query.limit(1000).get();
+      return snap.docs.map(doc => strip(doc.data() as AdCreative));
+    }
+    return (db.adCreatives || []).filter(item => !campaignId || item.campaignId === campaignId).map(strip);
+  },
+  saveAdCreative: async (row: AdCreative): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("adCreatives").doc(row.id).set(row); return; }
+    db.adCreatives = [...(db.adCreatives || []).filter(item => item.id !== row.id), row];
+    saveDatabase();
+  },
+  deleteAdCreative: async (id: string): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("adCreatives").doc(id).delete(); return; }
+    db.adCreatives = (db.adCreatives || []).filter(item => item.id !== id);
+    saveDatabase();
+  },
+  /** يضيف فروقاتٍ إلى عدّادات الأيام دفعةً واحدة (increment ذرّي في Firestore). */
+  addAdStats: async (deltas: Array<Omit<AdStatsDay, "id">>): Promise<void> => {
+    if (!deltas.length) return;
+    const idOf = (row: Omit<AdStatsDay, "id">) => `${row.campaignId}_${row.creativeId}_${row.day}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      for (let i = 0; i < deltas.length; i += 400) {
+        const batch = firestoreDb.batch();
+        for (const row of deltas.slice(i, i + 400)) {
+          batch.set(firestoreDb.collection("adStats").doc(idOf(row)), {
+            id: idOf(row), campaignId: row.campaignId, creativeId: row.creativeId, day: row.day,
+            impressions: FieldValue.increment(row.impressions), uniques: FieldValue.increment(row.uniques),
+            clicks: FieldValue.increment(row.clicks), filteredClicks: FieldValue.increment(row.filteredClicks),
+          }, { merge: true });
+        }
+        await batch.commit();
+      }
+      return;
+    }
+    const list = db.adStats || (db.adStats = []);
+    for (const row of deltas) {
+      const id = idOf(row);
+      const found = list.find(item => item.id === id);
+      if (found) { found.impressions += row.impressions; found.uniques += row.uniques; found.clicks += row.clicks; found.filteredClicks += row.filteredClicks; }
+      else list.push({ ...row, id });
+    }
+    saveDatabase();
+  },
+  listAdStats: async (campaignId?: string): Promise<AdStatsDay[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const query = campaignId ? firestoreDb.collection("adStats").where("campaignId", "==", campaignId) : firestoreDb.collection("adStats");
+      const snap = await query.limit(20000).get();
+      return snap.docs.map(doc => doc.data() as AdStatsDay);
+    }
+    return (db.adStats || []).filter(item => !campaignId || item.campaignId === campaignId);
+  },
+  addAudienceDay: async (day: string, delta: Omit<AudienceDay, "id" | "day">): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const inc = (map: Record<string, number>) => Object.fromEntries(Object.entries(map).map(([key, value]) => [key, FieldValue.increment(value)]));
+      await firestoreDb.collection("audienceDaily").doc(day).set({
+        id: day, day, visits: inc(delta.visits), hours: inc(delta.hours),
+        returning: FieldValue.increment(delta.returning), fresh: FieldValue.increment(delta.fresh),
+        mobile: FieldValue.increment(delta.mobile), desktop: FieldValue.increment(delta.desktop), installed: FieldValue.increment(delta.installed),
+      }, { merge: true });
+      return;
+    }
+    const list = db.audienceDaily || (db.audienceDaily = []);
+    let row = list.find(item => item.id === day);
+    if (!row) { row = { id: day, day, visits: {}, returning: 0, fresh: 0, mobile: 0, desktop: 0, installed: 0, hours: {} }; list.push(row); }
+    for (const [key, value] of Object.entries(delta.visits)) row.visits[key] = (row.visits[key] || 0) + value;
+    for (const [key, value] of Object.entries(delta.hours)) row.hours[key] = (row.hours[key] || 0) + value;
+    row.returning += delta.returning; row.fresh += delta.fresh; row.mobile += delta.mobile; row.desktop += delta.desktop; row.installed += delta.installed;
+    saveDatabase();
+  },
+  listAudienceDays: async (limit = 400): Promise<AudienceDay[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("audienceDaily").orderBy("day", "desc").limit(limit).get();
+      return snap.docs.map(doc => doc.data() as AudienceDay).sort((a, b) => a.day.localeCompare(b.day));
+    }
+    return [...(db.audienceDaily || [])].sort((a, b) => a.day.localeCompare(b.day)).slice(-limit);
+  },
+  getPartnerKitToken: async (): Promise<string> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("adSettings").doc("partnerKit").get();
+      return String((doc.data() as any)?.token || "");
+    }
+    return db.partnerKitToken || "";
+  },
+  setPartnerKitToken: async (token: string): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("adSettings").doc("partnerKit").set({ token, updatedAt: new Date().toISOString() }); return; }
+    db.partnerKitToken = token;
+    saveDatabase();
   },
 
   createClientTelemetry: async (entries: Array<Omit<ClientTelemetryEntry, "id" | "timestamp"> & { timestamp?: string }>): Promise<number> => {

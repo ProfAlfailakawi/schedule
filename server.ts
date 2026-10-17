@@ -98,6 +98,7 @@ import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
+import { adInjection, registerAdsRoutes } from "./src/server/adsRoutes";
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
@@ -712,6 +713,8 @@ function rateLimitPublic(req: Request, res: Response, next: NextFunction) {
   next();
 }
 app.use("/api/public", rateLimitPublic);
+/* نبضُ الزوار والإعلانُ يُحقنان في الصفحات العامة وحدها (انظر server/adsRoutes). */
+app.use(adInjection());
 
 const SERVER_IDLE_SESSION_MS = 15 * 60 * 1000;
 const DEMO_SESSION_TTL_MS = 60 * 60 * 1000;
@@ -20436,6 +20439,9 @@ registerPlanReviewRoutes(app, {
   hasPermission: (req, formId) => (req.permissions || []).includes(formId),
   actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
 });
+
+/* ── الإعلانات ونبضُ الزوار ولوحة الجمهور: قياسٌ مجهول، وإدارةٌ لحساب الإدارة الرئيسي ── */
+registerAdsRoutes(app, { requireAuth, requireRootAdmin, publicPageNonce });
 
 /* ── بروفةُ التسجيل: تشغيلٌ لإدارة النظام، وقراءةٌ بحدود النطاق ──────────────── */
 registerSimulationRoutes(app, {
