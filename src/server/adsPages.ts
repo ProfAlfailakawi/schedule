@@ -473,7 +473,6 @@ ${banner}
   <h1>جمهورك في لحظة الجدول</h1>
   <p>طلبةٌ وأساتذة يفتحون جداولهم بأنفسهم، كل فصل.</p>
   <a class="k-cta noprint" href="#new">${icon("plus")}${NEW_CAMPAIGN}</a>
-  <button class="btn noprint" id="print" type="button">طباعة / PDF</button>
 </section>
 <div class="k-stats">
   <div class="k-stat"><span class="badge">${icon("students")}</span><small class="note" style="margin:0">حوالي</small><b>${fmt(head.students)}</b><span>إجمالي الطلبة المستفيدين</span></div>
