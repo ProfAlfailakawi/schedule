@@ -32,14 +32,17 @@ html.fit #plan{min-width:0}
 /* The chosen course lifts out of the plan */
 #plan{--pop:1.08}
 .card.pick{transform:scale(var(--pop));animation:pop .34s ease-out}
-.card.pick>rect:first-child{filter:drop-shadow(0 0 10px var(--glow,rgba(11,37,69,.35)));animation:glow 1.4s ease-in-out 2}
-@keyframes glow{50%{filter:drop-shadow(0 0 22px var(--glow,rgba(11,37,69,.35)))}}
+.card.pick>rect:first-child{stroke:var(--ring,#0B2545);stroke-opacity:1;stroke-width:4.5;filter:drop-shadow(0 0 12px var(--glow,rgba(11,37,69,.45)));animation:glow 1.4s ease-in-out 2}
+@keyframes glow{50%{filter:drop-shadow(0 0 26px var(--glow,rgba(11,37,69,.45)))}}
 /* Floating name tag for the chosen course on phones: readable at any zoom without covering the arrows */
 #tag{position:fixed;left:0;top:0;z-index:8;pointer-events:none;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 16px);background:#fff;color:var(--ink);border:2px solid var(--k);border-radius:14px;padding:6px 12px;font-size:15px;font-weight:800;line-height:1.35;box-shadow:0 10px 26px rgba(11,37,69,.22);opacity:0;transform:translateY(6px) scale(.96);transition:opacity .25s,transform .25s}
 #tag.on{opacity:1;transform:none}
 #tag b{color:var(--k);font-size:17px;font-weight:900}
 #tag::after{content:"";position:absolute;left:var(--tx,50%);bottom:-8px;width:12px;height:12px;background:#fff;border:2px solid var(--k);border-top:0;border-left:0;transform:translateX(-50%) rotate(45deg)}
 #tag.below::after{bottom:auto;top:-8px;transform:translateX(-50%) rotate(225deg)}
+#tag.side-l::after,#tag.side-r::after{bottom:auto;top:var(--ty,50%)}
+#tag.side-l::after{left:auto;right:-8px;transform:translateY(-50%) rotate(-45deg)}
+#tag.side-r::after{left:-8px;transform:translateY(-50%) rotate(135deg)}
 @media (min-width:1200px){#tag{display:none}}
 @keyframes pop{0%{transform:scale(1)}60%{transform:scale(calc(var(--pop) * 1.08))}100%{transform:scale(var(--pop))}}
 .edge{transition:opacity .2s}
@@ -120,7 +123,7 @@ function render(){
  const chip=c=>`<button class="chip" style="--k:${hc(c)}" data-go="${c}"><b>${c}</b>${name(c)}</button>`;
  const col=hc(sel)==='#64748B'&&C[sel]?D.YC[C[sel][0]][0]:hc(sel);
  sh.style.setProperty('--c',col);
- plan.querySelector(`.card[data-c="${sel}"]`)?.style.setProperty('--glow',col+'aa');
+ const pc=plan.querySelector(`.card[data-c="${sel}"]`);if(pc){pc.style.setProperty('--glow',col+'cc');pc.style.setProperty('--ring',col)}
  tag.style.setProperty('--k',col);tag.innerHTML=`<b>${sel}</b>${name(sel)}`;
  sh.innerHTML=`<button class="x2" aria-label="إغلاق">✕</button>
  <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}</div></div></div>
@@ -163,7 +166,11 @@ function zoomToChain(){
  box.style.paddingBottom=innerHeight+'px';
  // RTL: scrollLeft is 0 at the right edge and negative leftwards.
  box.scrollLeft=Math.max(cw-W,Math.min(0,-(W-(x0+x1)/2*k-cw/2)));
- window.scrollTo(0,Math.max(0,plan.getBoundingClientRect().top+scrollY+(y0+y1)/2*k-ah/2));
+ // Centre the chain in the space above the sheet; near the top of the page that needs a little room above the plan.
+ box.style.paddingTop='0px';
+ const want=plan.getBoundingClientRect().top+scrollY+(y0+y1)/2*k-ah/2;
+ if(want<0)box.style.paddingTop=-want+'px';
+ window.scrollTo(0,Math.max(0,want));
  // A wide, short chain leaves room below it: let the sheet grow up to the chain.
  sh.style.maxHeight=Math.max(innerHeight*.46,innerHeight-(plan.getBoundingClientRect().top+y1*k)-8)+'px';
 }
@@ -175,19 +182,30 @@ function placeTag(){
  tag.style.left='0px';// measure at full width, not squeezed against the screen edge
  const r=g.querySelector('rect').getBoundingClientRect(),tw=tag.offsetWidth,th=tag.offsetHeight,limit=innerHeight-sh.offsetHeight-6;
  const S=new Set([...up(sel),...dn(sel)]),chain=[...plan.querySelectorAll('.card')].filter(e=>S.has(+e.dataset.c)).map(e=>e.querySelector('rect').getBoundingClientRect());
- const x=Math.min(Math.max(r.left+r.width/2-tw/2,8),innerWidth-8-tw);
- const hits=y=>chain.filter(o=>o.right>x&&o.left<x+tw&&o.bottom>y&&o.top<y+th).length;
- const sides=[{y:r.top-th-12,below:false},{y:r.bottom+12,below:true}].filter(c=>c.y>=6&&c.y+th<=limit).sort((a,b)=>hits(a.y)-hits(b.y));
- const c=sides[0]||{y:Math.max(6,r.top-th-12),below:false};
- tag.style.transform='';tag.style.left=x+'px';tag.style.top=c.y+'px';tag.classList.toggle('below',c.below);
- tag.style.setProperty('--tx',Math.min(Math.max(r.left+r.width/2-x,16),tw-16)+'px');
+ // Candidates above, below, left and right of the card; keep the one hiding the least of its chain (by area).
+ const vw=innerWidth,cx=r.left+r.width/2,cy=r.top+r.height/2,G=12;
+ const clampX=x=>Math.min(Math.max(x,8),vw-8-tw),clampY=y=>Math.min(Math.max(y,6),limit-th);
+ // Above/below may also slide sideways (the tail still points at the card), which often clears a neighbour.
+ const xs=[cx-tw/2,r.left-8,r.right+8-tw].map(clampX);
+ const spots=[
+  ...xs.map(x=>({k:'',x,y:r.top-th-G})),
+  ...xs.map(x=>({k:'below',x,y:r.bottom+G})),
+  {k:'side-l',x:r.left-tw-G,y:clampY(cy-th/2)},
+  {k:'side-r',x:r.right+G,y:clampY(cy-th/2)}
+ ].filter(p=>p.x>=6&&p.x+tw<=vw-6&&p.y>=6&&p.y+th<=limit);
+ const cover=p=>chain.reduce((n,o)=>n+Math.max(0,Math.min(o.right,p.x+tw)-Math.max(o.left,p.x))*Math.max(0,Math.min(o.bottom,p.y+th)-Math.max(o.top,p.y)),0);
+ const best=spots.map((p,i)=>({...p,c:cover(p)+i}))/* ties keep the listed order: centred above first */.sort((a,b)=>a.c-b.c)[0]||{k:'',x:clampX(cx-tw/2),y:Math.max(6,r.top-th-G)};
+ tag.style.transform='';tag.style.left=best.x+'px';tag.style.top=best.y+'px';
+ tag.classList.remove('below','side-l','side-r');if(best.k)tag.classList.add(best.k);
+ tag.style.setProperty('--tx',Math.min(Math.max(cx-best.x,16),tw-16)+'px');
+ tag.style.setProperty('--ty',Math.min(Math.max(cy-best.y,14),th-14)+'px');
  tag.classList.add('on');
 }
 let tagRaf=0;const follow=()=>{cancelAnimationFrame(tagRaf);tagRaf=requestAnimationFrame(placeTag)};
 addEventListener('scroll',follow,{passive:true});addEventListener('resize',follow);box.addEventListener('scroll',follow,{passive:true});
 function pick(c){
  sel=(c==null||c==sel)?null:c;hov=null;
- if(sel==null){sh.style.removeProperty('max-height');box.style.removeProperty('padding-bottom')}
+ if(sel==null){sh.style.removeProperty('max-height');box.style.removeProperty('padding-bottom');box.style.removeProperty('padding-top')}
  if(small.matches&&sel==null&&autoFit!=null){const v=autoFit;autoFit=null;setFit(v.fit,false);setW(v.w);box.scrollLeft=v.sl;window.scrollTo(0,v.sy)}
  render();
  if(small.matches&&sel!=null)zoomToChain();
