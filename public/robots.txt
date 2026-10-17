@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /s/
+Disallow: /t/
+Disallow: /r/
+Disallow: /q/
+Disallow: /me
