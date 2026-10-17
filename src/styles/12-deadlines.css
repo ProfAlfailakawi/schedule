@@ -668,19 +668,34 @@
 @media (max-width:640px){.rap-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .rap-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rap-confirm{display:flex;align-items:flex-start;gap:6px;flex-basis:100%;font-size:.8rem;line-height:1.6}
 /* خريطة المستويات: كل شيء مفتوح، والخيوط تربط المسبقات، وعند التحديد تُضاء السلسلة */
-.pr-map{position:relative}
+.pr-map{position:relative;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr))}
+@media(max-width:900px){.pr-map{grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));column-gap:12px!important;padding-block-start:0!important}.pr-lines{display:none}}
+@media(max-width:640px){.pr-map{grid-template-columns:minmax(0,1fr)}}
 .pr-col{position:relative}
 .pr-card{position:relative;z-index:2}
 .pr-level-head{cursor:default}
 .pr-card.dim{opacity:.38}
 .pr-card.sel{border-color:var(--accent)}
+.pr-col[data-lvl="1"]{--lvl:var(--level-1)}.pr-col[data-lvl="2"]{--lvl:var(--level-2)}.pr-col[data-lvl="3"]{--lvl:var(--level-3)}.pr-col[data-lvl="4"]{--lvl:var(--level-4)}.pr-col[data-lvl="5"]{--lvl:var(--level-5)}
+/* عمودُ المستوى: خلفيةٌ خفيفة بلونه وإطارٌ وترويسةٌ ملوّنة */
+.pr-col{gap:9px;padding:10px;border:1.5px solid color-mix(in srgb,var(--lvl,var(--line)) 45%,var(--surface));border-radius:20px;background:color-mix(in srgb,var(--lvl,var(--line)) 7%,var(--surface))}
+.pr-level-head{min-height:0;padding:8px 12px;border-radius:14px;background:var(--lvl,var(--accent));color:var(--accent-contrast)}
+.pr-level-head b{color:inherit;font-size:.92rem}.pr-level-head small{color:inherit;opacity:.88}
+.pr-level-head-icon{background:rgb(255 255 255 / .22);color:inherit}
+/* البطاقة خفيفة: شارةُ الوحدات بلون المستوى، ثم الاسم، ثم الرقم بلون أسهمه */
+.pr-card{display:flex;align-items:center;gap:10px;padding:9px 12px;border-inline-start-width:1px;border-radius:14px}
+.pr-card .pr-credit{flex:none;display:grid;place-items:center;inline-size:26px;block-size:26px;border-radius:50%;background:var(--lvl,var(--accent));color:var(--accent-contrast);font-style:normal;font-size:.78rem;font-weight:700;font-variant-numeric:tabular-nums}
+.pr-card .pr-name{flex:1;min-width:0;font-size:.86rem;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.pr-card .pr-name svg{margin-inline-start:4px;vertical-align:-1px}
+.pr-card .pr-code{flex:none;font-size:1.05rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--src,var(--muted))}
+.pr-card.dim .pr-credit{opacity:.7}
+.pr-key{margin:0;padding:8px 14px;border:1px dashed var(--line-strong);border-radius:14px;background:var(--surface);color:var(--ink-2);font-size:.82rem;text-align:center}
 .pr-lines{position:absolute;inset-block-start:0;left:0;z-index:1;pointer-events:none;overflow:visible}
-.pr-line path{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.34;transition:opacity .18s,stroke .18s,stroke-width .18s}
-.pr-line .pr-head{fill:var(--accent);stroke:none;opacity:.55}
+.pr-line path{fill:none;stroke:var(--arrow,var(--accent));stroke-width:1.8;opacity:.62;transition:opacity .18s,stroke-width .18s}
+.pr-line .pr-head{fill:var(--arrow,var(--accent));stroke:none;opacity:.8}
 .pr-line.opt path{stroke-dasharray:5 4}
-.pr-line.dim path{opacity:.12}
-.pr-line.up path{stroke:var(--brass);stroke-width:2.4;opacity:1}.pr-line.up .pr-head{fill:var(--brass);opacity:1}
-.pr-line.down path{stroke:var(--accent);stroke-width:2.4;opacity:1}.pr-line.down .pr-head{fill:var(--accent);opacity:1}
+.pr-line.dim path,.pr-line.dim .pr-head{opacity:.07}
+.pr-line.up path,.pr-line.down path{stroke-width:2.8;opacity:1}.pr-line.up .pr-head,.pr-line.down .pr-head{opacity:1}
 .pr-focus{display:grid;gap:6px;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--accent-softer)}
 .pr-focus-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .pr-focus-head>div:first-child{display:grid;gap:2px;min-width:0}.pr-focus-head small{color:var(--muted);font-size:.78rem}
@@ -688,18 +703,7 @@
 .pr-focus-x{display:grid;place-items:center;inline-size:30px;block-size:30px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--muted);cursor:pointer}
 .pr-focus p{margin:0;font-size:.86rem;line-height:1.7}.pr-focus p em{font-style:normal;font-weight:650;color:var(--accent-ink);margin-inline-end:6px}
 @media(max-width:640px){.pr-lines{display:none}}
-/* مراجعة المرجع: المستويات مفتوحة وبطاقات خفيفة وخيوط المسبقات ظاهرة */
-.reference-level-map{position:relative;column-gap:38px}
-.reference-level-toggle{cursor:default}
-.reference-level-courses{display:grid;gap:9px;padding:10px}
-.reference-course-card{position:relative;z-index:2;padding:0 10px}
-.reference-course-card.is-dim{opacity:.4}
-.reference-course-main{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;padding:8px 0}
-.reference-course-top{display:flex;align-items:center;gap:6px}
-.reference-course-top>bdi{margin-inline-end:auto}
-.reference-prereq-summary{display:inline-flex;align-items:center;gap:2px;font-size:.66rem}
-.reference-dot{inline-size:8px;block-size:8px;border-radius:50%;background:var(--success)}
-.reference-dot.status-different{background:var(--brass)}.reference-dot.status-missing{background:var(--warning)}.reference-dot.status-ambiguous{background:var(--danger)}
-.reference-course-more{display:grid;gap:4px;padding:7px 0 9px;border-block-start:1px dashed var(--line)}
-.reference-course-more .reference-status{justify-self:start}
-@media(max-width:760px){.reference-level-map>.pr-lines{display:none}}
+.pr-line .pr-dot{fill:var(--arrow,var(--accent));stroke:var(--surface);stroke-width:1;opacity:.95}
+.pr-line.dim .pr-dot{display:none}
+.pr-line.up .pr-dot,.pr-line.down .pr-dot{r:4.2}
+@media(prefers-reduced-motion:reduce){.pr-line .pr-dot{display:none}}

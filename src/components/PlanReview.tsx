@@ -9,13 +9,13 @@
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
-import PlanMapLines, { planEdges } from "./PlanMapLines";
+import PlanMapLines, { levelHue, planEdges } from "./PlanMapLines";
 import { arabicMatchKey } from "../utils/arabicText";
 /* اسمُ القسم في القائمة يحمل كليته («قسم تكنولوجيا التعليم · التربية الأساسية - بنات»): يُطابَق بالاحتواء. */
 const isTechnologyEducation = (label: string) => arabicMatchKey(label).includes(arabicMatchKey("تكنولوجيا التعليم"));
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, courseLevelFromCode, dependentsOf, describePrereq } from "../utils/curriculumRules";
@@ -222,7 +222,16 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     walk(focus);
     return out;
   }, [view, focus]);
-  const edges = useMemo(() => view ? planEdges(view.rules, new Set(view.courses.map(c => c.id))) : [], [view]);
+  /* لكل مقررٍ له أسهمٌ خارجة لونٌ مميّز (من عشرة): رقمُه وأسهمُه بلونٍ واحد، فيُتتبَّع السهم إلى مصدره. */
+  const { edges, series } = useMemo(() => {
+    const none = { edges: [] as ReturnType<typeof planEdges>, series: new Map<number, number>() };
+    if (!view) return none;
+    const raw = planEdges(view.rules, new Set(view.courses.map(c => c.id)));
+    const codeOf = new Map(view.courses.map(c => [c.id, c.code] as const));
+    const sources = [...new Set(raw.map(e => Number(e.from)))].sort((a, b) => String(codeOf.get(a)).localeCompare(String(codeOf.get(b)), "en", { numeric: true }));
+    const map = new Map(sources.map((id, i) => [id, i % 10 + 1] as const));
+    return { edges: raw.map(e => ({ ...e, hue: map.get(Number(e.from)) })), series: map };
+  }, [view]);
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
@@ -315,9 +324,9 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 </div>
               </section>
 
-              <div className="pr-map" ref={mapRef} aria-label="خريطة المستويات">
+              <div className="pr-map" ref={mapRef} style={{ ["--cols" as string]: levels.size }} aria-label="خريطة المستويات">
                 {[...levels.entries()].map(([level, ids]) => (
-                  <section key={level} className="pr-col">
+                  <section key={level} className="pr-col" data-lvl={levelHue(level)}>
                     <div className="pr-level-head">
                       <span className="pr-level-head-icon"><GraduationCap size={16} aria-hidden="true" /></span><span><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)} · {countOf(ids.reduce((sum, id) => sum + (view.courses.find(course => course.id === id)?.credit || 0), 0), AR.unit)}</small></span>
                     </div>
@@ -327,10 +336,11 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                       const opens = dependentsOf(view.rules, id).length;
                       const cls = ["pr-card", `k-${KIND_TONE[rule?.kind || "none"]}`, focus === id ? "sel" : "", upstream.has(id) ? "up" : "", downstream.has(id) ? "down" : "", focus && focus !== id && !upstream.has(id) && !downstream.has(id) ? "dim" : "", c.owned ? "" : "lock"].join(" ");
                       return (
-                        <button key={id} type="button" data-cid={id} aria-pressed={focus === id} className={cls} onClick={() => setFocus(focus === id ? 0 : id)} data-guide-ignore="بطاقةُ مقررٍ داخل خريطة شاشةٍ مسجّلة في المرشد باسم page.planReview">
-                          <b>{c.code}</b><span>{c.name}</span>
-                          {c.external ? <em className="pr-ext" title={`مقرر عام يملكه ${c.ownerSectionName || "قسمٌ آخر"}`}>عام</em> : null}
-                          <i>{countOf(c.credit, AR.unit)}{rule?.prereq ? " · " : ""}{rule?.prereq ? <Link2 size={11} /> : null}{opens ? <> · يفتح {opens.toLocaleString("ar-KW-u-nu-latn")}</> : null}{c.owned ? null : <Lock size={11} />}</i>
+                        <button key={id} type="button" data-cid={id} aria-pressed={focus === id} className={cls} style={{ ["--src" as string]: series.has(id) ? `var(--series-${series.get(id)})` : undefined }} onClick={() => setFocus(focus === id ? 0 : id)} data-guide-ignore="بطاقةُ مقررٍ داخل خريطة شاشةٍ مسجّلة في المرشد باسم page.planReview">
+                          <i className="pr-credit" aria-hidden="true">{c.credit}</i>
+                          <span className="pr-name">{c.name}{c.external ? <em className="pr-ext" title={`مقرر عام يملكه ${c.ownerSectionName || "قسمٌ آخر"}`}>عام</em> : null}{c.owned ? null : <Lock size={11} aria-hidden="true" />}</span>
+                          <b className="pr-code">{c.code}</b>
+                          <span className="sr-only">{countOf(c.credit, AR.unit)}{opens ? ` · يفتح ${countOf(opens, AR.course)}` : ""}</span>
                         </button>
                       );
                     })}
@@ -338,6 +348,8 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 ))}
                 <PlanMapLines mapRef={mapRef} edges={edges} focus={focus} up={upstream} down={downstream} layoutKey={`${view.courses.length}:${levels.size}`} />
               </div>
+
+              {edges.length ? <p className="pr-key">السهم يصل إلى المقرر الذي يتطلبه · ولون الرقم هو لون أسهمه</p> : null}
 
               {focusCourse ? (
                 <section className="pr-focus" aria-live="polite">

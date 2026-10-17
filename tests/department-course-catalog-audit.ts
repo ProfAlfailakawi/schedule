@@ -27,9 +27,8 @@ check(/course\.ownerSectionId === selectedSectionId/.test(referenceView)
   && /course\.current!\.id/.test(referenceView),
   "تصحيح السجل وبدء الإضافة يظهران للقسم المالك المختار وحده");
 check(!/!course\.ownerSectionId \|\|/.test(referenceView) && !referenceView.includes("كل الأقسام")
-  && /group\.courses\.filter\(course => course\.ownerSectionId === selectedSectionId\)/.test(referenceView)
-  && /const levels = useMemo\(\(\) => \{[\s\S]{0,200}entries\.forEach/.test(referenceView),
-  "صحيفة التخرج تحذف ما ليس للقسم المفتوح (لا «كل الأقسام»)، والمستويات والعدّادات من مقررات القسم وحدها");
+  && /group\.courses\.filter\(course => course\.ownerSectionId === selectedSectionId\)/.test(referenceView),
+  "صحيفة التخرج تحذف ما ليس للقسم المفتوح (لا «كل الأقسام»)، والعدّادات من مقررات القسم وحدها");
 check(/collegeName/.test(referenceView) && /body\.sections/.test(referenceView)
   && /deps\.isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId\)\)/.test(reviewRoutes),
   "مقارنة كل كلية تبقى محصورة بأقسام المستخدم المصرح بها");

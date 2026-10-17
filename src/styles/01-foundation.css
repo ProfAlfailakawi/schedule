@@ -108,6 +108,10 @@
   --danger:#973c38;
   --danger-soft:#f8e4e2;
 
+  /* خريطة المستويات: لون كل مستوى (عمودٌ وترويسةٌ وشارةُ وحدات)، وعشرةُ ألوانٍ مميِّزة للمقررات (الرقمُ وأسهمُه بلونٍ واحد). */
+  --level-1:#2f62d9;--level-2:#12915f;--level-3:#7a3fe0;--level-4:#e8590c;--level-5:#6b7a75;
+  --series-1:#c2185b;--series-2:#1e74c9;--series-3:#8e24aa;--series-4:#00897b;--series-5:#283593;--series-6:#b71c1c;--series-7:#558b2f;--series-8:#00838f;--series-9:#6d4c41;--series-10:#f29900;
+
   /* Elevation — soft, ink-tinted */
   --shadow-xs:0 1px 2px rgb(17 25 22 / .04);
   --shadow-sm:0 2px 6px rgb(17 25 22 / .05), 0 10px 24px -12px rgb(17 25 22 / .10);
@@ -228,6 +232,9 @@
   --warning-soft:#332715;
   --danger:#e08279;
   --danger-soft:#38201e;
+
+  --level-1:#7ba3ff;--level-2:#3fcf94;--level-3:#b894ff;--level-4:#ff9a5c;--level-5:#9aa7a2;
+  --series-1:#f06292;--series-2:#64b5f6;--series-3:#ba68c8;--series-4:#4db6ac;--series-5:#7986cb;--series-6:#e57373;--series-7:#aed581;--series-8:#4dd0e1;--series-9:#bcaaa4;--series-10:#ffd54f;
 
   --shadow-xs:0 1px 2px rgb(0 0 0 / .3);
   --shadow-sm:0 2px 6px rgb(0 0 0 / .3), 0 10px 24px -12px rgb(0 0 0 / .5);

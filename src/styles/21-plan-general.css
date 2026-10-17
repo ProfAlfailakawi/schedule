@@ -11,3 +11,11 @@
 .reference-flat{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
 .reference-level-pill{display:inline-grid;place-items:center;min-inline-size:34px;padding:1px 8px;border-radius:999px;background:var(--accent-softer);color:var(--accent-ink);font-style:normal;font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums}
 .reference-course-group{display:block;color:var(--muted);font-size:.72rem;line-height:1.5}
+
+/* ── صحيفة التخرج: قائمة المتابعة (غير المطابق فقط) ── */
+.reference-followups{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.reference-followups>h3{margin:0;font-size:.95rem;display:flex;align-items:baseline;gap:8px}.reference-followups>h3 small{font-size:.74rem;color:var(--muted);font-weight:500}
+.reference-followups>ul{list-style:none;margin:0;padding:0;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.reference-followups>ul>li{display:grid;gap:4px;align-content:start;padding:10px 12px;border:1px solid var(--line);border-inline-start:3px solid var(--warning);border-radius:var(--r-md);background:var(--bg)}
+.reference-followups>ul>li.state-ambiguous{border-inline-start-color:var(--danger)}
+.reference-followup-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.reference-followup-head>bdi{font-weight:700;color:var(--muted);font-size:.8rem}.reference-followup-head>strong{font-size:.86rem;flex:1;min-width:0}
