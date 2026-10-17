@@ -80,6 +80,7 @@ export interface DemoSandboxState {
   scheduleApprovals: any[];
   /* سجلُّ المباني والقاعات: بدونه لا يُحفظ موعدٌ في الصندوق (locationPreflight). */
   locationBuildings: MasterBuilding[]; locationRooms: MasterRoom[];
+  registrationStats?: any[];
 }
 
 function syntheticInstructors(): AdInstructor[] {
@@ -399,6 +400,8 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
  * (سبتمبر→ديسمبر الأول، فبراير→مايو الثاني، يونيو→يوليو الصيفي)، والفصلُ
  * السابق قبله بفصلٍ كامل وقد انتهى. */
 export const DEMO_PREVIOUS_TERM_ID = 2;
+/** فصلٌ أقدم من السابق: يكفي مع السابق ليقرأ التنبّؤ «تاريخاً» لا «تاريخاً غير كافٍ» (فصلان فأكثر). */
+export const DEMO_OLDER_TERM_ID = 3;
 function demoTermName(start: Date): string {
   const month = start.getUTCMonth() + 1, year = start.getUTCFullYear();
   if (month >= 8) return `الفصل الأول ${year}/${year + 1}`;
@@ -411,10 +414,47 @@ function demoTerms(now: Date): AdTerm[] {
   start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // الأحد
   const previous = new Date(start.getTime() - 22 * 7 * day);
   const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const older = new Date(previous.getTime() - 22 * 7 * day);
   return [
     { AdTermId: 1, AdTermName: demoTermName(start), AdTermStart: iso(start), AdTermWeeks: 15, AdTermSubmissionDeadline: iso(new Date(now.getTime() + 7 * day)) },
     { AdTermId: DEMO_PREVIOUS_TERM_ID, AdTermName: demoTermName(previous), AdTermStart: iso(previous), AdTermWeeks: 15 },
+    { AdTermId: DEMO_OLDER_TERM_ID, AdTermName: demoTermName(older), AdTermStart: iso(older), AdTermWeeks: 15 },
   ];
+}
+/** الفصل الأقدم: جدولُ السابق بتبديلٍ بسيطٍ في الأوقات وحذفِ شعبةٍ من كل خمس، فيختلف الإيقاعُ قليلاً بين الفصول. */
+function olderTermRows(previous: FSchedule[]): FSchedule[] {
+  const top = Math.max(0, ...previous.map(row => Number(row.id)));
+  const shift = (clock: string, minutes: number) => {
+    const [h, m] = String(clock || "").split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return clock;
+    const total = h * 60 + m + minutes;
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
+  return previous.filter((_, index) => index % 5 !== 4).map((row, index) => {
+    const copy: FSchedule = { ...structuredClone(row), id: top + 1000 + index, AdTermId: DEMO_OLDER_TERM_ID, rev: 0 };
+    if (index % 3 === 0) { copy.fstarttime = shift(copy.fstarttime, 90); copy.fendtime = shift(copy.fendtime, 90); }
+    return copy;
+  });
+}
+/** إحصاءُ «الذين لم يسجلوا» لفصلين سابقين (قيمٌ وهمية بأعمدة كشف التسجيل نفسها)، فيقرأ التنبّؤُ الطلبَ من التاريخ. */
+function demoRegistrationStats(courses: AdCourse[]): any[] {
+  const scopes = [...new Map(courses.map(course => [`${course.AdCollegeId}:${course.AdSectionId}`, course] as const)).values()];
+  const importedAt = new Date().toISOString();
+  return [DEMO_PREVIOUS_TERM_ID, DEMO_OLDER_TERM_ID].flatMap(termId => scopes.map(scope => {
+    const own = courses.filter(course => course.AdCollegeId === scope.AdCollegeId && course.AdSectionId === scope.AdSectionId);
+    const remaining: Record<string, number> = {}, vacant: Record<string, number> = {};
+    own.forEach((course, index) => {
+      const max = Number(course.MaxStudent) || 30;
+      remaining[String(course.AdCourseId)] = Math.max(0, Math.round(max * (0.15 + ((index + termId) % 4) * 0.12)));
+      vacant[String(course.AdCourseId)] = Math.max(0, Math.round(max * (((index + termId) % 3) * 0.08)));
+    });
+    return {
+      id: `${scope.AdCollegeId}:${scope.AdSectionId}:${termId}`, scopeKey: `${scope.AdCollegeId}:${scope.AdSectionId}:${termId}`,
+      collegeId: scope.AdCollegeId, sectionId: scope.AdSectionId, termId, counts: {}, remaining, vacant,
+      remainingSource: { fileName: "كشف التسجيل (تجريبي)", importedAt, column: "unregistered" },
+      updatedAt: importedAt, updatedBy: "demo",
+    };
+  }));
 }
 function previousTermRows(current: FSchedule[]): FSchedule[] {
   const top = Math.max(0, ...current.map(row => Number(row.id)));
@@ -835,7 +875,8 @@ export function createDemoSandboxState(): DemoSandboxState {
   /* الفصلُ السابق: جدولُ الأقسام نفسُه قبل فصل — تاريخٌ تتعلّم منه القراءاتُ
      (إيقاعُ القسم، ما دُرِّس فعلاً في الاستبيان)، ومصدرٌ يُبنى منه الفصلُ الجديد
      («بداية الفصل»). والحالتان التجريبيتان المقصودتان لا تُورَّثان. */
-  const history = previousTermRows(schedules);
+  const previousRows = previousTermRows(schedules);
+  const history = [...previousRows, ...olderTermRows(previousRows)];
 
   /* أسماءُ الشاشات كما في academicRoles.ts (2…17). الرقمان 1 و13 غير موصوفين هناك فسُمّيا بما اختاره المالك (تجريبي فقط). */
   const FORM_LABELS = ["الصفحة الرئيسية", "الكليات", "الأساتذة", "الأقسام", "الفصول", "المقررات", "الجداول ومركز الذكاء", "استعلام الأساتذة", "استعلام القاعات", "استعلام الأوقات", "المستخدمون", "الصلاحيات", "لوحة المؤشرات", "تقرير القسم", "النطاقات", "القاعات والأوقات", "البحث المتقدم"];
@@ -898,5 +939,6 @@ export function createDemoSandboxState(): DemoSandboxState {
     departmentRooms: [], scheduleDecisionMemories: [],
     campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: [...seeded.approvals, ...archived.approvals],
     locationBuildings: registry.buildings, locationRooms: registry.rooms,
+    registrationStats: demoRegistrationStats(courses),
   };
 }
