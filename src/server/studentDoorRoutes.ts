@@ -35,7 +35,7 @@ import { remainingNeed, unmetPrereq } from "../utils/curriculumRules";
 import { adviseStudent } from "../utils/studentAdvice";
 import { buildStudentNotices } from "../utils/studentNotices";
 import { studentNeedsCommitteeHelp } from "../utils/studentNeedRequest";
-import { caseRefFor } from "../db/repository";
+import { caseRefFor, studentNeedKind } from "../db/repository";
 import { isCaseLevelNeed, studentCaseStatus } from "../utils/studentCaseDecision";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
 import { deadlineDateShort } from "../utils/submissionDeadlines";
@@ -960,15 +960,32 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         if (owner) byOwner.set(owner, [...(byOwner.get(owner) || []), answer]);
       }
       const { nameCipher, civilCipher } = sealed;
+      const earlier = await Repository.getStudentNeedsByFingerprint(fingerprint, 0, ctx.termId);
       for (const [ownerSectionId, list] of byOwner) {
         const ownerCollegeId = Number(courseOf.get(list[0].courseId)?.AdCollegeId) || profile.AdCollegeId;
         const homeInOwnerCollege = profile.AdCollegeId === ownerCollegeId;
+        const afterText = `من «مساري» بعد التسجيل — ${list.map(answer => `${ctx.info(answer.courseId).name}: ${REASON_TEXT[answer.reason || "other"]}`).join("؛ ")}`;
+        /* طالبٌ له طلبُ فتح مقرّرٍ قائمٌ عند هذا القسم: ما تعثّر فيه بعد التسجيل يُضمّ إليه
+           (بطاقةٌ واحدة يقرؤها القسم، وقراراتُه السابقة باقية)، لا حالةٌ ثانية للطالب نفسه. */
+        const open = earlier.find(need => studentNeedKind(need) === "course"
+          && Number(need.surveySectionId || need.AdSectionId) === Number(ownerSectionId) && need.requestType !== "graduate");
+        if (open) {
+          const priorText = String(open.details || "").replace(/ · بعد التسجيل: [\s\S]*$/, "");
+          const need = await Repository.saveStudentNeed({
+            ...open, id: undefined, createdAt: undefined,
+            courseIds: [...new Set([...(open.courseIds || []).map(Number), ...list.map(answer => answer.courseId)])],
+            details: `${priorText} · بعد التسجيل: ${afterText.replace(/^من «مساري» بعد التسجيل — /, "")}`.slice(0, 900),
+            nameCipher, civilCipher,
+          } as any, { byKind: true });
+          cases.push({ sectionName: String((sections as any[]).find(row => Number(row.AdSectionId) === ownerSectionId)?.AdSectionName || ""), caseRef: caseRefFor(need) });
+          continue;
+        }
         const need = await Repository.saveStudentNeed({
           fingerprint, AdCollegeId: ownerCollegeId, AdSectionId: homeInOwnerCollege ? profile.AdSectionId : ownerSectionId,
           studentSectionId: profile.AdSectionId, surveySectionId: ownerSectionId, AdTermId: ctx.termId,
           curriculumPlanId: profile.curriculumPlanId, courseIds: list.map(answer => answer.courseId), requestType: "new-course",
           nameCipher, civilCipher, eligibility: "not-checked",
-          details: `من «مساري» بعد التسجيل — ${list.map(answer => `${ctx.info(answer.courseId).name}: ${REASON_TEXT[answer.reason || "other"]}`).join("؛ ")}`,
+          details: afterText,
         } as any, { byKind: true });
         cases.push({ sectionName: String((sections as any[]).find(row => Number(row.AdSectionId) === ownerSectionId)?.AdSectionName || ""), caseRef: caseRefFor(need) });
       }

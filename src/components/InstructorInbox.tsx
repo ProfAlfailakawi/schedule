@@ -777,7 +777,9 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   const [deptFilter, setDeptFilter] = useState(0);
   const [instructorFilter, setInstructorFilter] = useState(0);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
-  const [quick, setQuick] = useState<{ row: InboxRequest; index: number; seed: QuickSeed } | null>(null);
+  const [quick, setQuick] = useState<{ row: InboxRequest; index: number; after?: number[]; seed: QuickSeed } | null>(null);
+  /* تنبيهاتٌ لا تمنع (انتقالٌ ضيّق بين مبنيين…) بعد تثبيتٍ نجح. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [quickClash, setQuickClash] = useState<Record<string, string | null>>({});
@@ -1004,36 +1006,9 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     const key = `${row.id}:${index}`;
     /* ما ثُبّت قد كُتب في الجدول: لا يُعاد (كان يُنشئ صفّاً مكرّراً أو يناقض الجدول). */
     if (row.items[index]?.decision?.state === "fixed") return true;
-    /* الصفُّ الواحد له وقتٌ واحد: بندٌ بأوقاتٍ مختلفة لا يُثبَّت من هنا. */
-    const mixedTimes = (i: number) => state === "fixed" && row.items[i]?.action !== "delete"
-      && new Set((row.items[i]?.slots || []).map(slot => `${slot.start}-${slot.end}`)).size > 1;
-    if (mixedTimes(index)) {
-      setRowErrors(prev => ({ ...prev, [key]: "أوقات هذا البند مختلفة بين الأيام، والموعد الواحد له وقت واحد. ثبّته من الجدول الدراسي بصفٍّ لكل وقت." }));
-      return false;
-    }
-    /* ما يعتمد عليه هذا البند يُثبَّت قبله، بالمسار نفسه. فإن رُفض الشقيقُ وقف
-       هذا عنده، وقيل السببُ على صفّ الشقيق. */
-    if (state === "fixed" && Array.isArray(extra?.after) && extra.after.length) {
-      /* فحصٌ قبل أي كتابة: شقيقٌ لا يمكن تثبيتُه أصلاً (صفّه غاب، أو أوقاته مختلفة)
-         كان يُكتشف بعد نقل غيره، فيبقى الجدولُ نصفَ منقول. */
-      const blocked = (extra.after as number[]).find(sibling => {
-        const it = row.items[sibling];
-        if (!it || it.decision?.state === "fixed") return false;
-        if (mixedTimes(sibling)) return true;
-        return it.action === "change" && !currentRows.has(Number(it.rowId));
-      });
-      if (blocked != null) {
-        setRowErrors(prev => ({ ...prev, [key]: "طلبُه الآخر الذي يُفرغ هذا الوقت لا يمكن تثبيته الآن — حدّث الصفحة وانظر صفّه. لم يُكتب شيء." }));
-        return false;
-      }
-      for (const sibling of extra.after as number[]) {
-        const ok = await decide(row, sibling, "fixed", { current: currentRows.get(Number(row.items[sibling]?.rowId)) });
-        if (!ok) {
-          setRowErrors(prev => ({ ...prev, [key]: "لم يُثبَّت طلبُه الآخر الذي يُفرغ هذا الوقت — انظر سببه في صفّه." }));
-          return false;
-        }
-      }
-    }
+    /* البنودُ المترابطة (ما يُفرغ وقتَ هذا البند) لا تُثبَّت هنا واحداً واحداً: تُرسل
+       مع البند إلى مسار التثبيت الذرّي، فيُفحص الكلُّ على الجدول النهائي ويُكتب معاً أو لا يُكتب. */
+    const after: number[] = state === "fixed" && Array.isArray(extra?.after) ? (extra.after as number[]) : [];
     /* الإضافةُ تُفتح بطاقةً سريعة في مكانها — كبطاقة «الجدول الدراسي» —
        بالمقرّر والأيام والوقت من طلب الأستاذ، والشعبةُ والقاعةُ قرارُ القسم. */
     if (state === "fixed" && row.items[index]?.action === "add") {
@@ -1042,7 +1017,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       const dayNames = slots.map(slot => INBOX_DAY_NAMES[slot.day] || slot.day).join(" · ");
       setQuickError(null);
       setQuick({
-        row, index,
+        row, index, after,
         seed: {
           day: (slots[0]?.day || "fsunday") as any,
           dayLabel: dayNames,
@@ -1065,61 +1040,35 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     setError(null);
     setRowErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
     try {
-      let scheduleId: number | undefined;
       if (state === "fixed") {
         const item = row.items[index];
-        if (item.action === "delete" && item.rowId != null) {
-          /* حذفٌ وقع ثم أخفق تسجيلُ قراره: الإعادةُ تسجّل القرار ولا تتعثّر بصفٍّ غائب. */
-          if (currentRows.has(Number(item.rowId))) await request(`/api/schedules/${item.rowId}`, { method: "DELETE" });
-          scheduleId = Number(item.rowId);
-        } else if (item.action === "change" && item.rowId != null) {
-          const current = currentRows.get(Number(item.rowId));
-          if (!current) throw new Error("لم يعد هذا الموعد موجوداً في الجدول. حدّث الصفحة.");
-          const slots = item.slots || [];
-          const days = new Set(slots.map(slot => slot.day));
-          const saved = await request(`/api/schedules/${item.rowId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...current,
-              fsunday: days.has("fsunday"), fmonday: days.has("fmonday"), ftuesday: days.has("ftuesday"),
-              fwednesday: days.has("fwednesday"), fthursday: days.has("fthursday"),
-              fstarttime: slots[0]?.start || current.fstarttime,
-              fendtime: slots[0]?.end || current.fendtime,
-            }),
-          });
-          scheduleId = Number(saved?.id || item.rowId);
-        } else if (item.action === "add") {
-          /* ── الإضافة ───────────────────────────────────────────────────────
-             تحتاج شعبةً وقاعةً ومبنى، وليس شيءٌ منها من اختيار الأستاذ — فلا
-             تُثبَّت من هنا كما تُثبَّت نقلةُ موعدٍ قائم، ولا تُخترع لها قيمٌ
-             افتراضيةٌ تُنتج صفّاً ناقصاً يكتشفه أحدٌ بعد شهر.
-
-             وكانت تقف عند رسالةٍ تقول «افتحها في الورشة» — وهو طريقٌ مسدودٌ
-             يترك المنسّقَ يعيد كتابةَ ما قرأه للتوّ. فصارت تحمله إليها ومعه ما
-             قاله الأستاذ: المقرّر والأيام والوقت، ويبقى قرارُه هو فارغاً. */
+        if (item.action === "add") {
+          /* لا يُتوقّع هنا (الإضافة تفتح بطاقتها أعلاه)؛ يبقى طريقُ الورشة إن وصل. */
           const slots = item.slots || [];
           putHandoff({
-            requestId: row.id,
-            itemIndex: index,
-            instructorId: Number(row.AdInstructorId),
-            instructorName: row.instructorName,
-            courseId: Number(item.after?.courseId || 0),
-            collegeId: Number(item.after?.collegeId || row.AdCollegeId),
-            sectionId: Number(item.after?.sectionId || row.AdSectionId),
-            termId: Number(row.AdTermId),
-            days: slots.map(slot => slot.day) as any,
-            start: slots[0]?.start || "",
-            end: slots[0]?.end || "",
+            requestId: row.id, itemIndex: index, instructorId: Number(row.AdInstructorId), instructorName: row.instructorName,
+            courseId: Number(item.after?.courseId || 0), collegeId: Number(item.after?.collegeId || row.AdCollegeId),
+            sectionId: Number(item.after?.sectionId || row.AdSectionId), termId: Number(row.AdTermId),
+            days: slots.map(slot => slot.day) as any, start: slots[0]?.start || "", end: slots[0]?.end || "",
           });
           onNavigate?.("schedules");
           return true;
         }
+        const payload = { itemIndex: index, after, revs: revsFor(row, [...after, index]) };
+        if (!(await previewAndConfirm(row, payload))) return false;
+        const result = await request(`/api/instructor-requests/${row.id}/apply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        await load();
+        announceApplied(result);
+        return true;
       }
       await request(`/api/instructor-requests/${row.id}/decide`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemIndex: index, state, scheduleId, ...extra, current: undefined }),
+        body: JSON.stringify({ itemIndex: index, state, ...extra, current: undefined, after: undefined }),
       });
       await load();
       return true;
@@ -1152,8 +1101,6 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     if (!quick || frozen) return;
     const { row, index } = quick;
     const item = row.items[index];
-    const slots = item.slots || [];
-    const days = new Set(slots.map(slot => slot.day));
     const expectedCourse = Number(item.after?.courseId || 0);
     if (draft.courseId && expectedCourse && Number(draft.courseId) !== expectedCourse) {
       setQuickError("هذا البند لمقرّر الأستاذ المطلوب؛ لإضافة مقرّرٍ آخر استعمل الجدول الدراسي.");
@@ -1161,56 +1108,65 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     }
     if (item.decision?.state === "fixed") { setQuick(null); return; }
     setQuickSaving(true); setQuickError(null);
-    let createdId = 0;
     try {
-      const saved = await request("/api/schedules", {
+      /* الإضافةُ وقرارُها نداءٌ واحد: لا صفَّ يتيماً إن تعذّر القرار، ولا صفَّ ثانياً عند الإعادة. */
+      const after = quick.after || [];
+      const payload = {
+        itemIndex: index, after, revs: revsFor(row, after),
+        add: {
+          courseId: expectedCourse, scode: draft.scode, start: draft.start, end: draft.end,
+          room: draft.room, hall: draft.hall, buildingId: draft.buildingId, roomId: draft.roomId, locationStatus: draft.locationStatus,
+        },
+      };
+      if (!(await previewAndConfirm(row, payload))) return;
+      const result = await request(`/api/instructor-requests/${row.id}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          AdCollegeId: Number(item.after?.collegeId || row.AdCollegeId),
-          AdSectionId: Number(item.after?.sectionId || row.AdSectionId),
-          AdTermId: Number(row.AdTermId),
-          AdCourseId: Number(draft.courseId || item.after?.courseId || 0),
-          SCode: draft.scode,
-          AdInstructorId: Number(row.AdInstructorId),
-          fsunday: days.has("fsunday"), fmonday: days.has("fmonday"), ftuesday: days.has("ftuesday"),
-          fwednesday: days.has("fwednesday"), fthursday: days.has("fthursday"),
-          fstarttime: draft.start, fendtime: draft.end,
-          AdRoomCode: draft.room, AdRoomHall: draft.hall,
-          buildingId: draft.buildingId, roomId: draft.roomId, locationStatus: draft.locationStatus,
-        }),
+        body: JSON.stringify(payload),
       });
-      createdId = Number(saved?.id || 0);
-      /* تسجيلُ القرار بلا `request()`: نحتاج أن نفرّق رفضاً صريحاً من الخادم
-         (فيُسحب الصفّ) عن ردٍّ ضائع أو خطأ خادم قد يكون القرارُ فيه قد حُفظ
-         (فلا يُحذف صفٌّ صار القرارُ يشير إليه). */
-      let response: Response | null = null;
-      let body: any = {};
-      try {
-        response = await fetch(`/api/instructor-requests/${row.id}/decide`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemIndex: index, state: "fixed", scheduleId: createdId }),
-        });
-        body = await response.json().catch(() => ({}));
-      } catch { response = null; }
-      const refused = Boolean(response && response.status >= 400 && response.status < 500 && body?.code !== "already-fixed");
-      if (refused) {
-        /* حُفظ الصفّ ورفض الخادمُ القرارَ صراحةً: لا يبقى صفٌّ يتيمٌ بلا طلب،
-           ولا تُنشئ الإعادةُ صفّاً ثانياً. */
-        await request(`/api/schedules/${createdId}`, { method: "DELETE" }).catch(() => undefined);
-        createdId = 0;
-        throw new Error(body?.error || "تعذّر تسجيل القرار، فسُحب الموعد الجديد.");
-      }
-      createdId = 0;
       setQuick(null);
       await load();
-      if (!response || !response.ok) setError("حُفظ الموعد، ولم يتأكد تسجيلُ القرار. راجع حالة البند بعد التحديث.");
-    } catch (e: any) {
-      setQuickError(e.message);
-    }
+      announceApplied(result);
+    } catch (e: any) { setQuickError(e.message); }
     finally { setQuickSaving(false); }
   };
+
+  /* ختمُ الإصدار: رقمُ كل صفٍّ كما رآه المنسّق، فلا يكتب التثبيتُ فوق تعديلِ زميلٍ أحدث. */
+  const revsFor = (row: InboxRequest, indexes: number[]) => Object.fromEntries(indexes
+    .map(i => row.items[i]?.rowId).filter(id => id != null)
+    .map(id => [String(id), (currentRows.get(Number(id)) as any)?.rev] as const)
+    .filter(([, rev]) => rev !== undefined));
+
+  /* ── المعاينة قبل الكتابة ─────────────────────────────────────────────────
+     الخادمُ يفحص الجدول كما سيصير (بلا كتابة). فإن كان التثبيتُ صفّاً واحداً بلا
+     تنبيه مضى مباشرة؛ وإن كان أكثرَ من خطوة (سلسلة، أو أوقاتٌ مختلفة تصير صفوفاً)
+     أو فيه تنبيه، عُرض ما سيُكتب ليقرّه المنسّق. وما لا يجوز يُردّ هنا بسببه قبل أي كتابة. */
+  const previewAndConfirm = async (row: InboxRequest, payload: any): Promise<boolean> => {
+    const preview = await request(`/api/instructor-requests/${row.id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, preview: true }),
+    });
+    const plan: any[] = Array.isArray(preview?.plan) ? preview.plan : [];
+    const warn: string[] = [...new Set<string>((preview?.warnings || []).map((w: any) => String(w?.message || "")).filter(Boolean))];
+    if (plan.length <= 1 && !warn.length) return true;
+    const verb: Record<string, string> = { update: "نقل", create: "إضافة", delete: "حذف" };
+    const lines = plan.map(step => `• ${verb[step.action] || step.action}: ${(step.days || []).map((d: string) => INBOX_DAY_NAMES[d] || d).join(" و")} ${step.start || ""}–${step.end || ""}${step.room ? ` · ${step.room}` : ""}`);
+    return window.confirm(`سيُكتب في الجدول الدراسي:\n${lines.join("\n")}${warn.length ? `\n\nتنبيه: ${warn.join(" · ")}` : ""}\n\nمتابعة؟`);
+  };
+
+  /* ما كُتب فعلاً يُقال، والتنبيهاتُ التي لا تمنع تُعرض. */
+  const announceApplied = (result: any) => {
+    const plan: any[] = Array.isArray(result?.applied) ? result.applied : [];
+    const created = plan.filter(step => step.action === "create").length;
+    const warn: string[] = (Array.isArray(result?.warnings) ? result.warnings : []).map((w: any) => String(w?.message || "")).filter(Boolean);
+    const parts = [
+      created > 1 ? `ثُبّت في ${countOf(created, AR.appointment)} لأن أوقاته مختلفة بين الأيام.` : "",
+      warn.length ? `تنبيه: ${[...new Set(warn)].join(" · ")}` : "",
+    ].filter(Boolean);
+    setNotice(parts.length ? parts.join(" ") : null);
+  };
+
 
   /* فحصُ البطاقة: السؤالُ نفسُه للخادم بالقاعة والشعبة المختارتين. يُحفظ الجوابُ
      بمفتاح المسوّدة، فتقرؤه البطاقةُ متى وصل. */
@@ -1313,6 +1269,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       })()}
 
       {error ? <Notice type="error" onDismiss={() => setError(null)}>{error}</Notice> : null}
+      {notice ? <Notice type="info" onDismiss={() => setNotice(null)}>{notice}</Notice> : null}
 
       {!collegeId || !termId ? (
         <EmptyState title="اختر النطاق" detail="اختر الكلية والفصل، واترك القسم فارغاً لعرض وارد الكلية كاملاً." />

@@ -48,6 +48,7 @@ import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueu
 import { createDataContextKey } from "./src/server/dataContextCache";
 import { isDemoLinkToken, publicLinkTokenFromPath, PUBLIC_LINK_PAGE_PREFIXES } from "./src/utils/demoLinkToken";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
+import { slotTimeGroups } from "./src/utils/slotTimeGroups";
 import { NEGOTIATION_LABEL, THREAD_TEXT_LIMIT, capThread, negotiationState, parseOfferedSlots } from "./src/utils/instructorRequestThread";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
@@ -7606,6 +7607,8 @@ const createScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
      على طلبٍ ناقص الحقول يخفي الخطأ الحقيقي خلف خطأٍ إجرائي. */
   const addLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);
   if (addLock) { res.status(409).json({ error: addLock, code: "schedule-locked" }); return; }
+  /* فحصٌ جافّ كما في التعديل: كلُّ التحقّق مرّ ولا كتابة (للتثبيت الذرّي لبنود الأساتذة). */
+  if ((req as any).__dryRun) { res.json({ ok: true, dryRun: true, warnings: conflicts.filter((c:any)=>c.soft) }); return; }
 
   const addVersion = await captureScopeVersion(req, collegeId, sectionId, termId, "قبل إضافة موعد دراسي", "manual");
 
@@ -7738,7 +7741,7 @@ const updateScheduleHandler = async (req: AuthenticatedRequest, res: Response) =
   if (editLock) { res.status(409).json({ error: editLock, code: "schedule-locked" }); return; }
 
   /* فحصٌ جافّ: كلُّ التحقّق (نطاق، قفل، تعارض) مرّ ولا كتابة. يستعمله «اعتماد الاقتراح» قبل أي خطوة. */
-  if ((req as any).__dryRun) { res.json({ ok: true, dryRun: true }); return; }
+  if ((req as any).__dryRun) { res.json({ ok: true, dryRun: true, warnings: conflicts.filter((c:any)=>c.soft) }); return; }
   try {
     const editVersion = await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
     const arrivalVersion = existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId
@@ -19034,6 +19037,258 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
     status: decided ? "settled" : "in-review",
   });
   res.json(await judgeRequestItems(saved, { forDepartment: true }));
+});
+
+/* ══ تثبيتُ بندٍ في الجدول بنداءٍ واحد (ذرّي) ══════════════════════════════════
+ *
+ * كان التثبيتُ خطوتين من الشاشة: حفظٌ عبر `/api/schedules` ثم تسجيلُ القرار. وما
+ * بينهما فجوة: انقطاعٌ يترك صفّاً بلا قرار، وسلسلةُ بنودٍ مترابطة تُنقل نصفَها.
+ *
+ * هنا الخطوتان واحدة، والبنودُ المترابطة (`after`: ما يُفرغ وقتَ هذا البند) معه:
+ *   1. يُبنى أسبوعُ الفصل كما سيصير بعد كل البنود، ويُفحص كلُّ صفٍّ عليه فحصاً جافّاً
+ *      بالمسار نفسه الذي تمرّ منه ورشة الجدول (نطاق، قفل، تعارض قاعةٍ وأستاذٍ ودفعة).
+ *      فلا يُكتب شيءٌ إن تعذّر شيء.
+ *   2. يُكتب، ولو أخفقت خطوةٌ لتغيّرٍ في اللحظة نفسها رُدّ ما كُتب.
+ *   3. يُسجَّل القرارُ لكل البنود معاً.
+ * والبندُ بأوقاتٍ مختلفة بين الأيام يصير صفّاً لكل وقت، لا وقتَ الأول على الكل.
+ * وختمُ الإصدار (`revs`) يمنع الكتابة فوق تعديلِ زميلٍ وقع بعد أن فُتحت الشاشة.
+ * و`preview` يُرجع الخطة والتنبيهات بلا كتابة.
+ */
+type ApplyOp =
+  | { kind: "update"; itemIndex: number; rowId: number; body: any; original: any; tempId?: undefined }
+  | { kind: "create"; itemIndex: number; body: any; tempId: number }
+  | { kind: "delete"; itemIndex: number; rowId: number; original: any; tempId?: undefined };
+
+const daysFlags = (days: string[]) => Object.fromEntries(PROPOSAL_DAYS.map(key => [key, days.includes(key)]));
+const rowBodyOf = (row: any) => ({
+  AdCollegeId: row.AdCollegeId, AdSectionId: row.AdSectionId, AdTermId: row.AdTermId, AdCourseId: row.AdCourseId,
+  SCode: row.SCode, AdInstructorId: row.AdInstructorId,
+  fsunday: !!row.fsunday, fmonday: !!row.fmonday, ftuesday: !!row.ftuesday, fwednesday: !!row.fwednesday, fthursday: !!row.fthursday,
+  fstarttime: row.fstarttime, fendtime: row.fendtime,
+  AdRoomCode: row.AdRoomCode, AdRoomHall: row.AdRoomHall,
+  buildingId: row.buildingId, roomId: row.roomId, locationStatus: row.locationStatus,
+  sourceBuildingText: row.sourceBuildingText, sourceRoomText: row.sourceRoomText,
+});
+
+const APPLYING_REQUESTS = new Set<string>();
+app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
+  if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  const termId = Number(stored.AdTermId || 0);
+  if (await refuseIfTermFrozen(res, termId)) return;
+
+  const index = Number(req.body?.itemIndex);
+  if (!Number.isInteger(index) || !(stored.items || [])[index]) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }
+  /* البنودُ المترابطة تُقبل معلّقةً فقط: بندٌ رفضه القسم أو ثبّته لا يُكتب لأن شاشةً قديمة أرسلته. */
+  const siblings: number[] = (Array.isArray(req.body?.after) ? req.body.after : []).map(Number)
+    .filter((i: number) => Number.isInteger(i) && i !== index && (stored.items || [])[i] && !stored.items[i].decision?.state);
+  const chain = [...new Set([...siblings, index])];
+  const preview = req.body?.preview === true;
+  const add = req.body?.add && typeof req.body.add === "object" ? req.body.add : {};
+  const revs: Record<string, unknown> = req.body?.revs && typeof req.body.revs === "object" ? req.body.revs : {};
+  if (stored.items[index].decision?.state === "fixed") {
+    res.status(409).json({ error: "سبق تثبيت هذا البند في الجدول.", code: "already-fixed" });
+    return;
+  }
+  /* تثبيتان متزامنان للطلب نفسه (منسّقان، أو نقرةٌ مزدوجة) كانا يُنشئان صفّين: واحدٌ في كل مرة. */
+  /* والقفلُ على الفصل كلِّه: تثبيتان متزامنان في الفصل نفسه قد يحجزان القاعةَ أو الأستاذَ
+     نفسَه في اللحظة نفسها، وكلٌّ منهما يفحص أسبوعاً لا يرى الآخر. */
+  const applyLock = `term:${termId}`;
+  if (APPLYING_REQUESTS.has(applyLock)) {
+    res.status(409).json({ error: "يجري الآن تثبيتٌ آخر في هذا الفصل. انتظر لحظة ثم أعد المحاولة.", code: "apply-busy" });
+    return;
+  }
+  APPLYING_REQUESTS.add(applyLock);
+  try {
+
+  const instructor = await Repository.getInstructorById(Number(stored.AdInstructorId));
+  const origin = { kind: "instructor-request", refId: String(stored.id), note: `رغبة ${String(instructor?.AdInstructorName || "أستاذ")}`.slice(0, 160) };
+  const ops: ApplyOp[] = [];
+  let tempSeq = -1;
+  /* الصفُّ الحيّ يجب أن يكون صفَّ هذا الأستاذ في هذا الفصل كما رآه المنسّق: لا يُنقل ولا
+     يُحذف صفٌّ أُسند لغيره أو نُقل لفصلٍ آخر أو عدّله زميلٌ بعد فتح الشاشة. */
+  const liveRowRefusal = (live: any, seen: Record<string, unknown>): { error: string; code: string } | null => {
+    if (Number(live.AdInstructorId) !== Number(stored.AdInstructorId) || Number(live.AdTermId) !== termId) {
+      return { error: "هذا الموعد لم يعد للأستاذ نفسه في هذا الفصل. حدّث الصفحة وراجعه.", code: "stale" };
+    }
+    const seenRev = seen[String(live.id)];
+    if (seenRev !== undefined && seenRev !== null && live.rev !== undefined && Number(seenRev) !== Number(live.rev)) {
+      return { error: "تغيّر هذا الموعد في الجدول بعد أن فتحت الشاشة (عدّله زميل). حدّث الصفحة وراجعه قبل التثبيت.", code: "revision" };
+    }
+    return null;
+  };
+  const failItem = (status: number, itemIndex: number, error: string, code?: string) =>
+    res.status(status).json({ error, code, itemIndex, applied: [], reverted: true });
+
+  for (const i of chain) {
+    const item = stored.items[i];
+    if (item.decision?.state === "fixed") continue;
+    const scope = requestItemScope(stored, item);
+    if (!isScopeAllowed(req, scope.collegeId, scope.sectionId)) { failItem(403, i, "هذا القسم خارج نطاقك."); return; }
+    const groups = slotTimeGroups(item.slots || []);
+
+    if (item.action === "delete") {
+      const live: any = item.rowId == null ? undefined : await Repository.getScheduleById(Number(item.rowId));
+      if (live) {
+        const refusal = liveRowRefusal(live, revs);
+        if (refusal) { failItem(409, i, refusal.error, refusal.code); return; }
+        ops.push({ kind: "delete", itemIndex: i, rowId: Number(live.id), original: live });
+      }
+      continue;  /* صفٌّ حُذف من قبل: يكفي تسجيلُ القرار. */
+    }
+    if (!groups.length) { failItem(400, i, "البند بلا أيام أو وقت."); return; }
+
+    if (item.action === "change") {
+      const live: any = item.rowId == null ? undefined : await Repository.getScheduleById(Number(item.rowId));
+      if (!live) { failItem(409, i, "لم يعد هذا الموعد موجوداً في الجدول. حدّث الصفحة.", "stale"); return; }
+      const refusal = liveRowRefusal(live, revs);
+      if (refusal) { failItem(409, i, refusal.error, refusal.code); return; }
+      const [first, ...rest] = groups;
+      ops.push({ kind: "update", itemIndex: i, rowId: Number(live.id), original: live,
+        body: { ...rowBodyOf(live), ...daysFlags(first.days), fstarttime: first.start, fendtime: first.end, rev: live.rev, origin } });
+      for (const group of rest) {
+        ops.push({ kind: "create", itemIndex: i, tempId: tempSeq--,
+          body: { ...rowBodyOf(live), ...daysFlags(group.days), fstarttime: group.start, fendtime: group.end, origin } });
+      }
+      continue;
+    }
+
+    if (item.action === "add") {
+      if (i !== index) { failItem(400, i, "بندُ الإضافة يُثبَّت من بطاقته."); return; }
+      const courseId = Number(item.after?.courseId || 0);
+      if (add.courseId && Number(add.courseId) !== courseId) { failItem(400, i, "هذا البند لمقرّر الأستاذ المطلوب؛ لإضافة مقرّرٍ آخر استعمل الجدول الدراسي."); return; }
+      const base = {
+        AdCollegeId: Number(item.after?.collegeId || stored.AdCollegeId), AdSectionId: Number(item.after?.sectionId || stored.AdSectionId),
+        AdTermId: termId, AdCourseId: courseId, SCode: add.scode, AdInstructorId: Number(stored.AdInstructorId),
+        AdRoomCode: add.room, AdRoomHall: add.hall, buildingId: add.buildingId, roomId: add.roomId, locationStatus: add.locationStatus, origin,
+      };
+      const single = groups.length === 1;
+      for (const group of groups) {
+        ops.push({ kind: "create", itemIndex: i, tempId: tempSeq--,
+          body: { ...base, ...daysFlags(group.days),
+            fstarttime: single && add.start ? add.start : group.start, fendtime: single && add.end ? add.end : group.end } });
+      }
+      continue;
+    }
+    failItem(400, i, "نوعُ البند لا يُثبَّت في الجدول.");
+    return;
+  }
+
+  /* ── الأسبوعُ كما سيصير ─────────────────────────────────────────────────── */
+  let termRows = await Repository.getSchedulesByScope({ termId });
+  const removed = new Set(ops.filter(op => op.kind === "delete").map(op => (op as any).rowId));
+  const updatedBy = new Map(ops.filter(op => op.kind === "update").map(op => [(op as any).rowId, op] as const));
+  const created = ops.filter(op => op.kind === "create") as Array<Extract<ApplyOp, { kind: "create" }>>;
+  const buildWeek = (rows: FSchedule[]): FSchedule[] => [
+    ...rows.filter(row => !removed.has(Number(row.id))).map(row => {
+      const op: any = updatedBy.get(Number(row.id));
+      return op ? ({ ...row, ...op.body } as any) : row;
+    }),
+    ...created.map(op => ({ ...op.body, id: op.tempId } as any)),
+  ];
+  let finalWeek: FSchedule[] = buildWeek(termRows);
+  const weekFor = (op: ApplyOp) => op.kind === "create" ? finalWeek.filter(row => Number(row.id) !== op.tempId) : finalWeek;
+
+  /* ── فحصٌ جافّ لكل خطوة على الأسبوع النهائي ─────────────────────────────── */
+  const warnings: any[] = [];
+  for (const op of ops) {
+    if (op.kind === "delete") {
+      const lock = await scheduleLockRefusal(req, op.original.AdCollegeId, op.original.AdSectionId, op.original.AdTermId);
+      if (lock) { failItem(409, op.itemIndex, lock, "schedule-locked"); return; }
+      continue;
+    }
+    const dry = op.kind === "update"
+      ? await runScheduleHandler(updateScheduleHandler, req, { params: { id: String(op.rowId) }, body: op.body, hypotheticalWeek: weekFor(op), dryRun: true })
+      : await runScheduleHandler(createScheduleHandler, req, { body: op.body, hypotheticalWeek: weekFor(op), dryRun: true });
+    if (dry.status >= 400) {
+      res.status(dry.status).json({ ...(dry.body && typeof dry.body === "object" ? dry.body : { error: "تعذّر التثبيت." }), itemIndex: op.itemIndex, applied: [], reverted: true });
+      return;
+    }
+    for (const w of (dry.body?.warnings || [])) warnings.push({ ...w, itemIndex: op.itemIndex });
+  }
+
+  const plan = ops.map(op => {
+    const body: any = op.kind === "delete" ? op.original : op.body;
+    return {
+      itemIndex: op.itemIndex, action: op.kind,
+      days: PROPOSAL_DAYS.filter(key => Boolean(body[key])), start: body.fstarttime, end: body.fendtime,
+      room: [body.AdRoomCode, body.AdRoomHall].filter(Boolean).join("/"),
+    };
+  });
+  if (preview) { res.json({ ok: true, preview: true, plan, warnings }); return; }
+
+  /* ── الكتابة، والتراجعُ إن تغيّر شيءٌ في اللحظة نفسها ─────────────────────── */
+  /* يُعاد بناءُ الأسبوع من الجدول الحيّ لحظةَ الكتابة: موعدٌ أضافه زميلٌ أثناء الفحص يُرى. */
+  termRows = await Repository.getSchedulesByScope({ termId });
+  finalWeek = buildWeek(termRows);
+  const ordered = [...ops.filter(op => op.kind === "update"), ...ops.filter(op => op.kind === "create"), ...ops.filter(op => op.kind === "delete")];
+  const done: Array<{ op: ApplyOp; row?: any }> = [];
+  const scheduleIdOf = new Map<number, number>();
+  for (const op of ordered) {
+    const result = op.kind === "update"
+      ? await runScheduleHandler(updateScheduleHandler, req, { params: { id: String(op.rowId) }, body: op.body, hypotheticalWeek: weekFor(op) })
+      : op.kind === "create"
+        ? await runScheduleHandler(createScheduleHandler, req, { body: op.body, hypotheticalWeek: weekFor(op) })
+        : await runScheduleHandler(deleteScheduleHandler, req, { params: { id: String(op.rowId) }, body: {} });
+    if (result.status >= 400) {
+      const reverted = await rollback();
+      res.status(result.status).json({
+        ...(result.body && typeof result.body === "object" ? result.body : { error: "تعذّر التثبيت." }),
+        itemIndex: op.itemIndex, applied: [], reverted,
+        ...(reverted ? {} : { error: "تعذّر إتمام التثبيت ولم يمكن ردّ كل خطواته. راجع مواعيد الأستاذ في الجدول." }),
+      });
+      return;
+    }
+    done.push({ op, row: result.body });
+    const rowId = op.kind === "delete" ? op.rowId : Number(result.body?.id);
+    if (rowId && !scheduleIdOf.has(op.itemIndex)) scheduleIdOf.set(op.itemIndex, rowId);
+  }
+  async function rollback(): Promise<boolean> {
+      let reverted = true;
+      for (let j = done.length - 1; j >= 0; j -= 1) {
+        const step = done[j];
+        /* التراجعُ يُحكم عليه على الأسبوع الأصلي (قبل التثبيت)، لا على الجدول الحيّ وهو نصفُ
+           منقول: وإلا رُدّ إرجاعُ موعدٍ إلى وقته لأن شقيقه ما زال فيه، فبقي الجدولُ نصفَ مطبّق. */
+        const originalWeek = termRows.filter(row => Number(row.id) !== Number(step.op.kind === "delete" ? step.op.rowId : -1));
+        const back = step.op.kind === "update"
+          ? await runScheduleHandler(updateScheduleHandler, req, { params: { id: String(step.op.rowId) }, body: { ...rowBodyOf(step.op.original), rev: step.row?.rev }, hypotheticalWeek: originalWeek, restoreOrigin: { value: step.op.original.origin } })
+          : step.op.kind === "create"
+            ? await runScheduleHandler(deleteScheduleHandler, req, { params: { id: String(step.row?.id) }, body: {} })
+            : await runScheduleHandler(createScheduleHandler, req, { body: { ...rowBodyOf(step.op.original), origin: step.op.original.origin }, hypotheticalWeek: originalWeek });
+        if (back.status >= 400) reverted = false;
+      }
+      return reverted;
+  }
+
+  /* ── القرارُ لكل البنود معاً ─────────────────────────────────────────────── */
+  const now = new Date().toISOString();
+  const by = roleLabel(req.user?.Role) || "القسم";
+  const fresh = (await Repository.getInstructorRequest(String(stored.id))) || stored;
+  const items = [...(fresh.items || [])];
+  const timeline = [...(fresh.timeline || [])];
+  for (const i of chain) {
+    if (!items[i] || items[i].decision?.state === "fixed") continue;
+    const id = scheduleIdOf.get(i) ?? (items[i].rowId != null ? Number(items[i].rowId) : undefined);
+    items[i] = { ...items[i], decision: { state: "fixed", decidedBy: by, decidedAt: now, ...(id ? { scheduleId: id } : {}) } };
+    timeline.push({ kind: "item-fixed" as InstructorRequestEventKind, at: now, by, itemIndex: i });
+  }
+  const decided = requestFullySettled(items);
+  if (decided) timeline.push({ kind: "settled" as InstructorRequestEventKind, at: now, by });
+  let saved: Awaited<ReturnType<typeof Repository.saveInstructorRequest>>;
+  try {
+    saved = await Repository.saveInstructorRequest({ ...fresh, items, timeline, status: decided ? "settled" : "in-review" });
+  } catch {
+    /* كُتب الجدولُ وتعذّر حفظُ القرار: يُردّ الجدول، فلا يبقى صفٌّ بلا قرار تُكرّره الإعادة. */
+    const reverted = await rollback();
+    res.status(503).json({ error: reverted ? "تعذّر حفظ القرار، فأُعيد الجدول كما كان. أعد المحاولة." : "تعذّر حفظ القرار ولم يمكن ردّ كل خطوات الجدول. راجع مواعيد الأستاذ.", code: "decision-save-failed", reverted });
+    return;
+  }
+
+  res.locals.auditChanges = `تثبيت رغبة أستاذ (${String(instructor?.AdInstructorName || "")}): ` + plan.map(step =>
+    `${step.action === "delete" ? "حذف" : step.action === "create" ? "إضافة" : "نقل"} ${step.days.map(dayLabelOf).join(" و")} ${formatScheduleTimeRange(step.start, step.end)}`).join(" · ");
+  res.locals.auditRowIds = done.map(step => Number(step.op.kind === "delete" ? step.op.rowId : step.row?.id)).filter(Number.isFinite);
+  res.json({ ...(await judgeRequestItems(saved, { forDepartment: true })), applied: plan, warnings });
+  } finally { APPLYING_REQUESTS.delete(applyLock); }
 });
 
 /* ── حوارُ البند: ردُّ القسم واقتراحُه ─────────────────────────────────────
