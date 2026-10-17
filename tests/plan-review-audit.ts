@@ -109,14 +109,12 @@ const ctx = (plan: number[]) => ({
 
 {
   const source = read("src/components/CurriculumReferenceReview.tsx");
-  check(source.includes("reference-flat") && source.includes("reference-level-pill") && source.includes("courseLevelFromCode") && source.includes("reference-filterbar") && !source.includes("reference-level-map"),
-    "R6 المقارنة قائمةٌ واحدة مرتّبة بالمستوى (شارة مستوى لكل مقرر) مع البحث والفلاتر، بلا أعمدة مستوياتٍ مطويّة");
+  check(source.includes("reference-level-map") && source.includes("courseLevelFromCode") && !source.includes("reference-filterbar") && !source.includes("reference-sections") && !source.includes("reference-flat"),
+    "R6 المقارنة تعرض المستويات أعمدةً مفتوحة مباشرة بلا شريط أقسام ولا بحث ولا فلاتر");
   check(source.includes("ancestry.up") && source.includes("ancestry.down") && source.includes("reference-selected-links"),
     "R6 اختيار مقرر يبرز المتطلبات السابقة والمقررات التي تعتمد عليه");
-  check(source.includes('aria-label="أقسام الصحيفة"') && source.includes('role="tab"') && source.includes('aria-label="المجموعة"') && source.includes('aria-label="حالة المطابقة"'),
-    "R6 تبويب أقسام الصحيفة (ثقافة عامة/تخصصية/مهنية/تدريب) والمجموعة وحالة المطابقة قابلة للوصول");
-  check(source.includes("reference-guide") && !source.includes("reference-level-toggle") && !source.includes("expandedLevels"),
-    "R6 القراءة البصرية مختصرة: دليل الربط مطوي ولا أعمدة مستوياتٍ تُفتح وتُطوى");
+  check(source.includes("reference-guide") && !source.includes("expandedLevels") && source.includes("PlanMapLines") && source.includes("data-cid") && source.includes("reference-course-more"),
+    "R6 المستويات مفتوحة دائماً وبينها خيوط المسبقات، والبطاقة خفيفة وتفاصيلها (الوحدات والساعات والحالة) عند الضغط");
   check(source.includes("reference-course-group") && source.includes("requiredUnits") && source.includes("غير مصنف"),
     "R6 كل بطاقة تحمل مجموعتها (إجباري/اختياري والمطلوب) ووسمَ المستوى أو «غير مصنف»");
   check(source.includes("course.ownerSectionId === selectedSectionId"),

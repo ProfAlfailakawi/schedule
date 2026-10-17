@@ -1,11 +1,12 @@
 import { AR, countOf } from "../utils/arabicCount";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BookOpen, Check, GraduationCap, Layers3, Link2, Search } from "lucide-react";
+import { AlertCircle, BookOpen, Check, GraduationCap, Layers3, Link2 } from "lucide-react";
 import type { compareCurriculumReference } from "../utils/curriculumReference";
 import type { CurriculumReference } from "../data/technologyEducationCurricula";
 import { courseLevelFromCode } from "../utils/curriculumRules";
 import { Notice } from "./ui";
 import ReferenceApplyPanel from "./ReferenceApplyPanel";
+import PlanMapLines, { type PlanEdge } from "./PlanMapLines";
 
 type Reference = Omit<CurriculumReference, "groups"> & { planId: string | null; groups: Array<Omit<ReturnType<typeof compareCurriculumReference>[number], "courses"> & { courses: Array<ReturnType<typeof compareCurriculumReference>[number]["courses"][number] & { ownerSectionId: number; ownerSectionName: string; ownerCollegeId: number }> }> };
 type SectionResult = { sectionId: number; collegeId: number; collegeName: string; sectionName: string; references: Reference[] };
@@ -28,13 +29,9 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("new");
   const [selectedSectionId, setSelectedSectionId] = useState(sectionId);
-  const [category, setCategory] = useState("all");
-  const [groupKind, setGroupKind] = useState("all");
-  const [levelFilter, setLevelFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [query, setQuery] = useState("");
   const [focusedCode, setFocusedCode] = useState("");
   const [reload, setReload] = useState(0);
+  const mapRef = useRef<HTMLDivElement | null>(null);
 
   const loadedAt = useRef(-1);
   useEffect(() => {
@@ -61,12 +58,6 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
     course, groupId: group.id, groupName: group.name, category: group.category, requiredUnits: group.requiredUnits, elective: group.elective,
     level: courseLevelFromCode(course.code) || 0,
   }))) : [], [reference, selectedSectionId]);
-  const categoryOptions = useMemo(() => [...new Set(entries.map(row => row.category))], [entries]);
-  /* لا تبويبَ «الكل»: أول تبويبٍ للقسم هو الافتراضي. */
-  const activeCategory = categoryOptions.includes(category) ? category : (categoryOptions[0] || "");
-  const inCategory = useMemo(() => entries.filter(row => row.category === activeCategory), [entries, activeCategory]);
-  const groupOptions = useMemo(() => [...new Map<string, string>(inCategory.map(row => [row.groupId, row.groupName] as const)).entries()], [inCategory]);
-  const levelOptions = useMemo<number[]>(() => [...new Set<number>(inCategory.map(row => row.level))].sort((a, b) => a - b), [inCategory]);
   const focused = entries.find(row => row.course.code === focusedCode);
 
   const ancestry = useMemo(() => {
@@ -88,16 +79,18 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
     return { up, down };
   }, [entries, focusedCode]);
 
-  const visibleEntries = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase("ar");
-    return entries.filter(row => (!activeCategory || row.category === activeCategory)
-      && (groupKind === "all" || row.groupId === groupKind)
-      && (levelFilter === "all" || row.level === Number(levelFilter))
-      && (statusFilter === "all" || (statusFilter === "attention" ? row.course.state !== "matched" : row.course.state === statusFilter))
-      && (!q || `${row.course.name} ${row.course.code}`.toLocaleLowerCase("ar").includes(q)));
-  }, [entries, activeCategory, groupKind, levelFilter, statusFilter, query]);
-
-
+  const levels = useMemo(() => {
+    const result = new Map<number, CourseEntry[]>();
+    entries.forEach(row => result.set(row.level, [...(result.get(row.level) || []), row]));
+    return [...result.entries()]
+      .map(([level, rows]) => [level, [...rows].sort((x, y) => x.course.code.localeCompare(y.course.code))] as const)
+      .sort((x, y) => (x[0] || Number.MAX_SAFE_INTEGER) - (y[0] || Number.MAX_SAFE_INTEGER));
+  }, [entries]);
+  /* خيوط المسبقات: من كل مسبقٍ إلى المقرر الذي يشترطه (ما كان ضمن الصحيفة فقط). */
+  const edges = useMemo<PlanEdge[]>(() => {
+    const known = new Set(entries.map(row => plainCode(row.course.code)));
+    return entries.flatMap(row => [...new Set(row.course.prerequisites.map(plainCode))].filter(from => known.has(from)).map(from => ({ from, to: plainCode(row.course.code), optional: false })));
+  }, [entries]);
 
   if (error) return <Notice type="error">{error}</Notice>;
   if (!reference) return null;
@@ -136,25 +129,9 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
       <div className={`reference-summary-item${missing ? " is-missing" : ""}`}><span className="reference-summary-icon"><AlertCircle size={17} /></span><span><small>تحتاج متابعة</small><b>{countOf(missing + review, AR.course)}</b></span></div>
     </div>
 
-    <div className="reference-sections" role="tablist" aria-label="أقسام الصحيفة">
-      {categoryOptions.map(option => {
-        const rows = entries.filter(row => row.category === option);
-        return <button key={option} type="button" role="tab" aria-selected={activeCategory === option} className={activeCategory === option ? "on" : ""} onClick={() => { setCategory(option); setGroupKind("all"); setLevelFilter("all"); }} data-guide-ignore="تصفية مقررات الصحيفة بحسب قسمها: ثقافة عامة وتخصصية ومهنية وتدريب ميداني">
-          <b>{option}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small>
-        </button>;
-      })}
-    </div>
-
     {undecided ? <Notice type="info" inline>{countOf(undecided, AR.course)} بلا قسمٍ مالك محسوم، ولا تُحتسب هنا حتى تُحسم ملكيتها.</Notice> : null}
 
     {canApply ? <ReferenceApplyPanel key={`${selectedSectionId}:${reference.id}`} referenceId={reference.id} referenceName={reference.name} onApplied={() => setReload(n => n + 1)} /> : null}
-
-    <div className="reference-filterbar" aria-label="تصفية المقررات">
-      <label className="reference-search"><Search size={16} aria-hidden="true" /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="ابحث باسم المقرر أو رمزه" aria-label="ابحث باسم المقرر أو رمزه" /></label>
-      {groupOptions.length > 1 ? <label><Layers3 size={15} aria-hidden="true" /><select aria-label="المجموعة" value={groupKind} onChange={event => setGroupKind(event.target.value)}><option value="all">كل المجموعات</option>{groupOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label> : null}
-      {levelOptions.length > 1 ? <label><span className="reference-level-mark" aria-hidden="true">١٠٠</span><select aria-label="المستوى" value={levelFilter} onChange={event => setLevelFilter(event.target.value)}><option value="all">كل المستويات</option>{levelOptions.map(value => <option key={value} value={String(value)}>{value ? `المستوى ${value}` : "تمهيدي / غير مصنف"}</option>)}</select></label> : null}
-      <label><AlertCircle size={15} aria-hidden="true" /><select aria-label="حالة المطابقة" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">كل الحالات</option><option value="attention">تحتاج متابعة</option><option value="matched">مطابقة</option><option value="different">تحتاج تصحيحًا</option><option value="missing">غير مضافة</option><option value="ambiguous">هوية غير محسومة</option></select></label>
-    </div>
 
     <details className="reference-guide"><summary><Link2 size={14} />طريقة قراءة الربط</summary><div className="reference-legend" aria-label="دليل روابط المتطلبات">
       <span><i className="legend-current" />المقرر المحدد</span><span><i className="legend-prereq" />مسبقاتُه</span><span><i className="legend-next" />مقررات يفتحها</span><span className="reference-legend-note">اضغط مقررًا لإظهار تسلسل متطلباته</span>
@@ -166,7 +143,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
         <span className="reference-link-label">يسبقه</span>
         {focused.course.prerequisites.length ? focused.course.prerequisites.map(code => {
           const parent = entries.find(row => plainCode(row.course.code) === plainCode(code));
-          return <button key={code} type="button" className="link-prereq" onClick={() => { setFocusedCode(parent?.course.code || ""); if (!parent) setQuery(code); }} data-guide-ignore="انتقال إلى المقرر السابق ضمن سلسلة المتطلبات الأكاديمية"><bdi dir="ltr">{code}</bdi>{parent ? ` · ${parent.course.name}` : " · شرط خارجي يحتاج توثيقًا"}</button>;
+          return <button key={code} type="button" className="link-prereq" onClick={() => { if (parent) setFocusedCode(parent.course.code); }} data-guide-ignore="انتقال إلى المقرر السابق ضمن سلسلة المتطلبات الأكاديمية"><bdi dir="ltr">{code}</bdi>{parent ? ` · ${parent.course.name}` : " · شرط خارجي يحتاج توثيقًا"}</button>;
         }) : <span className="reference-no-link">لا توجد متطلبات سابقة مسجلة في المرجع</span>}
         {focused.course.externalAlternative ? <span className="reference-external">بديل خارجي: {focused.course.externalAlternative} · يحتاج توثيق القسم</span> : null}
       </div>
@@ -174,34 +151,43 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
     </aside> : null}
 
     {!reference.planId ? <Notice type="info" inline>لا توجد صحيفة تشغيلية مرتبطة بهذه النسخة؛ هذه المقارنة للمرجع فقط.</Notice> : null}
-    {!visibleEntries.length ? <div className="reference-empty"><Search size={19} /><b>لا توجد مقررات بهذا الاختيار</b><span>غيّر المرشحات أو امسح البحث لعرض الصحيفة كاملة.</span><button type="button" onClick={() => { setQuery(""); setCategory("all"); setGroupKind("all"); setLevelFilter("all"); setStatusFilter("all"); }} data-guide-ignore="مسح مرشحات صحيفة التخرج وإظهار كل المقررات">مسح المرشحات</button></div> : (
-      <div className="reference-flat" aria-label="مقررات القسم مرتبة بالمستوى">
-        {[...visibleEntries].sort((x, y) => (x.level || 9999) - (y.level || 9999) || x.course.code.localeCompare(y.course.code)).map(({ course, level, category, groupName, elective, requiredUnits }) => {
-          const key = plainCode(course.code), selectedCourse = focusedCode === course.code;
-          const tone = ancestry.up.has(key) ? "prereq" : ancestry.down.has(key) ? "next" : "";
-          return <article key={course.code} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}`}>
-            <button type="button" className="reference-course-main" aria-pressed={selectedCourse} onClick={() => setFocusedCode(selectedCourse ? "" : course.code)} data-guide-ignore="إظهار روابط المتطلبات للمقرر في الصحيفة">
-              <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi><i className="reference-level-pill" title={level ? `المستوى ${level}` : "تمهيدي / غير مصنف"}>{level || "غير مصنف"}</i><span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
-              <strong>{course.name}</strong>
-              <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)} · {category}</span>
-              <span className="reference-course-group">{groupName} · {elective ? `اختياري · المطلوب ${countOf(requiredUnits, AR.unit)}` : "إجباري"}</span>
-              {course.prerequisites.length ? <span className="reference-prereq-summary"><Link2 size={13} /> يسبقه {course.prerequisites.length} {course.prerequisites.length === 1 ? "متطلب" : "متطلبات"}</span> : null}
-            </button>
-            {course.current ? <small className="reference-course-capacity">السعة المسجلة: {course.current.capacity === null ? "غير محددة" : countOf(course.current.capacity, AR.student)}</small> : null}
-            {course.current && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
-              <button type="button" className="reference-fix" data-guide-ignore="فتح بيانات المقرر المملوك للقسم لتعديل الوحدات والساعات والسعة" onClick={() => onCatalogAction({ kind: "edit", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, courseId: course.current!.id, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>تعديل الوحدات والساعات والسعة</button>
-            ) : null}
-            {course.state === "different" && course.current ? <small className="reference-course-diff">المطلوب: {course.differences.map(field => ({ name: "الاسم", credit: "الوحدات", hours: "الساعات", membership: "عضوية الصحيفة" }[field] || field)).join("، " )}.</small> : null}
-            {course.state === "different" && course.current && course.ownerSectionId !== selectedSectionId && course.ownerSectionName ? <small className="reference-course-owner">السجل مملوك لقسم {course.ownerSectionName}؛ يتولى القسم المالك تصحيحه.</small> : null}
-            {course.state === "missing" ? <small className="reference-course-owner">{course.ownerSectionName ? `غير موجود في كتالوج قسم ${course.ownerSectionName}.` : "لم تُحسم ملكية المقرر بعد."}</small> : null}
-            {course.state === "ambiguous" ? <small className="reference-course-owner">الرمز يطابق أكثر من سجل؛ يلزم حسم الهوية قبل التعديل.</small> : null}
-            {course.state === "missing" && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
-              <button type="button" className="reference-fix" data-guide-ignore="بدء إضافة المقرر الناقص إلى سجل القسم" onClick={() => onCatalogAction({ kind: "create", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>أضف المقرر إلى القسم</button>
-            ) : null}
-          </article>;
-        })}
+    {!entries.length ? <div className="reference-empty"><BookOpen size={19} /><b>لا توجد مقررات في هذه الصحيفة</b></div> : (
+      <div className="reference-level-map" ref={mapRef} aria-label="المقررات مرتبة حسب المستوى">
+        {levels.map(([level, rows]) => <section className="reference-level-column" key={level}>
+          <div className="reference-level-toggle">
+            <span><b>{level ? `المستوى ${level}` : "تمهيدي / غير مصنف"}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small></span><i>{level || "—"}</i>
+          </div>
+          <div className="reference-level-courses">{rows.map(({ course, category, groupName, elective, requiredUnits }) => {
+            const key = plainCode(course.code), selectedCourse = focusedCode === course.code;
+            const tone = ancestry.up.has(key) ? "prereq" : ancestry.down.has(key) ? "next" : "";
+            const dim = focusedCode && !selectedCourse && !tone;
+            return <article key={course.code} data-cid={key} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}${dim ? " is-dim" : ""}`}>
+              <button type="button" className="reference-course-main" aria-pressed={selectedCourse} onClick={() => setFocusedCode(selectedCourse ? "" : course.code)} data-guide-ignore="إظهار روابط المتطلبات للمقرر في الصحيفة">
+                <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi>{course.prerequisites.length ? <span className="reference-prereq-summary" title={`يسبقه ${course.prerequisites.length}`}><Link2 size={12} aria-hidden="true" />{course.prerequisites.length}</span> : null}<i className={`reference-dot status-${course.state}`} aria-hidden="true" /><span className="sr-only">{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
+                <strong>{course.name}</strong>
+              </button>
+              {selectedCourse ? <div className="reference-course-more">
+                <span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span>
+                <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)}</span>
+                <span className="reference-course-group">{category} · {groupName} · {elective ? `اختياري · المطلوب ${countOf(requiredUnits, AR.unit)}` : "إجباري"}</span>
+                {course.current ? <small className="reference-course-capacity">السعة المسجلة: {course.current.capacity === null ? "غير محددة" : countOf(course.current.capacity, AR.student)}</small> : null}
+                {course.current && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
+                  <button type="button" className="reference-fix" data-guide-ignore="فتح بيانات المقرر المملوك للقسم لتعديل الوحدات والساعات والسعة" onClick={() => onCatalogAction({ kind: "edit", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, courseId: course.current!.id, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>تعديل الوحدات والساعات والسعة</button>
+                ) : null}
+                {course.state === "different" && course.current ? <small className="reference-course-diff">المطلوب: {course.differences.map(field => ({ name: "الاسم", credit: "الوحدات", hours: "الساعات", membership: "عضوية الصحيفة" }[field] || field)).join("، ")}.</small> : null}
+                {course.state === "different" && course.current && course.ownerSectionId !== selectedSectionId && course.ownerSectionName ? <small className="reference-course-owner">السجل مملوك لقسم {course.ownerSectionName}؛ يتولى القسم المالك تصحيحه.</small> : null}
+                {course.state === "missing" ? <small className="reference-course-owner">{course.ownerSectionName ? `غير موجود في كتالوج قسم ${course.ownerSectionName}.` : "لم تُحسم ملكية المقرر بعد."}</small> : null}
+                {course.state === "ambiguous" ? <small className="reference-course-owner">الرمز يطابق أكثر من سجل؛ يلزم حسم الهوية قبل التعديل.</small> : null}
+                {course.state === "missing" && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
+                  <button type="button" className="reference-fix" data-guide-ignore="بدء إضافة المقرر الناقص إلى سجل القسم" onClick={() => onCatalogAction({ kind: "create", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>أضف المقرر إلى القسم</button>
+                ) : null}
+              </div> : null}
+            </article>;
+          })}</div>
+        </section>)}
+        <PlanMapLines mapRef={mapRef} edges={edges} focus={focusedCode ? plainCode(focusedCode) : ""} up={ancestry.up} down={ancestry.down} layoutKey={`${selectedSectionId}:${selected}:${entries.length}:${focusedCode}`} />
       </div>
     )}
-    <footer className="reference-footer"><span><Layers3 size={14} />{countOf(visibleEntries.length, AR.course)} من {countOf(entries.length, AR.course)}</span><span>المستوى مستنتج من آخر ثلاثة أرقام في رمز المقرر؛ راجع القسم عند اختلاف الرمز عن الصحيفة.</span></footer>
+    <footer className="reference-footer"><span><Layers3 size={14} />{countOf(entries.length, AR.course)}</span><span>المستوى مستنتج من آخر ثلاثة أرقام في رمز المقرر؛ راجع القسم عند اختلاف الرمز عن الصحيفة.</span></footer>
   </section>;
 }
