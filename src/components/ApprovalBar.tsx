@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, Check, ChevronDown, CornerUpLeft, DoorOpen, FilePenLine, Flag, History,
   Hourglass, Users, Landmark, ListChecks, ListPlus, Lock, MessageSquareText, PenLine, Quote, Send, ShieldCheck, Undo2, X,
-  Hash, Clock, Layers, Type as TypeIcon, Pencil,
+  Clock, Layers, Pencil,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
@@ -175,7 +175,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const guardRef = useRef(createScopeGuard());
   const scopeKey = approvalScopeKey({ collegeId, sectionId, termId });
   if (guardRef.current.scope !== scopeKey) guardRef.current.setScope(scopeKey);
-  useEffect(() => { setState(null); setError(null); setSheet(null); }, [scopeKey]);
+  useEffect(() => { setState(null); setError(null); setSheet(null); setCoursesLocked(null); }, [scopeKey]);
   const load = useCallback(async () => {
     const token = guardRef.current.begin(scopeKey);
     if (!collegeId || !sectionId || !termId) { setState(null); return; }
@@ -572,7 +572,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
                 const courseLocked = !canEditCourses || Boolean(coursesLocked);
                 const pick = roomPicks[item.id];
                 const lockedTip = coursesLocked || "لا تملك صلاحية تعديل المقررات";
-                const FIELD_ICON: Record<string, LucideIcon> = { CourseCredit: Layers, CourseHours: Clock, MaxStudent: Users, CourseCode: Hash, CourseName: TypeIcon };
+                const FIELD_ICON: Record<string, LucideIcon> = { CourseCredit: Layers, CourseHours: Clock, MaxStudent: Users };
                 return (
                   <li key={itemKey} data-kind={item.kind} data-fix={mode}>
                     <span className="apb-dr-ic" aria-hidden="true"><ItemIcon /></span>
