@@ -1055,7 +1055,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const before = rows.find(item => Number(item.id) === Number(request.id || request.before?.id || 0)) || request.before;
     const after = request.after;
     if (!before || !after) return;
-    const issues = findConflicts([after], rows.filter(item => Number(item.id) !== Number(before.id)));
+    const issues = findConflicts([after], rows.filter(item => Number(item.id) !== Number(before.id)), { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
     setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر في هذه المعاينة ${countOf(issues.length, AR.conflict)}.` : "لا يظهر تعارض مانع في هذه المعاينة." });
     setReviewFocus(new Set([Number(before.id)]));
     changeView("week");
@@ -9633,7 +9633,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         if (detail.payload.roomCode) after.AdRoomCode = String(detail.payload.roomCode);
         if (detail.payload.roomHall) after.AdRoomHall = String(detail.payload.roomHall);
         if (detail.payload.instructorId) after.AdInstructorId = Number(detail.payload.instructorId);
-        const issues = findConflicts([after], rows.filter(item => item.id !== before.id));
+        const issues = findConflicts([after], rows.filter(item => item.id !== before.id), { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
         setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر في هذه المعاينة ${countOf(issues.length, AR.conflict)}.` : "لا يظهر تعارض مانع في هذه المعاينة." });
         setReviewFocus(new Set([id]));
         changeView("week");

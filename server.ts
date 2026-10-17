@@ -110,7 +110,7 @@ import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { loadSimulationInput, rankDemandRepairsBySimulation, rankSectionOpeningsBySimulation } from "./src/server/simulationData";
-import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, headlineReasonOf, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
 import { demandFromTargets, gapRows, hardestFirst, weekFingerprint, type GapRow } from "./src/utils/sectionBuild";
@@ -17352,6 +17352,7 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
 .card-tabs:has(#tab-movement[aria-selected=true])::before{transform:translateX(calc(-100% - 4px))}
 .card-tabs:has(#tab-requests[aria-selected=true])::before{transform:translateX(calc(-200% - 8px))}
 .card-tab{position:relative;border-color:transparent;transition:color .25s}
+.card-tab[hidden]{display:none}
 .card-tab[aria-selected=true]{background:transparent;border-color:transparent}
 @media screen{.stat b{color:var(--jade)}}
 @media screen and (max-width:559px){
@@ -17419,7 +17420,7 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
     <div class="card-tabs" role="tablist">
       <button type="button" class="card-tab" id="tab-week" role="tab" aria-selected="true">الجدول الأسبوعي</button>
       <button type="button" class="card-tab" id="tab-movement" role="tab" aria-selected="false">حركة الجدول</button>
-      <button type="button" class="card-tab" id="tab-requests" role="tab" aria-selected="false">طلب تعديل الجدول</button>
+      <button type="button" class="card-tab" id="tab-requests" role="tab" aria-selected="false" hidden>طلب تعديل الجدول</button>
     </div>
     <div id="panel-week">
       <div id="days"></div>
@@ -20137,9 +20138,9 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   /* القاعاتُ المرشّحة لا تُرسل: هذا المسار يخاطب صفحةَ الأستاذ. */
   res.json({
     kind: item.verdict || "clear",
-    headline: item.reasons?.[0]?.text || (item.verdict === "conflict" ? "هذا الموعد غير متاح." : item.verdict === "exception" ? "يحتاج سبب استثناء." : "الوقت متاح"),
+    headline: headlineReasonOf(item.reasons)?.text || (item.verdict === "conflict" ? "هذا الموعد غير متاح." : item.verdict === "exception" ? "يحتاج سبب استثناء." : "الوقت متاح"),
     computedEnd: item.slots?.[0]?.end || "",
-    roomAvailable: item.verdict === "conflict" ? false : true,
+    roomAvailable: !(item.reasons || []).some((reason: any) => reason.source === "room"),
     nearestTimes: (item.nearestTimes || []).map(slot => ({ day: slot.day, days: slot.days, start: slot.start, end: slot.end })),
   });
 });
