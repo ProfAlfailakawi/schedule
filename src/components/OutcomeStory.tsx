@@ -56,8 +56,8 @@ export function OutcomeCourse({ row }: { key?: React.Key; row: StoryRow }) {
             })}
           </div>
           <div className="os-pcts">
-            <span className="d-ok"><i className="dot d-ok"><Check aria-hidden="true" /></i><b>{Math.round((row.registered / total) * 100)}%</b><small>سجّلوا</small></span>
-            {reasons.map(reason => <span key={reason} className={`d-${reason}`}><i className={`dot d-${reason}`} /><b>{Math.round((row[reason] / total) * 100)}%</b><small>{REASON_INFO[reason].title}</small></span>)}
+            <span className="d-ok"><b>{row.registered.toLocaleString("ar-KW-u-nu-latn")}</b><i className="dot d-ok"><Check aria-hidden="true" /></i><small>سجّلوا · {Math.round((row.registered / total) * 100)}%</small></span>
+            {reasons.map(reason => <span key={reason} className={`d-${reason}`}><b>{row[reason].toLocaleString("ar-KW-u-nu-latn")}</b><i className={`dot d-${reason}`} /><small>{REASON_INFO[reason].title} · {Math.round((row[reason] / total) * 100)}%</small></span>)}
           </div>
         </div>
       )}
