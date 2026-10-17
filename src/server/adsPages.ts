@@ -362,8 +362,13 @@ const KIT_CSS = `
 @media (max-width:560px){.k-stat{padding:14px}.k-stat .badge{width:38px;height:38px}.k-stat b{font-size:24px}.k-hero{padding:26px 20px}.k-hero .btn{position:static;margin-top:14px}.k-stats{margin-top:14px;padding:0}.k-peak{grid-template-columns:1fr}}
 .k-cta{display:inline-flex;gap:8px;align-items:center;margin-top:16px;background:#fff;color:#0b4f3a;font-weight:800;padding:12px 22px;border-radius:14px;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .k-cta .ic{width:20px;height:20px}
-.k-new{margin-top:34px;scroll-margin-top:16px}
-.k-form{display:grid;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:24px;padding:22px;box-shadow:var(--shadow)}
+.k-new{display:none;position:fixed;inset:0;z-index:20;overflow-y:auto;padding:16px;background:rgba(10,25,19,.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.k-new:target{display:flex}
+.k-back{position:fixed;inset:0}
+.k-modal{position:relative;z-index:1;inline-size:min(640px,100%);margin:auto;background:var(--card);border-radius:26px;padding:24px 22px 22px;box-shadow:0 30px 80px rgba(0,0,0,.35)}
+.k-modal .k-h2{margin:0 0 14px;padding-inline-end:44px}
+.k-x{position:absolute;inset-block-start:16px;inset-inline-end:16px;display:grid;place-items:center;inline-size:38px;block-size:38px;border-radius:50%;background:var(--bg);color:var(--ink);text-decoration:none;font-size:22px;line-height:1}
+.k-form{display:grid;gap:14px}
 .k-fields{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .k-f{display:grid;gap:6px;font-size:13px;color:var(--muted);font-weight:600}
 .k-f>span{display:flex;gap:6px;align-items:center}.k-f .ic{width:16px;height:16px;color:var(--accent)}
@@ -449,8 +454,12 @@ export function partnerKitPage(input: PartnerKitInput): string {
   const banner = input.leadResult === "ok" ? `<div class="k-ok" role="status">${icon("check")}<span>وصلنا طلبك. نتواصل معك قريباً.</span></div>`
     : input.leadResult === "rate" ? `<div class="k-bad" role="alert">${icon("clock")}<span>أعد المحاولة بعد قليل.</span></div>`
     : input.leadResult === "bad" ? `<div class="k-bad" role="alert">${icon("shield")}<span>${esc(input.leadError || "راجع الحقول وأعد الإرسال.")}</span></div>` : "";
-  const lead = `<section class="k-new" id="new">
-<h2 class="k-h2">${icon("plus")}${NEW_CAMPAIGN}</h2>
+  /* نافذةٌ فوق الصفحة بلا JavaScript: الرابط #new يفتحها عبر :target، والإغلاق رابطٌ إلى # (الخلفية أو الزر ×). */
+  const lead = `<section class="k-new" id="new" role="dialog" aria-modal="true" aria-labelledby="new-h">
+<a class="k-back" href="#" aria-label="إغلاق"></a>
+<div class="k-modal">
+<a class="k-x" href="#" aria-label="إغلاق">×</a>
+<h2 class="k-h2" id="new-h">${icon("plus")}${NEW_CAMPAIGN}</h2>
 ${banner}
 <form class="k-form" method="post" action="/partners/${encodeURIComponent(input.token || "")}/lead" autocomplete="on">
   <div class="k-fields">
@@ -466,7 +475,7 @@ ${banner}
   <div class="k-hp" aria-hidden="true"><label>لا تملأ هذا الحقل<input name="website" tabindex="-1" autocomplete="off"></label></div>
   <button class="k-send" type="submit">${icon("send")}أرسل الطلب</button>
   <small class="note" style="margin:0">نتواصل معك قريباً. بياناتك لا يراها غيرنا.</small>
-</form></section>`;
+</form></div></section>`;
   return page("ملف الشراكة · SCHEDULE", nonce, `
 <section class="k-hero">
   <p class="brand">SCHEDULE · ملف الشراكة</p>
