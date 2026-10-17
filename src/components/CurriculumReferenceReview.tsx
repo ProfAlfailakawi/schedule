@@ -48,7 +48,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
   const reference = references.find(row => row.id === selected);
   /* مقررات القسم المفتوح وحده، حذفاً لا تصفية: مقررات الكلية العامة (ثقافة عامة ومتطلبات الكلية) تُصحَّح عند أقسامها.
      فكلُّ تبويبٍ ومجموعةٍ ومستوىً وعدّادٍ يُشتقّ من هذه القائمة، فلا يظهر ما ليس فيه مقرر للقسم.
-     ما لم تُحسم ملكيته (ownerSectionId = 0) لا يُحتسب هنا، وينبَّه إلى عدده في سطرٍ مستقل. */
+     ما لم تُحسم ملكيته (ownerSectionId = 0) لا يُحتسب هنا، وينبَّه إلى عدده في سطرٍ مستقل لمن يملك حسمها (canApply) لا لحساب القسم. */
   const undecided = useMemo(() => reference ? reference.groups.reduce((sum, group) => sum + group.courses.filter(course => !course.ownerSectionId).length, 0) : 0, [reference]);
   const entries = useMemo<CourseEntry[]>(() => reference ? reference.groups.flatMap(group => group.courses.filter(course => course.ownerSectionId === selectedSectionId).map(course => ({ course }))) : [], [reference, selectedSectionId]);
   if (error) return <Notice type="error">{error}</Notice>;
@@ -88,7 +88,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
       <div className={`reference-summary-item${missing ? " is-missing" : ""}`}><span className="reference-summary-icon"><AlertCircle size={17} /></span><span><small>تحتاج متابعة</small><b>{countOf(missing + review, AR.course)}</b></span></div>
     </div>
 
-    {undecided ? <Notice type="info" inline>{countOf(undecided, AR.course)} بلا قسمٍ مالك محسوم، ولا تُحتسب هنا حتى تُحسم ملكيتها.</Notice> : null}
+    {undecided && canApply ? <Notice type="info" inline>{countOf(undecided, AR.course)} بلا قسمٍ مالك محسوم، ولا تُحتسب هنا حتى تُحسم ملكيتها.</Notice> : null}
 
     {canApply ? <ReferenceApplyPanel key={`${selectedSectionId}:${reference.id}`} referenceId={reference.id} referenceName={reference.name} onApplied={() => setReload(n => n + 1)} /> : null}
 
