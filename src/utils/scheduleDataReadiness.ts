@@ -7,6 +7,7 @@
  * سجلّ المواقع ليست ناقصة.
  */
 import { SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
+import { isPendingRoom } from "./locationRegistry";
 
 export interface DataGapItem { kind: string; id: string; label: string; fields: string[] }
 export interface DataReadinessInput {
@@ -46,6 +47,9 @@ export function computeScheduleDataReadiness({ rows, courses, instructorIds, roo
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) rowFields.push("وقت بداية ونهاية صحيح");
     if (rowFields.length) missing.set(`schedule:${row.id}`, { kind: "schedule", id: String(row.id), label, fields: rowFields });
     const roomId = String(row.roomId || "");
+    /* قاعدة الحفظ نفسها في الخادم: مبنى مطلوب، ثم قاعةٌ مثبّتة أو «بانتظار التثبيت» (حالةٌ مقصودة لا نقص). */
+    const hasBuilding = Boolean(String(row.buildingId || "").trim());
+    if (hasBuilding && isPendingRoom(row)) continue;
     if (!roomId) {
       missing.set(`location:${row.id}`, { kind: "location", id: String(row.id), label, fields: ["ربط الموعد بقاعة معتمدة"] });
     } else {
