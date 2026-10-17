@@ -1,8 +1,10 @@
 import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
 import PredictiveInsightPanel from "./PredictiveInsightPanel";
+import PlanSheetPublisher from "./PlanSheetPublisher";
+import { roleDefinition } from "../utils/academicRoles";
 import { mergeDemandReadings, mergeOperationsReadings, mergeDecisionReadings, scopedReadingList, sameIntelligenceScope, type IntelligenceScope, type ScopedReading } from "../utils/intelligenceReadingScope";
 import { DEMO_STAGE_SECTION_ID, isDemoSession } from "../utils/demoSession";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TimeField } from "./TimeField";
 import { DnaStepper } from "./dna";
 import { CampusTravelMap, EquationChips } from "./VisualBits";
@@ -48,6 +50,7 @@ import {
   Upload,
   UsersRound,
   WandSparkles,
+  Workflow,
   Link2,
   QrCode,
   Printer,
@@ -219,7 +222,9 @@ type InsightScene =
      exactly the thing this strip exists to end. */
   | "approval"
   /* ما قاله الطلاب: الطلب، والتقاطع، والنقلة التي تُزيله. */
-  | "students";
+  | "students"
+  /* الصحيفة: نشرُ الصحائف المعتمدة للجميع (رابط وQR وPDF) لرئيس لجنة الجدول. */
+  | "sheet";
 /* «جرّب» — every card it holds, including the three that used to appear on
    their own the moment a scenario existed. */
 type TwinCard = "hero" | "lab" | "board" | "editor" | "ledger";
@@ -431,6 +436,18 @@ function metricBadge(metric: unknown) {
 
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
+  /* نشرُ الصحائف للعامة: رئيس لجنة الجدول وإدارة النظام وحدهما (والخادمُ يتحقق ثانيةً). */
+  const canPublishSheets = isPowerAdmin || roleDefinition((user as any)?.Role).id === "committeeChair";
+  const [sheetSummary, setSheetSummary] = useState<{ published: number; total: number } | null>(null);
+  const loadSheetSummary = useCallback(() => {
+    if (!canPublishSheets) return;
+    fetch("/api/plan-sheets").then(res => (res.ok ? res.json() : null)).then(body => {
+      if (!body?.sections) return;
+      const sheets = body.sections.flatMap((section: any) => section.sheets);
+      setSheetSummary({ published: sheets.filter((sheet: any) => sheet.published).length, total: sheets.length });
+    }).catch(() => undefined);
+  }, [canPublishSheets]);
+  useEffect(() => { loadSheetSummary(); }, [loadSheetSummary]);
   const [colleges, setColleges] = useState<AdCollege[]>([]),
     [sections, setSections] = useState<AdSection[]>([]),
     [terms, setTerms] = useState<AdTerm[]>([]),
@@ -524,7 +541,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       try {
         const requested = sessionStorage.getItem("schedule-intelligence-insight") as InsightScene | null;
         sessionStorage.removeItem("schedule-intelligence-insight");
-        return requested && ["quality", "approval", "attention", "density", "spatial", "rooms", "professors", "health", "students", "genome"].includes(requested)
+        return requested && ["quality", "approval", "attention", "density", "spatial", "rooms", "professors", "health", "students", "genome", "sheet"].includes(requested)
           ? requested
           : null;
       } catch { return null; }
@@ -2382,6 +2399,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               },
             ]
           : []),
+        ...(canPublishSheets && sheetSummary?.total
+          ? [{
+              value: "sheet" as const,
+              label: "الصحيفة",
+              detail: "رابطٌ تفاعلي وQR وPDF للجميع",
+              metric: `${sheetSummary.published}/${sheetSummary.total}`,
+              icon: <Workflow />,
+            }]
+          : []),
         {
           value: "predict" as const,
           label: "تنبّؤ الفصل القادم",
@@ -3817,6 +3843,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </span>
               </div>
             </Surface>
+            </div>
+          ) : null}
+          {activeInsightKey === "sheet" ? (
+            <div className="content-stack insight-scene-panel" id="insight-panel-sheet" role="tabpanel" aria-labelledby="insight-tab-sheet" tabIndex={0}>
+              <PlanSheetPublisher onChanged={loadSheetSummary} />
             </div>
           ) : null}
           {activeInsightKey === "predict" ? (

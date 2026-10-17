@@ -103,6 +103,7 @@ import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPha
 import { adInjection, adNotifications, registerAdsRoutes } from "./src/server/adsRoutes";
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
+import { registerPlanSheetRoutes } from "./src/server/planSheetRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
 import { seedDemoRadar, seedDemoPreviousTermRadar } from "./src/server/demoRadarSeed";
 import { seedDemoPreviousTerm, seedDemoCurrentTermStories } from "./src/server/demoPreviousTermSeed";
@@ -20808,6 +20809,22 @@ registerPlanReviewRoutes(app, {
   hasPermission: (req, formId) => (req.permissions || []).includes(formId),
   actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
 });
+
+/* ── الصحائف العامة: رئيس لجنة الجدول ينشر صحيفةً معتمدة فتصير رابطاً وQR وPDF بلا حساب ── */
+{
+  /* القالبُ يُقرأ مرةً عند الإقلاع (كما صفحةُ الهبوط)، فلا قراءةَ ملفاتٍ داخل الطلب. */
+  let planSheetTemplate = "";
+  for (const candidate of [path.join(process.cwd(), "public", "plans", "_template", "sheet.html"), path.join(process.cwd(), "dist", "plans", "_template", "sheet.html")]) {
+    try { if (fs.existsSync(candidate)) { planSheetTemplate = fs.readFileSync(candidate, "utf8"); break; } } catch { /* التالي */ }
+  }
+  registerPlanSheetRoutes(app, {
+    requireAuth,
+    isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+    isPowerUser: req => isPowerUser(req),
+    actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
+    template: planSheetTemplate,
+  });
+}
 
 /* ── الإعلانات ونبضُ الزوار ولوحة الجمهور: قياسٌ مجهول، وإدارةٌ لحساب الإدارة الرئيسي ── */
 registerAdsRoutes(app, { requireAuth, requireRootAdmin, publicPageNonce });

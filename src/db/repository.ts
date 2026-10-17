@@ -21,6 +21,7 @@ import {
   TermStudentPhases,
   StudentProfile,
   CurriculumRuleSet,
+  PublishedPlanSheet,
   RegistrationOutcomeShard,
   RegistrationRun,
   StudentRegistrationReport,
@@ -245,6 +246,7 @@ interface DBState {
   studentProfiles?: StudentProfile[];
   curriculumRuleSets?: CurriculumRuleSet[];
   curriculumRuleDrafts?: CurriculumRuleSet[];
+  publishedPlanSheets?: PublishedPlanSheet[];
   registrationTickets?: RegistrationTicket[];
   registrationRuns?: RegistrationRun[];
   registrationOutcomes?: RegistrationOutcomeShard[];
@@ -289,7 +291,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], registrationTickets: [], registrationRuns: [], registrationOutcomes: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], publishedPlanSheets: [], registrationTickets: [], registrationRuns: [], registrationOutcomes: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
@@ -5680,6 +5682,49 @@ export const Repository = {
       return (await firestoreDb.collection("curriculumRuleDrafts").get()).docs.map(doc => doc.data() as CurriculumRuleSet);
     }
     return [...(db.curriculumRuleDrafts || [])];
+  },
+  /**
+   * ── الصحائف المنشورة للعامة ─────────────────────────────────────────────
+   * وثيقةٌ لكل صحيفة بمفتاح planId: لقطةٌ نهائية يرسمها الخادم بلا حساب. لا يكتبها إلا رئيس لجنة الجدول
+   * (أو إدارة النظام) بالنشر، ولا يمسحها مسحُ الخطة بعد الاعتماد.
+   */
+  getPublishedSheet: async (planId: string): Promise<PublishedPlanSheet | undefined> => {
+    if (!planId) return undefined;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("publishedPlanSheets").doc(planId).get();
+      return doc.exists ? (doc.data() as PublishedPlanSheet) : undefined;
+    }
+    return (db.publishedPlanSheets || []).find(row => row.id === planId);
+  },
+  listPublishedSheets: async (): Promise<PublishedPlanSheet[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      return (await firestoreDb.collection("publishedPlanSheets").get()).docs.map(doc => doc.data() as PublishedPlanSheet);
+    }
+    return [...(db.publishedPlanSheets || [])];
+  },
+  savePublishedSheet: async (sheet: PublishedPlanSheet): Promise<void> => {
+    if (!sheet.id) throw new Error("معرّف الصحيفة مطلوب");
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("publishedPlanSheets").doc(sheet.id).set(sheet);
+      return;
+    }
+    if (!Array.isArray(db.publishedPlanSheets)) db.publishedPlanSheets = [];
+    const index = db.publishedPlanSheets.findIndex(row => row.id === sheet.id);
+    if (index >= 0) db.publishedPlanSheets[index] = sheet; else db.publishedPlanSheets.push(sheet);
+    saveDatabase();
+  },
+  deletePublishedSheet: async (planId: string): Promise<boolean> => {
+    if (!planId) return false;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("publishedPlanSheets").doc(planId);
+      const existed = (await ref.get()).exists;
+      if (existed) await ref.delete();
+      return existed;
+    }
+    const before = (db.publishedPlanSheets || []).length;
+    db.publishedPlanSheets = (db.publishedPlanSheets || []).filter(row => row.id !== planId);
+    if (db.publishedPlanSheets.length !== before) saveDatabase();
+    return db.publishedPlanSheets.length !== before;
   },
   listRuleSets: async (): Promise<CurriculumRuleSet[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {

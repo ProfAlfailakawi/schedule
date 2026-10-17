@@ -68,7 +68,7 @@ export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "i
 }
 
 /** تصنيف كل مقرر في صحيفة تكنولوجيا التعليم كما تكتبه الصحيفة (ثقافة عامة، تخصصية، مهنية، تدريب ميداني)، وترتيب ظهور التصنيفات فيها. */
-const REFERENCE_CATEGORIES = (() => {
+export const REFERENCE_CATEGORIES = (() => {
   const byCode = new Map<string, string>(), order: string[] = [];
   for (const reference of [...TECHNOLOGY_EDUCATION_CURRICULA].sort((a, b) => Number(b.id === "new") - Number(a.id === "new")))
     for (const group of reference.groups) {
@@ -350,7 +350,10 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     if (issues.length) { fail(res, 409, `لا يُعتمد وفي القواعد ${countOf(issues.length, AR.blocker)}: ${issues[0].text}`, { code: "blockers", issues }); return; }
     try {
       const approved = await Repository.approveRuleDraft(ctx.plan.id, String(req.body?.updatedAt || ""), deps.actorName(req));
-      res.locals.auditChanges = `اعتماد صحيفة «${ctx.plan.name}» — الإصدار ${approved.version}`;
+      /* صحيفةٌ منشورة للعامة تتبع اعتمادها: تُعاد لقطتُها بالقواعد الجديدة، فلا يبقى الرابطُ على نسخةٍ قديمة.
+         الاستيرادُ متأخر لأن وحدة النشر تستورد من هذه الوحدة. */
+      const republished = await (await import("./planSheetRoutes")).republishIfPublished(ctx.plan.id, deps.actorName(req)).catch(() => false);
+      res.locals.auditChanges = `اعتماد صحيفة «${ctx.plan.name}» — الإصدار ${approved.version}${republished ? "، وتحديث صفحتها العامة" : ""}`;
       res.json(await view(req, ctx));
     } catch (error) {
       if (error instanceof RuleDraftConflict) { fail(res, 409, error.message, { code: "stale" }); return; }
