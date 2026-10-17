@@ -186,7 +186,7 @@ async function summaryOf(profile: StudentProfile) {
     }
   }
   return {
-    setupDone, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
+    setupDone, collegeId: profile.AdCollegeId || 0, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
     passedCourseIds: profile.passedCourseIds, passedUnits: profile.passedUnits,
     progress, wishes: profile.wishes || null,
     createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason, hasIdentity: Boolean(profile.nameCipher && profile.civilCipher),
@@ -652,7 +652,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       curriculumPlanId: checked.provenPlanId || profile.curriculumPlanId, nameCipher: profile.nameCipher!, civilCipher: profile.civilCipher!, details,
       graduateReason: reason, passedUnits: checked.passedUnits, requiredUnits: checked.requiredUnits, degreeUnits: checked.degreeUnits,
       eligibility: checked.eligibility, proofNameMatched: checked.nameMatched,
-    });
+    }, { byKind: true });
     const sections = await Repository.getSections();
     noStore(res);
     res.status(201).json({ ok: true, requestType: "graduate", termId, caseRef: caseRefFor(saved), cases: [{
@@ -759,7 +759,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const details = String(req.body?.details || "").normalize("NFKC").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 600);
     if (details.length < 3) { fail(res, 400, "اكتب سبباً مختصراً يساعد القسم على مراجعة الطلب.", "details-needed"); return; }
     const existing = (await Repository.getStudentNeedsByFingerprint(fingerprint, profile.AdCollegeId, termId))
-      .find(need => Number(need.surveySectionId || need.AdSectionId) === Number(profile.AdSectionId));
+      .find(need => need.requestType === "graduate" && Number(need.surveySectionId || need.AdSectionId) === Number(profile.AdSectionId));
     if (existing?.requestType === "graduate" && existing.eligibility === "eligible") {
       fail(res, 409, "لديك حالة تخرج موثّقة لهذا الفصل. تابعها من «حالاتي» أو حدّثها من مسارها الحالي.", "verified-graduate-case"); return;
     }
@@ -788,7 +788,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         requestGroupId, nameCipher: profile.nameCipher, civilCipher: profile.civilCipher,
         details: ownerDetails, eligibility: "not-checked",
       };
-      const saved = await Repository.saveStudentNeed(entry);
+      const saved = await Repository.saveStudentNeed(entry, { byKind: true });
       byOwner.push({ sectionId: ownerSectionId, caseRef: caseRefFor(saved), courseIds: ownerCourseIds });
     }
     const primary = byOwner.find(row => row.sectionId === Number(profile.AdSectionId)) || byOwner[0];
@@ -969,7 +969,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
           curriculumPlanId: profile.curriculumPlanId, courseIds: list.map(answer => answer.courseId), requestType: "new-course",
           nameCipher, civilCipher, eligibility: "not-checked",
           details: `من «مساري» بعد التسجيل — ${list.map(answer => `${ctx.info(answer.courseId).name}: ${REASON_TEXT[answer.reason || "other"]}`).join("؛ ")}`,
-        } as any);
+        } as any, { byKind: true });
         cases.push({ sectionName: String((sections as any[]).find(row => Number(row.AdSectionId) === ownerSectionId)?.AdSectionName || ""), caseRef: caseRefFor(need) });
       }
     }

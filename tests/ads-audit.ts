@@ -56,6 +56,21 @@ function webpX(width: number, height: number): Buffer {
 
 async function main() {
   const E = await import("../src/utils/adsEngine");
+  const CAL = await import("../src/utils/adCalendar");
+  {
+    const ics = CAL.reportCalendar({ id: "c9", company: "شركة, الأمل; للتقنية", startDay: "2026-11-01", endDay: "2026-12-01" }, "https://x.test/ad-report/abc", "2026-11-10", new Date("2026-11-10T00:00:00Z"));
+    const lines = ics.split("\r\n");
+    check(lines.every(l => new TextEncoder().encode(l).length <= 75), "A6 iCal: لا سطر يتجاوز ٧٥ بايتاً (طيٌّ سليم لا يقطع حرفاً عربياً)");
+    const unfolded = ics.replace(/\r\n /g, "");
+    check(unfolded.includes("SUMMARY:تنتهي حملة شركة\\, الأمل\\; للتقنية بعد أسبوع"), "A6 iCal: الفاصلة والفاصلة المنقوطة تُهرَّبان");
+    check(unfolded.includes("DTSTART;VALUE=DATE:20261124") && unfolded.includes("DTSTART;VALUE=DATE:20261201") && unfolded.includes("DTSTART;VALUE=DATE:20261115") && unfolded.includes("UNTIL=20261201"), "A6 iCal: تذكير قبل أسبوع (٢٤ نوفمبر) ويوم الانتهاء وأول أحدٍ قادم (١٥ نوفمبر)");
+    const late = CAL.reportCalendar({ id: "c9", company: "ش", startDay: "2026-11-01", endDay: "2026-12-01" }, "https://x.test/r", "2026-11-28").replace(/\r\n /g, "");
+    check(late.includes("SUMMARY:تنتهي حملة ش بعد") && !late.includes("بعد أسبوع") && late.includes("DTSTART;VALUE=DATE:20261128"), "A6 iCal: مشتركٌ بعد موعد التحذير: تذكير اليوم بالأيام الفعلية لا «أسبوع»");
+    const lastDay = CAL.reportCalendar({ id: "c9", company: "ش", startDay: "2026-11-01", endDay: "2026-12-01" }, "https://x.test/r", "2026-12-01").replace(/\r\n /g, "");
+    check(!lastDay.includes(`UID:c9-renew@`) && lastDay.includes("UID:c9-end@"), "A6 iCal: يوم الانتهاء نفسه: حدثُ الانتهاء وحده");
+    const ended = CAL.reportCalendar({ id: "c9", company: "ش", startDay: "2026-01-01", endDay: "2026-02-01" }, "https://x.test/r", "2026-11-10");
+    check(!ended.includes("BEGIN:VEVENT"), "A6 iCal: حملةٌ منتهية بلا أحداث");
+  }
   const { AR, countOf } = await import("../src/utils/arabicCount");
 
   /* ── A1 ── */
@@ -167,7 +182,7 @@ async function main() {
   check(gapBest?.day === 0 && gapBest.min === 90 && gapFns.tkClock(gapBest.from) === "9:30" && gapFns.tkClock(gapBest.to) === "11:00", "A13 أطول فراغٍ في أسبوع الطالب: الأحد من ٩:٣٠ إلى ١١:٠٠ (٩٠ دقيقة)", gapBest);
   check(gapFns.tkLongestGap([{ timesVisible: true, slots: [{ day: 1, start: 480, end: 540 }, { day: 1, start: 560, end: 620 }] }]) === null, "A13 فراغٌ أقل من ساعة لا يُعرض فيه إعلان");
   check(gapFns.tkLongestGap([{ timesVisible: false, slots: [{ day: 1, start: 480, end: 540 }, { day: 1, start: 700, end: 760 }] }]) === null, "A13 مواعيدٌ غير ظاهرة للطالب: لا استراحة");
-  check(homeSrc.includes('adxMountLater("adx-break-box","break"') && homeSrc.includes('adxMountLater("adx-me-box","me")'), "A13 «مساري» تركّب موقعَي «مساري» و«محطة الاستراحة» من داخلها بعد الدخول");
+  check(homeSrc.includes('adxMountLater("adx-break-box","break",') && homeSrc.includes('adxMountLater("adx-me-box","me",'), "A13 «مساري» تركّب موقعَي «مساري» و«محطة الاستراحة» من داخلها بعد الدخول");
   const gateStart = homeSrc.indexOf("function viewGate()"), gateEnd = homeSrc.indexOf("\n}", gateStart);
   check(gateStart > 0 && !homeSrc.slice(gateStart, gateEnd).includes("adxMount"), "A13 شاشة الدخول (الرقم المدني) لا تركّب أي إعلان");
   const { AD_CLIENT_SCRIPT: adjs } = await import("../src/server/adClientScript");
@@ -247,7 +262,7 @@ async function main() {
   check(!E.eligibleNow(tgt({ seasons: ["finals"] }), { today: "2026-11-10", seasons: ["start", "registration"] }), "A8 موسمٌ لم يحن: لا تُعرض");
   check(E.eligibleNow(tgt({}), { today: "2026-11-10", seasons: [] }), "A8 بلا استهداف: تُعرض دائماً");
   check(!E.eligibleNow(tgt({ colleges: [3] }), { today: "2026-11-10", seasons: [] }), "A8 مستهدفةٌ بكلية ولا سياق (مساري): لا تُعرض");
-  check(E.campaignProblems({ company: "أ", category: "ج", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", colleges: [3] }).length === 1 && E.campaignProblems({ company: "أ", category: "ج", slot: "schedule", startDay: "2026-11-05", endDay: "2026-11-20", colleges: [3] }).length === 0, "A8 «مساري» لكل الجامعة: لا استهداف بكلية فيه، ويصح في الجدول العام");
+  check(E.campaignProblems({ company: "أ", category: "ج", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", colleges: [3] }).length === 0, "A8 «مساري» يقبل الاستهداف بكلية (يعرفها من ملف الطالب)");
   check(E.eligibleNow(tgt({ colleges: [3] }), { today: "2026-11-10", seasons: [], collegeId: 3 }) && !E.eligibleNow(tgt({ colleges: [3] }), { today: "2026-11-10", seasons: [], collegeId: 4 }), "A8 الكلية تطابق أو لا");
   check(E.cleanSeasons(["start", "hack", "start", 5]).join() === "start" && E.cleanColleges(["3", 3, -1, 2.5, "x", 7]).join() === "3,7", "A8 تنظيف قوائم الاستهداف");
   /* السعة تُحسب على من يتقاطع جمهورُهم: ٥ حملات في «مساري» لكلٍّ موسمُها لا تملأ الموقع. */
@@ -370,7 +385,15 @@ async function main() {
     // تقرير الشركة
     const report = await call("GET", mine.reportUrl);
     check(report.status === 200 && report.text.includes("مطعم الواحة") && report.text.includes("النقرات الصحيحة") && report.text.includes('nonce="TESTNONCE"'), "A6 صفحة تقرير الشركة تعمل بنونس");
-    check(!report.text.includes("curl") && !report.text.includes("127.0.0.1"), "A6 التقرير لا يكشف عناوين ولا وكلاء مستخدمين");
+    check(!report.text.includes("curl") && !report.text.replace(/webcal:\/\/127\.0\.0\.1:\d+/g, "").includes("127.0.0.1"), "A6 التقرير لا يكشف عناوين ولا وكلاء مستخدمين");
+    // تنبيهات الشركة بلا حساب: اشتراك تقويم برمز التقرير نفسه
+    const repToken = String(mine.reportUrl).split("/").pop();
+    const ics = await call("GET", `/ad-report/${repToken}/calendar.ics`);
+    check(ics.status === 200 && String(ics.headers.get("content-type")).startsWith("text/calendar") && ics.text.startsWith("BEGIN:VCALENDAR") && ics.text.trimEnd().endsWith("END:VCALENDAR"), "A6 اشتراك التقويم: ملف iCalendar صالح");
+    check(ics.text.includes(`DTSTART;VALUE=DATE:${mine.endDay.replace(/-/g, "")}`) && ics.text.includes("RRULE:FREQ=WEEKLY;BYDAY=SU") && ics.text.includes("TRIGGER;RELATED=START:PT9H"), "A6 اشتراك التقويم: يوم الانتهاء وتذكيرٌ أسبوعي وتنبيه");
+    check(ics.text.split("\r\n").every(l => Buffer.byteLength(l) <= 75), "A6 اشتراك التقويم: الأسطر ≤٧٥ بايتاً");
+    check(report.text.includes("calendar.ics") && report.text.includes("webcal://"), "A6 صفحة التقرير تعرض زر الاشتراك");
+    check((await call("GET", "/ad-report/" + "z".repeat(32) + "/calendar.ics")).status === 404 && (await call("GET", "/ad-report/short/calendar.ics")).status === 404, "A6 اشتراك التقويم برمزٍ خاطئ: ٤٠٤");
     check((await call("GET", "/ad-report/short")).status === 404 && (await call("GET", "/ad-report/" + "z".repeat(32))).status === 404, "A6 رمزٌ خاطئ: ٤٠٤");
 
     // تعدد الشركات: خمس في «مساري» والسادسة تُرفض، ومنافس الفئة نفسها يُرفض
@@ -463,6 +486,13 @@ async function main() {
     check(!sched.includes(college3.id), "A9 حملة بكلية بلا رابطٍ يعرفها (مساري): لا تُعرض");
     sched = (await call("GET", `/_ads/serve?slot=schedule&t=${encodeURIComponent(link.id)}`)).json.items.map((x: any) => x.c);
     check(sched.includes(college3.id), "A9 الرابطُ الذي كليتُه ٣ يعرض حملة الكلية ٣");
+    const meCollege3 = await mkTargeted("مساري كلية٣", "مواصلات", { colleges: [3] }, "break", 480, 160);
+    check(meCollege3.ap.status === 200, "A9 اعتماد حملةٍ في محطة الاستراحة محصورةٍ بكلية", meCollege3.ap.json);
+    const meIds = async (q: string) => (await call("GET", `/_ads/serve?slot=break${q}`)).json.items.map((x: any) => x.c);
+    check(!(await meIds("")).includes(meCollege3.id), "A9 الاستراحة بلا كلية معروفة: الحملة المحصورة لا تُعرض");
+    check((await meIds("&c=3")).includes(meCollege3.id), "A9 الاستراحة لطالبٍ كليتُه ٣: تُعرض");
+    check(!(await meIds("&c=4")).includes(meCollege3.id), "A9 الاستراحة لطالبٍ كليتُه ٤: لا تُعرض");
+    check(!(await meIds("&c=abc")).includes(meCollege3.id) && !(await meIds("&c=-3")).includes(meCollege3.id), "A9 قيمة كلية فاسدة تُتجاهل");
     const link4 = await Repository.createShareLink({ AdCollegeId: 4, AdSectionId: 1, AdTermId: 1, label: "اختبار٤", expiresAt: new Date(Date.now() + 86400000).toISOString(), SystemUserId: 1, userName: "t", showInstructors: false });
     sched = (await call("GET", `/_ads/serve?slot=schedule&t=${encodeURIComponent(link4.id)}`)).json.items.map((x: any) => x.c);
     check(!sched.includes(college3.id), "A9 رابطُ كلية ٤ لا يعرض حملة الكلية ٣");

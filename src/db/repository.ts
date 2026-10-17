@@ -2423,6 +2423,13 @@ export class ApprovalRevisionConflict extends Error {
   }
 }
 
+/** نوعُ طلب الطالب لمفتاح الدمج: كلُّ نوعٍ سجلٌّ مستقلّ في الفصل والقسم نفسيهما. */
+export const studentNeedKind = (need: { requestType?: string; details?: string }): string =>
+  need.requestType === "graduate" ? "graduate"
+    : need.requestType === "course-conflict" ? "conflict"
+      : /^من «مساري» بعد التسجيل/.test(String(need.details || "")) ? "after-registration"
+        : "course";
+
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
   /** السرّ المشترك بين نسخ الخادم، مقروءاً خارج صندوق العرض دائماً: مفتاحُ
@@ -5101,19 +5108,23 @@ export const Repository = {
    * `droppedByStudent` (rule: src/utils/studentNeedMerge.ts). It used to delete
    * and recreate, discarding those decisions, in two non-atomic steps.
    */
-  saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">): Promise<StudentNeed> => {
+  /* في «مساري» (byKind) «اليد الواحدة» يدٌ لكل نوع طلب: كان طلبُ التعارض يمحو طلبَ فتح المقرّر قبله،
+     وجوابُ «بعد التسجيل» يمحو حالةَ الخريج وقرارَ لجنتها (studentNeedKind). */
+  saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">, options: { byKind?: boolean } = {}): Promise<StudentNeed> => {
     const now = new Date().toISOString();
     const sameHand = (item: StudentNeed) => {
       const itemSurveySection = Number(item.surveySectionId || item.AdSectionId || 0);
       const entrySurveySection = Number(entry.surveySectionId || entry.AdSectionId || 0);
       return item.fingerprint === entry.fingerprint && Number(item.AdTermId) === Number(entry.AdTermId)
-        && itemSurveySection === entrySurveySection;
+        && itemSurveySection === entrySurveySection
+        /* «مساري» وحده يفصل بالنوع؛ الاستبيان القديم يبقى حالةً واحدة برقمٍ واحد (تحقّقُ رقم الحالة فيه يفترض ذلك). */
+        && (!options.byKind || studentNeedKind(item) === studentNeedKind(entry));
     };
 
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const collection = firestoreDb.collection("studentNeeds");
       return await firestoreDb.runTransaction(async transaction => {
-        const snap = await transaction.get(collection.where("fingerprint", "==", entry.fingerprint).limit(20));
+        const snap = await transaction.get(collection.where("fingerprint", "==", entry.fingerprint).limit(500));
         const prior = snap.docs.map(doc => doc.data() as StudentNeed).filter(sameHand);
         const { row, removeIds } = mergeStudentResubmission(prior, entry, now, randomUUID());
         for (const id of removeIds) transaction.delete(collection.doc(id));

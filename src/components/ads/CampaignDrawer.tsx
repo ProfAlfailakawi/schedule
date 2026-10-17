@@ -18,6 +18,17 @@ export interface DrawerActions {
   setMsg: (m: string) => void;
 }
 
+/** رسالةُ تذكير التجديد: تُرسل للشركة قبل انتهاء حملتها أو بعده، برابط تقريرها الحي. */
+export function renewText(c: Campaign): string {
+  return [
+    "السلام عليكم،",
+    c.phase === "ended" ? `انتهت حملة «${c.company}» في برنامج الجداول.` : `تنتهي حملة «${c.company}» بعد ${countOf(Math.max(0, c.daysLeft), AR.day)}.`,
+    "يسعدنا تثبيت مكانكم في الفصل القادم؛ نتائجكم الحية في هذا الرابط:",
+    new URL(c.reportUrl, location.origin).toString(),
+    "ويمكنكم الاشتراك من الصفحة نفسها في تنبيهات التقويم بلا أي حساب.",
+  ].join("\n");
+}
+
 /** نصٌّ جاهز للواتساب: ملخص الأسبوع ورابط التقرير الحي. لا يُرسَل شيء؛ يُنسخ لتلصقه أنت. */
 export function summaryText(c: Campaign, slotLabel: string): string {
   const w = c.weekly;
@@ -147,10 +158,12 @@ export default function CampaignDrawer({ campaign: c, data, onClose, actions }: 
       <section className="ad-dsec">
         <h3>مشاركة الأرقام مع الشركة</h3>
         <p className="ad-url-box"><bdi dir="ltr">{url}</bdi></p>
+        <p className="ad-note">الشركة بلا حساب: من هذه الصفحة تشترك في تنبيهات تقويم جوالها (قبل الانتهاء بأسبوع، ويوم الانتهاء، وتقرير أسبوعي).</p>
         <div className="ad-btnrow">
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={() => copy(c.reportUrl)}><Copy aria-hidden="true" size={15} /> نسخ رابط التقرير</button>
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={() => window.open(c.reportUrl, "_blank", "noopener")}><ExternalLink aria-hidden="true" size={15} /> فتح التقرير</button>
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={async () => { try { await navigator.clipboard.writeText(summaryText(c, slotLabel)); setMsg("نُسخ ملخص الأسبوع؛ الصقه في واتساب."); } catch { setMsg("تعذّر النسخ تلقائياً."); } }}><Copy aria-hidden="true" size={15} /> نسخ ملخص الأسبوع</button>
+          {c.endingSoon || c.phase === "ended" ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={async () => { try { await navigator.clipboard.writeText(renewText(c)); setMsg("نُسخت رسالة التجديد؛ الصقها في واتساب."); } catch { setMsg("تعذّر النسخ تلقائياً."); } }}><Copy aria-hidden="true" size={15} /> رسالة تجديد</button> : null}
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-ghost" onClick={() => { if (window.confirm("تجديد الرابط يُبطل الرابط القديم عند الشركة. متابعة؟")) void act(`rot-${c.id}`, () => api(`/api/admin/ads/campaigns/${c.id}/rotate-report`, { method: "POST" }), "تجدّد رابط التقرير."); }}><RefreshCw aria-hidden="true" size={15} /> تجديد الرابط</button>
         </div>
       </section>

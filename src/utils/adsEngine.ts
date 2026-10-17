@@ -24,7 +24,7 @@ export interface AdSlotSpec {
   exclusive?: boolean;
   /** موقعٌ متوقف: لا يُعرض فيه شيء ولا تُقبل فيه حملةٌ جديدة. يبقى معرَّفاً لتُقرأ حملاتٌ قديمة عليه. */
   retired?: boolean;
-  /** موقعٌ يصل كلَّ طلبة الجامعة بلا تمييز كلية (لا يعرف كليةَ الطالب، فلا يُقبل فيه استهدافٌ بالكلية). */
+  /** موقعٌ يصل كلَّ طلبة الجامعة افتراضياً (بلا استهداف)؛ ويعرف كليةَ الطالب بعد إكمال ملفه، فيجوز حصرُه بكليات. */
   wholeUniversity?: boolean;
 }
 
@@ -183,7 +183,6 @@ export function campaignProblems(input: Candidate): string[] {
   if (!String(input.company || "").trim()) out.push("اسم الشركة مطلوب.");
   if (!String(input.category || "").trim()) out.push("الفئة مطلوبة.");
   if (input.seasons?.some(s => !SEASON_IDS.includes(s))) out.push("موسمٌ غير معروف.");
-  if (slotById(input.slot)?.wholeUniversity && input.colleges?.length) out.push("«مساري» ومحطة الاستراحة يصلان كل طلبة الجامعة ولا يعرفان كلية الطالب؛ أزل استهداف الكليات أو اختر الجدول العام.");
   if (!isDay(input.startDay) || !isDay(input.endDay)) out.push("تاريخا البداية والنهاية مطلوبان بصيغة YYYY-MM-DD.");
   else {
     if (input.endDay < input.startDay) out.push("تاريخ النهاية قبل تاريخ البداية.");
@@ -218,7 +217,7 @@ export function placementProblems(input: Candidate, others: readonly AdCampaign[
         const count = active.filter(c => (!c.seasons?.length || c.seasons.includes(season)) && (!c.colleges?.length || c.colleges.includes(college))).length;
         if (count >= limit) {
           const where = `${input.seasons?.length || same.some(c => c.seasons?.length) ? ` في موسم «${seasonLabel(season)}»` : ""}${college ? " لهذه الكلية" : ""}`;
-          out.push(slot.exclusive ? `«${slot.label}» حصريٌّ وهو محجوزٌ يوم ${day}${where}.` : `موقع «${slot.label}» ممتلئ (${limit}) يوم ${day}${where}؛ أجّل الحملة بعد انتهاء إحدى الحملات أو اختر موسماً آخر.`);
+          out.push(slot.exclusive ? `${slot.label} حصريٌّ وهو محجوزٌ يوم ${day}${where}.` : `موقع ${slot.label} ممتلئ (${limit}) يوم ${day}${where}؛ أجّل الحملة بعد انتهاء إحدى الحملات أو اختر موسماً آخر.`);
           return out;
         }
       }

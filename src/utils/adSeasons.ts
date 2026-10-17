@@ -33,7 +33,8 @@ export const seasonLabel = (id: string): string => SEASONS.find(s => s.id === id
 
 const DAY_MS = 86_400_000;
 const EDGE_WEEKS = 3;
-const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+/* أيامُ التقويم بتوقيت الكويت: نافذةُ الفصل تبدأ منتصف ليل الكويت (21:00 UTC من اليوم السابق). */
+const dayOf = (ms: number): string => kuwaitDateISO(new Date(ms));
 
 /** المواسم الفاعلة الآن. */
 export function activeSeasons(terms: readonly AdTerm[], now: number = Date.now(), today: string = kuwaitDateISO(new Date(now))): SeasonId[] {
