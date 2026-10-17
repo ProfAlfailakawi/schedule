@@ -385,6 +385,38 @@ export const roomKeyOf = (roomId: unknown, roomCode: unknown, roomHall: unknown)
   return building && room ? `legacy:${building}|${room}` : "";
 };
 
+export interface EligibleHall { room: string; hall: string; buildingId: string; roomId: string; shared: boolean }
+
+/**
+ * The halls a department may actually place a lecture in: the rooms assigned to
+ * it in the registry plus rooms it borrowed (approved barter) this term.
+ *
+ * ONE rule for every "is there a free room?" question — the schedule screen's
+ * slot/room advisor and the instructor request form's verdict. The request
+ * form used to take "known rooms" from the rooms the section's EXISTING rows
+ * happen to use, so a section with a single class had exactly one candidate
+ * room, and an instructor's own lecture in it made the form claim that no room
+ * existed at all while the registry held many free ones.
+ */
+export const eligibleHallsForSection = (
+  registry: LocationRegistry,
+  sectionId: number,
+  borrowedRoomIds: ReadonlySet<string> = new Set(),
+): EligibleHall[] => {
+  const rooms = registry.rooms.filter(room => room.active && room.confidence === "CONFIRMED"
+    && ((room.sectionIds || []).includes(sectionId) || borrowedRoomIds.has(room.id)));
+  const buildings = new Map(registry.buildings
+    .filter(building => building.active && building.confidence === "CONFIRMED" && rooms.some(room => room.buildingId === building.id))
+    .map(building => [building.id, building]));
+  return rooms.filter(room => buildings.has(room.buildingId)).map(room => ({
+    room: buildings.get(room.buildingId)!.officialCode,
+    hall: room.canonicalCode,
+    buildingId: room.buildingId,
+    roomId: room.id,
+    shared: (room.sectionIds || []).length > 1,
+  }));
+};
+
 export const roomIdentityKey = (row: Partial<FSchedule>): string => {
   if(row.locationStatus==="PENDING_ROOM") return "";
   return roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall);
