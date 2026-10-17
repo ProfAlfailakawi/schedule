@@ -1017,7 +1017,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         /* لا عودة إلى النافذة الصغيرة ولا إلى جدول المعاينة: حصيلة النشر تحلّ
            محلّ الشاشة كلها، ومنها يُغلق. */
         const total=scopes.reduce((sum,scope)=>sum+Number(scope?.count||0),0)||Number(xlsxPreview?.count||0);
-        setPublishReceipt({count:total,scopes,...(xlsxPreview?.planning?{planning:xlsxPreview.planning}:{})});
+        setPublishReceipt({count:total,scopes});
+        /* حصيلة «نزّل الشعب» تُعرَف بشعبها الجديدة ومواعيدها الباقية، لا بعنوان «نُشر الجدول». */
+        if(xlsxPreview?.planning)setPublishReceipt(prev=>prev?{...prev,planning:xlsxPreview.planning}:prev);
       } else {
         setXlsxDraft(id||"تم");
       }
@@ -1261,8 +1263,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               <SecondaryButton type="button" data-guide-ignore="يعود إلى شاشة تخطيط الشعب دون كتابة شيء في الجدول" onClick={() => goTab("planning")}>رجوع إلى التخطيط</SecondaryButton>
             </section>
           ) : null}
-          {tab === "import" && branchSite && !fromPlanning ? (
-            <div className="transfer-branch-import" role="note">
+          {tab === "import" && branchSite ? (
+            <div className="transfer-branch-import" role="note" hidden={fromPlanning}>
               <span className="transfer-branch-import-mark"><Building2 aria-hidden="true" /></span>
               <div>
                 <strong>الاستيراد يتم من «{baseCollegeName}»</strong>
