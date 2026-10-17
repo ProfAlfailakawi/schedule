@@ -4201,7 +4201,7 @@ export const Repository = {
   },
   /** يسجّل تبليغَ الشركة عن استعمال الكود في يوم (إدخالٌ لكل يوم، حدٌّ ٢٠٠)، بمعاملةٍ تكتب redemptions وحده. */
   reportAdRedemption: async (id: string, day: string, count: number): Promise<boolean> => {
-    const apply = (list: AdCampaign["redemptions"]) => [...(list || []).filter(r => r.day !== day), { day, count, at: new Date().toISOString() }].sort((a, b) => a.day.localeCompare(b.day)).slice(-200);
+    const apply = (list: AdCampaign["redemptions"]) => [...(list || []).filter(r => r.day !== day), { day, count, at: new Date().toISOString() }].sort((a, b) => a.day.localeCompare(b.day)).slice(-400);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("adCampaigns").doc(id);
       return firestoreDb.runTransaction(async tx => {

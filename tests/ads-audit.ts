@@ -489,15 +489,16 @@ async function main() {
     check(ics.text.split("\r\n").every(l => Buffer.byteLength(l) <= 75), "A6 اشتراك التقويم: الأسطر ≤٧٥ بايتاً");
     check(report.text.includes("calendar.ics") && report.text.includes("webcal://"), "A6 صفحة التقرير تعرض زر الاشتراك");
     /* A15: شارة الشراكة والتحويل المُبلَّغ (غير موثَّق) عبر مسارات الخادم */
-    check(report.text.includes("استعمال كود الخصم عندكم") && report.text.includes("مُبلَّغاً منكم") && report.text.includes(`/ad-report/${repToken}/badge.svg`) && report.text.includes("utm_source=schedule"), "A15 صفحة التقرير: نموذج التحويل والشارة ووسم utm");
-    const bd = await call("GET", `/ad-report/${repToken}/badge.svg`);
-    const bdText = await (await fetch(base + `/ad-report/${repToken}/badge.svg`, { headers: { "User-Agent": UA } })).text();
+    check(report.text.includes("استعمال كود الخصم عندكم") && report.text.includes("مُبلَّغاً منكم") && report.text.includes("/partner-badge/") && !report.text.includes(`${repToken}/badge`) && report.text.includes("utm_source=schedule"), "A15 صفحة التقرير: نموذج التحويل والشارة ووسم utm");
+    const badgePath = String(report.text.match(/\/partner-badge\/[0-9a-f]{32}\.svg/)?.[0]);
+    const bd = await call("GET", badgePath);
+    const bdText = await (await fetch(base + badgePath, { headers: { "User-Agent": UA } })).text();
     check(bd.status === 200 && String(bd.headers.get("content-type")).startsWith("image/svg+xml") && String(bd.headers.get("content-security-policy")).includes("default-src 'none'") && bd.headers.get("x-content-type-options") === "nosniff" && bdText.includes("<svg") && bdText.includes("مطعم الواحة"), "A15 الشارة: SVG بترويسات أمان واسم الشركة");
-    check(String((await call("GET", `/ad-report/${repToken}/badge.svg?dl=1`)).headers.get("content-disposition")).includes("attachment"), "A15 الشارة: تنزيل");
-    check((await call("GET", "/ad-report/" + "z".repeat(32) + "/badge.svg")).status === 404, "A15 الشارة برمزٍ خاطئ: ٤٠٤");
+    check(String((await call("GET", badgePath + "?dl=1")).headers.get("content-disposition")).includes("attachment"), "A15 الشارة: تنزيل");
+    check((await call("GET", "/partner-badge/" + "a".repeat(32) + ".svg")).status === 404, "A15 الشارة برمزٍ خاطئ: ٤٠٤");
     const draftC = await call("POST", "/api/admin/ads/campaigns", { company: "مسودة الشارة", category: "ترفيه", slot: "dashboard", startDay: today, endDay: dayPlus(3), linkUrl: "https://draft-badge.example.com" });
-    const draftView = (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === draftC.json.id);
-    check((await call("GET", draftView.reportUrl + "/badge.svg")).status === 404, "A15 الشارة: لا تُصدَر لمسودة");
+    const draftBadgeId = (await import("../src/server/adsPages")).badgeId(String((await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === draftC.json.id)?.reportUrl).split("/").pop());
+    check((await call("GET", "/partner-badge/" + draftBadgeId + ".svg")).status === 404, "A15 الشارة: لا تُصدَر لمسودة");
     const form = (tok: string, body: Record<string, string>) => fetch(base + `/ad-report/${tok}/redemptions`, { method: "POST", redirect: "manual", headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body).toString() });
     const conv = async () => (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === id).conversion;
     check((await conv()).total === 0 && (await conv()).note === "none", "A15 التحويل: يبدأ بلا تبليغ");

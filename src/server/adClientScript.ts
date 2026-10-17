@@ -84,6 +84,7 @@ function flush(beacon){
  if(queue.length)timer=setTimeout(function(){flush(false)},800);
 }
 function record(it){
+ if(dailyTotal()>=DAILY_CAP)return;
  var uk="adx:u:"+it.c+":"+day,nk="adx:n:"+it.c+":"+day;
  var u=get(uk)?0:1;if(u)put(uk,"1");
  put(nk,String((parseInt(get(nk)||"0",10)||0)+1));

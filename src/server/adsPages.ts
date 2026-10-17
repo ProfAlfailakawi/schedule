@@ -7,12 +7,16 @@
  *   تقرير الحملة : ما تراه شركةٌ واحدة عن حملتها وحدها، وطريقةُ العدّ بصراحة.
  *   ملف الشراكة  : ما تراه شركةٌ قبل أن تتعاقد: حجم الجمهور، والمواقع، والشروط.
  */
+import { createHash } from "crypto";
 import type { AdCampaign, AdCreative, AdStatsDay } from "../types";
 import type { AudienceStats } from "../utils/audienceStats";
 import { AD_RULES, TRIAL_DAYS, activeSlots, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase, type WeeklyCompare } from "../utils/adsEngine";
 import { conversionOf, hourAr, peakSummary, wrapUp, type WrapUp } from "../utils/adInsights";
 import { AR, countOf } from "../utils/arabicCount";
 import { SEASONS, seasonLabel, type CalendarItem } from "../utils/adSeasons";
+
+/** معرّفٌ عام للشارة مشتقٌّ من رمز التقرير بتجزئةٍ لا تُعكس: يُنشر في موقع الشركة دون أن يكشف الرمز السري. */
+export const badgeId = (reportToken: string): string => createHash("sha256").update(`badge:${reportToken}`).digest("hex").slice(0, 32);
 
 export const esc = (value: unknown): string =>
   String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -220,10 +224,10 @@ ${msg}
   const badgeCard = c.status === "draft" || c.startDay > today || !origin ? "" : `
 <h2>شارة الشراكة</h2>
 <div class="card"><p style="margin:0 0 10px">ضعوها في موقعكم أو متجركم: تعلن أنكم شركاء SCHEDULE.</p>
-<p style="margin:0 0 10px"><img src="${esc(reportPath)}/badge.svg" alt="شريك SCHEDULE" width="320" height="92" style="max-width:100%;height:auto;border-radius:16px"></p>
-<p class="btnrow"><a class="btn" href="${esc(reportPath)}/badge.svg?dl=1">تنزيل الشارة</a></p>
+<p style="margin:0 0 10px"><img src="/partner-badge/${badgeId(c.reportToken)}.svg" alt="شريك SCHEDULE" width="320" height="92" style="max-width:100%;height:auto;border-radius:16px"></p>
+<p class="btnrow"><a class="btn" href="/partner-badge/${badgeId(c.reportToken)}.svg?dl=1">تنزيل الشارة</a></p>
 <p class="note" style="margin:6px 0 4px">أو انسخوا هذا الكود:</p>
-<textarea readonly rows="2" style="inline-size:100%;box-sizing:border-box;font:12px/1.5 ui-monospace,monospace;border:1px solid var(--line);border-radius:10px;padding:8px;direction:ltr">${esc(`<img src="${origin}${reportPath}/badge.svg" alt="شريك SCHEDULE" width="320">`)}</textarea></div>`;
+<textarea readonly rows="2" style="inline-size:100%;box-sizing:border-box;font:12px/1.5 ui-monospace,monospace;border:1px solid var(--line);border-radius:10px;padding:8px;direction:ltr">${esc(`<img src="${origin}/partner-badge/${badgeId(c.reportToken)}.svg" alt="شريك SCHEDULE" width="320">`)}</textarea></div>`;
   const calendarCard = phase === "ended" || c.endDay < today ? "" : `
 <h2>تنبيهاتٌ تصلك بلا حساب</h2>
 <div class="card"><p>لا حاجة لإنشاء حساب: اشترك بهذا الرابط في تقويم جوالك فيذكّرك بنفسه قبل انتهاء الحملة بأسبوع وفي يوم انتهائها، وكل أحدٍ بتقريرك الأسبوعي. وإن تغيّرت تواريخ الحملة يتحدّث وحده.</p>

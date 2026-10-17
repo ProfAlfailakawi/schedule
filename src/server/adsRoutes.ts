@@ -34,7 +34,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import type { CenterNotification } from "../utils/notificationCenter";
 import { AD_CLIENT_SCRIPT } from "./adClientScript";
 import { analyzeCreative } from "./adQuality";
-import { campaignReportPage, measurementPage, partnerKitPage } from "./adsPages";
+import { badgeId, campaignReportPage, measurementPage, partnerKitPage } from "./adsPages";
 
 /** إشعاراتُ الجرس لحساب الإدارة الرئيسي: حملاتٌ تنتهي قريباً أو انتهت هذه الأيام، ليُجدَّد معها أو تُؤرشف. */
 export async function adNotifications(today = kuwaitDay()): Promise<CenterNotification[]> {
@@ -487,10 +487,10 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     res.send(measurementPage(deps.publicPageNonce(res)));
   });
 
-  /* شارة «شريك SCHEDULE»: صورةٌ ثابتة بالرمز نفسه؛ لا تُصدَر لحملةٍ لم تبدأ أو ما زالت مسودة. */
-  app.get("/ad-report/:token/badge.svg", async (req, res) => {
-    const token = String(req.params.token || "");
-    const campaign = token.length >= 20 ? (await Repository.listAdCampaigns()).find(c => c.reportToken === token) : undefined;
+  /* شارة «شريك SCHEDULE»: صورةٌ ثابتة بمعرّفٍ عام مشتقٍّ من الرمز ولا يكشفه (الشارة تُنشر في موقع الشركة، فلا يجوز أن يحمل رمز التقرير). تتغيّر بتجديد الرمز. لا تُصدَر لمسودة أو لحملةٍ لم تبدأ. */
+  app.get("/partner-badge/:id.svg", async (req, res) => {
+    const id = String(req.params.id || "");
+    const campaign = /^[0-9a-f]{32}$/.test(id) ? (await Repository.listAdCampaigns()).find(c => badgeId(c.reportToken) === id) : undefined;
     if (!campaign || campaign.status === "draft" || campaign.startDay > kuwaitDay()) { missing(res); return; }
     noindex(res);
     res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
