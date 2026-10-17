@@ -2095,7 +2095,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const scopedContext = resolveScopeSelection(scopes, collegeId, isPowerAdmin);
   const contextColleges = isPowerAdmin ? colleges : colleges.filter((college) => resolveScopeSelection(scopes, 0, false).collegeIds.includes(Number(college.AdCollegeId)));
-  const ContextBar = () => (
+  const contextBar = (
     <IntelligenceContextBar
       collegeId={collegeId}
       sectionId={sectionId}
@@ -2601,7 +2601,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       >
         مركز الذكاء
       </PageTitle>
-      <ContextBar />
+      {contextBar}
       {collegeId && sectionId && termId ? <div className="intelligence-reading-toolbar no-print">
         {tab === "twin" ? <span className="intelligence-working-scope">{ownScope.collegeName}</span>
           : <IntelligenceScopeSwitch value={analysisScope} onChange={value => {pendingReadingAction.current = null; setAnalysisScope(value);}} />}
