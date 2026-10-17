@@ -16,7 +16,9 @@ import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { evaluateScheduleChange, loadSimulationInput, runRegistrationSimulation } from "./simulationData";
 import { radarInsightFor } from "./radarInsight";
 import { predictiveReadingFor } from "./predictiveInsight";
+import { predictiveNarrow, predictiveSummaryOf } from "../utils/predictiveScope";
 import { emptyCauseTotals } from "../utils/registrationCauses";
+import { termIsFrozen, TERM_FROZEN_MESSAGE } from "../utils/termSequence";
 
 export interface SimulationDeps {
   requireAuth: RequestHandler;
@@ -36,13 +38,33 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
   const ctxKey = (key: string | number): string => (deps.dataContextKey ? deps.dataContextKey(key) : String(key));
   const fail = (res: Response, status: number, error: string, code?: string) => res.status(status).json({ error, ...(code ? { code } : {}) });
 
+  /**
+   * فصلُ القراءة: الافتراضيُّ فصلُ الباب. و`?termId=` اختياريٌّ لا يُقبل إلا لفصلٍ معروفٍ هو فصلُ الباب أو
+   * فصلٌ سابقٌ مجمَّد (يُعرض للاطّلاع). هو للقراءة وحدها: التشغيلُ و«ماذا لو؟» يقيسان فصلَ الباب فقط
+   * ويردّان 409 `term-frozen` على الفصل السابق.
+   */
+  const readTermFor = async (req: Request, res: Response): Promise<{ term: any; frozen: boolean } | null | "sent"> => {
+    const terms = (await Repository.getTerms()) as any[];
+    const door = pickDoorTerm(terms as any);
+    const asked = req.query.termId;
+    if (asked === undefined || asked === "") return door ? { term: door, frozen: false } : null;
+    const id = Number(asked);
+    const term = Number.isSafeInteger(id) && id > 0 ? terms.find(row => Number(row.AdTermId) === id) : undefined;
+    if (!term) { fail(res, 400, "فصلٌ غير معروف.", "bad-term"); return "sent"; }
+    if (door && Number(door.AdTermId) === id) return { term: door, frozen: termIsFrozen(id, terms as any) };
+    if (!termIsFrozen(id, terms as any)) { fail(res, 409, "الرادار لفصل الباب أو لفصلٍ سابق.", "other-term"); return "sent"; }
+    return { term, frozen: true };
+  };
+
   app.get("/api/simulation/summary", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    const terms = await Repository.getTerms();
-    const term = pickDoorTerm(terms as any);
-    if (!term) { res.json({ term: null, run: null, canRun: deps.isPowerUser(req) }); return; }
+    const picked = await readTermFor(req, res);
+    if (picked === "sent") return;
+    if (!picked) { res.json({ term: null, run: null, canRun: deps.isPowerUser(req) }); return; }
+    const { term, frozen } = picked;
     const run = await Repository.getRegistrationRun(Number(term.AdTermId));
-    if (run?.stale) kickRadarRefresh();
+    /* الفصلُ السابق سجلٌّ مجمَّد: لا يُعاد احتسابُه ولا يُوسَم «قديماً» وإن تغيّرت ملفّاتٌ بعده. */
+    if (run?.stale && !frozen) kickRadarRefresh();
     const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
     const power = deps.isPowerUser(req);
     const inScope = (rows: NonNullable<typeof run>["courses"] | undefined) => (rows || [])
@@ -66,16 +88,18 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     }
     res.json({
       term: { id: Number(term.AdTermId), name: String(term.AdTermName || "") },
-      canRun: power,
-      auto: radarAutoSettings(),
-      phase: (() => { const reading = readStudentPhase(term.AdTermStudentPhases); return { mode: reading.mode, label: reading.label, line: reading.line, namesVisible: reading.namesVisible }; })(),
+      canRun: power && !frozen,
+      frozen,
+      auto: frozen ? { enabled: false, everyHours: radarAutoSettings().everyHours } : radarAutoSettings(),
+      phase: frozen ? { mode: "closed", label: "انتهى التسجيل", line: "فصلٌ سابق: أرقامُ الرادار كما كانت عند إغلاقه.", namesVisible: true }
+        : (() => { const reading = readStudentPhase(term.AdTermStudentPhases); return { mode: reading.mode, label: reading.label, line: reading.line, namesVisible: reading.namesVisible }; })(),
       run: run ? {
         ranAt: run.ranAt, ranBy: run.ranBy, students: power ? run.students : scoped.students, withoutRules: power ? run.withoutRules : scoped.withoutRules, defaulted: power ? run.defaulted : scoped.defaulted,
         population: power ? (run.population ?? run.students + run.defaulted) : scoped.population,
         capacity: power ? (run.capacity || null) : (run.scopes ? scoped.capacity : null),
         projected: power ? (run.projected ? { students: run.projected.students, capacity: run.projected.capacity } : null) : (run.scopes ? scoped.projected : null),
         dataQuality: power ? (run.dataQuality || null) : (run.scopes ? scoped.dataQuality : null),
-        stale: Boolean(run.stale || (!power && !run.scopes)), staleAt: run.staleAt || null,
+        stale: frozen ? false : Boolean(run.stale || (!power && !run.scopes)), staleAt: run.staleAt || null,
         sourceFingerprint: run.sourceFingerprint || null,
         rounds: run.rounds, windows: power ? run.windows : scoped.windows, scoped: !power,
       } : null,
@@ -89,7 +113,10 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     res.setHeader("Cache-Control", "no-store");
     const term = pickDoorTerm((await Repository.getTerms()) as any);
     const termId = Number(req.body?.termId);
-    if (!term || Number(term.AdTermId) !== termId) { fail(res, 409, "الأثرُ يُقاس على فصل الرادار فقط.", "other-term"); return; }
+    if (!term || Number(term.AdTermId) !== termId) {
+      if (termIsFrozen(termId, (await Repository.getTerms()) as any)) { fail(res, 409, TERM_FROZEN_MESSAGE, "term-frozen"); return; }
+      fail(res, 409, "الأثرُ يُقاس على فصل الرادار فقط.", "other-term"); return;
+    }
     const power = deps.isPowerUser(req);
     const kind = String(req.body?.kind || "");
     try {
@@ -142,12 +169,14 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
   /* ── لماذا لم يبلغوا 12؟ وأيّ شعبةٍ بيانُها ناقص؟ ── يُحسب عند الطلب، بحدود النطاق. */
   app.get("/api/simulation/insight", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    const term = pickDoorTerm((await Repository.getTerms()) as any);
-    if (!term) { res.json({ ready: false }); return; }
+    const picked = await readTermFor(req, res);
+    if (picked === "sent") return;
+    if (!picked) { res.json({ ready: false }); return; }
+    const { term, frozen } = picked;
     const run = await Repository.getRegistrationRun(Number(term.AdTermId));
     if (!run) { res.json({ ready: false }); return; }
     try {
-      const insight = await radarInsightFor(term, run.rounds || 2);
+      const insight = await radarInsightFor(term, run.rounds || 2, { wishesTermId: run.wishesTermId, scope: ctxKey(Number(term.AdTermId)) });
       const power = deps.isPowerUser(req);
       const mine = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
       const causes = emptyCauseTotals();
@@ -159,7 +188,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
       const scopedQuality = insight.quality.filter(item => mine(item.collegeId, item.sectionId));
       const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
       res.json({
-        ready: true, computedAt: insight.computedAt, stale: Boolean(run.stale) || (run.sourceFingerprint || "") !== insight.fingerprint,
+        ready: true, computedAt: insight.computedAt, stale: frozen ? false : Boolean(run.stale) || (run.sourceFingerprint || "") !== insight.fingerprint,
         students, short, causes, scoped: !power,
         quality: scopedQuality.slice(0, 300).map(item => ({ ...item, courseName: String(catalog.get(item.courseId)?.CourseName || ""), courseCode: String(catalog.get(item.courseId)?.CourseCode || "") })),
         qualityTruncated: scopedQuality.length > 300 || insight.qualityTruncated,
@@ -172,38 +201,54 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
 
   /* ── الذكاء التنبّؤي: ماذا يحتاج الفصلُ القادم؟ ── قراءةٌ فقط، بحدود نطاق القارئ، وكلُّ رقمٍ يحمل ثقتَه وعددَ فصوله. */
   const predictiveMemo = createTtlMemo<Awaited<ReturnType<typeof predictiveReadingFor>>>({ ttlMs: 5 * 60_000 });
+  /* قراءةٌ واحدة تخدم اللوحة والملخّص معاً: الذاكرة نفسها، ومفتاحُها يشمل العالمَ (ctxKey) وصاحبَ الطلب والنطاق. */
+  const predictiveFor = async (req: Request) => {
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    if (!term) return null;
+    const termId = Number(term.AdTermId);
+    const run = await Repository.getRegistrationRun(termId);
+    const power = deps.isPowerUser(req);
+    /* مفتاحُ «الكلية / القسم» في مركز القراءات: يضيّق النطاقَ ولا يوسّعه أبداً (يبقى شرطُ صلاحيات القارئ). */
+    const narrow = predictiveNarrow(req.query, await Repository.getSections());
+    const permitted = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
+    const allowed = (collegeId: number, sectionId: number) => permitted(collegeId, sectionId) && (!narrow || narrow.match(collegeId, sectionId));
+    const loaded = await inputMemo.get(ctxKey(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
+    /* مفتاحُ الذاكرة يشمل صاحبَ الطلب: نطاقُه لا يُستنتج من شعب الفصل وحدها، فلا يشارك قارئٌ ذاكرةَ آخر. */
+    const scopeKey = `${power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`}:${narrow ? narrow.key : "-"}`;
+    const reading = await predictiveMemo.get(ctxKey(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`), () => predictiveReadingFor({ term, run, loaded, allowed }));
+    return { reading, scoped: !power };
+  };
   app.get("/api/simulation/predictive", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    const term = pickDoorTerm((await Repository.getTerms()) as any);
-    if (!term) { res.json({ ready: false }); return; }
-    const termId = Number(term.AdTermId);
     try {
-      const run = await Repository.getRegistrationRun(termId);
-      const power = deps.isPowerUser(req);
-      /* مفتاحُ «الكلية / القسم» في مركز القراءات: يضيّق النطاقَ ولا يوسّعه أبداً (يبقى شرطُ صلاحيات القارئ). */
-      const narrowMode = req.query.analysisScope === "department" ? "department" : req.query.analysisScope === "college" ? "college" : "";
-      const narrowCollege = Number(req.query.collegeId) || 0, narrowSection = Number(req.query.sectionId) || 0;
-      const narrow = narrowMode && narrowCollege ? { mode: narrowMode, collegeId: narrowCollege, sectionId: narrowMode === "department" ? narrowSection : 0 } : null;
-      const permitted = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
-      const allowed = (collegeId: number, sectionId: number) => permitted(collegeId, sectionId)
-        && (!narrow || (collegeId === narrow.collegeId && (narrow.mode === "college" || sectionId === narrow.sectionId)));
-      const loaded = await inputMemo.get(ctxKey(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
-      /* مفتاحُ الذاكرة يشمل صاحبَ الطلب: نطاقُه لا يُستنتج من شعب الفصل وحدها، فلا يشارك قارئٌ ذاكرةَ آخر. */
-      const scopeKey = `${power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`}:${narrow ? `${narrow.mode}:${narrow.collegeId}:${narrow.sectionId}` : "-"}`;
-      const reading = await predictiveMemo.get(ctxKey(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`), () => predictiveReadingFor({ term, run, loaded, allowed }));
-      res.json({ ready: true, scoped: !power, reading });
+      const got = await predictiveFor(req);
+      if (!got) { res.json({ ready: false }); return; }
+      res.json({ ready: true, scoped: got.scoped, reading: got.reading });
     } catch (error) {
       console.error("[simulation] predictive:", error instanceof Error ? error.message : error);
       fail(res, 500, "تعذّر حساب التنبّؤات الآن. أعد المحاولة بعد قليل.");
+    }
+  });
+  /* ملخّصٌ صغير لبطاقة مركز الذكاء: أعدادٌ فقط، من القراءة المخزَّنة نفسها (فتحُ اللوحة بعده فوريّ). */
+  app.get("/api/simulation/predictive-summary", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const got = await predictiveFor(req);
+      if (!got) { res.json({ ready: false }); return; }
+      res.json({ ready: true, scoped: got.scoped, summary: predictiveSummaryOf(got.reading) });
+    } catch (error) {
+      console.error("[simulation] predictive-summary:", error instanceof Error ? error.message : error);
+      fail(res, 500, "تعذّر حساب ملخّص التنبّؤ الآن.");
     }
   });
 
   /* ما قاله الطلبةُ بعد التسجيل («هل سجلت؟»): أعدادٌ لكل مقرر، بحدود النطاق. */
   app.get("/api/simulation/outcome", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    const terms = await Repository.getTerms();
-    const term = pickDoorTerm(terms as any);
-    if (!term) { res.json({ term: null, answered: 0, courses: [] }); return; }
+    const picked = await readTermFor(req, res);
+    if (picked === "sent") return;
+    if (!picked) { res.json({ term: null, answered: 0, courses: [] }); return; }
+    const term = picked.term;
     const termId = Number(term.AdTermId);
     const shards = await outcomeMemo.get(ctxKey(termId), () => Repository.getRegistrationOutcome(termId));
     const merged = new Map<number, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>();
@@ -238,6 +283,9 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     let lease: { termId: number; holder: string } | null = null;
     try {
       const terms = await Repository.getTerms();
+      /* الشاشةُ قد تعرض فصلاً سابقاً؛ والخادمُ لا يثق بها: تشغيلٌ باسم فصلٍ مجمَّد يُردّ دائماً. */
+      const askedTerm = Number(req.body?.termId) || 0;
+      if (askedTerm && termIsFrozen(askedTerm, terms as any)) { fail(res, 409, TERM_FROZEN_MESSAGE, "term-frozen"); return; }
       const term = pickDoorTerm(terms as any);
       if (!term) { fail(res, 409, "لا فصلَ جارياً أو قادماً يُبنى له الرادار.", "no-term"); return; }
       const holder = `${process.pid}-${Date.now()}`;

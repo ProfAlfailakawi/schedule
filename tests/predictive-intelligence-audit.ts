@@ -12,6 +12,7 @@ import {
 } from "../src/utils/predictiveIntelligence";
 import { compareArabic } from "../src/utils/arabicText";
 import { orderRadarCourses } from "../src/utils/registrationSim";
+import { predictiveNarrow, predictiveSummaryOf } from "../src/utils/predictiveScope";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -174,6 +175,23 @@ const full = readPredictive({ ...base, students: cohort as any, plans: [plan], c
 check(full.historyTerms === 5 && full.historyNames.length === 5, "الحزمة تصرّح بعدد الفصول السابقة المستعملة");
 check(full.top.length > 0 && full.top.every((item, i, list) => i === 0 || item.confidence.score * item.impact <= list[i - 1].confidence.score * list[i - 1].impact + 1e-9), "وأهمُّ الإجراءات مرتّبةٌ بالأثر × الثقة");
 check(full.top.every(item => item.reason.length > 0 && item.confidence.termsUsed >= 0), "ولكلٍّ سطرُ سببٍ وثقةٌ بعدد الفصول");
+
+/* ═════ ٨) نطاق التنبّؤ وملخّص البطاقة ═════ */
+const sectionsList = [
+  { AdCollegeId: 1, AdSectionId: 10, AdSectionName: "قسم الرياضيات" }, { AdCollegeId: 2, AdSectionId: 20, AdSectionName: "الرياضيات" },
+  { AdCollegeId: 1, AdSectionId: 11, AdSectionName: "الفيزياء" },
+];
+const hereOnly = predictiveNarrow({ analysisScope: "college", collegeId: "1", sectionId: "10" }, sectionsList)!;
+const familyWide = predictiveNarrow({ analysisScope: "department", collegeId: "1", sectionId: "10" }, sectionsList)!;
+check(hereOnly.match(1, 10) && !hereOnly.match(2, 20) && !hereOnly.match(1, 11), "«هذه الكلية»: القسم المفتوح في هذه الكلية وحده");
+check(familyWide.match(1, 10) && familyWide.match(2, 20) && !familyWide.match(1, 11), "«كل كليات القسم»: عائلة القسم عبر الكليات دون أقسامٍ أخرى");
+check(hereOnly.key !== familyWide.key, "ومفتاحا الذاكرة مختلفان فلا يتشاركان قراءة");
+check(predictiveNarrow({}, sectionsList) === null && predictiveNarrow({ analysisScope: "college" }, sectionsList) === null, "بلا نطاقٍ صريح لا تضييق (يبقى شرطُ صلاحيات القارئ وحده)");
+check(predictiveNarrow({ analysisScope: "college", collegeId: 1 }, sectionsList)!.match(1, 11), "ونداءٌ قديم بكليةٍ بلا قسم يعني كل أقسام الكلية");
+const sumFull = predictiveSummaryOf(full), sumEmpty = predictiveSummaryOf(empty);
+check(sumFull.historyTerms === 5 && !sumFull.thin && sumFull.actions === full.top.length && sumFull.best?.label === full.top[0].label, "الملخّص: عمقُ التاريخ وعددُ المقترحات وأفضلُها من القراءة نفسها");
+check(sumEmpty.thin && sumEmpty.actions === empty.top.length, "وبلا تاريخٍ يُعلَن أنه غير كافٍ");
+check(predictiveSummaryOf({ historyTerms: 1, top: [] }).thin && !predictiveSummaryOf({ historyTerms: 2, top: [] }).thin, "وفصلٌ واحد = غير كافٍ، فصلان = كافٍ للعرض");
 
 console.log(`\n${passed} نجح · ${failed} فشل`);
 if (failed) process.exit(1);

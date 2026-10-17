@@ -103,7 +103,7 @@ import { adInjection, adNotifications, registerAdsRoutes } from "./src/server/ad
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
-import { seedDemoRadar } from "./src/server/demoRadarSeed";
+import { seedDemoRadar, seedDemoPreviousTermRadar } from "./src/server/demoRadarSeed";
 import { seedDemoPreviousTerm, seedDemoCurrentTermStories } from "./src/server/demoPreviousTermSeed";
 import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instructorRequestItems";
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
@@ -162,6 +162,7 @@ import {
   authoritySectionCodeLooksPlausible,
   normalizeAuthoritySectionCode,
 } from "./src/utils/authorityAcademicCodes";
+import { buildRowReasons, instructorLoadUnits } from "./src/utils/rowReasons";
 import { PENDING_ROOM, eligibleHallsForSection, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, rowOccupiesRoom, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
@@ -2366,6 +2367,7 @@ async function seedDemoStories(): Promise<void> {
   const storyDeps = { sealIdentity: sealStudentIdentity, fingerprintOf: surveyFingerprint, requestItemFromRow, dayLetters: DAY_LETTERS, judge: (request: InstructorRequest) => judgeRequestItems(request) };
   await seedDemoCurrentTermStories(storyDeps, termId).catch(error => console.error("[demo] seeding current-term stories failed:", error));
   await seedDemoPreviousTerm(storyDeps).catch(error => console.error("[demo] seeding previous term failed:", error));
+  await seedDemoPreviousTermRadar().catch(error => console.error("[demo] seeding previous-term radar failed:", error));
 }
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
@@ -8892,8 +8894,33 @@ app.get("/api/intelligence/context/:id", requirePermission(7), async (req: Authe
   const offeringLife=buildOfferingLife(selected,courseHistory,terms,instructors,versions);
   const decisionCost=buildDecisionCost(selected,termVisible,courseHistory);
   const whyHere=explainWhyHere(selected,courseLife,externalConflicts);
+  /* ── لماذا هذه القاعة؟ ورغبة الأستاذ/أثره ─────────────────────────────────
+     رقائق محسوبة بدالة صرفة من بياناتٍ موجودة؛ أي إخفاقٍ في القراءة = لا رقائق، ولا يمسّ السياق. */
+  let reasons:any[]=[];
+  try{
+    const instructor=instructors.find(i=>i.AdInstructorId===selected.AdInstructorId)||null;
+    const course=courses.find(c=>c.AdCourseId===selected.AdCourseId)||null;
+    const [registry,barter,requests,proposals]=await Promise.all([
+      readLocationRegistry(),Repository.getHallBarterRequests(selected.AdTermId),
+      selected.AdInstructorId?Repository.getInstructorRequests(selected.AdCollegeId,selected.AdSectionId,selected.AdTermId):Promise.resolve([]),
+      selected.AdInstructorId?Repository.getStudyProposalsByTerm(selected.AdTermId):Promise.resolve([]),
+    ]);
+    let room:any=selected.roomId?registry.rooms.find(r=>r.id===selected.roomId):null;
+    if(!room&&selected.AdRoomCode&&selected.AdRoomHall){
+      const b=resolveBuilding(registry,selected.AdRoomCode,{collegeId:selected.AdCollegeId,sectionId:selected.AdSectionId});
+      if(b.status==="CONFIRMED"&&b.value?.id){const r=resolveRoom(registry,selected.AdRoomHall,b.value.id,{collegeId:selected.AdCollegeId,sectionId:selected.AdSectionId});if(r.status==="CONFIRMED")room=r.value||null;}
+    }
+    const creditOf=(id:number)=>Number(courses.find(c=>c.AdCourseId===id)?.CourseCredit)||0;
+    const mineAll=selected.AdInstructorId?termRows.filter(r=>r.AdInstructorId===selected.AdInstructorId):[];
+    reasons=buildRowReasons({
+      row:selected,room,barter:barter.filter(r=>r.status==="approved"),maxStudent:Number(course?.MaxStudent)||0,
+      instructorRows:mineAll,quota:Number(instructor?.AdInstructorLoad)||null,
+      loadUnits:Number(instructor?.AdInstructorLoad)>0?instructorLoadUnits(mineAll,selected.AdInstructorId,creditOf):null,
+      history:courseHistory,requests:requests as any,proposals:proposals as any,
+    });
+  }catch(error:any){console.error("تعذّر حساب رقائق «لماذا؟»:",error?.message||error);}
   res.json({selected,course:courses.find(c=>c.AdCourseId===selected.AdCourseId)||null,instructor:instructors.find(i=>i.AdInstructorId===selected.AdInstructorId)||null,related,conflicts:externalConflicts,comments,
-    memory,memoryTerms:style.memory?.terms||0,courseLife,offeringLife,decisionCost,whyHere});
+    memory,memoryTerms:style.memory?.terms||0,courseLife,offeringLife,decisionCost,whyHere,reasons});
 });
 
 app.get("/api/intelligence/replay/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

@@ -900,6 +900,8 @@ export interface RegistrationTicket {
 export interface RegistrationRun {
   id: string;
   termId: number;
+  /** رغباتُ أيّ فصلٍ حُسب منها هذا الرادار إن اختلف عن `termId` (فصلٌ سابقٌ يُعرض للاطّلاع). */
+  wishesTermId?: number;
   runId: string;
   ranAt: string;
   ranBy: string;

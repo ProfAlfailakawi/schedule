@@ -316,7 +316,7 @@ try {
   const adminSummary = (await http("GET", "/api/simulation/summary", { who: "admin" })).json;
   check(adminSummary.auto?.enabled === true && adminSummary.auto.everyHours === 24, "I2 الشاشةُ تقول إنه تلقائي وكم ساعة");
   const rs = fs.readFileSync(path.join(process.cwd(), "src/server/simulationRoutes.ts"), "utf8"), sv = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
-  check(rs.includes("acquireRegistrationRunLease") && rs.includes("Repository.isDemoMode()") && sv.includes("scheduleRadarAutoRun(") && rs.includes("if (run?.stale) kickRadarRefresh()"), "I2 بقفلٍ بين الخوادم، ولا يعمل في التجربة، ويُجدول عند الإقلاع");
+  check(rs.includes("acquireRegistrationRunLease") && rs.includes("Repository.isDemoMode()") && sv.includes("scheduleRadarAutoRun(") && rs.includes("if (run?.stale && !frozen) kickRadarRefresh()"), "I2 بقفلٍ بين الخوادم، ولا يعمل في التجربة، ويُجدول عند الإقلاع");
 } finally { server.close(); }
 
 console.log(`\n${passed} passed, ${failed} failed`);

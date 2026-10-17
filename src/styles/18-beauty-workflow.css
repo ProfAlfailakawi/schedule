@@ -117,3 +117,4 @@
   .insight-preview{transition:none}
   .insight-preview:hover{transform:none}
 }
+.insight-preview>b[data-long]{font-size:clamp(15px,1.5vw,19px);letter-spacing:0;line-height:1.3;max-inline-size:9ch;text-align:end}

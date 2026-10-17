@@ -142,6 +142,7 @@ export const AR = {
   record:      { one: "سجل", two: "سجلان", few: "سجلات", many: "سجلاً" },
   draft:       { one: "مسوّدة", two: "مسوّدتان", few: "مسوّدات", many: "مسوّدة" },
   answer:      { one: "جواب", two: "جوابان", few: "أجوبة", many: "جواباً" },
+  procedure:   { one: "إجراء", two: "إجراءان", few: "إجراءات", many: "إجراءً" },
   seat:        { one: "مقعد", two: "مقعدان", few: "مقاعد", many: "مقعداً" },
   profile:     { one: "ملف", two: "ملفان", few: "ملفات", many: "ملفاً" },
   unit:        { one: "وحدة", two: "وحدتان", few: "وحدات", many: "وحدة" },
