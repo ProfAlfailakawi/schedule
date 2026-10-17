@@ -178,6 +178,8 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
     const [sections, published] = await Promise.all([Repository.getSections(), Repository.listPublishedSheets()]);
     const publishedById = new Map(published.map(sheet => [sheet.id, sheet]));
     const rows: any[] = [];
+    /* القسمُ المختار في مركز الذكاء يُعاد ولو بلا صحيفةٍ معتمدة، ليشرح الواجهةُ أنّ الاعتماد مطلوب لا أن تُخفي لوحتَه. */
+    const focusId = Number(req.query.section) || 0;
     for (const section of sections as any[]) {
       const sectionId = Number(section.AdSectionId), collegeId = Number(section.AdCollegeId);
       if (!canPublish(req, collegeId, sectionId)) continue;
@@ -189,7 +191,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
         const pub = publishedById.get(plan.id);
         sheets.push({ planId: plan.id, name: plan.name, ruleVersion: live.version, published: Boolean(pub), publishedAt: pub?.publishedAt || "", stale: Boolean(pub && pub.ruleVersion !== live.version), url: pub ? sheetUrl(sectionId, plan.id) : "" });
       }
-      if (sheets.length) rows.push({ sectionId, sectionName: String(section.AdSectionName || ""), sheets, deptUrl: `${OFFICIAL_ORIGIN}/plans/s${sectionId}/`, indexUrl: `${OFFICIAL_ORIGIN}/plans/` });
+      if (sheets.length || sectionId === focusId) rows.push({ sectionId, sectionName: String(section.AdSectionName || ""), sheets, deptUrl: `${OFFICIAL_ORIGIN}/plans/s${sectionId}/`, indexUrl: `${OFFICIAL_ORIGIN}/plans/` });
     }
     res.json({ sections: rows, canPublish: rows.length > 0 || deps.isPowerUser(req) });
   });

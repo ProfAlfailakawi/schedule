@@ -24,7 +24,7 @@ async function call(url: string, body?: unknown) {
   return json;
 }
 
-export default function PlanSheetPublisher({ onChanged }: { onChanged?: () => void }) {
+export default function PlanSheetPublisher({ onChanged, focusSectionId = 0 }: { onChanged?: () => void; focusSectionId?: number }) {
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -33,10 +33,26 @@ export default function PlanSheetPublisher({ onChanged }: { onChanged?: () => vo
   const [copied, setCopied] = useState("");
 
   const load = useCallback(async () => {
-    try { setState(await call("/api/plan-sheets")); setError(""); }
+    try { setState(await call(focusSectionId ? `/api/plan-sheets?section=${focusSectionId}` : "/api/plan-sheets")); setError(""); }
     catch (e: any) { setError(e?.message || "تعذّر تحميل الصحائف."); setState({ sections: [], canPublish: false }); }
-  }, []);
+  }, [focusSectionId]);
   useEffect(() => { void load(); }, [load]);
+
+  /* قسمُ نطاق القرار المختار: رمزُ QR لصفحته يظهر في أعلى اللوحة بلا بحثٍ ولا ضغط. */
+  const focus = state?.sections.find(s => s.sectionId === focusSectionId);
+  const focusPublished = Boolean(focus?.sheets.some(x => x.published));
+  const [focusQr, setFocusQr] = useState("");
+  useEffect(() => {
+    let live = true;
+    setFocusQr("");
+    if (!focus || !focusPublished) return;
+    import("../utils/qrcodeGenerator").then(mod => {
+      const factory = mod.default as unknown as QrFactory;
+      const code = factory(0, "M"); code.addData(focus.deptUrl); code.make();
+      if (live) setFocusQr(code.createSvgTag({ scalable: true, margin: 2 }));
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [focus?.deptUrl, focusPublished]);
 
   const run = async (key: string, task: () => Promise<string>) => {
     setBusy(key); setError(""); setNote("");
@@ -74,26 +90,26 @@ export default function PlanSheetPublisher({ onChanged }: { onChanged?: () => vo
   };
 
   /* ملصقُ A4 للقسم: الاسم والرمز كبيراً، يُعلَّق على لوحة القسم كملصق «مساري». */
-  const printPoster = () => {
-    if (!qr) return;
+  const printPoster = (target: { title: string; url: string; svg: string } | null = qr) => {
+    if (!target) return;
     const win = window.open("", "_blank", "width=720,height=960");
     if (!win) { setError("اسمح بالنوافذ المنبثقة لطباعة الملصق."); return; }
     const esc = (v: string) => v.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
-    win.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(qr.title)}</title>
+    win.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(target.title)}</title>
 <style>@page{size:A4;margin:0}body{margin:0;font-family:"Plex Arabic",Tahoma,sans-serif;color:#0B2545;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .p{box-sizing:border-box;min-height:100vh;padding:64px 48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:linear-gradient(#EEF4FF,#fff)}
 .k{font-size:20px;font-weight:700;color:#2563EB;letter-spacing:.5px}h1{margin:0;font-size:46px;line-height:1.3;font-weight:900}
 .bar{width:140px;height:6px;border-radius:6px;background:linear-gradient(90deg,#EA580C 0 25%,#2563EB 25%)}
 .qr{width:360px;height:360px;padding:18px;background:#fff;border-radius:28px;box-shadow:0 10px 40px rgba(11,37,69,.12);margin-top:18px}.qr svg{width:100%;height:100%}
 p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;direction:ltr}</style></head>
-<body><div class="p"><div class="k">الخطة الدراسية</div><h1>${esc(qr.title)}</h1><div class="bar"></div><div class="qr">${qr.svg}</div><p>امسح الرمز لتفتح الخطة التفاعلية</p><small>${esc(qr.url)}</small></div></body></html>`);
+<body><div class="p"><div class="k">الخطة الدراسية</div><h1>${esc(target.title)}</h1><div class="bar"></div><div class="qr">${target.svg}</div><p>امسح الرمز لتفتح الخطة التفاعلية</p><small>${esc(target.url)}</small></div></body></html>`);
     win.document.close();
     win.focus();
     win.setTimeout(() => win.print(), 250);
   };
 
   if (!state) return <MicroLoader />;
-  if (!state.sections.length) return <EmptyState title="لا صحائف معتمدة لتُنشر" detail="تظهر هنا الصحائف التي اعتمدتها بعد مراجعتها." />;
+  if (!state.sections.length) return <EmptyState title="لا صحيفةَ معتمدة بعد" detail="اعتمد قواعد صحيفة القسم من «مراجعة الصحيفة» في القائمة، فتظهر هنا مع رمز QR ورابطها العام." />;
   const pending = state.sections.reduce((n, s) => n + s.sheets.filter(x => !x.published || x.stale).length, 0);
   const total = state.sections.reduce((n, s) => n + s.sheets.length, 0);
   const publishedCount = state.sections.reduce((n, s) => n + s.sheets.filter(x => x.published).length, 0);
@@ -110,9 +126,33 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
         </div>
       </header>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
+      {focus ? (
+        <section className={`psh-focus${focusPublished ? "" : " off"}`} aria-label={`صحيفة ${focus.sectionName}`}>
+          {focusPublished
+            ? <div className="psh-focus-qr" role="img" aria-label="رمز QR لصفحة القسم" dangerouslySetInnerHTML={{ __html: focusQr }} />
+            : <div className="psh-focus-qr empty" aria-hidden="true"><QrCode /></div>}
+          <div className="psh-focus-body">
+            <strong>{focus.sectionName}</strong>
+            {focusPublished ? <>
+              <small>امسح الرمز لتفتح صحيفة القسم التفاعلية وملف PDF</small>
+              <code dir="ltr">{focus.deptUrl}</code>
+              <span className="psh-focus-actions">
+                <SecondaryButton onClick={() => copy(focus.deptUrl)} data-guide-ignore="نسخ رابط صفحة القسم">{copied === focus.deptUrl ? <Check /> : <Copy />} انسخ الرابط</SecondaryButton>
+                <a className="psh-open" href={focus.deptUrl} target="_blank" rel="noopener noreferrer" data-guide-ignore="فتح صفحة القسم العامة في تبويبٍ جديد"><ExternalLink /> افتح</a>
+                <SecondaryButton disabled={!focusQr} onClick={() => printPoster({ title: focus.sectionName, url: focus.deptUrl, svg: focusQr })} data-guide-ignore="طباعة ملصق A4 برمز QR لصفحة القسم"><Printer /> اطبع ملصقاً</SecondaryButton>
+              </span>
+            </> : <>
+              <small>{focus.sheets.length ? "لم تُنشر صحيفة هذا القسم بعد. انشرها فيظهر رمز QR ورابطها هنا." : "لا صحيفة معتمدة لهذا القسم بعد. يعتمد رئيس لجنة الجدول قواعدها في «مراجعة الصحيفة» ثم تُنشر هنا."}</small>
+              {focus.sheets.length ? <span className="psh-focus-actions">
+                <PrimaryButton disabled={Boolean(busy)} onClick={() => publish({ sectionId: focus.sectionId }, `s${focus.sectionId}`)} data-guide-ignore="نشر صحيفة القسم المختار">{busy === `s${focus.sectionId}` ? "جارٍ النشر…" : "انشر صحيفة القسم"}</PrimaryButton>
+              </span> : null}
+            </>}
+          </div>
+        </section>
+      ) : null}
       {note ? <Notice type="success" onDismiss={() => setNote("")}>{note}</Notice> : null}
 
-      {state.sections.map(section => {
+      {[...state.sections].sort((x, y) => Number(y.sectionId === focusSectionId) - Number(x.sectionId === focusSectionId)).map(section => {
         const todo = section.sheets.filter(x => !x.published || x.stale).length;
         return (
           <section className="psh-dept" key={section.sectionId}>
@@ -159,7 +199,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
             <div className="psh-qr-actions">
               <SecondaryButton onClick={() => copy(qr.url)} data-guide-ignore="نسخ رابط الصحيفة من نافذة رمز QR">{copied === qr.url ? <Check /> : <Copy />} انسخ الرابط</SecondaryButton>
               <SecondaryButton onClick={downloadQr} data-guide-ignore="تنزيل رمز QR صورةً"><Download /> تنزيل QR</SecondaryButton>
-              <SecondaryButton onClick={printPoster} data-guide-ignore="طباعة ملصق A4 برمز QR للقسم أو الصحيفة"><Printer /> اطبع ملصقاً</SecondaryButton>
+              <SecondaryButton onClick={() => printPoster()} data-guide-ignore="طباعة ملصق A4 برمز QR للقسم أو الصحيفة"><Printer /> اطبع ملصقاً</SecondaryButton>
             </div>
           </div>
         </div>
