@@ -214,8 +214,9 @@ check(inbox.includes("function RequestThread(") && inbox.includes("/reply`") && 
   "والواردُ يعرض الخيطَ ويردّ ويقترح أوقاتاً");
 
 /* ── بابُ التعديل في بطاقتي لا يختفي ──────────────────────────────────────── */
-check(staffHtml.includes('id="tab-requests" role="tab" aria-selected="false">طلب تعديل الجدول</button>') && !/id="tab-requests"[^>]*display:none/.test(staffHtml),
-  "تبويبُ «طلب تعديل الجدول» موجودٌ في الصفحة ولا يُخفى بالتنسيق (رابط القسم كالشخصي)");
+check(staffHtml.includes('id="tab-requests" role="tab" aria-selected="false" hidden>طلب تعديل الجدول</button>') && !/id="tab-requests"[^>]*display:none/.test(staffHtml)
+  && staffHtml.includes(".card-tab[hidden]{display:none}") && staffHtml.includes("tab.hidden=!links.length"),
+  "تبويبُ «طلب تعديل الجدول» يُرسم مخفياً افتراضياً (لا وميض) ويكشفه السكربتُ فقط حين توجد نافذةُ طلباتٍ مفتوحة");
 check(staffHtml.includes("tab.hidden=!links.length") && staffHtml.includes("if(!l.windowOpen||seen[l.linkId])return false")
   && !staffHtml.includes("انتهت فترة الطلبات'"),
   "ويُخفى التبويبُ كلُّه حين لا نافذةَ طلباتٍ مفتوحة، ولا بطاقةَ «انتهت فترة الطلبات» ولا زرَّ فتح نموذجٍ لنافذةٍ مغلقة");

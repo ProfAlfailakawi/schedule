@@ -17385,6 +17385,7 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
 .card-tabs:has(#tab-movement[aria-selected=true])::before{transform:translateX(calc(-100% - 4px))}
 .card-tabs:has(#tab-requests[aria-selected=true])::before{transform:translateX(calc(-200% - 8px))}
 .card-tab{position:relative;border-color:transparent;transition:color .25s}
+.card-tab[hidden]{display:none}
 .card-tab[aria-selected=true]{background:transparent;border-color:transparent}
 @media screen{.stat b{color:var(--jade)}}
 @media screen and (max-width:559px){
@@ -17452,7 +17453,7 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
     <div class="card-tabs" role="tablist">
       <button type="button" class="card-tab" id="tab-week" role="tab" aria-selected="true">الجدول الأسبوعي</button>
       <button type="button" class="card-tab" id="tab-movement" role="tab" aria-selected="false">حركة الجدول</button>
-      <button type="button" class="card-tab" id="tab-requests" role="tab" aria-selected="false">طلب تعديل الجدول</button>
+      <button type="button" class="card-tab" id="tab-requests" role="tab" aria-selected="false" hidden>طلب تعديل الجدول</button>
     </div>
     <div id="panel-week">
       <div id="days"></div>

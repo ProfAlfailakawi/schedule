@@ -26,8 +26,8 @@ function instructorGap(rows:FSchedule[], instructorId:number){
   return {total,max};
 }
 
-function conflictCountForRow(candidate:FSchedule, universe:FSchedule[]){
-  return findConflicts([candidate],universe.filter(row=>row.id!==candidate.id).concat(candidate)).filter(item=>item.rowId===candidate.id||item.otherId===candidate.id).length;
+function conflictCountForRow(candidate:FSchedule, universe:FSchedule[], placeholders?:Iterable<number>){
+  return findConflicts([candidate],universe.filter(row=>row.id!==candidate.id).concat(candidate),{placeholderInstructorIds:placeholders}).filter(item=>item.rowId===candidate.id||item.otherId===candidate.id).length;
 }
 
 function computeConflictTopology(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], options:AnalyzeOptions={}){
@@ -115,21 +115,23 @@ function computeFairnessEngine(rows:FSchedule[], instructors:AdInstructor[]){
   return {score,label:score>=90?"عادل جدًا":score>=78?"متوازن":score>=62?"يحتاج موازنة":"غير عادل",averageBurden:Number(avg.toFixed(1)),spread:Number(stdev.toFixed(1)),profiles:ranked,warnings};
 }
 
-function roomFreeFor(row:FSchedule, room:RoomPlacement, universe:FSchedule[]){
+function roomFreeFor(row:FSchedule, room:RoomPlacement, universe:FSchedule[], placeholders?:Iterable<number>){
   const candidate=placeInRoom(row,room);
-  const conflicts=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate));
+  const conflicts=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate),{placeholderInstructorIds:placeholders});
   return !conflicts.some(c=>isBlockingConflict(c)&&(c.rowId===candidate.id||c.otherId===candidate.id));
 }
 
-function computeRoomResilience(rows:FSchedule[], universe:FSchedule[]){
+/* `instructors` is part of the memo key (identity) so the placeholder rule can never go stale. */
+function computeRoomResilience(rows:FSchedule[], universe:FSchedule[], instructors:AdInstructor[]=[]){
+  const placeholders=placeholderInstructorIds(instructors as any);
   const groups=new Map<string,FSchedule[]>(); rows.forEach(r=>{const key=roomKey(r);if(key){const list=groups.get(key)||[];list.push(r);groups.set(key,list)}});
   const universeRooms=[...new Map(universe.map(roomPlacement).filter((r):r is RoomPlacement=>Boolean(r)).map(r=>[r.key,r])).values()];
-  const rooms=[...groups.entries()].map(([key,list])=>{const representative=roomPlacement(list[0]);const code=representative?.code||String(list[0]?.AdRoomCode||""),hall=representative?.hall||String(list[0]?.AdRoomHall||"");let recoverable=0;for(const row of list){if(universeRooms.some(room=>room.key!==key&&roomFreeFor(row,room,universe)))recoverable++}const dependency=rows.length?list.length/rows.length:0;const recoverability=list.length?recoverable/list.length:1;const risk=clamp(dependency*72+(1-recoverability)*42,0,100);return{key,buildingId:representative?.buildingId,roomId:representative?.roomId,code,hall,sessions:list.length,dependencyPct:Math.round(dependency*100),recoverable,recoverabilityPct:Math.round(recoverability*100),risk:Math.round(risk),singlePoint:risk>=38&&list.length>=Math.max(3,rows.length*.08)}}).sort((a,b)=>b.risk-a.risk);
+  const rooms=[...groups.entries()].map(([key,list])=>{const representative=roomPlacement(list[0]);const code=representative?.code||String(list[0]?.AdRoomCode||""),hall=representative?.hall||String(list[0]?.AdRoomHall||"");let recoverable=0;for(const row of list){if(universeRooms.some(room=>room.key!==key&&roomFreeFor(row,room,universe,placeholders)))recoverable++}const dependency=rows.length?list.length/rows.length:0;const recoverability=list.length?recoverable/list.length:1;const risk=clamp(dependency*72+(1-recoverability)*42,0,100);return{key,buildingId:representative?.buildingId,roomId:representative?.roomId,code,hall,sessions:list.length,dependencyPct:Math.round(dependency*100),recoverable,recoverabilityPct:Math.round(recoverability*100),risk:Math.round(risk),singlePoint:risk>=38&&list.length>=Math.max(3,rows.length*.08)}}).sort((a,b)=>b.risk-a.risk);
   return {rooms,topRisk:rooms[0]||null,singlePoints:rooms.filter(r=>r.singlePoint)};
 }
 
 function computeFragilityMap(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], options?:AnalyzeOptions){
-  const analysis=analyze(rows,universe,courses,instructors,options);const total=Math.max(1,rows.length);const room=buildRoomResilience(rows,universe);const fairness=buildFairnessEngine(rows,instructors);
+  const analysis=analyze(rows,universe,courses,instructors,options);const total=Math.max(1,rows.length);const room=buildRoomResilience(rows,universe,instructors);const fairness=buildFairnessEngine(rows,instructors);
   const instructorCounts=new Map<number,number>();rows.forEach(r=>instructorCounts.set(r.AdInstructorId,(instructorCounts.get(r.AdInstructorId)||0)+1));
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const professorRisk=[...instructorCounts.entries()].map(([id,count])=>({type:"instructor",key:String(id),label:instructorById.get(id)?.AdInstructorName||`أستاذ ${id}`,affected:count,impactPct:Math.round(count/total*100),severity:count/total>.12?"high":count/total>.07?"medium":"low"})).sort((a,b)=>b.affected-a.affected).slice(0,5);
@@ -182,7 +184,7 @@ export function buildDecisionMemoryInsight(memories:ScheduleDecisionMemory[], co
 }
 
 export function createEmergencyPlans(kind:"room"|"day"|"instructor",value:string|number,rows:FSchedule[],universe:FSchedule[],courses:AdCourse[],instructors:AdInstructor[],constraints:ScheduleConstraint[]=[]){
-  const baseIds=new Set(rows.map(r=>r.id));const external=universe.filter(r=>!baseIds.has(r.id));const allRooms=[...new Map(universe.map(roomPlacement).filter((r):r is RoomPlacement=>Boolean(r)).map(r=>[r.key,r])).values()];const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
+  const baseIds=new Set(rows.map(r=>r.id));const external=universe.filter(r=>!baseIds.has(r.id));const allRooms=[...new Map(universe.map(roomPlacement).filter((r):r is RoomPlacement=>Boolean(r)).map(r=>[r.key,r])).values()];const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));const placeholders=placeholderInstructorIds(instructors as any);
   const affected=kind==="room"?rows.filter(r=>roomKey(r)===String(value)):kind==="day"?rows.filter(r=>Boolean((r as any)[String(value)])):rows.filter(r=>r.AdInstructorId===Number(value));
   const courseTeachers=new Map<number,number[]>();universe.forEach(r=>{const list=courseTeachers.get(r.AdCourseId)||[];if(r.AdInstructorId&&!list.includes(r.AdInstructorId))list.push(r.AdInstructorId);courseTeachers.set(r.AdCourseId,list)});
   const strategies=[{id:"minimal",title:"الأقل تغييرًا",timeWeight:5,roomWeight:2,qualityWeight:1},{id:"comfort",title:"الأقل إزعاجًا للأساتذة",timeWeight:2,roomWeight:1,qualityWeight:4},{id:"quality",title:"الأعلى جودة",timeWeight:1,roomWeight:1,qualityWeight:8}];
@@ -198,7 +200,7 @@ export function createEmergencyPlans(kind:"room"|"day"|"instructor",value:string
         const replacements=(courseTeachers.get(current.AdCourseId)||[]).filter(id=>id!==Number(value));for(const id of replacements)candidates.push({...current,AdInstructorId:id});
       }
       let best:FSchedule|undefined,bestObjective=Number.POSITIVE_INFINITY;
-      for(const candidate of candidates){const temp=[...scenario];temp[index]=candidate;const u=[...external,...temp];const conflicts=conflictCountForRow(candidate,u);const timeChange=Math.abs(timeToMinutes(candidate.fstarttime)-timeToMinutes(current.fstarttime));const roomChange=roomKey(candidate)===roomKey(current)?0:1;const profGap=instructorGap(temp,candidate.AdInstructorId).total;const objective=conflicts*100000+timeChange*strategy.timeWeight+roomChange*45*strategy.roomWeight+profGap/Math.max(1,strategy.qualityWeight);if(objective<bestObjective){bestObjective=objective;best=candidate}}
+      for(const candidate of candidates){const temp=[...scenario];temp[index]=candidate;const u=[...external,...temp];const conflicts=conflictCountForRow(candidate,u,placeholders);const timeChange=Math.abs(timeToMinutes(candidate.fstarttime)-timeToMinutes(current.fstarttime));const roomChange=roomKey(candidate)===roomKey(current)?0:1;const profGap=instructorGap(temp,candidate.AdInstructorId).total;const objective=conflicts*100000+timeChange*strategy.timeWeight+roomChange*45*strategy.roomWeight+profGap/Math.max(1,strategy.qualityWeight);if(objective<bestObjective){bestObjective=objective;best=candidate}}
       if(best)scenario[index]=best;else unresolved.push(`${current.AdCourseName} · شعبة ${current.SCode}`);
     }
     const scenarioUniverse=[...external,...scenario];const analysis=analyzeSchedule(scenario,scenarioUniverse,courses,instructors);const rules=evaluateScheduleConstraints(scenario,constraints);const changed=scenario.filter(r=>{const b=rows.find(x=>x.id===r.id);return b&&!rowsEqual(b,r)}).length;const fairness=buildFairnessEngine(scenario,instructors);
