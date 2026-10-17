@@ -360,7 +360,7 @@ function kmJrHtml(){var X=KM.x,m=KM.m,chips='';
 /* ── سلاسل المسبقات العابرة للأقسام ── */
 function kmChainsHtml(){var X=KM.x,ch=X.chains();if(!ch.length)return'';
   var groups={},order=[];ch.forEach(function(line){var r=line[0];if(!groups[r]){groups[r]=[];order.push(r)}groups[r].push(line.slice(1))});
-  var hues=["#2563EB","#0891B2","#DB2777","#7C3AED","#EA580C","#059669"],h='<section class="km-sec fade"><div class="km-sh"><h2>سلاسلي</h2><span class="km-tag">مسبقاتٌ تعبر الأقسام</span></div><div class="kch">';
+  var hues=["#2563EB","#0891B2","#DB2777","#7C3AED","#EA580C","#059669"],h='<section class="km-sec fade"><div class="km-sh"><h2>مسبقاتي</h2><span class="km-tag">مسبقاتٌ تعبر الأقسام</span></div><div class="kch">';
   var st=function(id,big){var s=X.status(id);return '<button type="button" class="ks s-'+s+(big?' big':'')+'" data-id="'+id+'" aria-label="'+esc(X.byId[id].name)+' — '+KMST[s]+'">'+esc(X.byId[id].short)+'</button>'};
   order.forEach(function(r,i){var root=X.byId[r],br=groups[r],hue=hues[i%hues.length],ids={};ids[r]=1;br.forEach(function(path){path.forEach(function(id){ids[id]=1})});
     var all=Object.keys(ids).map(Number),done=all.filter(function(id){return X.isPassed(id)}).length,kids={};
@@ -389,7 +389,7 @@ function kmMapHtml(){return '<a class="km-map fade" href="/api/public/me/map-pag
 /* ── الهيكل والرسم ── */
 function kmShell(){return '<div class="km" id="kmRoot" data-pane="'+KM.pane+'"><div class="km-grid"><aside class="km-side"><div class="km-sticky"><div id="kmHero" class="o1"></div><nav id="kmSeg" class="km-seg o1" aria-label="أقسام خريطتي"></nav><div id="kmRq" class="o6" data-pane="rq"></div></div></aside><div class="km-main"><div id="kmReg" class="o2" data-pane="reg"></div><div id="kmMap" class="o3" data-pane="reg"></div><div id="kmJr" class="o4" data-pane="jr"></div><div id="kmCh" class="o5" data-pane="ch"></div></div></div></div>'}
 /* الجوال: أربع لوحاتٍ بدل صفحةٍ طويلة؛ الحاسوب يعرضها كلَّها (القاعدةُ في CSS تحت ٩٠٠). */
-function kmSegHtml(){var X=KM.x,hasCh=X.chains().length>0,t=[["reg","سجّل",kmCanWish()],["jr","رحلتي",true],["ch","سلاسلي",hasCh],["rq","متطلباتي",true]];
+function kmSegHtml(){var X=KM.x,hasCh=X.chains().length>0,t=[["reg","سجّل",kmCanWish()],["jr","رحلتي",true],["ch","مسبقاتي",hasCh],["rq","متطلباتي",true]];
   if(!hasCh&&KM.pane==="ch")KM.pane="jr";
   return t.filter(function(x){return x[2]}).map(function(x){return '<button type="button" data-act="pane" data-p="'+x[0]+'" aria-pressed="'+(KM.pane===x[0]?"true":"false")+'">'+x[1]+'</button>'}).join("")}
 function kmPane(p,sc){KM.pane=p;var r=document.getElementById("kmRoot");if(r)r.setAttribute("data-pane",p);var sg=document.getElementById("kmSeg");if(sg)sg.innerHTML=kmSegHtml();
