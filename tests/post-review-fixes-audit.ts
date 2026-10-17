@@ -14,7 +14,7 @@ const read = (path: string) => fs.readFileSync(new URL(`../${path}`, import.meta
 const sim = read("src/server/simulationRoutes.ts");
 const server = read("server.ts");
 check(!/(?:inputMemo|predictiveMemo|outcomeMemo)\.get\((?!ctxKey|deps\.dataContextKey)/.test(sim), "كلُّ ذاكرةٍ في المحاكاة تُقرأ بمفتاحٍ يحمل عالَمه");
-check(/dataContextKey: dataContextCacheKey,\n\}\);\nregisterInsightRoutes/.test(server) && server.includes("radarNoticeFor(req, { ...scopeDeps, dataContextKey: dataContextCacheKey })"), "الخادم يمرّر قاعدةَ المفتاح إلى مسارات المحاكاة والإشعار");
+check(/dataContextKey: dataContextCacheKey,\n\}\);\nregisterInsightRoutes/.test(server) && /const scopeDeps = \{[^\n]*dataContextKey: dataContextCacheKey \};/.test(server), "الخادم يمرّر قاعدةَ المفتاح إلى مسارات المحاكاة والإشعار");
 
 const ws = read("src/components/proposal/StudyProposalWorkspace.tsx");
 check(ws.includes("let ownPopNow = false;") && /window\.addEventListener\("popstate", \(\) => \{ ownPopNow = ownPops > 0;/.test(ws), "الحدثُ الذاتيّ يُستهلك في مستمعٍ دائم");

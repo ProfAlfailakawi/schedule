@@ -11762,8 +11762,8 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
      لا يُسقط الجرس. */
   try {
     const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
-    const scopeDeps = { isScopeAllowed: (r: any, c: number, s: number) => isScopeAllowed(r, c, s), isPowerUser: (r: any) => isPowerUser(r) };
-    const [reviews, radar] = await Promise.all([pendingPlanReviews(req, scopeDeps), radarNoticeFor(req, { ...scopeDeps, dataContextKey: dataContextCacheKey })]);
+    const scopeDeps = { isScopeAllowed: (r: any, c: number, s: number) => isScopeAllowed(r, c, s), isPowerUser: (r: any) => isPowerUser(r), dataContextKey: dataContextCacheKey };
+    const [reviews, radar] = await Promise.all([pendingPlanReviews(req, scopeDeps), radarNoticeFor(req, scopeDeps)]);
     const extra = buildFeatureNotifications({ role, planReviews: reviews, radar: radar.radar, outcome: radar.outcome, termId: radar.termId || termId, termName: radar.termName || termName });
     if (extra.length) {
       const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
