@@ -154,7 +154,8 @@ try {
     }
   }
 } finally {
-  if (child?.pid) { try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill(); } }
+  /* SIGKILL لمجموعة العملية كلها: خادمُ التجربة بعد ملء الفصلين يتأخر عن SIGTERM فيبقى على المنفذ ويُسقط خطوةً لاحقة تشغّل خادمها على المنفذ نفسه. */
+  if (child?.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* ended */ } } }
 }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
