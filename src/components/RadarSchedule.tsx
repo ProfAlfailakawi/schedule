@@ -26,10 +26,12 @@ export default function RadarSchedule({ course, termId, onChanged }: { course: R
   const [state, setState] = useState<"idle" | "loading" | "ready">("idle");
   const [proposal, setProposal] = useState<any>(null);
   const [message, setMessage] = useState("");
+  const [noCeiling, setNoCeiling] = useState(false);
   const read = async () => {
     setState("loading"); setMessage("");
     try {
       const data = await request(`/api/schedules/demand?collegeId=${course.collegeId}&sectionId=${course.sectionId}&termId=${termId}`);
+      setNoCeiling((data?.openings?.noCeiling || []).some((item: any) => Number(item.courseId) === course.courseId));
       setProposal((data?.openings?.proposals || []).find((item: any) => Number(item.courseId) === course.courseId) || null);
       setState("ready");
     } catch (e: any) { setMessage(e.message || "تعذّرت قراءة الاقتراح."); setState("idle"); }
@@ -39,7 +41,13 @@ export default function RadarSchedule({ course, termId, onChanged }: { course: R
       {state === "idle" ? <SecondaryButton type="button" onClick={read} data-guide-ignore="يقرأ اقتراح فتح شعبة لهذا المقرر؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> ماذا لو فتحنا شعبة؟</SecondaryButton> : null}
       {state === "loading" ? <small>يبحث عن وقتٍ خالٍ من التعارض…</small> : null}
       {message ? <small className="sm-act-note">{message}</small> : null}
-      {state === "ready" && !proposal ? <small className="sm-act-note">لا يقترح المحرّك شعبةً لهذا المقرر الآن: إمّا أن الطلب لا يُنتج مقاعد ناقصة، أو لا وقتَ خالياً من التعارض. راجع الجدول في ورشة القسم.</small> : null}
+      {state === "ready" && !proposal ? (
+        <small className="sm-act-note">
+          {noCeiling
+            ? "لم تُسجَّل «سعة الشعبة» لهذا المقرر، فلا يُحسب عدد الشعب. سجّلها في المقررات."
+            : "لا مقاعد ناقصة لهذا المقرر في طلب الفصل الحالي، أو لا وقتَ خالياً من التعارض. التوقّع أعلاه مبنيّ على الفصول السابقة وحدها."}
+        </small>
+      ) : null}
       {state === "ready" && proposal ? (
         <div className="sm-act-list">
           {proposal.simulationImpact ? (() => {
