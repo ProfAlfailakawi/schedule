@@ -217,14 +217,15 @@ function p5Findings() {
   const submitAt = sign.indexOf("submitToRegistrar(");
   check(ackAt > 0 && staleAt > 0 && staleAt < ackAt && ackAt < submitAt,
     "توقيعُ رئيس القسم يشمل الشُّعب المضافة قبل الإرسال — بعد حارس «الشاشة قديمة»");
-  const readiness = server.slice(server.indexOf("async function scheduleDataReadiness"), server.indexOf('app.get("/api/approvals"'));
+  const readiness = fs.readFileSync(path.join(process.cwd(), "src/utils/scheduleDataReadiness.ts"), "utf8"); /* الفحص انتقل إلى وحدةٍ نقيّة يستدعيها الخادم */
   check(readiness.includes('"الوحدات"') && readiness.includes('"الساعات"') && readiness.includes('"سعة الشعبة"') && readiness.includes('"سعة القاعة"')
     && readiness.includes('"أيام المحاضرة"') && readiness.includes('"عضو هيئة التدريس"') && readiness.includes('"وقت بداية ونهاية صحيح"'),
     "فحصٌ موحّد قبل التوقيع يكشف حقول المقرر والشعبة والأستاذ والموعد والقاعة الناقصة");
   const getApproval = server.slice(server.indexOf('app.get("/api/approvals"'), server.indexOf('app.get("/api/approvals/term"'));
   check(getApproval.includes("dataReadiness: await scheduleDataReadiness"), "شريط الاعتماد يستلم نواقص البيانات لنطاق القسم نفسه");
-  const readinessGateAt = sign.indexOf('if (!dataReadiness.ready)');
-  check(readinessGateAt > staleAt && readinessGateAt < sign.indexOf('captureScopeVersion'), "لا يُوقّع ولا تُنشأ نسخة توقيع قبل استكمال البيانات الناقصة");
+  /* القاعدة الجديدة (2026-09-27، قرار المالك): نواقص البيانات إشعارٌ لا يمنع التوقيع — حُدّث الفحص القديم الذي كان يُلزم بالبوابة. */
+  check(!sign.includes("scheduleDataReadiness") && !sign.includes("data-readiness"), "التوقيع لا تحجبه نواقص البيانات — لا يمنعه إلا تعارضٌ ماديّ");
+  check(sign.indexOf("blockingSummaryFor(") > staleAt && sign.indexOf("canSign(") > sign.indexOf("blockingSummaryFor("), "ويبقى المانع المادّي يُسأل قبل التوقيع");
   const seed = server.slice(server.indexOf("async function seedDemoStories("), server.indexOf("\n}\n", server.indexOf("async function seedDemoStories(")));
   check(seed.includes('attempt.items[target].verdict === "clear"') && seed.includes("acceptable.slice(1, 3)"),
     "الطلبُ المبذور وبدائلُه كلُّها مما يقبله حكمُ النظام — لا بديلَ يُرفض حين يختاره الأستاذ");

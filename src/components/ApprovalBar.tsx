@@ -468,7 +468,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
     <section className="apb-data-readiness" data-ready={state.dataReadiness.ready || undefined} aria-label="بيانات تحتاج استكمالاً">
       <header>
         <span className="apb-dr-ic">{state.dataReadiness.ready ? <Check aria-hidden="true" /> : <ListChecks aria-hidden="true" />}</span>
-        <strong>{state.dataReadiness.ready ? "البيانات مكتملة" : `${countOf(state.dataReadiness.count, AR.item)} ناقصة · تمنع التوقيع حتى تُستكمل`}</strong>
+        <strong>{state.dataReadiness.ready ? "البيانات مكتملة" : `${countOf(state.dataReadiness.count, AR.item)} ناقصة · لا تمنع التوقيع`}</strong>
         <button type="button" className="apb-dr-close" aria-label="إغلاق القائمة" onClick={() => setReadinessOpen(false)} data-guide-ignore="إغلاق قائمة البيانات الناقصة"><X aria-hidden="true" /></button>
       </header>
       {!state.dataReadiness.ready ? (() => {
@@ -481,11 +481,21 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
               {list.map(item => {
                 const ItemIcon = ITEM_ICON[item.kind] || ListChecks;
                 const canJump = item.kind !== "course" || Boolean(onOpenCourses);
+                /* بندُ سعة القاعة يحمل إصلاحه فيه: خانةٌ وحفظ، لا بطاقةٌ ثانية أسفل القائمة. */
+                const capacityRoom = item.kind === "room" && item.fields.includes("سعة القاعة")
+                  ? state.dataReadiness?.rooms?.find(room => room.id === item.id) : undefined;
+                const saved = capacityRoom ? String(capacityRoom.capacity ?? "") : "";
+                const draft = capacityRoom ? (roomCapacityDrafts[capacityRoom.id] ?? saved) : "";
                 return (
-                  <li key={`${item.kind}:${item.id}`}>
+                  <li key={`${item.kind}:${item.id}`} data-kind={item.kind}>
                     <span className="apb-dr-ic" aria-hidden="true"><ItemIcon /></span>
                     <span className="apb-dr-txt"><b>{item.label}</b>{item.fields.length ? <small>{item.fields.join("، ")}</small> : null}</span>
-                    {canJump ? <button type="button" className="apb-dr-go" onClick={() => jumpToItem(item)} data-guide-ignore="قفزٌ إلى مكان إصلاح البند الناقص">{ITEM_ACTION[item.kind] || "افتح"}<ArrowLeft aria-hidden="true" /></button> : null}
+                    {capacityRoom ? (
+                      <span className="apb-dr-fix">
+                        <label className="apb-dr-cap"><Users aria-hidden="true" /><span className="sr-only">السعة</span><input data-room-input={capacityRoom.id} inputMode="numeric" placeholder="السعة" aria-label={`سعة ${capacityRoom.label}`} value={draft} onChange={event => setRoomCapacityDrafts(current => ({ ...current, [capacityRoom.id]: event.target.value.replace(/[^0-9]/g, "") }))} onKeyDown={event => { if (event.key === "Enter" && draft && draft !== saved) void saveRoomCapacity(capacityRoom.id); }} /></label>
+                        <button type="button" className="apb-room-save" disabled={savingRoomId === capacityRoom.id || !draft || draft === saved} aria-label={`حفظ سعة ${capacityRoom.label}`} onClick={() => void saveRoomCapacity(capacityRoom.id)} data-guide-ignore="حفظ سعة القاعة الفعلية ضمن نطاق القسم">{savingRoomId === capacityRoom.id ? <Hourglass aria-hidden="true" /> : <Check aria-hidden="true" />}</button>
+                      </span>
+                    ) : canJump ? <button type="button" className="apb-dr-go" onClick={() => jumpToItem(item)} data-guide-ignore="قفزٌ إلى مكان إصلاح البند الناقص">{ITEM_ACTION[item.kind] || "افتح"}<ArrowLeft aria-hidden="true" /></button> : null}
                   </li>
                 );
               })}
@@ -494,19 +504,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           </>
         );
       })() : null}
-      {state.dataReadiness.rooms?.length ? <div className="apb-room-capacities" aria-label="سعات القاعات المستخدمة">{state.dataReadiness.rooms.map(room => {
-        const [first, ...others] = String(room.label).split(" · ").reverse();
-        const saved = String(room.capacity ?? "");
-        const draft = roomCapacityDrafts[room.id] ?? saved;
-        return (
-          <div key={room.id} className="apb-room" data-missing={!saved || undefined}>
-            <span className="apb-room-ic" aria-hidden="true"><DoorOpen /></span>
-            <span className="apb-room-name"><b>{first}</b>{others.length ? <small>{others.reverse().join(" · ")}</small> : null}</span>
-            <label><Users aria-hidden="true" /><span className="sr-only">السعة</span><input data-room-input={room.id} inputMode="numeric" placeholder="السعة" aria-label={`سعة ${room.label}`} value={draft} onChange={event => setRoomCapacityDrafts(current => ({ ...current, [room.id]: event.target.value.replace(/[^0-9]/g, "") }))} /></label>
-            <button type="button" className="apb-room-save" disabled={savingRoomId === room.id || !draft || draft === saved} aria-label={`حفظ سعة ${room.label}`} onClick={() => void saveRoomCapacity(room.id)} data-guide-ignore="حفظ سعة القاعة الفعلية ضمن نطاق القسم">{savingRoomId === room.id ? <Hourglass aria-hidden="true" /> : <Check aria-hidden="true" />}</button>
-          </div>
-        );
-      })}</div> : null}
     </section>
   ) : null;
 
@@ -556,12 +553,12 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {/* ── بياناتٌ ناقصة: عنصرٌ واحد، لا شارةٌ وأيقونةٌ منفصلتان ───────────
             العدّ هو عدد البنود التي تعدّها scheduleDataReadiness على الخادم
             (مقرراتٌ بلا وحدات/ساعات/سعة، مواعيدُ بلا أستاذ أو قاعة، قاعاتٌ بلا سعة).
-            وهي تمنع التوقيع فعلاً (الخادم يردّ 409 والزرّ معطّل) لكنها ليست
-            تعارضاً مادّياً: لونها كهرماني لا أحمر، واسمها «بيانات ناقصة» لا «مانع».
+            وهي إشعارٌ لا يمنع التوقيع (قاعدة 2026-09-27: لا يمنعه إلا تعارضٌ ماديّ):
+            لونها كهرماني لا أحمر، واسمها «بيانات ناقصة» لا «مانع».
             الضغط يفتح قائمتها وفي كل بندٍ فعلٌ يقفز إلى مكان إصلاحه. */}
         {state.dataReadiness && !state.dataReadiness.ready ? (
           <button type="button" className="apb-badge apb-data-btn" data-tone="warning" aria-expanded={readinessOpen}
-            title={`${countOf(state.dataReadiness.count, AR.item)} ناقصة — لا تمنعها تعارضات، لكن التوقيع ينتظر استكمالها. اضغط للقائمة.`}
+            title={`${countOf(state.dataReadiness.count, AR.item)} ناقصة · لا تمنع التوقيع. اضغط للقائمة.`}
             onClick={() => setReadinessOpen(open => !open)}
             data-guide-ignore="قائمة البيانات الناقصة قبل التوقيع — تفتح قائمةً بكل بندٍ وفعلُه">
             <ListChecks aria-hidden="true" />
@@ -570,7 +567,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             <ChevronDown aria-hidden="true" className="apb-data-chev" />
           </button>
         ) : null}
-        {canSignNow && blockingConflicts === 0 && state.dataReadiness?.ready ? (
+        {canSignNow && blockingConflicts === 0 ? (
           <span className="apb-badge apb-ready" data-tone="success" data-guide-ignore="شارة جاهزية التوقيع — عرضٌ لا فعل">
             <ShieldCheck aria-hidden="true" /><span>جاهز للتوقيع</span>
           </span>
@@ -680,9 +677,9 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
 
         {canSignNow ? (
-          <PrimaryButton type="button" className="apb-primary" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0 || Boolean(state.dataReadiness && !state.dataReadiness.ready)}
+          <PrimaryButton type="button" className="apb-primary" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0}
             aria-label={signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
-            title={state.dataReadiness && !state.dataReadiness.ready ? "استكمل البيانات الناقصة من تفاصيل مراجعة الاعتماد أولاً" : signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
+            title={signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
             onClick={() => void act("/api/approvals/sign")}>
             {signatureStage === "head" ? <BadgeCheck aria-hidden="true" /> : <PenLine aria-hidden="true" />}
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد وإرسال" : "توقيع"}

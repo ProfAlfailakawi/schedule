@@ -1531,3 +1531,10 @@
 .apb-dr-go,.apb-dr-more{display:inline-flex;align-items:center;gap:4px;flex:none;padding:4px 10px;border:1px solid var(--line-strong);border-radius:var(--r-full);background:transparent;color:var(--ink-2);font:inherit;font-size:.78rem;font-weight:700;cursor:pointer}
 .apb-dr-go svg{inline-size:13px;block-size:13px}
 .apb-dr-more{justify-self:start;border-style:dashed}
+
+/* بندٌ ناقص يحمل إصلاحَه: خانة سعة + حفظ داخل صفّ القائمة نفسه */
+.apb-dr-fix{display:inline-flex;align-items:center;gap:6px;flex:none}
+.apb-dr-cap{display:inline-flex;align-items:center;gap:6px;padding-inline:9px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface);color:var(--muted)}
+.apb-dr-cap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
+.apb-dr-cap svg{inline-size:15px;block-size:15px;flex:none}
+.apb-dr-cap input{inline-size:58px;min-block-size:34px;border:0;background:transparent;font:inherit;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);padding:0;outline:none}
