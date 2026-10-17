@@ -7,6 +7,8 @@
  *   • كل أحدٍ حتى الانتهاء: «تقريرك الأسبوعي جاهز» بالرابط الحي.
  * يتحدّث وحده إن تغيّرت تواريخُ الحملة (التقويمُ يُعيد قراءة الرابط). دالةٌ نقيّة قابلة للاختبار.
  */
+import { AR, countOf } from "./arabicCount";
+
 export interface CalendarCampaign { id: string; company: string; startDay: string; endDay: string; trial?: boolean }
 
 const CRLF = "\r\n";
@@ -46,7 +48,11 @@ export function reportCalendar(c: CalendarCampaign, reportUrl: string, today: st
   ];
   const open = `افتح تقرير حملتك الحي: ${reportUrl}`;
   const warnDay = shift(c.endDay, -7);
-  if (c.endDay >= today && warnDay >= c.startDay) events.push(base(`${c.id}-renew`, warnDay < today ? today : warnDay, `تنتهي حملة ${c.company} بعد أسبوع`, `للتجديد أو تثبيت مكانكم في الفصل القادم تواصلوا مع إدارة البرنامج. ${open}`));
+  /* من اشترك بعد موعد التحذير يصله تذكيرُ اللحاق اليوم بالأيام الفعلية المتبقية، لا بـ«أسبوع» كاذبة؛ وفي يوم الانتهاء نفسه يكفيه حدثُ الانتهاء. */
+  const left = Math.round((Date.parse(`${c.endDay}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+  const renewHow = `للتجديد أو تثبيت مكانكم في الفصل القادم تواصلوا مع إدارة البرنامج. ${open}`;
+  if (c.endDay >= today && warnDay >= c.startDay && warnDay >= today) events.push(base(`${c.id}-renew`, warnDay, `تنتهي حملة ${c.company} بعد أسبوع`, renewHow));
+  else if (left > 0 && left < 7) events.push(base(`${c.id}-renew`, today, `تنتهي حملة ${c.company} بعد ${countOf(left, AR.day)}`, renewHow));
   if (c.endDay >= today) events.push(base(`${c.id}-end`, c.endDay, `آخر يومٍ في حملة ${c.company}`, `${c.trial ? "تنتهي التجربة المجانية اليوم. " : ""}${open}`));
   const first = nextSunday(c.startDay > today ? c.startDay : today);
   if (first <= c.endDay) events.push(base(`${c.id}-weekly`, first, `تقريرك الأسبوعي: حملة ${c.company}`, `أرقام الأسبوع جاهزة. ${open}`, [`RRULE:FREQ=WEEKLY;BYDAY=SU;UNTIL=${compact(c.endDay)}`]));

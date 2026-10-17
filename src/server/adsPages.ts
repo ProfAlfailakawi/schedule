@@ -174,7 +174,7 @@ export function campaignReportPage(input: CampaignReportInput): string {
   const origin = (input.origin || "").replace(/\/$/, "");
   const endingBanner = phase === "live" && left <= 7
     ? `<div class="callout"><b>حملتكم تنتهي بعد ${esc(countOf(Math.max(0, left), AR.day))}</b><span>للتجديد أو تثبيت مكانكم في الفصل القادم تواصلوا مع إدارة البرنامج قبل الانتهاء.</span></div>` : "";
-  const calendarCard = phase === "ended" ? "" : `
+  const calendarCard = phase === "ended" || c.endDay < today ? "" : `
 <h2>تنبيهاتٌ تصلك بلا حساب</h2>
 <div class="card"><p>لا حاجة لإنشاء حساب: اشترك بهذا الرابط في تقويم جوالك فيذكّرك بنفسه قبل انتهاء الحملة بأسبوع وفي يوم انتهائها، وكل أحدٍ بتقريرك الأسبوعي. وإن تغيّرت تواريخ الحملة يتحدّث وحده.</p>
 <p class="btnrow">${origin ? `<a class="btn" href="${esc(origin.replace(/^https?:/, "webcal:") + reportPath)}/calendar.ics">اشترك في تقويمي</a>` : ""}<a class="btn" style="background:transparent;color:var(--accent);border:1px solid var(--line)" href="${esc(reportPath)}/calendar.ics?dl=1">تنزيل الملف</a></p>

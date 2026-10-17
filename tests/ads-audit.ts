@@ -64,6 +64,10 @@ async function main() {
     const unfolded = ics.replace(/\r\n /g, "");
     check(unfolded.includes("SUMMARY:تنتهي حملة شركة\\, الأمل\\; للتقنية بعد أسبوع"), "A6 iCal: الفاصلة والفاصلة المنقوطة تُهرَّبان");
     check(unfolded.includes("DTSTART;VALUE=DATE:20261124") && unfolded.includes("DTSTART;VALUE=DATE:20261201") && unfolded.includes("DTSTART;VALUE=DATE:20261115") && unfolded.includes("UNTIL=20261201"), "A6 iCal: تذكير قبل أسبوع (٢٤ نوفمبر) ويوم الانتهاء وأول أحدٍ قادم (١٥ نوفمبر)");
+    const late = CAL.reportCalendar({ id: "c9", company: "ش", startDay: "2026-11-01", endDay: "2026-12-01" }, "https://x.test/r", "2026-11-28").replace(/\r\n /g, "");
+    check(late.includes("SUMMARY:تنتهي حملة ش بعد") && !late.includes("بعد أسبوع") && late.includes("DTSTART;VALUE=DATE:20261128"), "A6 iCal: مشتركٌ بعد موعد التحذير: تذكير اليوم بالأيام الفعلية لا «أسبوع»");
+    const lastDay = CAL.reportCalendar({ id: "c9", company: "ش", startDay: "2026-11-01", endDay: "2026-12-01" }, "https://x.test/r", "2026-12-01").replace(/\r\n /g, "");
+    check(!lastDay.includes(`UID:c9-renew@`) && lastDay.includes("UID:c9-end@"), "A6 iCal: يوم الانتهاء نفسه: حدثُ الانتهاء وحده");
     const ended = CAL.reportCalendar({ id: "c9", company: "ش", startDay: "2026-01-01", endDay: "2026-02-01" }, "https://x.test/r", "2026-11-10");
     check(!ended.includes("BEGIN:VEVENT"), "A6 iCal: حملةٌ منتهية بلا أحداث");
   }
