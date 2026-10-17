@@ -175,7 +175,7 @@ const AUDIT_ENTITY_LABEL: Record<string, string> = {
   auth: "الدخول", schedules: "الجداول", approvals: "الاعتماد", users: "المستخدمون",
   permissions: "الصلاحيات", colleges: "الكليات", sections: "الأقسام", courses: "المقررات",
   instructors: "الأساتذة", terms: "الفصول", "user-scopes": "النطاقات", "system-backup": "النسخة الاحتياطية",
-  intelligence: "مركز الذكاء", "instructor-requests": "رغبات الأساتذة", "student-registration": "كشف التسجيل",
+  intelligence: "مركز الذكاء", "instructor-requests": "رغبات الأساتذة", "student-registration": "كشف التسجيل", ads: "الإعلانات",
 };
 const auditEntityLabel = (entity: string) => AUDIT_ENTITY_LABEL[entity] || entity;
 

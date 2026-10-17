@@ -14,7 +14,7 @@ export default function AdSlot({ slot }: { slot: string }) {
     document.body.appendChild(script);
     return () => { script.remove(); };
   }, [slot]);
-  return <aside id="adx" aria-label="إعلان" dir="rtl" />;
+  return <aside id="adx" className="adx" aria-label="إعلان" dir="rtl" />;
 }
 
 /** نبضُ الزيارة المجهول لتطبيق الكادر: مرةً في اليوم لكل متصفح، بلا هوية. يُستدعى بعد الدخول. */

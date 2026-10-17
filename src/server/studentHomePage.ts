@@ -546,6 +546,10 @@ function setupPassed(){var d=S.draft,load=function(){
   if(S.plans&&S.plans.length&&S.draft.sectionId)load();else api("GET","/api/public/me/plan?sectionId="+d.sectionId).then(function(r){if(!r.ok){toast(r.d.error||"تعذّر التحميل",true);return}S.plans=r.d.plans;if(!d.planId&&S.plans.length===1)d.planId=S.plans[0].id;load()})}
 
 /* ── الرئيسية ── */
+/* يركّب موقعَ إعلانٍ في عنصرٍ من الصفحة. السكربت العام مؤجَّل وقد يصل بعد هذه الدالة: إن لم يجهز يُؤجَّل الطلب
+   ويُنفَّذ حين يجهز (فإن أُعيد رسم العنصر قبلها يسقط القديم ويُركَّب الجديد). لا إعلان قبل الدخول: صفحةُ الدخول تطلب الرقم المدني. */
+function adxMountLater(id,slot,opt){var box=document.getElementById(id);if(!box)return;
+  if(window.AdxMount)window.AdxMount(box,slot,opt);else(window.__adxPending=window.__adxPending||[]).push([box,slot,opt])}
 function viewHome(){
   dockEl.innerHTML="";S.tkOverrides={};S.tkRemoved={};S.tkAdded={};S.tkSel=0;S.tkErr="";S.wDraft=null;S.wEdit=false;S.wStep=0;S.wCount=null;var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
   var first=p.identity&&p.identity.name?String(p.identity.name).split(" ")[0]:"";
@@ -554,13 +558,13 @@ function viewHome(){
   var h='<section class="hero me fade"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div class="who"><small>'+(first?"أهلاً، "+esc(first):"مساري")+'</small><h1>'+esc(p.sectionName)+'</h1><span>'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة</span></div><button class="ghost" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div>'
    +'<div class="kpis"><div><b>'+(pr.remainingUnits||0)+'</b><small>الوحدات المتبقية</small></div><div><b id="kt">'+(terms||"✓")+'</b><small id="kts">'+(terms?"فصول للتخرّج":"أكملت الصحيفة")+'</small></div><div><b class="w">'+esc(ph.label)+'</b><small>'+(ph.nextAt?esc(fmtShort(ph.nextAt)):"المرحلة الآن")+'</small></div></div></section>';
   h+='<div class="pane" data-pane="now"><div id="notices"></div><div id="cases"></div><div id="ticket"></div><div id="report"></div><div id="wishes"></div>'
-   +'<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'</section><div id="caseRequest"></div></div>';
+   +'<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'</section><div id="caseRequest"></div><div id="adx-me-box"></div></div>';
   h+='<div class="pane" data-pane="plan" hidden><div id="advice"></div>'
    +'<details class="more how fade"><summary>'+ic("info")+' كيف قدّرنا التخرج؟</summary><p class="muted">'+(pr.remainingUnits?'نحو '+countOf(terms,AR.term)+' بحسب المتبقي ومعدل 15 وحدة في الفصل.':'أكملت وحدات الصحيفة بحسب المقررات التي علّمتها.')+' تقدير يتغير مع تحديث إنجازك والقواعد المعتمدة، وليس موعداً رسمياً.</p></details></div>';
   h+='<div class="pane" data-pane="me" hidden>'
    +(p.identity?'<section class="card idn fade"><div class="row" style="gap:12px"><span class="ic">'+ic("user")+'</span><div class="tx"><b>'+esc(p.identity.name)+'</b><small>الرقم المدني <bdi dir="ltr">'+esc(p.identity.civilMasked)+'</bdi></small></div><button type="button" class="link" id="nmb">تصحيح</button></div></section>':"")
    +'<section class="card fade"><div class="acts"><button class="act" id="chg">'+ic("key")+'<span>غيّر الرمز</span></button><button class="act" id="out">'+ic("out")+'<span>اخرج</span></button><button class="act bad" id="del">'+ic("trash")+'<span>احذف ملفّي</span></button></div><p class="priv">'+ic("shield")+' يُحفظ حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p></section></div>';
-  app.innerHTML=h;animateRings();markOverflow();
+  app.innerHTML=h;animateRings();markOverflow();adxMountLater("adx-me-box","me");
   dockEl.innerHTML='<nav class="tabs" role="tablist" aria-label="أقسام مساري"><button type="button" role="tab" data-tab="now" aria-selected="true">'+ic("home")+'<span>الآن</span><i class="dot" id="nowdot" hidden></i></button><button type="button" role="tab" data-tab="plan" aria-selected="false">'+ic("layers")+'<span>خطتي</span></button><button type="button" role="tab" data-tab="me" aria-selected="false">'+ic("user")+'<span>ملفي</span></button></nav>';
   dockEl.querySelectorAll("[data-tab]").forEach(function(b){b.addEventListener("click",function(){showTab(b.getAttribute("data-tab"))})});
   document.getElementById("edp").addEventListener("click",function(){var d=startDraft();d.step=3;viewSetup()});
@@ -682,6 +686,12 @@ function tkSet(cur,courseId,offeringId){
 function tkDrop(cur,courseId){var key=cur.label+":"+courseId,base=cur.items.filter(function(i){return Number(i.courseId)===Number(courseId)})[0];
   if(base){S.tkRemoved[key]=true;delete S.tkOverrides[key]}else S.tkAdded[cur.label]=(S.tkAdded[cur.label]||[]).filter(function(a){return Number(a.courseId)!==Number(courseId)})}
 function tkEdited(cur){var any=false;Object.keys(S.tkRemoved).forEach(function(k){if(k.indexOf(cur.label+":")===0)any=true});return any||(S.tkAdded[cur.label]||[]).length>0}
+function tkClock(m){var h=Math.floor(m/60),mm=m%60;return h+':'+(mm<10?'0':'')+mm}
+function tkLongestGap(items){var by={},best=null;
+  items.forEach(function(i){if(!i.timesVisible)return;(i.slots||[]).forEach(function(s){(by[s.day]=by[s.day]||[]).push(s)})});
+  Object.keys(by).forEach(function(d){var a=by[d].sort(function(x,y){return x.start-y.start});
+    for(var n=1;n<a.length;n++){var g=a[n].start-a[n-1].end;if(g>=60&&(!best||g>best.min))best={day:Number(d),from:a[n-1].end,to:a[n].start,min:g}}});
+  return best}
 function tkGrid(items,sel,ghosts){
   var lo=1440,hi=0;
   items.forEach(function(it){if(it.timesVisible)(it.slots||[]).forEach(function(s){lo=Math.min(lo,s.start);hi=Math.max(hi,s.end)})});
@@ -757,8 +767,12 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
     +(tkEdited(cur)&&S.state.phase&&S.state.phase.canEditWishes?'<button type="button" class="btn small" data-act="wish" style="inline-size:auto">'+ic("heart")+'اجعلها رغباتي</button>':'')+'</div>';
   h+='<p class="fine" id="tkerr" role="status" aria-live="polite">'+esc(S.tkErr||"")+'</p>';
   if(t.unmet.length){h+='<details class="more"><summary>'+ic("down")+' ما لم نضعه ('+t.unmet.length+')</summary><div class="list" style="margin-block-start:6px">'+t.unmet.map(function(u){return '<div class="opt off"><span class="tx"><b>'+esc(u.name)+'</b><small>'+esc(WHY[u.reason]||"")+'</small></span></div>'}).join("")+'</div></details>'}
+  var brk=visibleTimes?tkLongestGap(items):null;
+  if(brk)h+='<div id="adx-break-box" data-gap="'+brk.min+'"></div>';
   h+='<p class="fine">'+ic("shield","")+' تقدير فقط — لا يحجز مقعداً.</p></div></section>';
   host.innerHTML=h;
+  /* محطة الاستراحة: أطولُ فراغٍ في أسبوعه يُعرض فيه إعلانٌ إن وُجدت حملةٌ للموقع (السكربت العام يحمّله من الخادم ويحتسب ظهوره). */
+  if(brk)adxMountLater("adx-break-box","break",{intro:'عندك فراغٌ يوم '+DAYN[brk.day]+' من '+tkClock(brk.from)+' إلى '+tkClock(brk.to)+' (نحو '+countOf(Math.round(brk.min/6)/10,AR.hour)+'). استراحتك برعاية:'});
   host.querySelectorAll('[data-seg="plan"] button').forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");S.tkSel=0;S.tkErr="";paintTicket(host)})});
   host.querySelectorAll('[data-seg="view"] button').forEach(function(b){b.addEventListener("click",function(){S.tkView=b.getAttribute("data-v");paintTicket(host)})});
   host.querySelectorAll(".wk-b[data-c]").forEach(function(b){b.addEventListener("click",function(){var id=Number(b.getAttribute("data-c"));S.tkSel=Number(S.tkSel)===id?0:id;S.tkErr="";paintTicket(host)})});

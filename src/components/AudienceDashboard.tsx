@@ -43,6 +43,7 @@ function Bars({ points, label }: { points: Array<{ key: string; value: number; t
   const step = W / Math.max(1, points.length);
   const bw = Math.max(3, Math.min(30, step * 0.66));
   return (
+    <>
     <svg className="pt-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
       <line x1="0" x2={W} y1={H - pb} y2={H - pb} stroke="var(--line)" />
       <line x1="0" x2={W} y1={(H - pb + pt) / 2} y2={(H - pb + pt) / 2} stroke="var(--line)" strokeDasharray="3 6" />
@@ -51,10 +52,9 @@ function Bars({ points, label }: { points: Array<{ key: string; value: number; t
         const x = W - step * (i + 1) + (step - bw) / 2;
         return <rect key={p.key} x={x} y={H - pb - h} width={bw} height={h} rx={4} fill="var(--accent)" opacity={0.9}><title>{p.tip}</title></rect>;
       })}
-      <text x={W - 2} y={H - 8} textAnchor="end">{points[0]?.key}</text>
-      <text x={2} y={H - 8} textAnchor="start">{points[points.length - 1]?.key}</text>
-      <text x={W - 2} y={pt - 3} textAnchor="end">الذروة {fmt(max)}</text>
     </svg>
+    <div className="pt-axis"><bdi dir="ltr">{points[0]?.key}</bdi><span>الذروة {fmt(max)}</span><bdi dir="ltr">{points[points.length - 1]?.key}</bdi></div>
+    </>
   );
 }
 
@@ -203,6 +203,13 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           {s.survey.current.byDay.length ? <div style={{ marginTop: 14 }}><Bars label="الطلبات اليومية" points={[...s.survey.current.byDay].slice(-30).reverse().map(d => ({ key: d.day.slice(5), value: d.count, tip: `${d.day} · ${fmt(d.count)}` }))} /></div> : null}
         </section>
       </div>
+
+      <section className="pt-card">
+        <h3>المقررات الأكثر طلباً</h3>
+        <p className="pt-sub">طلبةٌ فريدون يريدون المقرر في رغباتهم أو طلباتهم هذا الفصل. للجهات التعليمية والتدريبية أن ترى ما يبحث عنه الطلبة.</p>
+        {s.demand.top.length ? <HBars rows={s.demand.top.map(d => ({ label: d.name, count: d.students }))} /> : <div className="pt-empty">لا مقرر بلغ حدّ الخصوصية بعد (يلزم {countOf(s.demand.minStudents, AR.student)} مختلفين على الأقل لكل مقرر).</div>}
+        <p className="pt-note">حدّ الخصوصية: لا يظهر مقررٌ يطلبه أقل من {countOf(s.demand.minStudents, AR.student)} مختلفين{s.demand.hidden ? `؛ أُخفي ${countOf(s.demand.hidden, AR.course)} لهذا السبب` : ""}. أعدادٌ مجمّعة بلا أسماء.</p>
+      </section>
 
       <div className="pt-grid2">
         <section className="pt-card">

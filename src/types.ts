@@ -1841,6 +1841,10 @@ export interface AdCampaign {
   trial?: boolean;
   /** رمزُ رابط تقرير الشركة (يرى حملته وحدها). */
   reportToken: string;
+  /** مواسم العرض (utils/adSeasons)؛ فارغ = كل المواسم. */
+  seasons?: string[];
+  /** كلياتٌ مستهدفة: تظهر الحملة في صفحاتٍ تعرف كلية الطالب (الجدول العام وحالة الطلب) لا في «مساري»؛ فارغ = كل الكليات. */
+  colleges?: number[];
   note?: string;
   createdAt: string;
   updatedAt: string;
@@ -1854,6 +1858,8 @@ export interface AdCreative {
   width: number;
   height: number;
   bytes: number;
+  /** رُفعت رغم تحذير فحص الجودة بقرار الإدارة. */
+  qualityOverride?: boolean;
   /** base64 بلا بادئة data: */
   data: string;
   createdAt: string;
