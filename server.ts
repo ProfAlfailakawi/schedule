@@ -18877,6 +18877,12 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
   const index = Number(req.body?.itemIndex);
   const item = (stored.items || [])[index];
   if (!item) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }
+  /* بندٌ ثُبّت كُتب في الجدول: إعادةُ الفصل فيه (نقرةٌ مزدوجة أو تبويبٌ قديم) كانت
+     تُنشئ صفّاً ثانياً للإضافة، أو تكتب «رُفض» والجدولُ ما زال منقولاً. */
+  if (item.decision?.state === "fixed") {
+    res.status(409).json({ error: "سبق تثبيت هذا البند في الجدول.", code: "already-fixed" });
+    return;
+  }
 
   /* النطاقُ نطاقُ البند لا نطاقُ الرابط: محاضرةُ الأستاذ في كليةٍ أخرى يقرّر
      فيها منسّقُ تلك الكلية، لا منسّقُ الكلية التي أصدرت الرابط. */
@@ -18949,6 +18955,12 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
     } else {
       if (!live) { res.status(409).json({ error: "لم يعد هذا الموعد موجوداً في الجدول." }); return; }
       const want = item.slots || [];
+      /* الصفُّ الواحد له وقتٌ واحد: بندٌ بأوقاتٍ مختلفة كان يُثبَّت بوقت أوّلها
+         على كل الأيام، فيضيع ما طلبه الأستاذ لبقيّتها والسجلُّ يقول «ثُبّت». */
+      if (new Set(want.map(slot => `${slot.start}-${slot.end}`)).size > 1) {
+        res.status(409).json({ error: "أوقات هذا البند مختلفة بين الأيام، والموعد الواحد له وقت واحد. ثبّته من الجدول الدراسي بصفٍّ لكل وقت.", code: "mixed-times" });
+        return;
+      }
       const wantDays = new Set(want.map(slot => String(slot.day)));
       const sameDays = (["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const)
         .every(day => Boolean((live as any)[day]) === wantDays.has(day));

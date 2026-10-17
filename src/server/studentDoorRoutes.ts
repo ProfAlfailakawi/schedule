@@ -759,7 +759,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const details = String(req.body?.details || "").normalize("NFKC").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 600);
     if (details.length < 3) { fail(res, 400, "اكتب سبباً مختصراً يساعد القسم على مراجعة الطلب.", "details-needed"); return; }
     const existing = (await Repository.getStudentNeedsByFingerprint(fingerprint, profile.AdCollegeId, termId))
-      .find(need => Number(need.surveySectionId || need.AdSectionId) === Number(profile.AdSectionId));
+      .find(need => need.requestType === "graduate" && Number(need.surveySectionId || need.AdSectionId) === Number(profile.AdSectionId));
     if (existing?.requestType === "graduate" && existing.eligibility === "eligible") {
       fail(res, 409, "لديك حالة تخرج موثّقة لهذا الفصل. تابعها من «حالاتي» أو حدّثها من مسارها الحالي.", "verified-graduate-case"); return;
     }
