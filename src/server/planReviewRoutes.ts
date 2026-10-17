@@ -13,6 +13,7 @@
  *     في القواعد (دورة، مجموعةٌ لا تتّسع لحدّها…)، أو تغيّرت المسوّدةُ بعد أن رآها.
  *   · كلُّ تعديلٍ في سجلّ التدقيق.
  */
+import { groupDeptTracks, TRACK_LABEL, type DeptTrack } from "../utils/collegeTrack";
 import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurricula";
 import { compareCurriculumReference, isTechnologyEducation, referenceCodeKey } from "../utils/curriculumReference";
 import { AR, countOf } from "../utils/arabicCount";
@@ -52,17 +53,23 @@ const READERS = new Set(["committeeChair", "departmentHead", "standard"]);
 const WORKSPACE_FORM = 7;
 
 /** صحائفُ قيد المراجعة التي يراها هذا الحساب: لجرس الإشعارات. نفسُ حارس النطاق والصفة في الشاشة. */
-export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "isScopeAllowed" | "isPowerUser">): Promise<Array<{ planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; updatedAt: string }>> {
+export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "isScopeAllowed" | "isPowerUser">): Promise<Array<{ planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; groupKey: string; groupLabel: string; updatedAt: string }>> {
   const role = roleDefinition(req.user?.Role).id;
   const drafts = (await Repository.listRuleDrafts()).filter(draft => draft.status === "review");
   const visible = drafts.filter(draft => deps.isPowerUser(req) || (READERS.has(role) && deps.isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)));
   if (!visible.length) return [];
   const [sectionRows, collegeRows] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
   const sections = sectionLabels(sectionRows as any[], collegeRows as any[]);
+  /* بناتُ القسم بمواقعهنّ (الجهراء والفحيحيل) صحيفةٌ واحدة: إشعارٌ واحد لا ثلاثة. */
+  const trackOfSection = new Map<number, DeptTrack>();
+  for (const track of groupDeptTracks(sectionRows as any[], collegeRows as any[])) for (const section of [track.canonical, ...track.mirrors]) trackOfSection.set(Number(section.AdSectionId), track);
   const out = [];
   for (const draft of visible) {
     const plan = (await Repository.getCurriculumPlans(draft.AdSectionId)).find(row => row.id === draft.planId);
-    out.push({ planId: draft.planId, planName: plan?.name || "الصحيفة", sectionId: draft.AdSectionId, collegeId: draft.AdCollegeId, sectionName: sections.get(draft.AdSectionId) || "", updatedAt: draft.updatedAt });
+    out.push({ planId: draft.planId, planName: plan?.name || "الصحيفة", sectionId: draft.AdSectionId, collegeId: draft.AdCollegeId, sectionName: sections.get(draft.AdSectionId) || "",
+      groupKey: trackOfSection.get(draft.AdSectionId)?.key || `${draft.AdCollegeId}:${draft.AdSectionId}`,
+      groupLabel: (() => { const t = trackOfSection.get(draft.AdSectionId); return t ? `قسم ${t.deptName.replace(/^قسم\s+/, "")}${t.track ? ` · ${TRACK_LABEL[t.track]}${t.mirrors.length ? " (مع الجهراء والفحيحيل)" : ""}` : ` · ${t.collegeName}`}` : sections.get(draft.AdSectionId) || ""; })(),
+      updatedAt: draft.updatedAt });
   }
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }

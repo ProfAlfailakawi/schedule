@@ -847,6 +847,8 @@ export interface PublishedPlanSheet {
   ruleVersion: number;
   publishedAt: string;
   publishedBy: string;
+  /** لقطةٌ منسوخة من صحيفة البنات الأصل إلى موقعٍ فرعي (الجهراء/الفحيحيل): معرّفُ الأصل. */
+  mirrorOf?: string;
 }
 
 /**

@@ -65,21 +65,25 @@ const model: SheetModel = {
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-plan-sheet-"));
   const mk = (id: number, section: number, code: string, name: string) => ({ AdCourseId: id, AdCollegeId: 1, AdSectionId: section, CourseCode: code, CourseName: name, CourseCredit: 3, CourseHours: 3, MaxStudent: 30 });
-  const courses = [mk(101, 11, "0111101", "أصول"), mk(102, 11, "0111201", "فقه"), mk(103, 11, "0111301", "تفسير"), mk(900, 12, "0112150", "مقرر قسم آخر"), mk(201, 12, "0112101", "نحو")];
+  const courses = [mk(301, 21, "0121101", "مدخل"), mk(302, 22, "0121101", "مدخل"), mk(303, 23, "0121101", "مدخل"), mk(304, 24, "0121101", "مدخل"), mk(101, 11, "0111101", "أصول"), mk(102, 11, "0111201", "فقه"), mk(103, 11, "0111301", "تفسير"), mk(900, 12, "0112150", "مقرر قسم آخر"), mk(201, 12, "0112101", "نحو")];
   fs.writeFileSync(path.join(dir, "db.json"), JSON.stringify({
     users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [],
-    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية" }],
-    sections: [{ AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "11", AdSectionName: "قسم الشريعة" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "12", AdSectionName: "قسم اللغة" }],
+    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية" }, { AdCollegeId: 2, AdCollegeCode: "G", AdCollegeName: "كلية التربية الأساسية - بنات" }, { AdCollegeId: 3, AdCollegeCode: "J", AdCollegeName: "كلية التربية الأساسية - بنات - الجهراء" }, { AdCollegeId: 4, AdCollegeCode: "F", AdCollegeName: "كلية التربية الأساسية - بنات - الفحيحيل" }, { AdCollegeId: 5, AdCollegeCode: "B", AdCollegeName: "كلية التربية الأساسية - بنين" }],
+    sections: [{ AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "11", AdSectionName: "قسم الشريعة" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "12", AdSectionName: "قسم اللغة" }, ...[[21, 2], [22, 3], [23, 4], [24, 5]].map(([id, college]) => ({ AdSectionId: id, AdCollegeId: college, AdSectionCode: "21", AdSectionName: "قسم المناهج" }))],
     instructors: [], courses, schedules: [], rooms: [], courseTransitions: [],
     curriculumPlans: [
       { id: "p11", AdCollegeId: 1, AdSectionId: 11, name: "خطة 2026/2027", status: "active", createdAt: "2026-01-01" },
       { id: "p12", AdCollegeId: 1, AdSectionId: 12, name: "خطة اللغة", status: "active", createdAt: "2026-01-01" },
       { id: "p12b", AdCollegeId: 1, AdSectionId: 12, name: "خطة اللغة (قديمة)", status: "transition", createdAt: "2026-01-01" },
+      { id: "p21", AdCollegeId: 2, AdSectionId: 21, name: "صحيفة 2026", status: "active", createdAt: "2026-01-01" },
+      { id: "p22", AdCollegeId: 3, AdSectionId: 22, name: "BA-0115 2026/2027", status: "active", createdAt: "2026-01-01" },
+      { id: "p24", AdCollegeId: 5, AdSectionId: 24, name: "صحيفة 2026", status: "active", createdAt: "2026-01-01" },
     ],
     curriculumPlanCourses: [
       ...[101, 102, 103, 900].map(id => ({ id: `a${id}`, planId: "p11", AdCollegeId: 1, AdSectionId: 11, AdCourseId: id, createdAt: "2026-01-01" })),
       { id: "b201", planId: "p12", AdCollegeId: 1, AdSectionId: 12, AdCourseId: 201, createdAt: "2026-01-01" },
       { id: "c201", planId: "p12b", AdCollegeId: 1, AdSectionId: 12, AdCourseId: 201, createdAt: "2026-01-01" },
+      ...[["p21", 21, 2, 301], ["p22", 22, 3, 302], ["p24", 24, 5, 304]].map(([planId, sectionId, collegeId, courseId]) => ({ id: `m${courseId}`, planId, AdCollegeId: collegeId, AdSectionId: sectionId, AdCourseId: courseId, createdAt: "2026-01-01" })),
     ],
   }), { mode: 0o600 });
   process.env.NODE_ENV = "test"; process.env.DATA_MODE = "demo"; process.env.SCHEDULE_PRIVATE_DIR = dir;
@@ -176,6 +180,23 @@ const model: SheetModel = {
     check((await call("chair11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 200 && (await call("", "GET", "/plans/s11/p11/")).status === 404 && (await call("chair11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 404, "S2/S3 إيقافُ النشر يُسقط الصفحة، ومرتان: ٤٠٤");
     check(!(await call("", "GET", "/plans/")).text.includes('href="/plans/s11/"'), "S3 القسم الموقوف يغيب من الفهرس");
     check((await call("admin", "GET", "/api/plan-sheets")).json.sections.length === 2, "S2 إدارةُ النظام ترى كل الأقسام");
+
+    /* S5: بناتُ القسم صحيفةٌ واحدة تُنسخ إلى الجهراء والفحيحيل، وللبنين مسارُهم. */
+    await approve("p21", 21, [{ courseId: 301, level: 100 }]);
+    await approve("p24", 24, [{ courseId: 304, level: 100 }]);
+    const tracks = (await call("admin", "GET", "/api/plan-sheets")).json.sections.filter((row: any) => row.sectionName === "قسم المناهج");
+    check(tracks.length === 2 && tracks.map((row: any) => row.trackLabel).sort().join() === "بنات,بنين", "S5 للقسم مساران فقط: بنات وبنين (لا صفّ للجهراء ولا الفحيحيل)", tracks.map((row: any) => row.trackLabel));
+    const girlsRow = tracks.find((row: any) => row.track === "girls");
+    check(girlsRow.sectionId === 21 && girlsRow.members.join() === "21,22,23" && girlsRow.campuses === 2, "S5 مسارُ البنات أصلُه التربية الأساسية بنات ومعه الموقعان الفرعيان", girlsRow);
+    const pub = (await call("admin", "POST", "/api/plan-sheets/publish", { planId: "p21", sectionId: 21 })).json;
+    check(pub.copiedToCampuses === 1 && pub.unmatchedCampuses?.length === 1 && /الفحيحيل/.test(pub.unmatchedCampuses[0]), "S5 النشرُ ينسخ إلى الجهراء (بمطابقة السنة) ويُبلغ بما لم يُطابَق (الفحيحيل)", pub);
+    const copy = await Repository.getPublishedSheet("p22");
+    check(copy?.mirrorOf === "p21" && copy.AdSectionId === 22 && copy.model.url.includes("/plans/s22/p22/") && JSON.stringify({ ...copy.model, url: "" }) === JSON.stringify({ ...(await Repository.getPublishedSheet("p21"))!.model, url: "" }), "S5 النسخةُ مطابقةٌ للأصل بالضبط ولها رابطُ موقعها");
+    check((await call("", "GET", "/plans/s22/p22/")).status === 200, "S5 صفحةُ الجهراء تُفتح برابطها");
+    await call("admin", "POST", "/api/plan-sheets/publish", { planId: "p24", sectionId: 24 });
+    const publicIndex = (await call("", "GET", "/plans/")).text;
+    check(publicIndex.includes("قسم المناهج — بنات") && publicIndex.includes("قسم المناهج — بنين") && !publicIndex.includes('href="/plans/s22/"'), "S5 الفهرس العام: بطاقةٌ للبنات وأخرى للبنين، بلا تكرار للجهراء", publicIndex.match(/قسم المناهج[^<]*/g));
+    check((await call("admin", "POST", "/api/plan-sheets/unpublish", { planId: "p21" })).status === 200 && !(await Repository.getPublishedSheet("p22")), "S5 إيقاف الأصل يوقف نسخَه");
   } finally { server.close(); }
 }
 

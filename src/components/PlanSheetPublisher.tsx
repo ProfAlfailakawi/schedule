@@ -11,7 +11,7 @@ import { AR, countOf } from "../utils/arabicCount";
  * رمز QR يُرسم في المتصفح بالمولّد الموجود، فلا خدمةَ خارجية.
  */
 interface SheetRow { planId: string; name: string; ruleVersion: number; published: boolean; publishedAt: string; stale: boolean; url: string }
-interface SectionRow { sectionId: number; sectionName: string; collegeName?: string; sheets: SheetRow[]; deptUrl: string; indexUrl: string }
+interface SectionRow { sectionId: number; sectionName: string; collegeName?: string; track?: string; trackLabel?: string; members?: number[]; campuses?: number; sheets: SheetRow[]; deptUrl: string; indexUrl: string }
 interface State { sections: SectionRow[]; canPublish: boolean }
 type QrFactory = (t: number, e: "L" | "M" | "Q" | "H") => { addData(s: string): void; make(): void; createSvgTag(o?: { cellSize?: number; margin?: number; scalable?: boolean }): string };
 
@@ -39,11 +39,10 @@ export default function PlanSheetPublisher({ onChanged, focusSectionId = 0 }: { 
   useEffect(() => { void load(); }, [load]);
 
   /* قسمُ نطاق القرار المختار: رمزُ QR لصفحته يظهر في أعلى اللوحة بلا بحثٍ ولا ضغط. */
-  /* القسمُ نفسُه قد يكون في أكثر من كلية (بنات/بنين): الاسمُ وحده يبدو تكراراً، فتُضاف الكلية متى تكرّر. */
-  const nameCount = new Map<string, number>();
-  for (const row of state?.sections || []) nameCount.set(row.sectionName, (nameCount.get(row.sectionName) || 0) + 1);
-  const labelOf = (row: SectionRow) => (nameCount.get(row.sectionName) || 0) > 1 && row.collegeName ? `${row.sectionName} — ${row.collegeName}` : row.sectionName;
-  const focus = state?.sections.find(s => s.sectionId === focusSectionId);
+  /* للقسم مساران لا غير: بنات (بمواقعهنّ الجهراء والفحيحيل) وبنين — الصحيفةُ للبنات واحدة وتُنسخ إلى مواقعهنّ. */
+  const labelOf = (row: SectionRow) => row.trackLabel ? `${row.sectionName} — ${row.trackLabel}` : row.sectionName;
+  const isFocus = (row: SectionRow) => row.sectionId === focusSectionId || Boolean(row.members?.includes(focusSectionId));
+  const focus = state?.sections.find(isFocus);
   const focusPublished = Boolean(focus?.sheets.some(x => x.published));
   /* قسمٌ بالاسم نفسه في كليةٍ أخرى له صحائف معتمدة: سببُ «لا صحيفة» الشائع حين يُعتمد في كلية ويُختار نطاقُ كليةٍ أخرى. */
   const sibling = focus && !focus.sheets.length ? state?.sections.find(row => row.sectionId !== focus.sectionId && row.sectionName === focus.sectionName && row.sheets.length > 0) : undefined;
@@ -68,7 +67,7 @@ export default function PlanSheetPublisher({ onChanged, focusSectionId = 0 }: { 
   };
   const publish = (body: Record<string, unknown>, key: string) => run(key, async () => {
     const out = await call("/api/plan-sheets/publish", body);
-    return `نُشرت ${countOf(out.published.length, AR.sheet)}.`;
+    return `نُشرت ${countOf(out.published.length, AR.sheet)}${out.copiedToCampuses ? ` ونُسخت إلى ${countOf(out.copiedToCampuses, AR.sheet)} في الجهراء والفحيحيل` : ""}${out.unmatchedCampuses?.length ? ` (لم تُطابَق صحيفةٌ في: ${out.unmatchedCampuses.join("، ")})` : ""}.`
   });
   const unpublish = (planId: string) => run(`u${planId}`, async () => { await call("/api/plan-sheets/unpublish", { planId }); return "أُوقف نشر الصحيفة."; });
 
@@ -150,7 +149,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
               </span>
             </> : <>
               <small>{focus.sheets.length ? "لم تُنشر صحيفة هذا القسم بعد. انشرها فيظهر رمز QR ورابطها هنا." : sibling
-              ? `القسم المختار هنا ${focus.collegeName ? `(${focus.collegeName}) ` : ""}لم تُعتمد قواعد صحيفته بعد. أما صحيفة «${sibling.sectionName}»${sibling.collegeName ? ` في ${sibling.collegeName}` : ""} فمعتمدة — اختر ذلك القسم في نطاق القرار، أو اعتمد صحيفة هذا القسم في «مراجعة الصحيفة».`
+              ? `لم تُعتمد قواعد صحيفة ${focus.trackLabel || "هذا القسم"} بعد، أما صحيفة ${sibling.trackLabel || "المسار الآخر"} فمعتمدة. اعتمد هذه في «مراجعة الصحيفة» ثم تُنشر هنا.`
               : "لا صحيفة معتمدة لهذا القسم بعد. يعتمد رئيس لجنة الجدول قواعدها في «مراجعة الصحيفة» ثم تُنشر هنا."}</small>
               {focus.sheets.length ? <span className="psh-focus-actions">
                 <PrimaryButton disabled={Boolean(busy)} onClick={() => publish({ sectionId: focus.sectionId }, `s${focus.sectionId}`)} data-guide-ignore="نشر صحيفة القسم المختار">{busy === `s${focus.sectionId}` ? "جارٍ النشر…" : "انشر صحيفة القسم"}</PrimaryButton>
@@ -161,12 +160,13 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
       ) : null}
       {note ? <Notice type="success" onDismiss={() => setNote("")}>{note}</Notice> : null}
 
-      {[...state.sections].filter(row => row.sheets.length > 0 || row.sectionId !== focusSectionId).sort((x, y) => Number(y.sectionId === focusSectionId) - Number(x.sectionId === focusSectionId)).map(section => {
+      {[...state.sections].filter(row => row.sheets.length > 0 || !isFocus(row)).sort((x, y) => Number(isFocus(y)) - Number(isFocus(x))).map(section => {
         const todo = section.sheets.filter(x => !x.published || x.stale).length;
         return (
           <section className="psh-dept" key={section.sectionId}>
             <div className="psh-dept-head">
               <b>{labelOf(section)}</b>
+              {section.campuses ? <small>مع الجهراء والفحيحيل</small> : null}
               <small>{countOf(section.sheets.length, AR.sheet)}</small>
               <span className="psh-dept-actions">
                 {section.sheets.some(x => x.published) ? <>

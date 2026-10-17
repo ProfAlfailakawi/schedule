@@ -24,6 +24,7 @@ import { isTechnologyEducation, referenceCodeKey } from "../utils/curriculumRefe
 import { buildPlanSheet } from "./planSheetPage";
 import { REFERENCE_CATEGORIES } from "./planReviewRoutes";
 import { AR, countOf } from "../utils/arabicCount";
+import { groupDeptTracks, planMatchKey, trackOf, TRACK_LABEL, type DeptTrack } from "../utils/collegeTrack";
 
 export interface PlanSheetDeps {
   requireAuth: RequestHandler;
@@ -117,6 +118,31 @@ export async function buildSheetModel(plan: { id: string; AdCollegeId: number; A
   return { model, sectionName };
 }
 
+/** مساراتُ الأقسام (بنات بمواقعهنّ، بنين) من الكليات الحالية. */
+async function deptTracks(): Promise<DeptTrack[]> {
+  const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  return groupDeptTracks(sections as any[], colleges as any[]);
+}
+
+/** ينسخ لقطةَ صحيفة البنات الأصل كما هي إلى مواقعها الفرعية (الجهراء/الفحيحيل): يطابق صحيفتَها بالسنة أو بالاسم. */
+async function mirrorSheet(sheet: PublishedPlanSheet, track: DeptTrack | undefined): Promise<{ done: number; unmatched: string[] }> {
+  if (!track || !track.mirrors.length) return { done: 0, unmatched: [] };
+  const plan = (await Repository.getCurriculumPlans(sheet.AdSectionId)).find(row => row.id === sheet.planId);
+  const key = planMatchKey(String(plan?.name || sheet.planName));
+  const colleges = new Map(((await Repository.getColleges()) as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  let done = 0; const unmatched: string[] = [];
+  for (const mirror of track.mirrors) {
+    const target = (await Repository.getCurriculumPlans(mirror.AdSectionId)).find(row => !row.virtual && row.status !== "archived" && planMatchKey(String(row.name || "")) === key);
+    if (!target) { unmatched.push(colleges.get(Number(mirror.AdCollegeId)) || String(mirror.AdSectionId)); continue; }
+    await Repository.savePublishedSheet({
+      ...sheet, id: target.id, planId: target.id, AdCollegeId: Number(mirror.AdCollegeId), AdSectionId: Number(mirror.AdSectionId),
+      planName: String(target.name || sheet.planName), model: { ...sheet.model, url: sheetUrl(Number(mirror.AdSectionId), target.id) }, mirrorOf: sheet.planId,
+    });
+    done += 1;
+  }
+  return { done, unmatched };
+}
+
 /** بعد اعتماد قواعدٍ جديدة: إن كانت الصحيفة منشورة تُعاد لقطتُها، ولا يُنشر ما لم يكن منشوراً. */
 export async function republishIfPublished(planId: string, actor: string): Promise<boolean> {
   const current = await Repository.getPublishedSheet(planId);
@@ -125,7 +151,9 @@ export async function republishIfPublished(planId: string, actor: string): Promi
   const plan = plans.find(row => row.id === planId);
   if (!plan || !live) return false;
   const { model, sectionName } = await buildSheetModel(plan, live);
-  await Repository.savePublishedSheet({ ...current, sectionName, planName: String(plan.name || ""), model, ruleVersion: Number(live.version) || 0, publishedAt: new Date().toISOString(), publishedBy: actor });
+  const fresh = { ...current, sectionName, planName: String(plan.name || ""), model, ruleVersion: Number(live.version) || 0, publishedAt: new Date().toISOString(), publishedBy: actor };
+  await Repository.savePublishedSheet(fresh);
+  if (!current.mirrorOf) await mirrorSheet(fresh, (await deptTracks()).find(track => track.canonical.AdSectionId === current.AdSectionId));
   return true;
 }
 
@@ -175,14 +203,14 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
   /* ── من داخل البرنامج: ما يمكن نشره وما نُشر ─────────────────────────────── */
   app.get("/api/plan-sheets", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    const [sections, published, colleges] = await Promise.all([Repository.getSections(), Repository.listPublishedSheets(), Repository.getColleges()]);
-    const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+    const [tracks, published] = await Promise.all([deptTracks(), Repository.listPublishedSheets()]);
     const publishedById = new Map(published.map(sheet => [sheet.id, sheet]));
     const rows: any[] = [];
-    /* القسمُ المختار في مركز الذكاء يُعاد ولو بلا صحيفةٍ معتمدة، ليشرح الواجهةُ أنّ الاعتماد مطلوب لا أن تُخفي لوحتَه. */
+    /* القسمُ المختار في مركز الذكاء (أصلاً أو موقعاً فرعياً) يُعاد ولو بلا صحيفةٍ معتمدة، ليشرح الواجهةُ أنّ الاعتماد مطلوب لا أن تُخفي لوحتَه. */
     const focusId = Number(req.query.section) || 0;
-    for (const section of sections as any[]) {
-      const sectionId = Number(section.AdSectionId), collegeId = Number(section.AdCollegeId);
+    for (const track of tracks) {
+      const section = track.canonical, sectionId = Number(section.AdSectionId), collegeId = Number(section.AdCollegeId);
+      const members = [section, ...track.mirrors].map(row => Number(row.AdSectionId));
       if (!canPublish(req, collegeId, sectionId)) continue;
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => !plan.virtual && plan.status !== "archived");
       const sheets: any[] = [];
@@ -192,7 +220,10 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
         const pub = publishedById.get(plan.id);
         sheets.push({ planId: plan.id, name: plan.name, ruleVersion: live.version, published: Boolean(pub), publishedAt: pub?.publishedAt || "", stale: Boolean(pub && pub.ruleVersion !== live.version), url: pub ? sheetUrl(sectionId, plan.id) : "" });
       }
-      if (sheets.length || sectionId === focusId) rows.push({ sectionId, sectionName: String(section.AdSectionName || ""), collegeName: collegeName.get(collegeId) || "", sheets, deptUrl: `${OFFICIAL_ORIGIN}/plans/s${sectionId}/`, indexUrl: `${OFFICIAL_ORIGIN}/plans/` });
+      if (sheets.length || members.includes(focusId)) rows.push({
+        sectionId, sectionName: String(section.AdSectionName || ""), track: track.track, trackLabel: track.track ? TRACK_LABEL[track.track] : "", collegeName: track.collegeName,
+        members, campuses: track.mirrors.length, sheets, deptUrl: `${OFFICIAL_ORIGIN}/plans/s${sectionId}/`, indexUrl: `${OFFICIAL_ORIGIN}/plans/`,
+      });
     }
     res.json({ sections: rows, canPublish: rows.length > 0 || deps.isPowerUser(req) });
   });
@@ -203,7 +234,8 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
     const targets: Array<{ planId: string; sectionId: number }> = [];
     if (body.planId) targets.push({ planId: String(body.planId), sectionId: Number(body.sectionId || 0) });
     else {
-      const sections = (await Repository.getSections()) as any[];
+      /* الأصلُ وحدَه يُنشر؛ مواقعُ البنات الفرعية تُنسخ منه فلا تُنشر من قواعدها. */
+      const sections = (await deptTracks()).map(track => track.canonical) as any[];
       const wanted = body.sectionId ? sections.filter(row => Number(row.AdSectionId) === Number(body.sectionId)) : sections;
       for (const section of wanted) {
         const sectionId = Number(section.AdSectionId);
@@ -213,15 +245,21 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
     }
     if (!targets.length) return fail(res, 404, "لا صحائف في نطاقك لتُنشر.");
     const done: Array<{ planId: string; url: string }> = [], skipped: Array<{ planId: string; reason: string }> = [];
+    const tracks = await deptTracks();
+    let copied = 0; const unmatched = new Set<string>();
     for (const target of targets) {
       const result = await publishOne(req, target.planId, target.sectionId);
-      if (result.sheet) done.push({ planId: target.planId, url: sheetUrl(result.sheet.AdSectionId, target.planId) });
+      if (result.sheet) {
+        done.push({ planId: target.planId, url: sheetUrl(result.sheet.AdSectionId, target.planId) });
+        const mirrored = await mirrorSheet(result.sheet, tracks.find(track => track.canonical.AdSectionId === result.sheet!.AdSectionId));
+        copied += mirrored.done; mirrored.unmatched.forEach(name => unmatched.add(name));
+      }
       else if (body.planId) return fail(res, result.status || 400, result.error || "تعذّر النشر.");
       else skipped.push({ planId: target.planId, reason: result.error || "" });
     }
     if (!done.length) return fail(res, 409, "لا صحيفةَ معتمدة في هذا النطاق لتُنشر.");
-    res.locals.auditChanges = `نشر ${countOf(done.length, AR.sheet)} للعامة`;
-    res.json({ published: done, skipped });
+    res.locals.auditChanges = `نشر ${countOf(done.length, AR.sheet)} للعامة` + (copied ? ` ونسخها إلى ${countOf(copied, AR.sheet)} في مواقع البنات` : "");
+    res.json({ published: done, skipped, copiedToCampuses: copied, unmatchedCampuses: [...unmatched] });
   });
 
   app.post("/api/plan-sheets/unpublish", deps.requireAuth, publishLimit, async (req: Request, res: Response) => {
@@ -230,6 +268,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
     if (!sheet) return fail(res, 404, "هذه الصحيفة غير منشورة.");
     if (!canPublish(req, sheet.AdCollegeId, sheet.AdSectionId)) return fail(res, 403, "إيقاف النشر لرئيس لجنة الجدول وحده، ضمن نطاقه.");
     await Repository.deletePublishedSheet(planId);
+    for (const copy of (await Repository.listPublishedSheets()).filter(row => row.mirrorOf === planId)) await Repository.deletePublishedSheet(copy.id);
     res.locals.auditChanges = `إيقاف نشر صحيفة «${sheet.sectionName} — ${sheet.planName}»`;
     res.json({ ok: true });
   });
@@ -246,11 +285,21 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
   app.get("/plans/", publicRead, async (_req: Request, res: Response, next) => {
     try {
       noStore(res);
-      const groups = byDept(await Repository.listPublishedSheets());
+      /* نُسَخُ الجهراء والفحيحيل تُفتح برابطها المباشر ولا تتكرر بطاقاتٍ في الفهرس. */
+      const [published, colleges] = await Promise.all([Repository.listPublishedSheets(), Repository.getColleges()]);
+      const groups = byDept(published.filter(sheet => !sheet.mirrorOf));
+      const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+      /* القسمُ نفسُه للبنات وللبنين: يُضاف المسارُ إلى العنوان ليتميّزا. */
+      const names = new Map<string, number>();
+      for (const [, list] of groups) names.set(list[0].sectionName, (names.get(list[0].sectionName) || 0) + 1);
+      const cardTitle = (list: PublishedPlanSheet[]) => {
+        const track = trackOf(collegeName.get(list[0].AdCollegeId) || "");
+        return deptTitle(list[0].sectionName) + ((names.get(list[0].sectionName) || 0) > 1 && track ? ` — ${TRACK_LABEL[track]}` : "");
+      };
       /* صفحةُ قسم تكنولوجيا التعليم الأولى ثابتةٌ: تبقى في الفهرس ما لم يُنشر القسمُ من البرنامج. */
       const hasTech = [...groups.values()].some(list => isTechnologyEducation(list[0].sectionName));
       const cards = [...groups.entries()].sort((a, b) => a[1][0].sectionName.localeCompare(b[1][0].sectionName, "ar")).map(([sectionId, list]) =>
-        `<a class="c" href="/plans/s${sectionId}/"><b>${esc(deptTitle(list[0].sectionName))}</b><span>${esc(list.length === 1 ? list[0].planName : countOf(list.length, AR.sheet))}</span><i>افتح الخطة</i></a>`);
+        `<a class="c" href="/plans/s${sectionId}/"><b>${esc(cardTitle(list))}</b><span>${esc(list.length === 1 ? list[0].planName : countOf(list.length, AR.sheet))}</span><i>افتح الخطة</i></a>`);
       if (!hasTech) cards.unshift(`<a class="c" href="/plans/educational-technology/"><b>قسم تكنولوجيا التعليم</b><span>الخطة الدراسية</span><i>افتح الخطة</i></a>`);
       res.type("text/html; charset=utf-8").send(shell("الخطط الدراسية", `<h1>الخطط الدراسية</h1><p class="s">اختر القسم لتفتح خطته التفاعلية وتحمّلها PDF.</p>${cards.length > 6 ? '<input id="q" class="q" type="search" placeholder="ابحث عن قسم" aria-label="ابحث عن قسم">' : ""}<div class="g">${cards.join("") || '<div class="e">لم تُنشر خططٌ بعد.</div>'}</div>`, FILTER_SCRIPT));
     } catch (error) { next(error); }

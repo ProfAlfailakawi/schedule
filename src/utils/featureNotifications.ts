@@ -11,8 +11,9 @@
  */
 import { AR, countOf, nounFor } from "./arabicCount";
 import type { CenterNotification } from "./notificationCenter";
+import { planMatchKey } from "./collegeTrack";
 
-export interface PlanReviewNotice { planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; updatedAt: string }
+export interface PlanReviewNotice { planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; /** مسارُ القسم (بنات بمواقعهنّ / بنين): يجمع إشعاراتِ الصحائف المتماثلة. */ groupKey?: string; groupLabel?: string; updatedAt: string }
 export interface RadarNotice { ranAt: string; needsDecision: number; scoped: boolean }
 export interface OutcomeNotice { answered: number; stuck: number; scoped: boolean }
 
@@ -35,19 +36,20 @@ export function buildFeatureNotifications(input: FeatureNotificationInput): Cent
   /* ── صحائف قيد المراجعة ── إشعارٌ واحد لكل قسمٍ (كليةٍ وقسم)، لا لكل صحيفة: قسمٌ فيه صحيفتان يُزعج مرتين بلا فائدة. */
   const bySection = new Map<string, PlanReviewNotice[]>();
   for (const review of input.planReviews) {
-    const key = `${review.collegeId}:${review.sectionId}`;
+    const key = review.groupKey || `${review.collegeId}:${review.sectionId}`;
     bySection.set(key, [...(bySection.get(key) || []), review]);
   }
   const groups = [...bySection.values()];
   for (const group of groups.slice(0, 4)) {
     const first = group[0], latest = group.reduce((at, r) => (r.updatedAt > at ? r.updatedAt : at), "");
-    const one = group.length === 1;
+    /* صحائفُ البنات المتماثلة في المواقع الثلاثة تُعدّ صحيفةً واحدة (بالسنة أو الاسم). */
+    const kinds = new Set(group.map(r => planMatchKey(r.planName))), one = kinds.size === 1;
     items.push({
-      id: `plan-review:${first.collegeId}:${first.sectionId}:${group.map(r => r.planId).sort().join(",")}:${latest}`, tone: decides ? "action" : "waiting",
+      id: `plan-review:${first.groupKey || `${first.collegeId}:${first.sectionId}`}:${[...new Set(group.map(r => r.planName))].sort().join(",")}:${latest}`, tone: decides ? "action" : "waiting",
       title: one
         ? (decides ? `صحيفة «${first.planName}» تنتظر مراجعتك واعتمادك` : `صحيفة «${first.planName}» قيد المراجعة`)
-        : (decides ? `بانتظار مراجعتك واعتمادك: ${countOf(group.length, AR.sheet)}` : `قيد المراجعة: ${countOf(group.length, AR.sheet)}`),
-      detail: first.sectionName, view: "planReview", at: latest, collegeId: first.collegeId, sectionId: first.sectionId,
+        : (decides ? `بانتظار مراجعتك واعتمادك: ${countOf(kinds.size, AR.sheet)}` : `قيد المراجعة: ${countOf(kinds.size, AR.sheet)}`),
+      detail: first.groupLabel || first.sectionName, view: "planReview", at: latest, collegeId: first.collegeId, sectionId: first.sectionId,
     });
   }
   if (groups.length > 4) {
