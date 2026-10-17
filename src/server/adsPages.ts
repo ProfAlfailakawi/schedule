@@ -9,7 +9,7 @@
  */
 import type { AdCampaign, AdCreative, AdStatsDay } from "../types";
 import type { AudienceStats } from "../utils/audienceStats";
-import { AD_RULES, AD_SLOTS, TRIAL_DAYS, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase, type WeeklyCompare } from "../utils/adsEngine";
+import { AD_RULES, TRIAL_DAYS, activeSlots, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase, type WeeklyCompare } from "../utils/adsEngine";
 import { AR, countOf } from "../utils/arabicCount";
 import { SEASONS, seasonLabel, type CalendarItem } from "../utils/adSeasons";
 
@@ -246,7 +246,7 @@ ${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2>
 ${s.demand.top.length >= 3 ? `<h2>ما يبحث عنه الطلبة هذا الفصل</h2><div class="card"><table><thead><tr><th>المقرر</th><th>طلبةٌ يريدونه</th></tr></thead><tbody>${s.demand.top.slice(0, 6).map(d => `<tr><td>${esc(d.name)}</td><td class="n">${approx(d.students)}</td></tr>`).join("")}</tbody></table><p class="note">أعدادٌ تقريبية مجمّعة، ولا يظهر مقررٌ يطلبه أقل من ${countOf(s.demand.minStudents, AR.student)} مختلفين.</p></div>` : ""}
 ${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
 <h2>أين يظهر إعلانك</h2>
-<div class="card">${AD_SLOTS.map(slot => {
+<div class="card">${activeSlots().map(slot => {
   const live = input.liveBySlot[slot.id] || 0;
   const free = slot.exclusive ? (live ? 0 : 1) : Math.max(0, slot.capacity - live);
   const maxW = Math.min(180, slot.width / 3.6);
@@ -284,7 +284,7 @@ export function measurementPage(nonce: string): string {
 <div class="card">${li([
   "لا اسمك ولا رقمك المدني ولا بريدك ولا موقعك الجغرافي.",
   "لا نربط زيارتك بحسابٍ أو بملفّك، ولا نبني سجلَّ تصفّحٍ ولا «بصمةً» لجهازك.",
-  "لا نخزّن عنوان الاتصال (IP): يُستعمل في ذاكرة الخادم لدقيقةٍ واحدة لمنع الإساءة وتكرار النقر، ثم يزول.",
+  "لا نخزّن عنوان الاتصال (IP): يُستعمل في ذاكرة الخادم وحدها لمنع الإساءة وتكرار النقر، ويُمحى منها خلال دقيقتين كحدٍّ أقصى.",
   "لا نستعمل شبكات إعلانٍ ولا أدوات تتبّعٍ خارجية؛ الإعلانات صورٌ تُخدم من الموقع نفسه.",
 ])}</div>
 <h2>ما الذي يُحفظ في متصفحك؟</h2>
@@ -295,7 +295,7 @@ export function measurementPage(nonce: string): string {
 ])}</div>
 <h2>عن الإعلانات</h2>
 <div class="card">${li([
-  "كل إعلانٍ موسومٌ بكلمة «إعلان» أو «برعاية»، ولا يظهر في صفحات الهوية والاستبيان وحالة الطلب الشخصية والاعتماد والطباعة والتقويم.",
+  "كل إعلانٍ موسومٌ بكلمة «إعلان» أو «برعاية». لا يظهر في أي صفحةٍ تطلب رقمك المدني أو وثائقك (دخول «مساري»، الاستبيان، حالة الطلب، بطاقة الأستاذ)، ولا في صفحات الاعتماد والطباعة والتقويم؛ ويظهر في جدول القسم وجدول الطلبة، وداخل «مساري» بعد دخولك.",
   "عند الضغط على إعلانٍ تنتقل إلى موقع المعلن، وله سياسته الخاصة.",
   "لا يُعرض إعلانٌ إلا بعد مراجعته واعتماده من إدارة النظام، ولها إيقافه فوراً.",
   "تُوقف الإعلانات تلقائياً في موعد انتهاء كل حملة.",

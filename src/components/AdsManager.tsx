@@ -226,7 +226,7 @@ export default function AdsManager() {
                       <div className="ad-badges">
                         <span className={`ad-badge ${ph.cls}`}>{ph.label}</span>
                         {c.trial ? <span className="ad-badge warn">تجريبية</span> : null}
-                        <span className="ad-badge">{slot?.label || c.slot}</span>
+                        <span className="ad-badge">{(c as any).slotLabel || slot?.label || c.slot}</span>
                         <span className="ad-badge">{c.category}</span>
                         <span className="ad-badge">{c.startDay} ← {c.endDay}</span>
                         <span className="ad-badge">{c.seasons?.length ? c.seasons.map(id => data.seasons.find(x => x.id === id)?.label || id).join("، ") : "كل المواسم"}</span>

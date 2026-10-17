@@ -30,18 +30,19 @@ function post(url,obj,beacon){
 }
 var mobile=/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent||"")||(window.matchMedia&&window.matchMedia("(max-width: 820px)").matches);
 
+/* هويّة الرابط العام: يعرف بها الخادمُ نوعَ الصفحة الحقيقي (الصفحة الواحدة قد تخدم أنواعاً) وكليتَها. */
+var tm=location.pathname.match(/^\/(?:s|t|m)\/([^\/?#]+)/),tok="";
+try{tok=tm?decodeURIComponent(tm[1]):""}catch(e){tok=""}
+
 if(pulse){
  var pk="adx:p:"+pulse;
  if(get(pk)!==day){
   var first=get("adx:first");put(pk,day);if(!first)put("adx:first",day);
-  post("/_pulse",{k:pulse,r:first&&first<day?1:0,m:mobile?1:0});
+  post("/_pulse",{k:pulse,r:first&&first<day?1:0,m:mobile?1:0,t:tok||undefined});
  }
  window.addEventListener("appinstalled",function(){post("/_pulse",{k:"install"})});
 }
 
-/* هويّة الرابط العام (جدولٌ أو حالةُ طلب) لتعرف الخادمُ كليةَ الصفحة فتصحّ الحملاتُ المستهدِفة بالكلية. */
-var tm=location.pathname.match(/^\/(?:s|t|m)\/([^\/?#]+)/),tok="";
-try{tok=tm?decodeURIComponent(tm[1]):""}catch(e){tok=""}
 if(!document.getElementById("adx-css")){
  var css=document.createElement("style");css.id="adx-css";
  css.textContent=
@@ -176,5 +177,8 @@ fetch("/_ads/serve?slot="+encodeURIComponent(slot)+(tok?"&t="+encodeURIComponent
 }
 window.AdxMount=function(box,slot,opt){try{mount(box,slot,opt)}catch(e){}};
 if(slot)mount(document.getElementById("adx"),slot);
+/* صفحةٌ طلبت تركيب موقعٍ قبل أن يجهز هذا السكربت (محطة الاستراحة): نُنفّذ الطلبات المؤجَّلة إن كان عنصرها ما زال في الصفحة. */
+var pend=window.__adxPending;window.__adxPending=null;
+if(pend&&pend.length)pend.forEach(function(a){if(a&&a[0]&&document.documentElement.contains(a[0]))window.AdxMount(a[0],a[1],a[2])});
 })();
 `;

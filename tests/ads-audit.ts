@@ -130,7 +130,7 @@ async function main() {
   check(/prefers-reduced-motion/.test(AD_CLIENT_SCRIPT) && /adx-pp/.test(AD_CLIENT_SCRIPT), "A5 يحترم تقليل الحركة وفيه زر إيقاف");
 
   const R = await import("../src/server/adsRoutes");
-  check(R.injectPlanFor("/me")?.slot === "me" && R.injectPlanFor("/t/abc")?.slot === "schedule" && R.injectPlanFor("/s/abc")?.slot === "schedule" && R.injectPlanFor("/m/abc")?.slot === "status", "A5 مواضع الإعلان: مساري والجدولان وحالة الطلب");
+  check(R.injectPlanFor("/me")?.slot === "" && R.injectPlanFor("/me")?.pulse === "me" && R.injectPlanFor("/t/abc")?.slot === "schedule" && R.injectPlanFor("/s/abc")?.slot === "schedule" && R.injectPlanFor("/m/abc")?.slot === "" && R.injectPlanFor("/m/abc")?.pulse === "status", "A5 مواضع الإعلان في الصفحات: الجدولان فقط؛ «مساري» وحالة الطلب نبضٌ فقط (الأولى تطلب الرقم المدني قبل الدخول)");
   check(R.injectPlanFor("/q/abc")?.slot === "" && R.injectPlanFor("/q/abc")?.pulse === "survey", "A5 الاستبيان: نبضٌ بلا إعلان");
   check(R.injectPlanFor("/r/abc")?.slot === "" && R.injectPlanFor("/r/abc/proposal/3")?.slot === "", "A5 بطاقة الأستاذ: نبضٌ بلا إعلان");
   check(R.injectPlanFor("/s/demo.abc") === null && R.injectPlanFor("/api/public/schedule/x") === null && R.injectPlanFor("/") === null, "A5 الرموز التجريبية والواجهات والجذر: لا حقن");
@@ -167,7 +167,11 @@ async function main() {
   check(gapBest?.day === 0 && gapBest.min === 90 && gapFns.tkClock(gapBest.from) === "9:30" && gapFns.tkClock(gapBest.to) === "11:00", "A13 أطول فراغٍ في أسبوع الطالب: الأحد من ٩:٣٠ إلى ١١:٠٠ (٩٠ دقيقة)", gapBest);
   check(gapFns.tkLongestGap([{ timesVisible: true, slots: [{ day: 1, start: 480, end: 540 }, { day: 1, start: 560, end: 620 }] }]) === null, "A13 فراغٌ أقل من ساعة لا يُعرض فيه إعلان");
   check(gapFns.tkLongestGap([{ timesVisible: false, slots: [{ day: 1, start: 480, end: 540 }, { day: 1, start: 700, end: 760 }] }]) === null, "A13 مواعيدٌ غير ظاهرة للطالب: لا استراحة");
-  check(homeSrc.includes('window.AdxMount(document.getElementById("adx-break-box"),"break"') && R.injectPlanFor("/me")?.pulse === "me", "A13 صفحة «مساري» تركّب موقع «محطة الاستراحة» عبر السكربت العام");
+  check(homeSrc.includes('adxMountLater("adx-break-box","break"') && homeSrc.includes('adxMountLater("adx-me-box","me")'), "A13 «مساري» تركّب موقعَي «مساري» و«محطة الاستراحة» من داخلها بعد الدخول");
+  const gateStart = homeSrc.indexOf("function viewGate()"), gateEnd = homeSrc.indexOf("\n}", gateStart);
+  check(gateStart > 0 && !homeSrc.slice(gateStart, gateEnd).includes("adxMount"), "A13 شاشة الدخول (الرقم المدني) لا تركّب أي إعلان");
+  const { AD_CLIENT_SCRIPT: adjs } = await import("../src/server/adClientScript");
+  check(adjs.includes("__adxPending") && homeSrc.includes("__adxPending"), "A13 الطلب المؤجَّل: إن سبقت التذكرةُ السكربتَ العام يُنفَّذ التركيب حين يجهز");
 
   /* ── اتجاهات الطلب: مجمّعة، وبحد خصوصية ── */
   const fp = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `fp-${tag}-${i}`);
@@ -251,6 +255,15 @@ async function main() {
   const sameSeason = Array.from({ length: 5 }, (_, i) => camp({ slot: "me", seasons: ["start"], category: `ك${i}` }));
   check(E.placementProblems({ company: "س", category: "جديدة", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", seasons: ["start"] }, sameSeason).some(p => p.includes("ممتلئ")), "A8 خمس حملات لموسمٍ واحد تملأ الموقع لذلك الموسم");
   check(E.placementProblems({ company: "س", category: "ك0", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", seasons: ["finals"] }, [camp({ slot: "me", seasons: ["start"], category: "ك0" })]).length === 0, "A8 منافسان من فئةٍ واحدة لموسمين مختلفين لا يتعارضان");
+  /* السعة لكل شريحة: ٣ حملات «بدء» و٣ «نهاية» تتعايشان ويقبل الموقع حملةً تستهدف الموسمين معاً. */
+  const startThree = [1, 2, 3].map(i => camp({ slot: "me", seasons: ["start"], category: `س${i}` }));
+  const finalsThree = [1, 2, 3].map(i => camp({ slot: "me", seasons: ["finals"], category: `ن${i}` }));
+  check(E.placementProblems({ company: "ب", category: "ج", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", seasons: ["start", "finals"] }, [...startThree, ...finalsThree]).length === 0, "A8 حملةٌ لموسمين تُقبل حين لا يتجاوز أيُّ موسمٍ سعته (٣+١ ≤ ٥)");
+  const startFive = [1, 2, 3, 4, 5].map(i => camp({ slot: "me", seasons: ["start"], category: `ب${i}` }));
+  check(E.placementProblems({ company: "ب", category: "ج", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", seasons: ["start", "finals"] }, startFive).some(p => p.includes("ممتلئ") && p.includes("بدء الفصل")), "A8 ويُرفض حين يمتلئ أحد موسميها، مع ذكر الموسم", E.placementProblems({ company: "ب", category: "ج", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", seasons: ["start", "finals"] }, startFive));
+  const byCollege = [camp({ slot: "schedule", colleges: [1], category: "ك1" }), camp({ slot: "schedule", colleges: [1], category: "ك2" }), camp({ slot: "schedule", colleges: [1], category: "ك3" })];
+  check(E.placementProblems({ company: "ب", category: "ج", slot: "schedule", startDay: "2026-11-05", endDay: "2026-11-20", colleges: [2] }, byCollege).length === 0, "A8 السعة لكل كلية: ٣ حملات للكلية ١ لا تملأ موقع الكلية ٢");
+  check(E.placementProblems({ company: "ب", category: "ج", slot: "schedule", startDay: "2026-11-05", endDay: "2026-11-20" }, byCollege).some(p => p.includes("ممتلئ")), "A8 وحملةٌ بلا كلية (تُعرض أيضاً حيث لا سياق وللكلية ١) تُرفض لامتلاء شريحة الكلية ١");
   check(E.slotById("break")?.width === 480 && E.slotById("break")?.audience === "students", "A8 موقع «محطة الاستراحة» معرَّف");
 
   /* فشلُ كتابة النبض لا يُسقط الدفعة: تُدمج في ما وصل بعدها. */
@@ -389,13 +402,13 @@ async function main() {
     check(r.status === 200, "A6 تُعتمد من جديد بعد المراجعة", r.json);
 
     // التجربة المجانية عبر المسارات
-    r = await call("POST", "/api/admin/ads/campaigns", { company: "تجريبية أ", category: "تعليم ودورات", slot: "status", startDay: today, endDay: dayPlus(9), trial: true, linkUrl: "https://t1.example.com" });
+    r = await call("POST", "/api/admin/ads/campaigns", { company: "تجريبية أ", category: "تعليم ودورات", slot: "break", startDay: today, endDay: dayPlus(9), trial: true, linkUrl: "https://t1.example.com" });
     check(r.status === 400 && String(r.json.error).includes("سبعة أيام"), "A11 تجربةٌ أطول من أسبوع تُرفض", r.json);
-    const tr1 = await call("POST", "/api/admin/ads/campaigns", { company: "تجريبية أ", category: "تعليم ودورات", slot: "status", startDay: today, endDay: dayPlus(6), trial: true, linkUrl: "https://t1.example.com" });
+    const tr1 = await call("POST", "/api/admin/ads/campaigns", { company: "تجريبية أ", category: "تعليم ودورات", slot: "break", startDay: today, endDay: dayPlus(6), trial: true, linkUrl: "https://t1.example.com" });
     check(tr1.status === 200, "A11 تجربة ٧ أيام تُقبل", tr1.json);
-    r = await call("POST", "/api/admin/ads/campaigns", { company: "تجريبية  أ", category: "تعليم ودورات", slot: "status", startDay: dayPlus(20), endDay: dayPlus(24), trial: true, linkUrl: "https://t1.example.com" });
+    r = await call("POST", "/api/admin/ads/campaigns", { company: "تجريبية  أ", category: "تعليم ودورات", slot: "break", startDay: dayPlus(20), endDay: dayPlus(24), trial: true, linkUrl: "https://t1.example.com" });
     check(r.status === 400 && String(r.json.error).includes("من قبل"), "A11 التجربة الثانية للشركة نفسها تُرفض عبر المسار", r.json);
-    await call("POST", `/api/admin/ads/campaigns/${tr1.json.id}/creatives`, png(600, 250), { "Content-Type": "image/png" });
+    await call("POST", `/api/admin/ads/campaigns/${tr1.json.id}/creatives`, png(480, 160), { "Content-Type": "image/png" });
     await call("POST", `/api/admin/ads/campaigns/${tr1.json.id}/status`, { action: "approve", rulesAccepted: true });
     const trRep = await call("GET", (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === tr1.json.id).reportUrl);
     check(trRep.status === 200 && trRep.text.includes("خلاصة التجربة المجانية") && trRep.text.includes("حملة تجريبية"), "A11 تقرير التجربة يحوي خلاصتها ووسمها");
@@ -411,14 +424,14 @@ async function main() {
 
     // سياسة القياس: صفحةٌ عامة تصف ما يحدث فعلاً
     const meas = await call("GET", "/measurement");
-    check(meas.status === 200 && meas.text.includes("لا نخزّن عنوان الاتصال") && meas.text.includes("adx:") && meas.text.includes("TESTNONCE"), "A12 صفحة «كيف نقيس» تعمل وتذكر ما يُحفظ وما لا يُحفظ");
+    check(meas.status === 200 && meas.text.includes("لا نخزّن عنوان الاتصال") && meas.text.includes("دقيقتين") && meas.text.includes("adx:") && meas.text.includes("TESTNONCE"), "A12 صفحة «كيف نقيس» تعمل وتذكر ما يُحفظ وما لا يُحفظ");
     check(!/https?:\/\/[^"' ]*(google|facebook|doubleclick)/i.test(meas.text), "A12 الصفحة لا تشير إلى أي أداة تتبّعٍ خارجية");
     check(!meas.text.includes("الفيلكاوي") && !meas.text.includes("العنزي"), "A12 لا اسم مؤلفٍ في صفحةٍ عامة تخص القياس");
     check(!trRep.text.includes("الفيلكاوي") && !trRep.text.includes("العنزي"), "A12 لا اسمَ في صفحة تقرير الحملة");
 
     // فحص الجودة عبر المسار: فارغة تُرفض بـ٤٢٢ وأسبابها، والإدارة تتجاوز بقرارٍ صريح يُسجَّل.
-    const qc = await call("POST", "/api/admin/ads/campaigns", { company: "جودة", category: "كتب وقرطاسية", slot: "status", startDay: today, endDay: dayPlus(5), linkUrl: "https://q.example.com" });
-    const solid = png(600, 250, 0xf0, 0xf0);
+    const qc = await call("POST", "/api/admin/ads/campaigns", { company: "جودة", category: "كتب وقرطاسية", slot: "break", startDay: today, endDay: dayPlus(5), linkUrl: "https://q.example.com" });
+    const solid = png(480, 160, 0xf0, 0xf0);
     r = await call("POST", `/api/admin/ads/campaigns/${qc.json.id}/creatives`, solid, { "Content-Type": "image/png" });
     check(r.status === 422 && r.json.code === "quality" && Array.isArray(r.json.problems) && r.json.problems.length > 0, "A10 صورةٌ فارغة: ٤٢٢ مع الأسباب", r.json);
     check((await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === qc.json.id).creatives.length === 0, "A10 الصورة المرفوضة لم تُحفظ");
@@ -432,7 +445,7 @@ async function main() {
     const inactive = (adminNow.seasons as any[]).map(x => x.id).find((x: string) => !activeNow.includes(x));
     check(Array.isArray(adminNow.seasons) && adminNow.seasons.length === 5 && Array.isArray(adminNow.calendar) && Array.isArray(adminNow.colleges), "A9 الشاشة تستلم المواسم والتقويم والكليات");
     const mkTargeted = async (company: string, category: string, extra: any, slot = "schedule", w = 640, h = 160) => {
-      const c1 = await call("POST", "/api/admin/ads/campaigns", { company, category, slot, startDay: today, endDay: dayPlus(10), linkUrl: `https://${company}.example.com`, ...extra });
+      const c1 = await call("POST", "/api/admin/ads/campaigns", { company, category, slot, startDay: today, endDay: dayPlus(10), linkUrl: `https://c${Math.floor(Math.random() * 1e9)}.example.com`, ...extra });
       await call("POST", `/api/admin/ads/campaigns/${c1.json.id}/creatives`, png(w, h), { "Content-Type": "image/png" });
       const ap = await call("POST", `/api/admin/ads/campaigns/${c1.json.id}/status`, { action: "approve", rulesAccepted: true });
       return { id: c1.json.id as string, ap };
@@ -462,6 +475,40 @@ async function main() {
     check(partnerPage.text.includes("تقويم المواسم") || adminNow.calendar.length === 0, "A9 ملف الشراكة يعرض تقويم المواسم عند وجود تواريخ فصل");
     check(!partnerPage.text.includes("الفيلكاوي") && !partnerPage.text.includes("العنزي"), "A12 لا اسمَ في ملف الشراكة");
 
+    // الموقع المتوقف: حملةٌ جديدة عليه تُرفض، والمواقع الفاعلة وحدها تُعرض للإدارة
+    r = await call("POST", "/api/admin/ads/campaigns", { company: "على متوقف", category: "ترفيه", slot: "status", startDay: today, endDay: dayPlus(5), linkUrl: "https://r.example.com" });
+    check(r.status === 400 && String(r.json.error).includes("متوقف"), "A14 موقع «حالة الطلب» متوقف: لا حملة جديدة عليه", r.json);
+    check(!(await call("GET", "/api/admin/ads")).json.slots.some((x: any) => x.id === "status") && (await call("GET", "/api/admin/ads")).json.slots.some((x: any) => x.id === "break"), "A14 الإدارة ترى المواقع الفاعلة فقط");
+
+    // نوع الرابط يقرّر: الجدول للعرض يحمل إعلاناً؛ البطاقة والاستبيان وطلب الجدول (هوية) لا تحمل
+    const mkLink = (kind: string, college = 7) => Repository.createShareLink({ AdCollegeId: college, AdSectionId: 1, AdTermId: 1, label: kind, expiresAt: new Date(Date.now() + 86400000).toISOString(), SystemUserId: 1, userName: "t", showInstructors: false, kind: kind as any });
+    const links = { department: await mkLink("department"), students: await mkLink("students"), staff: await mkLink("staff"), survey: await mkLink("survey"), request: await mkLink("request") };
+    const withAds = await mkTargeted("لكل الأنواع", "مواصلات", {});
+    check(withAds.ap.status === 200, "A14 اعتماد حملةٍ عامة في الجدول العام", { ap: withAds.ap.json, id: withAds.id });
+    const items = async (t?: string) => (await call("GET", `/_ads/serve?slot=schedule${t ? `&t=${encodeURIComponent(t)}` : ""}`)).json.items.map((x: any) => x.c);
+    check((await items(links.department.id)).includes(withAds.id) && (await items(links.students.id)).includes(withAds.id), "A14 رابط جدول القسم وجدول الطلبة يحملان الإعلان");
+    for (const kind of ["staff", "survey", "request"] as const) check((await items((links as any)[kind].id)).length === 0, `A14 رابط «${kind}» (يطلب هوية) لا يحمل أي إعلان`);
+    check((await items("no-such-token-xyz")).length === 0, "A14 رمزٌ غير معروف: لا إعلان");
+    check((await (await call("GET", `/_ads/serve?slot=schedule&t=${encodeURIComponent(links.staff.id)}`)).json).sponsor === null, "A14 ولا راعٍ في صفحةٍ تطلب هوية");
+
+    // سجلّ التجربة دائم: فكّ الوسم أو الحذف لا يعيدان التجربة
+    const t1 = await call("POST", "/api/admin/ads/campaigns", { company: "شركة دائمة", category: "سفر وسياحة", slot: "dashboard", startDay: today, endDay: dayPlus(5), trial: true, linkUrl: "https://perm.example.com" });
+    check(t1.status === 200, "A14 تجربة أولى لشركة", t1.json);
+    r = await call("POST", "/api/admin/ads/campaigns", { id: t1.json.id, company: "شركة دائمة", category: "سفر وسياحة", slot: "dashboard", startDay: today, endDay: dayPlus(5), trial: false, linkUrl: "https://perm.example.com" });
+    check(r.status === 200, "A14 فكّ وسم التجربة عن الحملة نفسها مسموح");
+    r = await call("POST", "/api/admin/ads/campaigns", { company: "شركة دائمة", category: "سفر وسياحة", slot: "dashboard", startDay: dayPlus(10), endDay: dayPlus(14), trial: true, linkUrl: "https://perm.example.com" });
+    check(r.status === 400 && String(r.json.error).includes("من قبل"), "A14 بعد فكّ الوسم لا تجربة ثانية للشركة (السجل دائم)", r.json);
+    await call("DELETE", `/api/admin/ads/campaigns/${t1.json.id}`);
+    r = await call("POST", "/api/admin/ads/campaigns", { company: "شركة دائمة", category: "سفر وسياحة", slot: "dashboard", startDay: dayPlus(10), endDay: dayPlus(14), trial: true, linkUrl: "https://perm.example.com" });
+    check(r.status === 400, "A14 وبعد حذف الحملة الأولى أيضاً لا تجربة ثانية", r.json);
+    r = await call("POST", "/api/admin/ads/campaigns", { id: t1.json.id, company: "شركة دائمة", category: "سفر وسياحة", slot: "dashboard", startDay: today, endDay: dayPlus(5), trial: true, linkUrl: "https://perm.example.com" });
+
+    // مفاتيح الحدّ (فيها العنوان) تُمحى فعلاً بعد نافذتها، كما تعد صفحة «كيف نقيس؟»
+    const sizes0 = R.limiterSizes();
+    check(sizes0.windows > 0, "A14 توجد مفاتيح حدٍّ بعد الطلبات", sizes0);
+    R.sweepLimiters(Date.now() + 3 * 60_000);
+    check(R.limiterSizes().windows === 0 && R.limiterSizes().clicks === 0, "A14 المسح بعد دقيقتين يفرّغ مفاتيح الحدّ كلها", R.limiterSizes());
+
     // الإيقاف الفوري والانتهاء
     r = await call("POST", `/api/admin/ads/campaigns/${id}/status`, { action: "pause" });
     check(String(audited[audited.length - 1]?.text).includes("إيقاف فوري"), "A6 سجلّ التدقيق: الإيقاف الفوري", audited[audited.length - 1]);
@@ -471,10 +518,10 @@ async function main() {
     check((await call("DELETE", `/api/admin/ads/campaigns/${id}`)).status === 200, "A6 حذف الحملة الموقوفة");
 
     // مرحلة قديمة: حملةٌ منتهية لا تُعرض ولو معتمدة
-    const old = await call("POST", "/api/admin/ads/campaigns", { company: "قديمة", category: "سفر وسياحة", slot: "status", startDay: dayPlus(-30), endDay: dayPlus(-1), linkUrl: "https://old.example.com" });
-    await call("POST", `/api/admin/ads/campaigns/${old.json.id}/creatives`, png(600, 250), { "Content-Type": "image/png" });
+    const old = await call("POST", "/api/admin/ads/campaigns", { company: "قديمة", category: "سفر وسياحة", slot: "break", startDay: dayPlus(-30), endDay: dayPlus(-1), linkUrl: "https://old.example.com" });
+    await call("POST", `/api/admin/ads/campaigns/${old.json.id}/creatives`, png(480, 160), { "Content-Type": "image/png" });
     await call("POST", `/api/admin/ads/campaigns/${old.json.id}/status`, { action: "approve", rulesAccepted: true });
-    check(!(await call("GET", "/_ads/serve?slot=status")).json.items.some((x: any) => x.c === old.json.id), "A6 الحملة المنتهية لا تُعرض ولو كانت معتمدة");
+    check(!(await call("GET", "/_ads/serve?slot=break")).json.items.some((x: any) => x.c === old.json.id), "A6 الحملة المنتهية لا تُعرض ولو كانت معتمدة");
 
     // شريك الفصل
     const sp = await call("POST", "/api/admin/ads/campaigns", { company: "الراعي", category: "خدمات مصرفية", slot: "sponsor", startDay: today, endDay: dayPlus(60), linkUrl: "https://sponsor.example.com" });
@@ -492,6 +539,15 @@ async function main() {
     check(stats.json.visits.today === 2 && stats.json.visits.bySource.find((s: any) => s.source === "me")?.count === 2, "A6 زيارتان مقيستان اليوم", stats.json.visits);
     check(stats.json.visits.installs === 1 && stats.json.visits.mobileRate === 50 && stats.json.visits.returningRate === 50, "A6 التثبيت ونسبة الجوال والعائدين", stats.json.visits);
     check(stats.json.ads.live >= 5, "A6 ملخص الإعلانات في لوحة الجمهور", stats.json.ads);
+    // النبض يُنسب إلى نوع الرابط الحقيقي لا إلى المسار
+    const sources = async () => { await R.flushAdsCounters(); const v = (await call("GET", "/api/admin/audience-stats")).json.visits.bySource as Array<{ source: string; count: number }>; return Object.fromEntries(v.map(x => [x.source, x.count])) as Record<string, number>; };
+    const visitsBefore = await sources();
+    await call("POST", "/_pulse", { k: "schedule", r: 0, m: 0, t: links.staff.id });
+    await call("POST", "/_pulse", { k: "schedule", r: 0, m: 0, t: links.survey.id });
+    await call("POST", "/_pulse", { k: "schedule", r: 0, m: 0, t: links.department.id });
+    const visitsAfter = await sources();
+    check((visitsAfter.staff || 0) - (visitsBefore.staff || 0) === 1 && (visitsAfter.survey || 0) - (visitsBefore.survey || 0) === 1 && (visitsAfter.schedule || 0) - (visitsBefore.schedule || 0) === 1, "A14 زيارة بطاقة الأستاذ تُحسب «بطاقة» والاستبيان «استبيان» والجدول «جدول»", { visitsBefore, visitsAfter });
+
 
     // ملف الشراكة
     check((await call("GET", "/partners/" + "q".repeat(32))).status === 404, "A6 ملف الشراكة: لا رابط بلا إنشاء");

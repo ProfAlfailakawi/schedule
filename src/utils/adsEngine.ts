@@ -8,7 +8,7 @@
  * التواريخ أيامٌ بتوقيت الكويت (UTC+3) والنهاية شاملة.
  */
 import type { AdCampaign, AdStatsDay } from "../types";
-import { SEASON_IDS } from "./adSeasons";
+import { SEASON_IDS, seasonLabel } from "./adSeasons";
 
 export interface AdSlotSpec {
   id: string;
@@ -22,18 +22,23 @@ export interface AdSlotSpec {
   capacity: number;
   /** حصري: حملةٌ واحدة فقط في أي لحظة. */
   exclusive?: boolean;
+  /** موقعٌ متوقف: لا يُعرض فيه شيء ولا تُقبل فيه حملةٌ جديدة. يبقى معرَّفاً لتُقرأ حملاتٌ قديمة عليه. */
+  retired?: boolean;
 }
 
 export const AD_SLOTS: readonly AdSlotSpec[] = [
   { id: "sponsor", label: "شريك الفصل", where: "شريط «برعاية» أعلى كل موقعٍ إعلاني", audience: "all", width: 640, height: 80, capacity: 1, exclusive: true },
   { id: "me", label: "«مساري»", where: "أسفل البطاقة الرئيسية في «مساري» (/me)", audience: "students", width: 640, height: 200, capacity: 5 },
   { id: "schedule", label: "الجدول العام", where: "أسفل جدول القسم وجدول الطلبة (QR)", audience: "students", width: 640, height: 160, capacity: 3 },
-  { id: "status", label: "حالة الطلب", where: "أسفل صفحة «حالة طلبي»", audience: "students", width: 600, height: 250, capacity: 3 },
+  /* متوقف: صفحة «حالة طلبي» تطلب رقماً مدنياً ورقم الحالة، وشرطُنا ألا إعلان في صفحات الهوية. */
+  { id: "status", label: "حالة الطلب (متوقف)", where: "متوقف: الصفحة تطلب الهوية", audience: "students", width: 600, height: 250, capacity: 3, retired: true },
   { id: "break", label: "محطة الاستراحة", where: "داخل «تذكرتي» في «مساري» حين يكون للطالب فراغ ساعةٍ فأكثر بين محاضراته", audience: "students", width: 480, height: 160, capacity: 3 },
   { id: "dashboard", label: "لوحة الكادر", where: "بطاقة في لوحة الأساتذة والإداريين", audience: "staff", width: 480, height: 160, capacity: 3 },
 ] as const;
 
 export const slotById = (id: string): AdSlotSpec | undefined => AD_SLOTS.find(slot => slot.id === id);
+/** المواقع الفاعلة التي تُقبل فيها حملاتٌ جديدة. */
+export const activeSlots = (): AdSlotSpec[] => AD_SLOTS.filter(slot => !slot.retired);
 
 export const AD_MAX_BYTES = 300 * 1024;
 export const AD_MIMES = ["image/png", "image/jpeg", "image/webp"] as const;
@@ -172,6 +177,7 @@ export function eligibleNow(campaign: AdCampaign, ctx: AdContext = {}): boolean 
 export function campaignProblems(input: Candidate): string[] {
   const out: string[] = [];
   if (!slotById(input.slot)) out.push("اختر موقعاً صحيحاً.");
+  else if (slotById(input.slot)?.retired) out.push("هذا الموقع متوقف؛ اختر موقعاً آخر.");
   if (!String(input.company || "").trim()) out.push("اسم الشركة مطلوب.");
   if (!String(input.category || "").trim()) out.push("الفئة مطلوبة.");
   if (input.seasons?.some(s => !SEASON_IDS.includes(s))) out.push("موسمٌ غير معروف.");
@@ -190,20 +196,29 @@ export function campaignProblems(input: Candidate): string[] {
 export function placementProblems(input: Candidate, others: readonly AdCampaign[]): string[] {
   const slot = slotById(input.slot);
   if (!slot || !isDay(input.startDay) || !isDay(input.endDay)) return [];
-  const same = others.filter(c => c.id !== input.id && c.slot === input.slot && c.status === "approved" && overlaps(c, input) && targetsOverlap(c, input));
+  const same = others.filter(c => c.id !== input.id && c.slot === input.slot && c.status === "approved" && overlaps(c, input));
   const out: string[] = [];
-  const rival = same.find(c => c.category === input.category);
+  const rival = same.find(c => c.category === input.category && targetsOverlap(c, input));
   if (rival) out.push(`«${rival.company}» من الفئة نفسها (${input.category}) في هذا الموقع خلال ${rival.startDay} إلى ${rival.endDay}${rival.seasons?.length || rival.colleges?.length ? " ولجمهورٍ يتقاطع مع جمهورك" : ""}.`);
   const limit = slot.exclusive ? 1 : slot.capacity;
-  const span = Math.min(daysBetween(input.startDay, input.endDay), 366);
-  for (let i = 0; i <= span; i++) {
-    const day = addDays(input.startDay, i);
-    const count = same.filter(c => c.startDay <= day && day <= c.endDay).length;
-    if (count >= limit) {
-      out.push(slot.exclusive
-        ? `«${slot.label}» حصريٌّ وهو محجوزٌ يوم ${day}.`
-        : `موقع «${slot.label}» ممتلئ (${limit}) يوم ${day}؛ أجّل الحملة بعد انتهاء إحدى الحملات.`);
-      break;
+  /* السعة لكل «مشاهدٍ» ممكن: زوجُ (موسم، كلية). الطالب يرى حملات شريحته وحدها، فالحملة المستهدِفة موسمين
+     لا تُحسب عليها حملاتُ الموسمين معاً. الكلية 0 = صفحةٌ لا تعرف كلية الطالب. ولا يتغير العدد إلا عند بدء حملة،
+     فيكفي فحص يوم بداية الحملة الجديدة وأيام بدايات الحملات المتقاطعة. */
+  const seasons = input.seasons?.length ? input.seasons : [...SEASON_IDS];
+  const colleges = new Set<number>([0, ...(input.colleges || []), ...same.flatMap(c => c.colleges || [])]);
+  const days = [...new Set([input.startDay, ...same.map(c => c.startDay).filter(d => d > input.startDay && d <= input.endDay)])].sort();
+  for (const day of days) {
+    const active = same.filter(c => c.startDay <= day && day <= c.endDay);
+    for (const season of seasons) {
+      for (const college of colleges) {
+        if (input.colleges?.length && !input.colleges.includes(college)) continue;
+        const count = active.filter(c => (!c.seasons?.length || c.seasons.includes(season)) && (!c.colleges?.length || c.colleges.includes(college))).length;
+        if (count >= limit) {
+          const where = `${input.seasons?.length || same.some(c => c.seasons?.length) ? ` في موسم «${seasonLabel(season)}»` : ""}${college ? " لهذه الكلية" : ""}`;
+          out.push(slot.exclusive ? `«${slot.label}» حصريٌّ وهو محجوزٌ يوم ${day}${where}.` : `موقع «${slot.label}» ممتلئ (${limit}) يوم ${day}${where}؛ أجّل الحملة بعد انتهاء إحدى الحملات أو اختر موسماً آخر.`);
+          return out;
+        }
+      }
     }
   }
   return out;
@@ -290,15 +305,17 @@ export const looksAutomated = (userAgent: unknown): boolean => {
 
 /* ── التجربة المجانية: سبعة أيام، ومرةً لكل شركة ── */
 export const TRIAL_DAYS = 7;
-const normCompany = (name: string): string => String(name || "").toLowerCase().replace(/[\s\u200e\u200f]+/g, " ").trim();
+export const normCompany = (name: string): string => String(name || "").toLowerCase().replace(/[\s\u200e\u200f]+/g, " ").trim();
 
 /** أسبابُ رفض حملةٍ تجريبية: أطول من أسبوع، أو شركةٌ أخذت تجربتها من قبل. */
-export function trialProblems(input: { id?: string; company: string; trial?: boolean; startDay: string; endDay: string }, others: readonly AdCampaign[]): string[] {
+/** `registry`: سجلٌّ دائم بالشركات التي استهلكت تجربتها (اسمٌ مُطبَّع ← رقم الحملة)؛ لا يمحوه تعديلُ الحملة ولا حذفها. */
+export function trialProblems(input: { id?: string; company: string; trial?: boolean; startDay: string; endDay: string }, others: readonly AdCampaign[], registry: Readonly<Record<string, string>> = {}): string[] {
   if (!input.trial) return [];
   const out: string[] = [];
   if (isDay(input.startDay) && isDay(input.endDay) && daysBetween(input.startDay, input.endDay) + 1 > TRIAL_DAYS) out.push("الحملة التجريبية سبعة أيام كحدٍّ أقصى.");
   const name = normCompany(input.company);
-  if (name && others.some(c => c.id !== input.id && c.trial && normCompany(c.company) === name)) out.push("هذه الشركة أخذت تجربتها المجانية من قبل؛ الحملة التجريبية مرةٌ واحدة لكل شركة.");
+  const usedBy = name ? registry[name] : undefined;
+  if (name && (others.some(c => c.id !== input.id && c.trial && normCompany(c.company) === name) || (usedBy && usedBy !== input.id))) out.push("هذه الشركة أخذت تجربتها المجانية من قبل؛ الحملة التجريبية مرةٌ واحدة لكل شركة.");
   return out;
 }
 

@@ -235,6 +235,8 @@ interface DBState {
   audienceDaily?: AudienceDay[];
   /** رمز رابط «ملف الشراكة» العام (يُدار من شاشة الإعلانات). */
   partnerKitToken?: string;
+  /** الشركات التي استهلكت تجربتها المجانية (اسمٌ مُطبَّع ← رقم حملتها). سجلٌّ دائم لا يمحوه تعديلٌ ولا حذف. */
+  adTrialCompanies?: Array<{ name: string; campaignId: string }>;
   scheduleComments?: ScheduleComment[];
   instructorRequests?: InstructorRequest[];
   studyProposals?: StudyProposal[];
@@ -4269,6 +4271,31 @@ export const Repository = {
       return snap.docs.map(doc => doc.data() as AudienceDay).sort((a, b) => a.day.localeCompare(b.day));
     }
     return [...(db.audienceDaily || [])].sort((a, b) => a.day.localeCompare(b.day)).slice(-limit);
+  },
+  getTrialCompanies: async (): Promise<Array<{ name: string; campaignId: string }>> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("adSettings").doc("trials").get();
+      const map = ((doc.data() as any)?.items || {}) as Record<string, { name: string; campaignId: string }>;
+      return Object.values(map).filter(item => item && item.name);
+    }
+    return [...(db.adTrialCompanies || [])];
+  },
+  /** يسجّل أن شركةً استهلكت تجربتها. لا يُستبدل تسجيلٌ قائم (الأول يبقى). */
+  addTrialCompany: async (name: string, campaignId: string): Promise<void> => {
+    if (!name) return;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      /* مفتاح الحقل مشفَّر: اسم الشركة قد يحمل نقطةً أو رموزاً لا تصلح اسم حقلٍ في Firestore. */
+      const key = Buffer.from(name, "utf8").toString("base64url");
+      const ref = firestoreDb.collection("adSettings").doc("trials");
+      await firestoreDb.runTransaction(async tx => {
+        const doc = await tx.get(ref);
+        const items = ((doc.data() as any)?.items || {}) as Record<string, unknown>;
+        if (!items[key]) tx.set(ref, { items: { ...items, [key]: { name, campaignId } } }, { merge: true });
+      });
+      return;
+    }
+    const list = db.adTrialCompanies || (db.adTrialCompanies = []);
+    if (!list.some(item => item.name === name)) { list.push({ name, campaignId }); saveDatabase(); }
   },
   getPartnerKitToken: async (): Promise<string> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {

@@ -22,7 +22,7 @@ import {
   AD_CATEGORIES, AD_MAX_BYTES, AD_RULES, AD_SLOTS, MAX_ROTATE_CREATIVES, campaignProblems, cleanColleges, cleanCoupon, cleanLink, cleanSeasons, eligibleNow,
   creativeBreakdown, creativeProblem, daysBetween, daysLeft, endingSoon, expectedShare, isLive, kuwaitDay, kuwaitHour,
   looksAutomated, nextFreeDay, phaseOf, placementProblems, readImageInfo, rotationOrder, slotById, totalsOf, dailySeries,
-  trialProblems, weeklyCompare, slotBenchmarkCtr, TRIAL_DAYS,
+  trialProblems, weeklyCompare, slotBenchmarkCtr, TRIAL_DAYS, normCompany, activeSlots,
 } from "../utils/adsEngine";
 import { buildAudienceStats } from "../utils/audienceStats";
 import { SEASONS, activeSeasons, seasonCalendar, seasonsText } from "../utils/adSeasons";
@@ -156,28 +156,34 @@ async function currentSeasons(): Promise<string[]> {
   seasonsCache = { at: Date.now(), ids };
   return ids;
 }
-const tokenCollege = new Map<string, { at: number; collegeId: number }>();
-/** كليةُ رابطٍ عام (جدولٌ أو حالةُ طلب). الرمزُ التجريبي والمجهول لا يُنتجان سياقاً. */
-async function collegeOfToken(raw: unknown): Promise<number | undefined> {
+/** نوعُ رابطٍ عام وكليتُه (من رمز الصفحة). الصفحة الواحدة قد تخدم أنواعاً (`/s/` تخدم جدول القسم وبطاقة الأستاذ والاستبيان)، فالنوع وحده يقرّر هل يجوز فيها إعلان. */
+interface LinkInfo { known: boolean; kind: string; collegeId: number }
+const tokenInfo = new Map<string, { at: number; info: LinkInfo }>();
+async function linkInfo(raw: unknown): Promise<LinkInfo> {
   const token = String(raw ?? "").slice(0, 120);
-  if (!token || isDemoLinkToken(token)) return undefined;
-  const hit = tokenCollege.get(token);
-  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.collegeId || undefined;
-  let collegeId = 0;
-  try { collegeId = Number((await Repository.getShareLink(token))?.AdCollegeId || 0); } catch { collegeId = 0; }
-  if (tokenCollege.size >= 500) tokenCollege.delete(tokenCollege.keys().next().value as string);
-  tokenCollege.set(token, { at: Date.now(), collegeId });
-  return collegeId || undefined;
+  const none: LinkInfo = { known: false, kind: "", collegeId: 0 };
+  if (!token || isDemoLinkToken(token)) return none;
+  const hit = tokenInfo.get(token);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.info;
+  let info = none;
+  try {
+    const link = await Repository.getShareLink(token);
+    if (link) info = { known: true, kind: String(link.kind || "department"), collegeId: Number(link.AdCollegeId || 0) };
+  } catch { info = none; }
+  if (tokenInfo.size >= 500) tokenInfo.delete(tokenInfo.keys().next().value as string);
+  tokenInfo.set(token, { at: Date.now(), info });
+  return info;
 }
+/** أنواعُ الروابط التي يجوز فيها إعلان: جدولٌ للعرض فقط. بطاقةُ الأستاذ والاستبيان وطلبُ الجدول تطلب هويةً فلا إعلان فيها أبداً. */
+const AD_LINK_KINDS = new Set(["department", "students"]);
 
 /* ─────────────────────────── حدودٌ بسيطة ضد الإساءة ─────────────────────────── */
 
-const windows = new Map<string, { n: number; at: number }>();
+const windows = new Map<string, { n: number; at: number; ms: number }>();
 function underLimit(key: string, max: number, windowMs = 60_000): boolean {
   const now = Date.now();
-  if (windows.size > 20_000) for (const [k, v] of windows) if (now - v.at > windowMs) windows.delete(k);
   const cur = windows.get(key);
-  if (!cur || now - cur.at >= windowMs) { windows.set(key, { n: 1, at: now }); return true; }
+  if (!cur || now - cur.at >= windowMs) { windows.set(key, { n: 1, at: now, ms: windowMs }); return true; }
   cur.n += 1;
   return cur.n <= max;
 }
@@ -186,11 +192,18 @@ const lastClick = new Map<string, number>();
 const CLICK_REPEAT_MS = 4_000;
 const clickWasRepeat = (key: string): boolean => {
   const now = Date.now();
-  if (lastClick.size > 8000) for (const [k, t] of lastClick) if (now - t > 60_000) lastClick.delete(k);
   const prev = lastClick.get(key);
   lastClick.set(key, now);
   return prev !== undefined && now - prev < CLICK_REPEAT_MS;
 };
+/** يمحو مفاتيح الحدّ المنتهية (فيها العنوان): كل ٣٠ ثانية، فلا يبقى مفتاحٌ أكثر من دقيقتين. هذا ما تعد به صفحة «كيف نقيس؟». */
+export function sweepLimiters(now = Date.now()): number {
+  let removed = 0;
+  for (const [k, v] of windows) if (now - v.at >= v.ms) { windows.delete(k); removed++; }
+  for (const [k, t] of lastClick) if (now - t >= CLICK_REPEAT_MS) { lastClick.delete(k); removed++; }
+  return removed;
+}
+export const limiterSizes = () => ({ windows: windows.size, clicks: lastClick.size });
 
 /* ─────────────────────────── حقنُ السكربت في الصفحات العامة ─────────────────────────── */
 
@@ -199,7 +212,8 @@ interface InjectPlan { pulse: string; slot: string }
 /** أيُّ صفحةٍ تحمل نبضاً، وأيُّها تحمل إعلاناً. الاستبيانُ وبطاقةُ الأستاذ نبضٌ فقط: صفحاتُ هويةٍ لا إعلان فيها أبداً. */
 export function injectPlanFor(path: string): InjectPlan | null {
   const clean = path.split("?")[0].split("#")[0];
-  if (clean === "/me" || clean === "/me/") return { pulse: "me", slot: "me" };
+  /* «مساري» نبضٌ فقط من الحقن: أولُ شاشةٍ فيه تطلب الرقم المدني، فالإعلان لا يُركَّب إلا بعد الدخول (من صفحة «مساري» نفسها). */
+  if (clean === "/me" || clean === "/me/") return { pulse: "me", slot: "" };
   const head = PUBLIC_LINK_PAGE_PREFIXES.find(prefix => clean.startsWith(prefix));
   if (!head) return null;
   const token = decodeURIComponent(clean.slice(head.length).split("/")[0] || "");
@@ -208,7 +222,7 @@ export function injectPlanFor(path: string): InjectPlan | null {
   switch (head) {
     case "/s/": return rest === "" || rest === "/" ? { pulse: "schedule", slot: "schedule" } : null;
     case "/t/": return rest === "" || rest === "/" ? { pulse: "schedule", slot: "schedule" } : null;
-    case "/m/": return rest === "" || rest === "/" ? { pulse: "status", slot: "status" } : null;
+    case "/m/": return rest === "" || rest === "/" ? { pulse: "status", slot: "" } : null;
     case "/q/": return rest === "" || rest === "/" ? { pulse: "survey", slot: "" } : null;
     case "/r/": return { pulse: "staff", slot: "" };
     default: return null;
@@ -254,6 +268,7 @@ async function campaignView(c: AdCampaign, stats: AdStatsDay[], heads: Array<Omi
   const live = all.filter(x => x.slot === c.slot && isLive(x, today)).length;
   return {
     ...c,
+    slotLabel: slotById(c.slot)?.label || c.slot,
     phase: phaseOf(c, today),
     daysLeft: daysLeft(c, today),
     endingSoon: endingSoon(c, today),
@@ -307,7 +322,7 @@ async function audienceInputs(requestedTermId: number) {
 /* ─────────────────────────── التسجيل ─────────────────────────── */
 
 export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
-  const timer = setInterval(() => { void flushAdsCounters(); }, 30_000);
+  const timer = setInterval(() => { sweepLimiters(); void flushAdsCounters(); }, 30_000);
   timer.unref?.();
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => { void flushAdsCounters(); });
 
@@ -325,7 +340,11 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const slot = slotById(slotId);
     if (!slot || slot.id === "sponsor") { res.json({ items: [], sponsor: null, rotateMs: 9000 }); return; }
     const today = kuwaitDay();
-    const ctx = { today, seasons: await currentSeasons(), collegeId: await collegeOfToken(req.query.t) };
+    /* صفحةٌ برمزٍ (جدولٌ أو حالة): لا إعلان إلا لرابطٍ معروفٍ من نوع جدولٍ للعرض. وبلا رمزٍ («مساري») يُعرض بلا سياق كلية. */
+    const hasToken = Boolean(String(req.query.t || ""));
+    const link = hasToken ? await linkInfo(req.query.t) : null;
+    if (link && (!link.known || !AD_LINK_KINDS.has(link.kind))) { res.json({ items: [], sponsor: null, rotateMs: 9000 }); return; }
+    const ctx = { today, seasons: await currentSeasons(), collegeId: link?.collegeId || undefined };
     const live = (await campaigns()).filter(c => eligibleNow(c, ctx));
     const heads = new Map((await Promise.all([...new Set(live.flatMap(c => c.creativeIds))].map(async id => [id, await Repository.getAdCreative(id)] as const))).filter(([, v]) => v).map(([k, v]) => [k, v!] as const));
     const itemFor = (c: AdCampaign) => {
@@ -386,11 +405,18 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     res.end();
   });
 
-  app.post("/_pulse", express.json({ limit: "1kb" }), (req, res) => {
+  app.post("/_pulse", express.json({ limit: "1kb" }), async (req, res) => {
     res.status(204);
     const ip = String(req.ip || "?");
     if (looksAutomated(req.headers["user-agent"]) || !underLimit(`pulse|${ip}`, 3000)) { res.end(); return; }
-    recordPulse({ kind: String(req.body?.k || ""), returning: Boolean(req.body?.r), mobile: Boolean(req.body?.m) });
+    let kind = String(req.body?.k || "");
+    /* `/s/` تخدم جدول القسم وبطاقة الأستاذ والاستبيان: النبضُ يُنسب إلى نوع الرابط الحقيقي لا إلى المسار. */
+    if (kind === "schedule" && req.body?.t) {
+      const link = await linkInfo(req.body.t);
+      if (link.known && (link.kind === "staff" || link.kind === "request")) kind = "staff";
+      else if (link.known && link.kind === "survey") kind = "survey";
+    }
+    recordPulse({ kind, returning: Boolean(req.body?.r), mobile: Boolean(req.body?.m) });
     res.end();
   });
 
@@ -456,7 +482,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const today = kuwaitDay();
     const rows = await Promise.all(all.map(c => campaignView(c, stats, heads, all, today)));
     rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const slots = AD_SLOTS.map(slot => ({
+    const slots = activeSlots().map(slot => ({
       ...slot,
       live: all.filter(c => c.slot === slot.id && isLive(c, today)).length,
       nextFree: nextFreeDay(slot.id, all, today),
@@ -482,7 +508,8 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const id = str(req.body?.id, 60);
     const existing = id ? (await campaigns()).find(c => c.id === id) : undefined;
     if (id && !existing) { fail(res, 404, "الحملة غير موجودة."); return; }
-    const problems = [...campaignProblems({ id, ...body }), ...trialProblems({ id, ...body }, await campaigns()), ...(link.problem ? [link.problem] : [])];
+    const trialRegistry = Object.fromEntries((await Repository.getTrialCompanies()).map(item => [item.name, item.campaignId]));
+    const problems = [...campaignProblems({ id, ...body }), ...trialProblems({ id, ...body }, await campaigns(), trialRegistry), ...(link.problem ? [link.problem] : [])];
     if (problems.length) { fail(res, 400, problems[0], { problems }); return; }
     const now = new Date().toISOString();
     let row: AdCampaign;
@@ -503,6 +530,8 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
       row = { id: randomUUID(), ...body, linkUrl: link.url, creativeIds: [], status: "draft", reportToken: newToken(), createdAt: now, updatedAt: now };
     }
     await Repository.saveAdCampaign(row);
+    /* التجربة تُسجَّل في سجلٍّ دائم: فكّ وسمها أو حذف حملتها لا يعيد للشركة تجربتها. */
+    if (row.trial) await Repository.addTrialCompany(normCompany(row.company), row.id);
     dropCampaignCache();
     audit(res, row.id, existing
       ? `تعديل حملة «${row.company}»${existing.status === "approved" && row.status === "draft" ? " — عادت مسودةً لتغيّر موقعها أو فئتها أو تواريخها" : ""} · ${row.startDay} ← ${row.endDay}`
