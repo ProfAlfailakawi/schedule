@@ -29,9 +29,9 @@ const base = { courses: [course], instructorIds: new Set([7, 8]) };
 /* 1) نواقص بلا تعارضٍ ماديّ: يُوقَّع. */
 {
   const rows = [row(1, { roomId: "f13" })];
-  const gaps = computeScheduleDataReadiness({ ...base, rows, rooms: [room("f13", null)] });
+  const gaps = computeScheduleDataReadiness({ ...base, courses: [{ ...course, MaxStudent: 0 }], rows, rooms: [room("f13", null)] });
   const blockers = approvalBlockerSummary(rows, rows, {});
-  check(gaps.count > 0 && !gaps.ready, "الجدول فيه بياناتٌ ناقصة (سعة قاعة)");
+  check(gaps.count > 0 && !gaps.ready, "الجدول فيه بياناتٌ ناقصة (سعة شعبة) — وسعة القاعة لم تعد بنداً");
   check(blockers.conflicts === 0, "ولا تعارضَ ماديّ فيه");
   const verdict = canSign(emptyApproval(1, 5, 20), "committee", { blockingConflicts: blockers.conflicts, blockingDuplicates: blockers.duplicates, rowCount: rows.length });
   check(verdict.ok === true, "نواقصُ البيانات وحدها لا تمنع التوقيع");

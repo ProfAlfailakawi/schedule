@@ -26,7 +26,7 @@ const gaps = computeScheduleDataReadiness({
 });
 const modeOf = (kind: string) => gaps.items.filter(i => i.kind === kind).map(readinessFixMode);
 check(modeOf("course").every(m => m === "course-fields") && modeOf("course").length === 1, "المقرر الناقص: خاناتٌ في مكانها");
-check(modeOf("room").every(m => m === "room-capacity") && modeOf("room").length === 1, "سعة القاعة: خانةٌ في مكانها");
+check(modeOf("room").length === 0, "سعة القاعة لم تعد بنداً ناقصاً (مخفيةٌ من البرنامج)");
 check(modeOf("location").every(m => m === "room-link"), "موعدٌ بلا قاعة: اختيارُ مبنى وقاعة في مكانه");
 check(modeOf("schedule").every(m => m === "open-row"), "نواقص الموعد (شعبة/أستاذ/أيام/وقت): «افتح الموعد»");
 check(readinessFixMode({ kind: "course", id: "0", fields: ["ربط المقرر برمز صحيح في المكتبة"] }) === "jump", "مقرر غير مربوط يبقى قفزاً");
@@ -35,19 +35,17 @@ check(readinessFixMode({ kind: "room", id: "x", fields: ["تأكيد ربط ال
 /* 2) حقول المقرر الأربعة (+الاسم) تُقرأ من تسميات الخادم. */
 const courseItem = gaps.items.find(i => i.kind === "course")!;
 const keys = courseFixFieldsOf(courseItem).map(f => f.key).sort();
-check(JSON.stringify(keys) === JSON.stringify(["CourseCode", "CourseCredit", "CourseHours", "MaxStudent"]), "الوحدات والساعات والسعة والرمز كلُّها خاناتٌ");
+check(JSON.stringify(keys) === JSON.stringify(["CourseCredit", "CourseHours", "MaxStudent"]), "الوحدات والساعات والسعة خاناتٌ؛ الرمز والاسم لا يُعدَّلان من الشريط (هويةُ المقرر المجدول ثابتة)");
 
 /* 3) التحقّق. */
-const [credit, hours, cap, code] = ["CourseCredit", "CourseHours", "MaxStudent", "CourseCode"].map(k => courseFixFieldsOf(courseItem).find(f => f.key === k)!);
+const [credit, hours, cap] = ["CourseCredit", "CourseHours", "MaxStudent"].map(k => courseFixFieldsOf(courseItem).find(f => f.key === k)!);
 check(validateCourseFix(credit, "3") === null && validateCourseFix(credit, "0") !== null && validateCourseFix(credit, "2.5") !== null, "الوحدات: عددٌ صحيح موجب");
 check(validateCourseFix(hours, "1.5") === null && validateCourseFix(hours, "") !== null, "الساعات: عشريٌّ موجب");
 check(validateCourseFix(cap, "2001") !== null && validateCourseFix(cap, "40") === null, "السعة: حدٌّ أعلى 2000");
-check(validateCourseFix(code, "  ") !== null && validateCourseFix(code, "CS101") === null, "الرمز: غير فارغ");
 
 /* 4) جسم PUT: الصفّ كاملاً ولا يتغيّر إلا ما عُدّل. */
 const body = buildCourseUpdateBody({ ...course, CourseCode: "CS1", CourseCredit: 3, CourseHours: 3, MaxStudent: 0, extra: "x" }, { MaxStudent: "35" });
 check(body.MaxStudent === 35 && body.CourseCode === "CS1" && body.CourseCredit === 3 && body.CourseHours === 3 && body.AdCollegeId === 1 && body.AdSectionId === 2 && !("extra" in body), "الجسم كاملٌ والحقل المعدَّل وحده تغيّر");
-check(buildCourseUpdateBody(course, { CourseCode: " CS9 " }).CourseCode === "CS9", "الرمز يُقصّ");
 
 /* 5) الصلاحية قفلٌ لا خطأ. */
 check(isPermissionDenial(403) && isPermissionDenial(409, "تعديل بيانات القسم متاح أثناء مراجعة مسوّدة الصحيفة فقط") && !isPermissionDenial(400, "تم تسجيل رمز المقرر") && !isPermissionDenial(409, "هذا المقرر له سجل تدريسي"), "403 وقفل اللجنة قفلٌ؛ بقية الأخطاء أخطاء");

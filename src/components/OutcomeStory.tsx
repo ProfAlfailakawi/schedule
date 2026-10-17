@@ -28,7 +28,7 @@ export function OutcomeLegend({ rows }: { rows: readonly OutcomeCounts[] }) {
       <ul>
         {sums.map(([reason, n]) => <li key={reason} className={`d-${reason}`}>{ICON[reason]}<span><b>{REASON_INFO[reason].title}</b><small>{countOf(n, AR.student)} · {REASON_INFO[reason].plain}</small></span></li>)}
       </ul>
-      <small className="os-key"><i className="dot d-ok" /> سجّل <i className="dot d-full" /> تعثّر (اللون = السبب) · كل نقطةٍ طالبٌ أجاب</small>
+      <small className="os-key"><i className="dot d-ok" /> سجّل <i className="dot d-full" /> تعثّر (اللون = السبب) · نقطةٌ لكل طالب في المقررات الصغيرة، وفي الكبيرة نقطةٌ لكل فئة وفوقها عددُها</small>
     </div>
   );
 }

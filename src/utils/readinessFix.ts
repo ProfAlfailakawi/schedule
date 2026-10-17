@@ -3,7 +3,7 @@
  * منطقٌ صرف لقائمة «بيانات ناقصة» في شريط الاعتماد: أيُّ نوعٍ يُصلَح في مكانه،
  * وكيف يُبنى جسمُ تعديل المقرر (PUT يطلب الجسم كاملاً)، وماذا يُرفض قبل الإرسال.
  */
-export type CourseFixKey = "CourseCredit" | "CourseHours" | "MaxStudent" | "CourseCode" | "CourseName";
+export type CourseFixKey = "CourseCredit" | "CourseHours" | "MaxStudent";
 export interface CourseFixField { key: CourseFixKey; label: string; type: "int" | "decimal" | "text"; max: number }
 
 /** تسمية الحقل الناقص كما يكتبها `scheduleDataReadiness` ← حقل المقرر. */
@@ -11,16 +11,13 @@ export const COURSE_FIX_FIELDS: Record<string, CourseFixField> = {
   "الوحدات": { key: "CourseCredit", label: "الوحدات", type: "int", max: 20 },
   "الساعات": { key: "CourseHours", label: "الساعات", type: "decimal", max: 40 },
   "سعة الشعبة": { key: "MaxStudent", label: "السعة", type: "int", max: 2000 },
-  "رمز المقرر": { key: "CourseCode", label: "الرمز", type: "text", max: 40 },
-  "اسم المقرر": { key: "CourseName", label: "الاسم", type: "text", max: 200 },
 };
 
-export type ReadinessFixMode = "course-fields" | "room-capacity" | "room-link" | "open-row" | "jump";
+export type ReadinessFixMode = "course-fields" | "room-link" | "open-row" | "jump";
 export interface ReadinessItemLike { kind: string; id: string; fields: string[] }
 
 export function readinessFixMode(item: ReadinessItemLike): ReadinessFixMode {
   if (item.kind === "course") return item.fields.some(f => COURSE_FIX_FIELDS[f]) ? "course-fields" : "jump";
-  if (item.kind === "room") return item.fields.includes("سعة القاعة") ? "room-capacity" : "jump";
   if (item.kind === "location") return "room-link";
   if (item.kind === "schedule") return "open-row";
   return "jump";

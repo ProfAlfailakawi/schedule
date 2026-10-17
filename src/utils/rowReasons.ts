@@ -58,12 +58,6 @@ function roomReasons(input: RowReasonInput): RowReason[] {
   } else if (room && room.active !== false && Array.isArray(room.sectionIds) && room.sectionIds.includes(num(row.AdSectionId))) {
     out.push({ kind: "hall", tone: "good", label: "قاعة القسم", tip: "القاعة مسجّلة ضمن قاعات هذا القسم في سجل المواقع" });
   }
-  const seats = num(room?.capacity), need = num(input.maxStudent);
-  if (room && seats > 0 && need > 0) {
-    out.push(seats >= need
-      ? { kind: "seats", tone: "good", label: `تتسع ${seats}`, tip: `سعة القاعة ${seats} مقابل سعة الشعبة ${need}` }
-      : { kind: "seats", tone: "warn", label: `ضيقة ${seats}/${need}`, tip: `سعة القاعة ${seats} أقل من سعة الشعبة ${need}` });
-  }
   /* القرب: أقرب محاضرة للأستاذ في اليوم نفسه تجاور هذه، إن عُرف مبنى كلٍّ منهما. */
   const here = buildingIdentityKey(row);
   if (here && row.AdInstructorId) {

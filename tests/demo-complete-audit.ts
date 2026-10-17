@@ -218,7 +218,7 @@ function p5Findings() {
   check(ackAt > 0 && staleAt > 0 && staleAt < ackAt && ackAt < submitAt,
     "توقيعُ رئيس القسم يشمل الشُّعب المضافة قبل الإرسال — بعد حارس «الشاشة قديمة»");
   const readiness = fs.readFileSync(path.join(process.cwd(), "src/utils/scheduleDataReadiness.ts"), "utf8"); /* الفحص انتقل إلى وحدةٍ نقيّة يستدعيها الخادم */
-  check(readiness.includes('"الوحدات"') && readiness.includes('"الساعات"') && readiness.includes('"سعة الشعبة"') && readiness.includes('"سعة القاعة"')
+  check(readiness.includes('"الوحدات"') && readiness.includes('"الساعات"') && readiness.includes('"سعة الشعبة"') && !readiness.includes('"سعة القاعة"')
     && readiness.includes('"أيام المحاضرة"') && readiness.includes('"عضو هيئة التدريس"') && readiness.includes('"وقت بداية ونهاية صحيح"'),
     "فحصٌ موحّد قبل التوقيع يكشف حقول المقرر والشعبة والأستاذ والموعد والقاعة الناقصة");
   const getApproval = server.slice(server.indexOf('app.get("/api/approvals"'), server.indexOf('app.get("/api/approvals/term"'));

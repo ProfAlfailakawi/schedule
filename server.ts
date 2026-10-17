@@ -6895,9 +6895,7 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
   const requestedCode=String(req.body?.canonicalCode??current.canonicalCode).normalize("NFKC").trim().toUpperCase().replace(/\s+/g,"");
   if(!requestedCode||requestedCode===PENDING_ROOM||isInvalidLocationToken(requestedCode)||!/^[A-Z0-9]{1,12}$/.test(requestedCode)||!/[0-9]/.test(requestedCode)){res.status(400).json({error:"رقم القاعة غير صالح. استخدم 1 إلى 12 حرفًا أو رقمًا، على أن يتضمن رقمًا."});return;}
   const roomCodeChanged=requestedCode!==current.canonicalCode;
-  const rawCapacity=req.body?.capacity;
-  const roomCapacity=rawCapacity===undefined?current.capacity:rawCapacity===null||rawCapacity===""?undefined:Number(rawCapacity);
-  if(roomCapacity!==undefined&&(!Number.isInteger(roomCapacity)||roomCapacity<1||roomCapacity>2000)){res.status(400).json({error:"سعة القاعة يجب أن تكون عدداً صحيحاً بين 1 و2000، أو تترك فارغة إن لم تُعرف."});return;}
+  const roomCapacity=current.capacity;/* سعة القاعة مخفيّة من البرنامج: لا تُقرأ من الطلب ولا تُعدَّل */
   if(registry.rooms.some(x=>x.id!==current.id&&x.buildingId===targetBuildingId&&x.canonicalCode===requestedCode)){res.status(409).json({error:"يوجد رقم القاعة نفسه في هذا المبنى."});return;}
   const sectionIds=req.body?.sectionIds===undefined?current.sectionIds:locationIdList(req.body.sectionIds);const primarySectionIds=(req.body?.primarySectionIds===undefined?(current.primarySectionIds||[]):locationIdList(req.body.primarySectionIds)).filter(id=>sectionIds.includes(id));
   /* Compatibility/audit contract: the room metadata still follows the canonical target building.
@@ -6958,19 +6956,6 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
     }})));throw error;}
   }else await Repository.upsertLocationRooms([row]);
   invalidateLocationRegistry();res.json({...row,updatedScheduleCount:schedulePatches.length});
-});
-app.put("/api/section/location-rooms/:id/capacity", requirePermission(7), async (req:AuthenticatedRequest,res:Response)=>{
-  const room=(await Repository.getLocationRooms()).find(item=>item.id===String(req.params.id));
-  if(!room){res.status(404).json({error:"القاعة غير موجودة في سجل المواقع."});return;}
-  const sectionId=Number(req.body?.sectionId||0),section=(await Repository.getSections()).find(item=>Number(item.AdSectionId)===sectionId);
-  if(!section||!room.sectionIds.map(Number).includes(sectionId)||!isScopeAllowed(req,Number(section.AdCollegeId),sectionId)){res.status(403).json({error:"تعديل سعة القاعة متاح للقسم المرتبطة به القاعة فقط."});return;}
-  const allSections=await Repository.getSections();
-  if((room.sectionIds||[]).some(id=>{const linked=allSections.find(item=>Number(item.AdSectionId)===Number(id));return Number(id)!==sectionId&&(!linked||!isScopeAllowed(req,Number(linked.AdCollegeId),Number(id)));})){res.status(403).json({error:"القاعة مشتركة؛ يلزم أن تملك صلاحية كل الأقسام المرتبطة بها."});return;}
-  const capacity=Number(req.body?.capacity);
-  if(!Number.isInteger(capacity)||capacity<1||capacity>2000){res.status(400).json({error:"أدخل سعة فعلية صحيحة بين 1 و2000."});return;}
-  const now=new Date().toISOString();
-  const updated:MasterRoom={...room,capacity,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(room.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"CAPACITY_UPDATE",before:{capacity:room.capacity},after:{capacity},note:`حدّثها قسم ${section.AdSectionName||sectionId}`} ]};
-  await Repository.upsertLocationRooms([updated]);invalidateLocationRegistry();res.json(updated);
 });
 app.put("/api/admin/location-registry/review/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const cases=await Repository.getLocationReviewCases();const current=cases.find(x=>x.id===req.params.id);if(!current){res.status(404).json({error:"حالة المراجعة غير موجودة"});return;}
