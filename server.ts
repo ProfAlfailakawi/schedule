@@ -112,6 +112,7 @@ import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weekl
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
 import { demandFromTargets, gapRows, hardestFirst, weekFingerprint, type GapRow } from "./src/utils/sectionBuild";
+import { facultyPlaceholderOf, placePending, templatesFromHistory } from "./src/utils/sectionPending";
 import { courseLevelFromCode } from "./src/utils/curriculumRules";
 import { reasonForMove } from "./src/utils/appointmentStory";
 import { buildCalendar, calendarSpanForTerm, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
@@ -14932,13 +14933,53 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
     ? readSectionOpenings(week, termWeek, courses, people as any[], history, demand, null, style?.reading || null, style?.doorway || 0, 999, registry.rooms, termId)
     : { proposals: [], noCeiling: [], headline: "" };
   const byCourse = new Map(reading.proposals.map(proposal => [proposal.courseId, proposal]));
+
+  /* ما لم تجد له الأولى قاعةً وأستاذاً: وقتٌ من الفصل المماثل وقاعةٌ بانتظار التثبيت وأستاذٌ «هيئة تدريسية».
+     يُبنى على الأسبوع بعد ما وُضع كاملاً، وتعارض الدفعة محسوبٌ؛ القاعة والأستاذ يُثبَّتان في شاشة المراجعة. */
+  const pendingBy = new Map<number, ReturnType<typeof placePending>>();
+  const needsPending = ordered.filter(row => row.remaining > (byCourse.get(row.courseId)?.placements.length || 0));
+  if (needsPending.length && history.length && !week.length) {
+    const terms = await Repository.getTerms().catch(() => []);
+    const target = (terms as any[]).find(row => Number(row.AdTermId) === termId);
+    const rank = termChronologyServer(target);
+    const season = termSeasonOf(target?.AdTermName);
+    const prior = sortTermsNewestServer((terms as any[]).filter(row => termChronologyServer(row) < rank));
+    const termOrder = [...prior.filter(row => season && termSeasonOf(row.AdTermName) === season), ...prior.filter(row => !(season && termSeasonOf(row.AdTermName) === season))].map(row => Number(row.AdTermId));
+    const placeholder = facultyPlaceholderOf(people as any[], new Set(history.map(row => Number(row.AdInstructorId)).filter(id => id > 0)));
+    let tempId = -100000;
+    const asRows = (courseId: number, list: Array<{ days?: string[]; day: string; start: string; end: string; roomId: string; roomCode: string; roomHall: string; buildingId: string; instructorId: number; sectionCode: string }>) => list.map(item => {
+      const next: any = { ...(week[0] || history[0]), id: tempId--, AdTermId: termId, AdCourseId: courseId, SCode: `x${item.sectionCode}`, fstarttime: item.start, fendtime: item.end,
+        roomId: item.roomId, AdRoomCode: item.roomCode, AdRoomHall: item.roomHall, buildingId: item.buildingId, AdInstructorId: item.instructorId, locationStatus: item.roomId ? "VERIFIED" : "PENDING_ROOM" };
+      for (const key of ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"]) next[key] = (item.days || [item.day]).includes(key);
+      return next as FSchedule;
+    });
+    const working: FSchedule[] = [...termWeek];
+    for (const proposal of reading.proposals) working.push(...asRows(proposal.courseId, proposal.placements as any));
+    const pairs = cohortPairs(demand);
+    for (const row of needsPending) {
+      const full = byCourse.get(row.courseId)?.placements || [];
+      const past = history.filter(item => Number(item.AdCourseId) === row.courseId);
+      const courseRows = past.length ? past : history;
+      const seed = [...past].sort((x, y) => Number(y.AdTermId) - Number(x.AdTermId))[0] || history[0];
+      const codes = [...past, ...week].filter(item => Number(item.AdCourseId) === row.courseId).map(item => Number(String(item.SCode).replace(/\D/g, ""))).filter(n => Number.isFinite(n) && n > 0);
+      const taken = [...codes, ...full.map(p => Number(p.sectionCode))];
+      const lengths = courseRows.map(item => timeToMinutes(item.fendtime) - timeToMinutes(item.fstarttime)).filter(n => n > 0);
+      const placed = placePending({
+        course: courseById.get(row.courseId)!, count: row.remaining - full.length, firstCode: (taken.length ? Math.max(...taken) : 500) + 1,
+        templates: templatesFromHistory(past, termOrder), seed, working, pairs, doorway: style?.doorway || 0, rhythm: style?.reading || null, termId,
+        instructorId: Number(placeholder?.AdInstructorId || 0), instructorName: placeholder?.AdInstructorName || "", fallbackLength: lengths[0] || 0, draftId: () => tempId--,
+      });
+      if (placed.length) pendingBy.set(row.courseId, placed);
+    }
+  }
   const rows = gaps.map(row => {
     const proposal = byCourse.get(row.courseId);
-    const placements = proposal?.placements || [];
+    const placements = [...(proposal?.placements || []), ...(pendingBy.get(row.courseId) || [])];
     let reason = "";
     if (row.remaining > 0 && placements.length < row.remaining) {
       reason = !(Number(courseById.get(row.courseId)?.MaxStudent) > 0) ? "سعة الشعبة غير مسجّلة في المقرر"
-        : proposal?.unplacedReason || "لا تاريخ للقسم يحدد مدة محاضرة هذا المقرر";
+        : !history.some(item => Number(item.AdCourseId) === row.courseId) && !week.length ? "لا تاريخ للقسم لهذا المقرر يحدد وقته"
+        : proposal?.unplacedReason || "لا وقت خالياً من التعارض في تاريخ القسم";
     }
     return { ...row, placements, unplaced: Math.max(0, row.remaining - placements.length), reason };
   });
@@ -14954,7 +14995,8 @@ app.post("/api/section-build/preview", requirePermission(7), async (req: Authent
   const totals = built.rows.reduce((sum, row) => ({
     target: sum.target + (row.target ?? 0), existing: sum.existing + (row.target === null ? 0 : Math.min(row.existing, row.target)),
     remaining: sum.remaining + row.remaining, placeable: sum.placeable + row.placements.length,
-  }), { target: 0, existing: 0, remaining: 0, placeable: 0 });
+    pending: sum.pending + row.placements.filter(p => (p as any).pending).length,
+  }), { target: 0, existing: 0, remaining: 0, placeable: 0, pending: 0 });
   res.json({ ...built, totals });
 });
 
@@ -14970,7 +15012,11 @@ app.post("/api/section-build/apply", requirePermission(7), async (req: Authentic
     if (String(req.body?.fingerprint || "") !== built.fingerprint) {
       return { status: 409, json: { error: "تغيّر جدول الفصل منذ المعاينة. أعد المعاينة قبل التنزيل.", code: "stale" } };
     }
-    const todo = built.rows.flatMap(row => row.placements.filter(placement => picked.has(`${row.courseId}:${placement.sectionCode}`)).map(placement => ({ row, placement })));
+    /* الشعب بانتظار القاعة والأستاذ لا تُكتب مباشرةً: تُراجع أولاً في شاشة الاستيراد. */
+    if (built.rows.some(row => row.placements.some(placement => (placement as any).pending && picked.has(`${row.courseId}:${placement.sectionCode}`)))) {
+      return { status: 409, json: { error: "بعض ما اخترت بانتظار قاعةٍ وأستاذ: راجعه في شاشة الاستيراد ثم انشره.", code: "needs-review" } };
+    }
+    const todo = built.rows.flatMap(row => row.placements.filter(placement => !(placement as any).pending && picked.has(`${row.courseId}:${placement.sectionCode}`)).map(placement => ({ row, placement })));
     if (!todo.length) return { status: 409, json: { error: "لا شيء من المختار قابلٌ للتنزيل الآن.", code: "stale" } };
     const batchId = `plan:${termId}:${Date.now().toString(36)}`;
     const created: any[] = [];
@@ -15005,6 +15051,24 @@ app.post("/api/section-build/apply", requirePermission(7), async (req: Authentic
   if (outcome.audit) res.locals.auditChanges = outcome.audit;
   res.locals.auditRowIds = ((outcome.json as any)?.applied || []).map((item: any) => Number(item?.row?.id)).filter(Number.isFinite);
   res.status(outcome.status).json(outcome.json);
+});
+
+/* «راجع وعدّل»: صفوفٌ بشكل نموذج الاستيراد نفسه، فتُفتح في شاشة المراجعة ذاتها (منتقيات الأستاذ والقاعة، فحص التعارض الحي، النشر).
+   النشر هناك يستبدل جدول القسم في الفصل، فلا يُعرض هذا الطريق إلا لفصلٍ فارغ؛ وغيره يمرّ بالتنزيل المباشر الذي لا يستبدل شيئاً. */
+app.post("/api/section-build/review-rows", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const occupied = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+  if (occupied.length) { res.status(409).json({ error: "في هذا الفصل مواعيد للقسم: المراجعة في شاشة الاستيراد تستبدل الجدول كله، فاستعمل «نزّل مباشرة».", code: "term-occupied" }); return; }
+  res.setHeader("Cache-Control", "no-store");
+  const built = await readSectionBuild(collegeId, sectionId, termId, req.body?.targets);
+  const rows = built.rows.flatMap(row => row.placements.map(p => ({
+    "القاعة": p.roomHall || "", "المبنى": p.roomCode || "", "الوقت": `${p.start}-${p.end}`,
+    "الأيام": ((p as any).days || [p.day]).map((day: string) => dayLabelOf(day)).join(" - "),
+    "الرقم المدني": "", "أستاذ المقرر": p.instructorName || "", "الشعبة": p.sectionCode, "المقرر الدراسي": row.name, "رمز المقرر": row.code,
+  })));
+  res.json({ rows, count: rows.length, pending: built.rows.reduce((sum, row) => sum + row.placements.filter(p => (p as any).pending).length, 0) });
 });
 
 /* التراجع: يحذف الصفوف التي أنشأتها دفعةٌ بعينها، ولا يلمس صفّاً تغيّر بعد إنشائه (رقم الإصدار) أو حُجز للتسجيل. */

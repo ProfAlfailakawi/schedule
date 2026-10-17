@@ -70,7 +70,7 @@ const fold = (value: string) => String(value || "").normalize("NFKC")
 const asText = (map: Record<string, number> | undefined) => Object.fromEntries(Object.entries(map || {}).map(([k, v]) => [k, String(v)]));
 const asNumbers = (map: Record<string, string>, min = 0) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).map(([k, v]) => [k, Math.max(min, Math.floor(Number(v)))]));
 
-export default function SectionPlanning({ collegeId, sectionId, termId }: { collegeId: number; sectionId: number; termId: number }) {
+export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows }: { collegeId: number; sectionId: number; termId: number; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[]) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -364,10 +364,14 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
 
   /* ما يراه القسم في خانة «المختار» (ما كتبه، وإلا المقترح) هو ما يُنزَّل: أعدادٌ فقط تذهب إلى الخادم. */
   const buildTargets = Object.fromEntries(planned.map(row => [row.key, row.pick as number]));
+  /* لا تظهر إلا والكل مضبوط: كشفٌ مستورد بلا رفض، وخطةٌ محفوظة، وفيها شعب. */
+  const buildReady = !importError && saveState !== "error" && saveState !== "saving" && Boolean(source) && planned.length > 0 && total > 0;
 
   return (
     <div className="section-plan">
-      <SectionBuild collegeId={collegeId} sectionId={sectionId} termId={termId} targets={buildTargets} />
+      {buildReady
+        ? <SectionBuild collegeId={collegeId} sectionId={sectionId} termId={termId} targets={buildTargets} onReview={onReviewRows} />
+        : <p className="sb-hint"><Layers aria-hidden="true" /> {importError ? "عالج رفض الكشف أولاً، فتظهر «نزّل الشعب»." : saveState === "error" ? "تعذّر حفظ الخطة؛ أعد المحاولة لتظهر «نزّل الشعب»." : "تظهر «نزّل الشعب» بعد استيراد كشف المتبقي وحفظ خطةٍ فيها شعب."}</p>}
       <div className="section-plan-import">
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
           <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي (لم يسجلوا)"}

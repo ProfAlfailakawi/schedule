@@ -650,15 +650,13 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   };
 
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
-  const readExcel = async (file: File) => {
+  /** صفوفٌ بشكل النموذج (من ملفٍ أو من «نزّل الشعب») تُعرض في شاشة المراجعة نفسها. */
+  const previewWorksheetRows = async (rows: any[], fileName: string) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
     setImportSectionId(0); setPdfScopeFix(null);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishReceipt(null);
     setBusy(true);
     try {
-      const XLSX = await import("xlsx");
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
       if (!rows.length) throw new Error("الورقة الأولى فارغة.");
       const response = await fetch("/api/intelligence/import-preview", {
         method: "POST",
@@ -667,11 +665,21 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذرت قراءة الملف");
-      setXlsxPreview({ ...data, fileName: file.name });
+      setXlsxPreview({ ...data, fileName });
     } catch (e: any) {
       setError(e.message || "تعذرت قراءة الملف");
     } finally {
       setBusy(false);
+    }
+  };
+  /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
+  const readExcel = async (file: File) => {
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      await previewWorksheetRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }) as any[], file.name);
+    } catch (e: any) {
+      setError(e.message || "تعذرت قراءة الملف");
     }
   };
   /* The deterministic reader above stays the default and runs first. A second,
@@ -1551,7 +1559,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <p>كشف «المتبقي» من عمادة التسجيل، ومدى شعبٍ يرسيه ما فتحه القسم فعلاً، ثم تقريرٌ يُطبع.</p>
                 </div>
               </div>
-              {collegeId && sectionId && termId ? <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} /> : <p>اختر القسم والفصل أولاً.</p>}
+              {collegeId && sectionId && termId ? <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} onReviewRows={rows => { setTab("import"); void previewWorksheetRows(rows, "تخطيط الشعب"); }} /> : <p>اختر القسم والفصل أولاً.</p>}
             </>
           ) : null}
 
