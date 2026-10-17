@@ -58,6 +58,12 @@ jobs:
           DATA_MODE: demo
           NODE_ENV: production
         run: |
+          # خادمٌ تركه اختبارٌ سابق على المنفذ 3000 يُسقط خادمَ هذه الخطوة بـ EADDRINUSE فيقرأ الفحصُ خادماً قديماً ثم يفشل إيقافه.
+          # نطبع ما وُجد ثم نغلقه؛ والأقواس في النمط تمنع مطابقة هذا الأمر نفسه.
+          ps -eo pid,args | grep -E "[t]sx|[s]erver\.(ts|cjs)" || true
+          pkill -f "[t]sx server.ts" || true
+          pkill -f "[s]erver.ts" || true
+          sleep 1
           node dist/server.cjs > /tmp/schedule-api.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
