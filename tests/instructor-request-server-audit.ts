@@ -104,8 +104,8 @@ const decideRoute = server.slice(
 check(decideRoute.length > 200, "مسارُ القرار مقروءٌ للتدقيق");
 check(!/Repository\.(createSchedule|updateSchedule|deleteSchedule)\b/.test(decideRoute),
   "ومسارُ القرار لا يكتب في الجدول: التثبيتُ يمرّ بمسار الحفظ نفسه");
-check(inbox.includes('`/api/schedules/${item.rowId}`') && inbox.includes('method: "PUT"'),
-  "والشاشةُ تستدعي مسارَ الحفظ الحقيقي، فترث تحقّقَه وتقريرَ تغييراته");
+check(inbox.includes("/apply`") && /runScheduleHandler\(updateScheduleHandler/.test(decideRoute) && /runScheduleHandler\(createScheduleHandler/.test(decideRoute),
+  "والتثبيتُ (مسارُ apply) يمرّ بمسار الحفظ الحقيقي نفسه، فيرث تحقّقَه وتقريرَ تغييراته");
 /* والإضافةُ لا تُثبَّت من الوارد: قاعةٌ وشعبةٌ ليستا من اختيار الأستاذ. وكانت
    تقف عند رسالةٍ تقول «افتحها في الورشة»، فصارت تحمله إليها ومعه ما قاله —
    والضمانُ نفسُه مُبرهنٌ سلوكياً في `request-handoff-audit`. */

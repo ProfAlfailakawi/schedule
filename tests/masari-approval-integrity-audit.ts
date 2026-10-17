@@ -51,6 +51,17 @@ const s2 = await Repository.saveStudentNeed({ ...sb, courseIds: [], requestType:
 check(s1.id === s2.id, "M1 الاستبيان العام يبقى حالةً واحدة برقم واحد (تحقق رقم الحالة فيه)");
 check(/requestType === "graduate" && Number\(need\.surveySectionId/.test(read("src/server/studentDoorRoutes.ts")), "M1 حارس «حالة تخرج موثقة» يبحث عن حالة الخريج تحديداً");
 
+{
+  const door = read("src/server/studentDoorRoutes.ts");
+  check(/studentNeedKind\(need\) === "course"/.test(door) && /\.\.\.open, id: undefined/.test(door) && /new Set\(\[\.\.\.\(open\.courseIds/.test(door),
+    "M2 ما تعثّر فيه الطالب بعد التسجيل يُضمّ إلى طلب فتح المقرر القائم عند القسم نفسه (بطاقة واحدة)");
+  /* سلوكٌ: الضمُّ عبر المستودع يُبقي رقمَ الحالة وقرارَها، ويوحّد المقررات. */
+  const open = (await Repository.getStudentNeedsByFingerprint("fp-masari", 1, 7)).find(n => studentNeedKind(n) === "course")!;
+  const merged = await Repository.saveStudentNeed({ ...open, id: undefined, createdAt: undefined, courseIds: [...new Set([...(open.courseIds || []), 105])], details: `${open.details} · بعد التسجيل: مقرر: امتلأت الشعب` } as any, { byKind: true });
+  check(merged.id === open.id && merged.caseRef === open.caseRef && merged.courseIds.includes(105) && merged.courseIds.includes(101) && studentNeedKind(merged) === "course",
+    "M2 الضمّ يُبقي رقم الحالة نفسه ويجمع المقررات", merged);
+}
+
 /* ── 2. استبيان الأستاذ ← الجدول ───────────────────────────────────────── */
 const server = read("server.ts");
 const decideRoute = server.slice(server.indexOf('app.post("/api/instructor-requests/:id/decide"'), server.indexOf('app.post("/api/instructor-requests/:id/reply"'));
@@ -58,10 +69,9 @@ check(/item\.decision\?\.state === "fixed"[\s\S]{0,200}already-fixed/.test(decid
 check(decideRoute.includes("mixed-times"), "I2 الخادم يرفض تثبيت بند بأوقات مختلفة بوقت واحد");
 const inbox = read("src/components/InstructorInbox.tsx");
 check(/decision\?\.state === "fixed"\) return true/.test(inbox), "I1 الشاشة لا تعيد كتابة بند ثُبّت (لا صف مكرر)");
-check(/const refused = Boolean\(response && response\.status >= 400 && response\.status < 500/.test(inbox), "I3 صف الإضافة يُسحب فقط إن رفض الخادم القرار صراحة (لا عند ردٍّ ضائع)");
-check(/Number\(draft\.courseId\) !== expectedCourse/.test(inbox), "I3 لا يُنشأ صف لمقرر غير مقرر البند");
-check(/if \(currentRows\.has\(Number\(item\.rowId\)\)\) await request\(`\/api\/schedules\/\$\{item\.rowId\}`, \{ method: "DELETE" \}\)/.test(inbox), "I4 إعادة تسجيل قرار حذفٍ وقع لا تتعثر");
-check(/لم يُكتب شيء/.test(inbox), "I5 سلسلة البنود المترابطة تُفحص قبل أي كتابة");
+check(/Number\(draft\.courseId\) !== expectedCourse/.test(inbox) && /add\.courseId && Number\(add\.courseId\) !== courseId/.test(server), "I3 لا يُنشأ صف لمقرر غير مقرر البند (الشاشة والخادم)");
+check(/صفٌّ حُذف من قبل: يكفي تسجيلُ القرار/.test(server), "I4 إعادة تثبيت حذفٍ وقع لا تتعثر");
+check(/after, revs: revsFor/.test(inbox), "I5 سلسلة البنود المترابطة تُرسل مع البند فتُثبَّت معاً أو لا تُثبَّت");
 
 console.log(`\n${failed ? "\x1b[31m" : "\x1b[32m"}${passed} نجح، ${failed} فشل\x1b[0m`);
 fs.rmSync(privateDir, { recursive: true, force: true });
