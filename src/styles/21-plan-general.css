@@ -56,3 +56,12 @@
 .psh-qr-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 @media (prefers-reduced-motion:reduce){.psh .spin{animation:none}}
 .psh .spin{animation:spin 1s linear infinite}
+.psh-focus{display:flex;gap:16px;align-items:center;padding:16px;border:1px solid var(--line);border-radius:var(--r-lg);background:linear-gradient(135deg,var(--surface),var(--accent-soft))}
+.psh-focus.off{background:var(--surface);border-style:dashed}
+.psh-focus-qr{inline-size:132px;block-size:132px;flex:none;padding:6px;border-radius:16px;background:#fff;box-shadow:0 6px 18px rgba(11,37,69,.12)}.psh-focus-qr svg{inline-size:100%;block-size:100%}
+.psh-focus-qr.empty{display:grid;place-items:center;color:var(--muted);background:var(--bg);box-shadow:none;border:1px dashed var(--line)}.psh-focus-qr.empty svg{inline-size:44px;block-size:44px}
+.psh-focus-body{display:grid;gap:6px;min-inline-size:0}.psh-focus-body>strong{font-size:1.05rem}.psh-focus-body>small{color:var(--muted);font-size:.84rem}
+.psh-focus-body>code{font-size:.75rem;color:var(--muted);overflow-wrap:anywhere;background:var(--bg);border-radius:8px;padding:4px 8px}
+.psh-focus-actions{display:flex;gap:8px;flex-wrap:wrap;margin-block-start:4px}
+.psh-open{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none;font-size:.86rem;font-weight:600}.psh-open svg{inline-size:16px;block-size:16px}
+@media (max-width:560px){.psh-focus{flex-direction:column;text-align:center}.psh-focus-actions{justify-content:center}}

@@ -183,6 +183,8 @@ const model: SheetModel = {
   const buttons = pub.match(/<(?:PrimaryButton|SecondaryButton|button)\b(?:=>|[^>])*>/g) || [];
   const undocumented = buttons.filter(tag => !/data-guide-ignore|aria-label|className="psh-link"/.test(tag) || (/psh-link/.test(tag) && !/data-guide-ignore/.test(tag)));
   check(undocumented.length === 0, "S4 كلُّ زرٍّ في لوحة النشر موثَّقٌ للمرشد أو معنون", undocumented.slice(0, 3));
+  check(!/canPublishSheets\s*&&\s*sheetSummary\?\.total/.test(work) && work.includes("تظهر بعد اعتماد الصحيفة"), "S4 البطاقةُ تظهر لمن ينشر دائماً، وتقول إنها تنتظر الاعتماد إن لم توجد صحيفةٌ معتمدة");
+  check(work.includes("focusSectionId={Number(sectionId) || 0}") && pub.includes("psh-focus") && pub.includes("focus.deptUrl"), "S4 قسمُ نطاق القرار المختار يظهر رمزُ QR لصفحته في أعلى اللوحة");
   check(pub.includes("printPoster") && pub.includes("اطبع ملصقاً") && pub.includes("@page{size:A4"), "S4 ملصقُ QR بحجم A4 للقسم أو الصحيفة");
   check(read("src/server/planReviewRoutes.ts").includes("republishIfPublished(ctx.plan.id"), "S4 مسارُ الاعتماد يستدعي إعادة النشر");
   check(server.includes("registerPlanSheetRoutes(app") && server.includes('"plans", "_template", "sheet.html"'), "S4 المسارات مسجّلةٌ في الخادم والقالبُ يُقرأ عند الإقلاع");
