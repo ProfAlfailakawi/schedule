@@ -647,7 +647,9 @@ async function main() {
       const got = stubState.seen[stubState.seen.length - 1];
       check(sent.status === 200 && stubState.seen.length === before + 1 && got.body.to[0] === "owner@company.co" && got.body.text.includes(`/ad-report/${mc.reportUrl.split("/").pop()}`), "A14 الإرسال اليدوي يصل برابط التقرير", sent.json);
       /* التلقائي: أحد صباحاً مرةً واحدة في الأسبوع، وتذكير تجديد لا يتكرر */
-      let sunday = today; while (new Date(`${sunday}T00:00:00Z`).getUTCDay() !== 0) sunday = E.addDays(sunday, 1);
+      /* الأحد القادم بعد اليوم لا «اليوم أو بعده»: الإرسال اليدوي أعلاه سجّل أسبوع اليوم، فإن كان اليوم أحداً (بتوقيت الكويت)
+         تخطّى الإرسال التلقائي ذلك الأسبوع بحقّ، وفشل الاختبار كل أحد. الحملة حيّة 10 أيام فالأحد القادم داخلها دائماً. */
+      let sunday = E.addDays(today, 1); while (new Date(`${sunday}T00:00:00Z`).getUTCDay() !== 0) sunday = E.addDays(sunday, 1);
       const sundayMorning = new Date(`${sunday}T07:00:00Z`);
       const prior = stubState.seen.length;
       await R.autoMailTick("https://x.test", sundayMorning);
