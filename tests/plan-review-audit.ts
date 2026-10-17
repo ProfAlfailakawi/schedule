@@ -125,7 +125,7 @@ const ctx = (plan: number[]) => ({
     "R6 فلتر التصنيف فوق الخريطة: مقررات القسم في التصنيف المختار فعّالة والباقي غير فعال وأسهمه تخفت");
   check(planUi.includes("pr-group-cards") && planUi.includes("pr-pre-item") && planUi.includes("ArrowUp") && planUi.includes("grouped.has") && css.includes(".pr-pre-item{") && css.includes(".pr-groups .pr-group{"),
     "R6 الاختياري بجمال الصحيفة: شريطٌ ذهبي ببطاقات المجموعة، وتحت كل بطاقة أسهمُ متطلباتها بلون كل مسبق، ولا تتكرر بطاقاتها في أعمدة المستويات");
-  check(planUi.includes("ownIds") && planUi.includes("c.sectionId === view.plan.sectionId") && planUi.includes("planEdges(view.rules, ownIds)") && planUi.includes("crossNotes") && planUi.includes("يتطلب أيضاً المقرر") && planUi.includes("own.has(id)"),
+  check(planUi.includes("ownIds") && planUi.includes("c.sectionId === view.plan.sectionId") && planUi.includes("planEdges(view.rules, ownIds)") && planUi.includes("crossNotes") && planUi.includes("يتطلب أيضاً المقرر") && planUi.includes("يتطلب أيضاً أحد المقررات") && planUi.includes("يُسجَّل معه المقرر") && planUi.includes("own.has(id)"),
     "R6 القسم يرى مقرراته فقط في الخريطة والعدّادات والمجموعات؛ مقررات الأقسام الأخرى لا تظهر، ومتطلبها منها يُذكر ملاحظةً");
   check(lines.includes("animateMotion") && css.includes("prefers-reduced-motion:reduce){.pr-line .pr-dot{display:none}"),
     "R6 نقاط متحركة على الأسهم وتُخفى عند تفضيل تقليل الحركة");

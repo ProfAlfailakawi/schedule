@@ -245,23 +245,27 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const isActive = (c: CourseRow) => !cat || (c.category === cat && ownIds.has(c.id));
   const offIds = useMemo(() => new Set<number>(view && cat ? view.courses.filter(c => !(c.category === cat && ownIds.has(c.id))).map(c => c.id) : []), [view, cat, ownIds]);
   const pickCat = (name: string) => { setCat(name); const f = view?.courses.find(c => c.id === focus); if (f && name && !(f.category === name && ownIds.has(f.id))) setFocus(0); };
-  /* متطلباتٌ لمقرراتِ القسم يملكها قسمٌ آخر: تُذكر ملاحظةً تحت الخريطة (لا بطاقةً ولا سهماً). */
+  /* متطلباتٌ ومرافقاتٌ لمقرراتِ القسم يملكها قسمٌ آخر: تُذكر ملاحظةً تحت الخريطة (لا بطاقةً ولا سهماً)،
+     وبمعناها: «المطلوب كله» غير «يكفي أحدها» غير «يُسجَّل معه». */
+  type CrossItem = { code: string; name: string; owner: string };
+  type CrossNote = { key: string; code: string; kind: "all" | "any" | "co"; items: CrossItem[] };
   const crossNotes = useMemo(() => {
-    if (!view) return [] as Array<{ key: string; code: string; pre: { code: string; name: string; owner: string } }>;
-    const info = new Map<number, { code: string; name: string; owner: string }>();
+    if (!view) return [] as CrossNote[];
+    const info = new Map<number, CrossItem>();
     view.referenced.forEach(c => info.set(c.id, { code: c.code, name: c.name, owner: "" }));
-    view.courses.forEach(c => info.set(c.id, { code: c.code, name: c.name, owner: c.ownerSectionName }));
-    const out: Array<{ key: string; code: string; pre: { code: string; name: string; owner: string } }> = [];
+    view.courses.forEach(c => info.set(c.id, { code: c.code, name: c.name, owner: ownIds.has(c.id) ? "" : c.ownerSectionName }));
+    const items = (ids: number[]) => ids.map(id => info.get(id)).filter((x): x is CrossItem => Boolean(x));
+    const out: CrossNote[] = [];
     for (const c of view.courses) {
       if (!ownIds.has(c.id)) continue;
-      const pre = view.rules.find(r => r.courseId === c.id)?.prereq;
-      for (const x of new Set([...(pre?.all || []), ...(pre?.anyOf || []).flat()].filter(id => !ownIds.has(id)))) {
-        const p = info.get(x);
-        if (p) out.push({ key: `${c.id}-${x}`, code: c.code, pre: p });
-      }
+      const rule = view.rules.find(r => r.courseId === c.id);
+      for (const id of new Set<number>((rule?.prereq?.all || []).filter(x => !ownIds.has(x)))) out.push({ key: `${c.id}-all-${id}`, code: c.code, kind: "all", items: items([id]) });
+      (rule?.prereq?.anyOf || []).forEach((group, gi) => { if (group.some(x => !ownIds.has(x))) out.push({ key: `${c.id}-any-${gi}`, code: c.code, kind: "any", items: items(group) }); });
+      for (const id of new Set<number>((rule?.coreq || []).filter(x => !ownIds.has(x)))) out.push({ key: `${c.id}-co-${id}`, code: c.code, kind: "co", items: items([id]) });
     }
-    return out;
+    return out.filter(n => n.items.length);
   }, [view, ownIds]);
+  const crossItem = (x: CrossItem) => <span key={x.code}><b>{x.code}</b> «{x.name}»{x.owner ? ` من ${x.owner}` : ""}</span>;
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
@@ -389,7 +393,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 <PlanMapLines mapRef={mapRef} edges={edges} focus={focus} up={upstream} down={downstream} off={offIds} layoutKey={`${ownIds.size}:${levels.size}`} />
               </div>
 
-              {crossNotes.length ? <ul className="pr-cross" aria-label="متطلبات من أقسام أخرى">{crossNotes.map(n => <li key={n.key}><em>ملاحظة:</em> المقرر <b>{n.code}</b> يتطلب أيضاً المقرر <b>{n.pre.code}</b> «{n.pre.name}»{n.pre.owner ? ` من ${n.pre.owner}` : ""}.</li>)}</ul> : null}
+              {crossNotes.length ? <ul className="pr-cross" aria-label="متطلبات من أقسام أخرى">{crossNotes.map(n => <li key={n.key}><em>ملاحظة:</em> المقرر <b>{n.code}</b> {n.kind === "all" ? "يتطلب أيضاً المقرر " : n.kind === "any" ? "يتطلب أيضاً أحد المقررات: " : "يُسجَّل معه المقرر "}{n.items.map((x, k) => <React.Fragment key={x.code}>{k ? " أو " : null}{crossItem(x)}</React.Fragment>)}{n.kind === "co" ? " في الفصل نفسه (أو سبق اجتيازه)" : ""}.</li>)}</ul> : null}
               {edges.length ? <p className="pr-key">السهم يصل إلى المقرر الذي يتطلبه · ولون الرقم هو لون أسهمه</p> : null}
 
               {focusCourse ? (
