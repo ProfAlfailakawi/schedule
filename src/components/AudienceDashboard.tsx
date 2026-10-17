@@ -53,7 +53,10 @@ function Bars({ points, label }: { points: Array<{ key: string; value: number; t
         return <rect key={p.key} x={x} y={H - pb - h} width={bw} height={h} rx={4} fill="var(--accent)" opacity={0.9}><title>{p.tip}</title></rect>;
       })}
     </svg>
-    <div className="pt-axis"><bdi dir="ltr">{points[0]?.key}</bdi><span>الذروة {fmt(max)}</span><bdi dir="ltr">{points[points.length - 1]?.key}</bdi></div>
+    {points.length > 1 && points.length <= 8
+      ? <div className="pt-axis-few" aria-hidden="true">{points.map(p => <span key={p.key}><b>{fmt(p.value)}</b>{p.key}</span>)}</div>
+      : null}
+    {points.length > 8 || points.length < 2 ? <div className="pt-axis"><bdi dir="ltr">{points[0]?.key}</bdi><span>الذروة {fmt(max)}</span><bdi dir="ltr">{points[points.length - 1]?.key}</bdi></div> : null}
     </>
   );
 }
