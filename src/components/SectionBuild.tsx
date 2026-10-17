@@ -44,7 +44,7 @@ function Dots({ row, picked }: { row: BuildRow; picked: Set<string> }) {
 export default function SectionBuild({ collegeId, sectionId, termId, targets, onBuilt, onReview }: {
   key?: React.Key; collegeId: number; sectionId: number; termId: number; targets: Record<string, number>; onBuilt?: () => void;
   /** صفوفٌ بشكل نموذج الاستيراد تُفتح في شاشة المراجعة نفسها. */
-  onReview?: (rows: any[]) => void;
+  onReview?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void;
 }) {
   const [built, setBuilt] = useState<Built | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -68,7 +68,7 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
   };
   const review = async () => {
     setBusy(true); setError("");
-    try { const data = await call("/api/section-build/review-rows", { ...base, pick: [...picked, ...(built?.rows.flatMap(row => row.placements.filter(p => p.pending).map(p => `${row.courseId}:${p.sectionCode}`)) || [])] }); setBuilt(null); onReview?.(data.rows || []); }
+    try { const data = await call("/api/section-build/review-rows", { ...base, pick: [...picked, ...(built?.rows.flatMap(row => row.placements.filter(p => p.pending).map(p => `${row.courseId}:${p.sectionCode}`)) || [])] }); setBuilt(null); onReview?.(data.rows || [], { existing: Number(data.existing) || 0, added: Number(data.added) || 0, pending: Number(data.pending) || 0, existingKeys: Array.isArray(data.existingKeys) ? data.existingKeys.map(String) : undefined }); }
     catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const toggle = (key: string) => setPicked(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });

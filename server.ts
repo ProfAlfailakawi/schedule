@@ -15113,6 +15113,8 @@ app.post("/api/section-build/review-rows", requirePermission(7), async (req: Aut
     "الرقم المدني": "", "أستاذ المقرر": p.instructorName || "", "الشعبة": p.sectionCode, "المقرر الدراسي": row.name, "رمز المقرر": row.code,
   }));
   res.json({ rows: [...existingRows, ...newRows], count: existingRows.length + newRows.length, existing: existingRows.length, added: newRows.length,
+    /* مفتاح كل موعدٍ حالي (مقرر|شعبة): تعرف الواجهة به أصل كل صف إن سقط ترتيبها بعد المعاينة. */
+    existingKeys: (occupied as any[]).map(row => `${Number(row.AdCourseId)}|${String(row.SCode)}`),
     pending: added.filter(({ p }) => (p as any).pending).length });
 });
 

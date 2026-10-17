@@ -21,6 +21,9 @@ check(srv.includes('applyProposalCore(req, {\n        kind: "opening"') && !/sec
 check(srv.includes("section-build:${collegeId}:${sectionId}:${termId}") && srv.includes("String(req.body?.fingerprint"), "قفلٌ متسلسل وبصمة أسبوع قبل الكتابة");
 check(plan.includes("<SectionBuild") && plan.includes("buildReady") && fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8").includes("xlsxPreview.editable") && ui.includes("/api/section-build/review-rows") && ui.includes("/api/section-build/apply") && ui.includes('role="alertdialog"'), "الواجهة موصولة في تخطيط الشعب وفيها تأكيدٌ قبل الكتابة");
 
+const transferSrc = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");
+check(transferSrc.includes('className="tp-banner"') && transferSrc.includes("const goTab = ") && transferSrc.includes("fromPlanning ? null : (<>") && transferSrc.includes('transfer-import-commit-wrap${fromPlanning') && transferSrc.includes("نزّل ${countOf(planningMeta.added, AR.section)} في الجدول") && transferSrc.includes("نزّل الشعب (من تخطيط الشعب)"), "مراجعة التخطيط لها هويتها المستقلة عن استيراد الملف/PDF: شارة، بلا رفع ملف، زر «نزّل» ثابت، ومغادرتها تُفرغها");
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-section-build-"));
 let child: ReturnType<typeof spawn> | null = null;
 try {
@@ -70,6 +73,7 @@ try {
     /* قسمٌ فيه مواعيد: تُفتح المراجعة وتحمل مواعيده الحالية كلها ثم المبنيّة، فلا يمحو النشر هناك شيئاً بلا علم القسم. */
     const occupiedReview = await call("POST", "/api/section-build/review-rows", base);
     check(occupiedReview.status === 200 && occupiedReview.body.existing === before.length && occupiedReview.body.added === preview.body.totals.placeable && occupiedReview.body.count === before.length + preview.body.totals.placeable, "قسمٌ فيه مواعيد: المراجعة تحمل مواعيده الحالية والمبنيّة معاً", { status: occupiedReview.status, existing: occupiedReview.body?.existing, added: occupiedReview.body?.added, before: before.length });
+    check(Array.isArray(occupiedReview.body.existingKeys) && occupiedReview.body.existingKeys.length === before.length && occupiedReview.body.existingKeys.every((k: string) => /^\d+\|/.test(k)), "والمراجعة تُرجع مفتاح كل موعدٍ حالي ليُحسب أصل كل صف بعد حذف المراجع", occupiedReview.body?.existingKeys);
     const occupiedImp = await call("POST", "/api/intelligence/import-preview", { ...scope, rows: occupiedReview.body.rows });
     check(occupiedImp.status === 200 && occupiedImp.body.count === occupiedReview.body.count, "وشاشة الاستيراد تقرأها كلها", { status: occupiedImp.status, error: occupiedImp.body?.error, count: occupiedImp.body?.count, expected: occupiedReview.body?.count });
     /* فصلٌ فيه مواعيد ومقررٌ لا أستاذ سابق له (CS490): يُعرض معلّقاً (قاعة وأستاذ بانتظار التثبيت) في المراجعة ولا يُهمَل. */

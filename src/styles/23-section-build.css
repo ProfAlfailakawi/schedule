@@ -28,3 +28,17 @@
 .sb-hint{display:flex;align-items:center;gap:8px;margin:12px 0;padding:8px 12px;border-radius:10px;background:var(--accent-softer);color:var(--muted);font-size:.8rem}.sb-hint svg{flex:none;inline-size:16px;block-size:16px;color:var(--accent-ink)}
 .sb-slot.is-pending{background:var(--warning-soft);color:var(--ink)}.sb-slot.is-pending small{display:inline-flex;align-items:center;gap:4px;color:var(--warning)}.sb-slot.is-pending small svg{inline-size:14px;block-size:14px}
 .sb-review{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--accent);border-radius:12px;background:var(--accent-softer)}.sb-review svg{flex:none;inline-size:22px;block-size:22px;color:var(--accent-ink)}.sb-review p{flex:1;min-inline-size:200px;margin:0;font-size:.85rem;line-height:1.7}
+
+/* ── مراجعة «نزّل الشعب»: هويةٌ نحاسية مستقلة عن استيراد الملف/PDF (الأخضر) كي لا يُخلط بينهما ── */
+.tp-banner{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-block:6px 14px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--brass) 45%,var(--line));border-inline-start:6px solid var(--brass);border-radius:16px;background:linear-gradient(135deg,var(--brass-soft),var(--surface))}
+.tp-banner>div{flex:1;min-inline-size:220px;display:grid;gap:3px}
+.tp-mark{display:grid;place-items:center;flex:none;inline-size:46px;block-size:46px;border-radius:14px;background:var(--brass);color:#fff;box-shadow:0 8px 20px color-mix(in srgb,var(--brass) 32%,transparent)}.tp-mark svg{inline-size:22px;block-size:22px}
+.tp-kicker{justify-self:start;padding:1px 10px;border-radius:999px;background:var(--brass);color:#fff;font-size:.7rem;font-weight:700}
+.tp-banner strong{font-size:1.08rem}.tp-banner p{margin:0;font-size:.82rem;line-height:1.8;color:var(--muted)}.tp-banner p b{color:var(--text)}
+.transfer-tabs button.is-planning.active svg{color:var(--brass)}
+.transfer-import-commit-wrap.is-planning{position:sticky;inset-block-end:0;z-index:3}
+.transfer-import-commit.is-planning{display:flex;align-items:center;justify-content:center;gap:10px;margin-block-start:12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--brass) 50%,var(--line));border-radius:14px;background:var(--brass-soft);box-shadow:0 -10px 26px color-mix(in srgb,var(--text) 12%,transparent)}
+.transfer-import-commit.is-planning button{background:var(--brass);border-color:var(--brass);color:#fff;display:inline-flex;align-items:center;gap:8px}.transfer-import-commit.is-planning button svg{inline-size:18px;block-size:18px}
+.transfer-import-commit.is-planning button:disabled{opacity:.55}
+.tp-blocked{display:flex;align-items:center;gap:8px;margin:0;font-size:.84rem;color:var(--warning)}.tp-blocked svg{flex:none;inline-size:18px;block-size:18px}
+.tp-banner .tp-removed{color:var(--danger);font-weight:700}
