@@ -151,8 +151,9 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
       <div className="pt-kpis">
         <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={Math.max(AUDIENCE_BASELINE.students, s.reach.studentsMin)} /></b><span>طالب استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
         <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.visits + (visits?.afterBaseline || 0)} /></b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.instructorOpens} /></b><span>مرة فتح فيها عضو هيئة تدريس بطاقته منذ {AUDIENCE_BASELINE.since}</span><small>مرّات الفتح، وليست عدد الأشخاص</small></div>
         <div className="pt-kpi"><b><CountUp value={s.instructors.opened} /></b><span>عضو هيئة تدريس فتح بطاقته</span><small>في {s.term?.name || "الفصل الجاري"}</small></div>
-        <div className="pt-kpi"><b>{pct(s.instructors.openRate)}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ عالٍ يعني جمهوراً منتبهاً</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> {pct(Math.max(AUDIENCE_BASELINE.instructorOpenRate, s.instructors.openRate))}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ عالٍ يعني جمهوراً منتبهاً</small></div>
         <div className="pt-kpi"><b>{hasVisits ? <CountUp value={visits!.last30} /> : "—"}</b><span>زيارة آخر 30 يوماً</span><small>{hasVisits ? `مقيسة منذ ${visits!.since}` : "القياس يبدأ بأول زيارة بعد التفعيل"}</small></div>
       </div>
 
@@ -257,7 +258,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <li><b>الزيارات:</b> إشارةٌ مجهولة واحدة لكل متصفحٍ في اليوم لكل نوع صفحة. تقدير؛ فمن يمسح بيانات متصفحه قد يُعدّ مرتين، ومن يمنع التخزين يُعدّ كل مرة.</li>
           <li><b>العائدون والجوال:</b> من الإشارة نفسها؛ لا تُحفظ أي هوية أو عنوان.</li>
           <li><b>الكليات:</b> مرتّبة بالحجم ومسمّاة بأرقام؛ لا تُكشف أسماؤها.</li>
-          <li><b>منذ {AUDIENCE_BASELINE.since}:</b> «الطلبة» و«الزيارات» الإجماليان يشملان رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه المقيس.</li>
+          <li><b>منذ {AUDIENCE_BASELINE.since}:</b> «الطلبة» و«الزيارات» ومرّات فتح بطاقات الأساتذة الإجمالية ونسبة فتح بطاقات الأساتذة (حدٌّ أدنى 90%) تشمل رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه المقيس.</li>
           <li>القياس يبدأ من يوم تفعيله ولا يرجع إلى الماضي؛ أما الاستبيان وبطاقات الأساتذة فمن سجلات التشغيل كاملة.</li>
         </ul>
       </details>
