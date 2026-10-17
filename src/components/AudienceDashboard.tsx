@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Expand, Megaphone, Minimize, Printer, RefreshCw } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton, PrimaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
-import type { AudienceStats } from "../utils/audienceStats";
+import { headlineTotals, type AudienceStats } from "../utils/audienceStats";
 import { AUDIENCE_BASELINE } from "../utils/audienceBaseline";
 
 type Payload = AudienceStats & { termChoices: Array<{ id: number; name: string }> };
@@ -114,6 +114,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
   if (!data) return <div className="pt-page">{error ? <Notice type="error">{error}</Notice> : <MicroLoader label="يجهّز الأرقام…" />}</div>;
 
   const s = data;
+  const head = headlineTotals(s);
   const hasVisits = (visits?.days || 0) > 0;
   const typeTotal = s.survey.current.byType.newCourse + s.survey.current.byType.conflict + s.survey.current.byType.graduate;
   const typeBars = [
@@ -133,7 +134,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
               {s.termChoices.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             <SecondaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => void load()} disabled={busy} aria-label="تحديث الآن"><RefreshCw aria-hidden="true" size={16} /> تحديث</SecondaryButton>
-            <SecondaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => window.print()}><Printer aria-hidden="true" size={16} /> طباعة</SecondaryButton>
+            <SecondaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => window.print()}><Printer aria-hidden="true" size={16} /> طباعة ملف الجمهور</SecondaryButton>
             <PrimaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => void toggleStage()}>{document.fullscreenElement || stage ? <Minimize aria-hidden="true" size={16} /> : <Expand aria-hidden="true" size={16} />} وضع العرض</PrimaryButton>
           </div>
         }
@@ -149,11 +150,11 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
       </section>
 
       <div className="pt-kpis">
-        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.students + s.reach.newSinceBaseline} /></b><span>طالب استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
-        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.visits + (visits?.afterBaseline || 0)} /></b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
-        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.instructorOpens + s.instructors.openedAfterBaseline} /></b><span>فتحُ أعضاء هيئة التدريس لبطاقاتهم منذ {AUDIENCE_BASELINE.since}</span><small>عدد مرّات الفتح، وليس عدد الأشخاص</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={head.students} /></b><span>طالب استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={head.visits} /></b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={head.instructorOpens} /></b><span>فتحُ أعضاء هيئة التدريس لبطاقاتهم منذ {AUDIENCE_BASELINE.since}</span><small>عدد مرّات الفتح، وليس عدد الأشخاص</small></div>
         <div className="pt-kpi"><b><CountUp value={s.instructors.opened} /></b><span>أعضاء هيئة التدريس هذا الفصل</span><small>فتحوا بطاقاتهم في {s.term?.name || "الفصل الجاري"}</small></div>
-        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> {pct(Math.max(AUDIENCE_BASELINE.instructorOpenRate, s.instructors.openRate))}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ عالٍ يعني جمهوراً منتبهاً</small></div>
+        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> {pct(head.instructorOpenRate)}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ عالٍ يعني جمهوراً منتبهاً</small></div>
         <div className="pt-kpi"><b>{hasVisits ? <CountUp value={visits!.last30} /> : "—"}</b><span>زيارة آخر 30 يوماً</span><small>{hasVisits ? `مقيسة منذ ${visits!.since}` : "القياس يبدأ بأول زيارة بعد التفعيل"}</small></div>
       </div>
 
@@ -211,6 +212,18 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
       </div>
 
       <section className="pt-card">
+        <h3>استمرارية الطلبة عبر الفصول</h3>
+        <p className="pt-sub">من أجاب في فصلٍ ثم أجاب في الفصل التالي. الطالب قد يرجع باستمرار دراسته لا بولائه وحده.</p>
+        {s.continuity.length ? <>
+          <div className="pt-kpis">
+            <div className="pt-kpi"><b>{pct(s.continuity[0].rate)}</b><span>استمرّوا من {s.continuity[0].fromTerm} إلى {s.continuity[0].toTerm}</span><small>{countOf(s.continuity[0].stayed, AR.student)} من {countOf(s.continuity[0].before, AR.student)}</small></div>
+          </div>
+          {s.continuity.length > 1 ? <div style={{ marginTop: 14 }}><Bars label="نسبة الاستمرارية بين الفصول" points={s.continuity.slice(0, 8).map(p => ({ key: p.toTerm, value: p.rate, tip: `${p.fromTerm} ← ${p.toTerm} · ${pct(p.rate)} (${fmt(p.stayed)} من ${fmt(p.before)})` }))} /></div> : null}
+          <p className="pt-note">من بصمات الاستبيان وحدها، فلا تشمل من لم يُجب. إن كان الفصل الأخير لم يكتمل فقد ترتفع نسبته.</p>
+        </> : <div className="pt-empty">تظهر حين يتوفر فصلان فيهما إجابات.</div>}
+      </section>
+
+      <section className="pt-card">
         <h3>المقررات الأكثر طلباً</h3>
         <p className="pt-sub">طلبةٌ فريدون يريدون المقرر في رغباتهم أو طلباتهم هذا الفصل. للجهات التعليمية والتدريبية أن ترى ما يبحث عنه الطلبة.</p>
         {s.demand.top.length ? <HBars rows={s.demand.top.map(d => ({ label: d.name, count: d.students }))} /> : <div className="pt-empty">لا مقرر بلغ حدّ الخصوصية بعد (يلزم {countOf(s.demand.minStudents, AR.student)} مختلفين على الأقل لكل مقرر).</div>}
@@ -248,6 +261,14 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <div className="pt-kpi"><b>{fmt(s.ads.clicks)}</b><span>النقرات الصحيحة</span></div>
           <div className="pt-kpi"><b>{pct(s.ads.ctr)}</b><span>نسبة النقر</span></div>
         </div>
+        {s.adsBySlot.length ? <>
+          <h4 style={{ margin: "16px 0 8px" }}>أداء كل موقع إعلاني</h4>
+          <div className="pt-slots" role="table" aria-label="أداء الإعلانات حسب الموقع">
+            <div role="row" className="pt-slots-head"><span>الموقع</span><span>ظهور</span><span>نقرات</span><span>نسبة النقر</span></div>
+            {s.adsBySlot.map(r => <div key={r.slot} role="row"><span>{r.label}</span><span>{fmt(r.impressions)}</span><span>{fmt(r.clicks)}</span><b>{pct(r.ctr)}</b></div>)}
+          </div>
+          <p className="pt-note">نسبة النقر لكل موقع من حملاته كلها. تُقارَن المواقع بحذر ما لم يبلغ ظهور كلٍّ منها بضعة آلاف.</p>
+        </> : null}
         {onNavigate ? <div style={{ marginTop: 12 }}><SecondaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => onNavigate("ads")}><Megaphone aria-hidden="true" size={16} /> إدارة الإعلانات</SecondaryButton></div> : null}
       </section>
 
@@ -257,11 +278,32 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <li><b>الطلبة المؤكَّدون:</b> الأكبر من عدد الطلبة الفريدين في الاستبيان وعدد ملفات «مساري». نعرف الطالب ببصمةٍ مشفّرة لا باسمه، فلا يُعدّ مرتين.</li>
           <li><b>الزيارات:</b> إشارةٌ مجهولة واحدة لكل متصفحٍ في اليوم لكل نوع صفحة. تقدير؛ فمن يمسح بيانات متصفحه قد يُعدّ مرتين، ومن يمنع التخزين يُعدّ كل مرة.</li>
           <li><b>العائدون والجوال:</b> من الإشارة نفسها؛ لا تُحفظ أي هوية أو عنوان.</li>
+          <li><b>الاستمرارية:</b> نسبة طلبة فصلٍ ما (ببصمات الاستبيان) الذين أجابوا أيضاً في الفصل التالي له.</li>
+          <li><b>أداء المواقع:</b> ظهورٌ ونقراتٌ صحيحة لكل موقع إعلاني، من حملاته كلها.</li>
           <li><b>الكليات:</b> مرتّبة بالحجم ومسمّاة بأرقام؛ لا تُكشف أسماؤها.</li>
           <li><b>منذ {AUDIENCE_BASELINE.since}:</b> «الطلبة» و«الزيارات» ومرّات فتح بطاقات الأساتذة الإجمالية تشمل رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه ما يُقاس بعده (طلبة ظهروا لأول مرة، وزيارات، وبطاقات فُتحت). أما نسبة فتح البطاقات فحدٌّ أدنى 90%، ويظهر المقيس إن زاد عليه.</li>
           <li>القياس يبدأ من يوم تفعيله ولا يرجع إلى الماضي؛ أما الاستبيان وبطاقات الأساتذة فمن سجلات التشغيل كاملة.</li>
         </ul>
       </details>
+
+      <section className="pt-kit" aria-hidden="true">
+        <header>
+          <span className="pt-kit-brand">SCHEDULE · نظام القرار الأكاديمي</span>
+          <h2>ملف الجمهور</h2>
+          <small>{stamp ? stamp.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" }) : ""}</small>
+        </header>
+        <div className="pt-kit-kpis">
+          <div><b><em>أكثر من</em> {fmt(head.students)}</b><span>الطلبة الذين استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span></div>
+          <div><b><em>أكثر من</em> {fmt(head.visits)}</b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span></div>
+          <div><b><em>أكثر من</em> {fmt(head.instructorOpens)}</b><span>فتحٌ لبطاقات أعضاء هيئة التدريس</span></div>
+          <div><b><em>أكثر من</em> {pct(head.instructorOpenRate)}</b><span>نسبة فتح بطاقات الأساتذة</span></div>
+        </div>
+        {s.continuity.length ? <p className="pt-kit-line">استمرارية الطلبة من {s.continuity[0].fromTerm} إلى {s.continuity[0].toTerm}: <b>{pct(s.continuity[0].rate)}</b></p> : null}
+        {hasVisits && visits!.peakDay ? <p className="pt-kit-line">أنشط أيام الأسبوع: <b>{visits!.peakDay}</b></p> : null}
+        {s.demand.top.length ? <div className="pt-kit-block"><h3>ما يطلبه الطلبة هذا الفصل</h3><ol>{s.demand.top.slice(0, 5).map(d => <li key={d.name}>{d.name}</li>)}</ol></div> : null}
+        {s.adsBySlot.length ? <div className="pt-kit-block"><h3>مواقع الإعلان</h3><ul>{s.adsBySlot.slice(0, 4).map(r => <li key={r.slot}>{r.label} · نسبة النقر <b>{pct(r.ctr)}</b></li>)}</ul></div> : null}
+        <footer>أرقامٌ مجمّعة ومجهولة، بلا اسمٍ ولا هوية. الإجماليات منذ {AUDIENCE_BASELINE.since} تشمل رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه ما يُقاس بعده.</footer>
+      </section>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { compareIntelligenceTerms, rowsForIntelligenceScope } from "./src/utils/intelligenceReadingScope";
+import { recordLinkOpen } from "./src/utils/audienceStats";
 import express, { Request, Response, NextFunction } from "express";
 import { rateLimit } from "express-rate-limit";
 import compression from "compression";
@@ -19334,11 +19335,12 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
   /* أولُ فتحٍ يُسجَّل مرّةً واحدة. وهو لا يقول «وصلت الرسالة» — يقول «فُتح
      الرابط»، وهذا كلُّ ما يعرفه النظام بصدق. */
   let request = await refreshUnsubmittedInstructorRequest(resolved.request);
-  if (!request.linkOpenedAt) {
-    const at = new Date().toISOString();
+  const opened = recordLinkOpen(request, new Date().toISOString());
+  if (opened) {
+    const firstOpen = !request.linkOpenedAt;
     request = await Repository.saveInstructorRequest({
-      ...request, linkOpenedAt: at,
-      timeline: [...(request.timeline || []), { kind: "link-opened", at }],
+      ...request, ...opened,
+      ...(firstOpen ? { timeline: [...(request.timeline || []), { kind: "link-opened" as const, at: opened.linkOpenedAt! }] } : {}),
     });
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);

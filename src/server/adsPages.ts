@@ -9,7 +9,8 @@
  */
 import { createHash } from "crypto";
 import type { AdCampaign, AdCreative, AdStatsDay } from "../types";
-import type { AudienceStats } from "../utils/audienceStats";
+import { headlineTotals, type AudienceStats } from "../utils/audienceStats";
+import { AUDIENCE_BASELINE } from "../utils/audienceBaseline";
 import { AD_RULES, TRIAL_DAYS, activeSlots, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase, type WeeklyCompare } from "../utils/adsEngine";
 import { conversionOf, hourAr, peakSummary, wrapUp, type WrapUp } from "../utils/adInsights";
 import { AR, countOf } from "../utils/arabicCount";
@@ -298,7 +299,7 @@ export interface PartnerKitInput {
 export function partnerKitPage(input: PartnerKitInput): string {
   const { stats: s, nonce } = input;
   const today = input.today || kuwaitDay();
-  const reachStudents = s.reach.studentsMin;
+  const head = headlineTotals(s);
   const hasVisits = s.visits.days > 0;
   const peak = hasVisits ? peakSummary(s.visits.heat) : null;
   const peakCard = peak ? `<h2>متى يفتح الطلبة البرنامج؟</h2>
@@ -313,9 +314,10 @@ ${barChart(peak.hourTotals.map((v, h) => ({ day: hourAr(h), a: v })), "الزي�
   <p class="lead">منصةٌ يستخدمها الطلبة والكادر في كل فصل لمعرفة جداولهم وتسجيلهم وحالة طلباتهم. إعلانك يظهر في صفحاتٍ يفتحونها بأنفسهم، وبأرقامٍ تراها أنت حيةً.</p>
 </section>
 <div class="grid">
-  <div class="kpi"><b>${approx(reachStudents)}</b><span>الطلبة المؤكَّدون (أجابوا الاستبيان أو أنشأوا ملفّهم)</span><small>حدٌّ أدنى مؤكد، بلا تكرار</small></div>
-  <div class="kpi"><b>${approx(s.instructors.opened)}</b><span>عضو هيئة تدريس فتح بطاقته</span><small>في الفصل الجاري</small></div>
-  <div class="kpi"><b>${pct(s.instructors.openRate)}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ يقيس جدّية الجمهور</small></div>
+  <div class="kpi"><b>${approx(head.students)}</b><span>الطلبة الذين استخدموا النظام منذ ${AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
+  <div class="kpi"><b>${approx(head.visits)}</b><span>زيارة منذ ${AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
+  <div class="kpi"><b>${approx(head.instructorOpens)}</b><span>فتحٌ لبطاقات أعضاء هيئة التدريس</span><small>عدد مرّات الفتح، وليس عدد الأشخاص</small></div>
+  <div class="kpi"><b><bdi dir="ltr">${Math.floor(head.instructorOpenRate)}%+</bdi></b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ يقيس جدّية الجمهور</small></div>
   ${hasVisits ? `<div class="kpi"><b>${approx(s.visits.last30)}</b><span>زيارة في آخر ٣٠ يوماً</span><small>مقيسة منذ ${esc(dateAr(s.visits.since))}</small></div>` : ""}
 </div>
 ${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2><div class="card">${barChart(s.visits.series.map(p => ({ day: p.day, a: p.count })), "الزيارات")}<p class="note">الذروة تأتي غالباً يوم ${esc(s.visits.peakDay || "—")}؛ ونسبة الجوال ${pct(s.visits.mobileRate)} ونسبة العائدين ${pct(s.visits.returningRate)}.</p></div>` : `<p class="note">قياس الزيارات اليومية فعّالٌ ويتراكم يوماً بعد يوم، وتظهر أرقامه هنا فور توفر بياناتٍ كافية.</p>`}
@@ -339,7 +341,7 @@ ${peakCard}
   <li>كود خصم خاص بشركتك لقياس التحويل عندكم.</li>
   <li>حملةٌ تجريبية قصيرة بتقريرٍ كامل لتجرّب قبل أن تلتزم.</li>
 </ul></div>
-<footer>SCHEDULE · ${esc(dateAr(today))} · الأرقام تقريبية ومجمّعة ولا تحمل أي هوية</footer>`);
+<footer>SCHEDULE · ${esc(dateAr(today))} · الأرقام تقريبية ومجمّعة ولا تحمل أي هوية. الإجماليات منذ ${AUDIENCE_BASELINE.since} تشمل رصيداً افتتاحياً أقرّته إدارة النظام حتى ${esc(dateAr(AUDIENCE_BASELINE.asOf))}، ثم يُضاف إليه ما يُقاس بعده.</footer>`);
 }
 
 /** سياسةُ القياس والإعلانات: صفحةٌ عامة بلا رمز، يصل إليها الطالب من السطر تحت كل إعلان. كلُّ سطرٍ فيها يصف ما يفعله الكود فعلاً. */
