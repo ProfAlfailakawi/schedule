@@ -7,7 +7,7 @@
  */
 import React from "react";
 import {
-  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, CalendarCheck2, CalendarDays, Check, Clock, GraduationCap, Hourglass, Layers, Scale, ShieldAlert, X,
+  AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CalendarCheck2, CalendarDays, Check, Clock, GraduationCap, Hourglass, Layers, Scale, ShieldAlert, X,
 } from "lucide-react";
 import type { StudyProposalMetrics } from "../../types";
 import { AR, countOf } from "../../utils/arabicCount";
@@ -83,6 +83,11 @@ export default function ProposalHeader(props: {
 
   return (
     <header className="sp-head">
+      {/* طريقُ العودة إلى قائمة الرغبات: أيقونةٌ وكلمة. إن كانت في المسوّدة تعديلاتٌ غير محفوظة سأل requestClose قبل أن يغلق. */}
+      <button type="button" className="sp-back" onClick={props.onClose} aria-label="رجوع إلى قائمة رغبات الأساتذة"
+        data-guide-ignore="رجوعٌ إلى قائمة رغبات الأساتذة — يسأل أولاً إن كانت هناك تعديلاتٌ غير محفوظة">
+        <ArrowRight aria-hidden="true" /><span>رجوع</span>
+      </button>
       <div className="sp-id">
         <span className="sp-avatar" aria-hidden="true"><GraduationCap /></span>
         <div className="sp-id-text">

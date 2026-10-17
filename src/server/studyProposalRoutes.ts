@@ -24,6 +24,7 @@ import type {
   StudyProposalDayKey, StudyProposalVersion,
 } from "../types";
 import { toEnglishDigits } from "../utils/digits";
+import { termIsFrozen, TERM_FROZEN_MESSAGE } from "../utils/termSequence";
 import { normalizeClock, withinScheduleDay } from "../utils/scheduleTime";
 import { timeToMinutes } from "../utils/scheduleIntelligence";
 import { termChronology } from "../utils/advancedIntelligence";
@@ -202,6 +203,9 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     if (!proposal) { res.status(404).json({ error: "لا يوجد مقترحٌ بهذا المعرّف." }); return null; }
     const ok = write ? canWriteScope(req, proposal.AdCollegeId, proposal.AdSectionId) : canSeeScope(req, proposal.AdCollegeId, proposal.AdSectionId);
     if (!ok) { res.status(403).json({ error: "هذا المقترح خارج نطاقك." }); return null; }
+    if (write && termIsFrozen(proposal.AdTermId, (await Repository.getTerms()) as any)) {
+      res.status(409).json({ error: TERM_FROZEN_MESSAGE, code: "term-frozen" }); return null;
+    }
     return proposal;
   }
 
@@ -329,7 +333,7 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
         loadCap: Number((world.instructor as any).AdInstructorLoad || 0) || null,
         retired: (world.instructor as any).AdInstructorStatus === "retired",
       },
-      term: { id: termId, name: String(world.term?.AdTermName || ""), closed: termClosedOf(world) },
+      term: { id: termId, name: String(world.term?.AdTermName || ""), closed: termClosedOf(world), frozen: termIsFrozen(termId, (await Repository.getTerms()) as any) },
       scope: {
         collegeId: Number(request.AdCollegeId), collegeName: scopeCollege?.AdCollegeName || "",
         sectionId: Number(request.AdSectionId), sectionName: scopeSection?.AdSectionName || "",
@@ -384,6 +388,9 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     if (!request) return;
     if (!canWriteScope(req, Number(request.AdCollegeId), Number(request.AdSectionId))) {
       res.status(403).json({ error: "لا تملك إعداد مقترحٍ لهذا القسم." }); return;
+    }
+    if (termIsFrozen(Number(request.AdTermId), (await Repository.getTerms()) as any)) {
+      res.status(409).json({ error: TERM_FROZEN_MESSAGE, code: "term-frozen" }); return;
     }
     const lock = await deps.scheduleLockRefusal(req, Number(request.AdCollegeId), Number(request.AdSectionId), Number(request.AdTermId), { registrarLock: false });
     if (lock) { res.status(409).json({ error: lock, code: "schedule-locked" }); return; }

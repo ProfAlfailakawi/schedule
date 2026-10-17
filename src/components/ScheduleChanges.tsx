@@ -41,6 +41,7 @@ import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/i
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import PagedFindingList from "./PagedFindingList";
 import ApprovalDossier from "./ApprovalDossier";
+import TermFrozenRibbon, { useTermFrozen } from "./TermFrozenRibbon";
 import { approvalScopeKey, authorityBaselineLabel, AUTHORITY_BASELINE_LABEL, createScopeGuard } from "../utils/approvalScope";
 
 type NoteField = DiffFieldKey | "row";
@@ -451,7 +452,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
           {/* قسمٌ واحد في مواقع عدّة: يُقال مرّةً في رأس القائمة، وتُسمّى السطورُ
               بمواقعها — لا اسمُ القسم نفسه مكرّراً بعدد الكليات. */}
           {audience.multiSite ? (
-            <p className="changes-inbox-multisite"><strong>{audience.multiSite.name}</strong> — {multiSiteHeadline(audience.multiSite)}</p>
+            <p className="changes-inbox-multisite"><MapPin aria-hidden="true" /><strong>{audience.multiSite.name}</strong><span>{multiSiteHeadline(audience.multiSite)}</span></p>
           ) : null}
           {visible.map(row => (
             <div key={`${row.collegeId}:${row.sectionId}`} className="changes-inbox-row" data-status={row.status} data-late={row.late || undefined}>
@@ -871,10 +872,12 @@ const CROSS_KIND_LABEL: Record<string, string> = {
   doorway: "زمنُ الانتقال", cohort: "دفعةُ الطلبة",
 };
 
-function Report({ termId, termName, scope, role, onBack, archive = false }: {
+function Report({ termId, termName, scope, role, onBack, archive = false, frozen = false }: {
   key?: React.Key;
   /** فصلٌ صار أرشيفاً (termIsArchive): لا شريطَ اعتمادٍ ولا توقيع. */
   archive?: boolean;
+  /** فصلٌ سابق: يُقرأ التقريرُ كلُّه، وكلُّ ما يكتب معطَّل (والخادم يرفض أيضاً). */
+  frozen?: boolean;
   termId: number;
   termName?: string;
   scope: { collegeId: number; sectionId: number; collegeName?: string; sectionName?: string };
@@ -965,6 +968,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
   useEffect(() => { void load(); }, [load]);
 
   const act = async (url: string, body?: unknown, done?: string) => {
+    if (frozen) return;
     setBusy(true); setError(null); setMessage(null);
     try {
       /* القرارُ يحمل ما رآه صاحبه: الجولة وحالها وعدد المواعيد. فإن تغيّر شيءٌ
@@ -995,7 +999,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
   }, [report?.notes]);
 
   const saveNote = async () => {
-    if (!noteDraft) return;
+    if (!noteDraft || frozen) return;
     setBusy(true); setError(null);
     try {
       await request("/api/schedule-notes", {
@@ -1009,6 +1013,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
   };
 
   const saveRebuttal = async () => {
+    if (frozen) return;
     if (!rebutting) return;
     setBusy(true); setError(null);
     try {
@@ -1056,7 +1061,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
     return (
       <>
         {canAnnotate && annotatable ? (
-          <button type="button" className="changes-note-add" data-guide-target="changes.action.note" onClick={() => openNote(scheduleId, defaultField)}>
+          <button type="button" className="changes-note-add" data-guide-target="changes.action.note" disabled={frozen} onClick={() => openNote(scheduleId, defaultField)}>
             <MessageSquarePlus aria-hidden="true" /> علّق على خانة
           </button>
         ) : null}
@@ -1097,14 +1102,14 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
                 ) : null}
                 {(canRebut && note.origin === "registrar" && note.state === "open") || (isRegistrar && note.state === "answered") ? <div className="changes-note-actions">
                   {canRebut && note.origin === "registrar" && note.state === "open" ? (
-                    <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
+                    <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" disabled={frozen} onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
                   ) : null}
                   {isRegistrar && note.state === "answered" ? (
                     <>
-                      <button type="button" data-guide-ignore="قبول تبرير القسم على ملاحظةٍ واحدة — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "accepted" }, "قُبل تبرير القسم")}>
+                      <button type="button" data-guide-ignore="قبول تبرير القسم على ملاحظةٍ واحدة — قرارٌ داخل الملاحظة لا على الجدول" disabled={frozen || busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "accepted" }, "قُبل تبرير القسم")}>
                         <Check aria-hidden="true" /> مقبول
                       </button>
-                      <button type="button" data-guide-ignore="إعادة ملاحظةٍ واحدة إلى الانتظار — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "insisted" }, "أُعيدت الملاحظة")}>
+                      <button type="button" data-guide-ignore="إعادة ملاحظةٍ واحدة إلى الانتظار — قرارٌ داخل الملاحظة لا على الجدول" disabled={frozen || busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "insisted" }, "أُعيدت الملاحظة")}>
                         لا زلت أطلب التغيير
                       </button>
                     </>
@@ -1317,11 +1322,11 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
             {handledNotes ? ` · ${countOf(handledNotes, AR.note)} عُولجت` : ""}
             {answeredNotes ? ` · ${countOf(answeredNotes, AR.note)} بانتظار قرارك` : ""}
           </span>
-          <SecondaryButton type="button" data-guide-target="changes.action.return" disabled={busy || openNotes === 0} onClick={() => void act("/api/approvals/return", undefined, report.approval.status === "accepted" ? "أُعيد فتح الجدول المعتمد وأُرجع للقسم" : "أُرجع الجدول للقسم")}>
+          <SecondaryButton type="button" data-guide-target="changes.action.return" disabled={frozen || busy || openNotes === 0} onClick={() => void act("/api/approvals/return", undefined, report.approval.status === "accepted" ? "أُعيد فتح الجدول المعتمد وأُرجع للقسم" : "أُرجع الجدول للقسم")}>
             <CornerUpLeft aria-hidden="true" /> {report.approval.status === "accepted" ? "إعادة فتح وإرجاع للقسم" : "إرجاع للقسم"}
           </SecondaryButton>
           {report.approval.status === "submitted" ? (
-            <PrimaryButton type="button" data-guide-target="changes.action.accept" disabled={busy || report.blockingConflicts > 0} onClick={() => void act("/api/approvals/accept", undefined, "اعتُمد الجدول")}>
+            <PrimaryButton type="button" data-guide-target="changes.action.accept" disabled={frozen || busy || report.blockingConflicts > 0} onClick={() => void act("/api/approvals/accept", undefined, "اعتُمد الجدول")}>
               <ShieldCheck aria-hidden="true" /> قبول نهائي
             </PrimaryButton>
           ) : null}
@@ -1446,6 +1451,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   }, [termId, terms]);
 
   const term = useMemo(() => (terms || []).find(row => Number(row.AdTermId) === termId), [terms, termId]);
+  const frozenTerm = useTermFrozen(termId, terms);
   const audience = useMemo(() => inboxAudience(role.id, { powerAdmin, scopes }), [role.id, powerAdmin, scopes]);
 
   if (!terms) return <MicroLoader label="يقرأ الفصول…" />;
@@ -1485,6 +1491,8 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
         تغييرات الجدول
       </PageTitle>
 
+      <TermFrozenRibbon termId={termId} terms={terms} onGoCurrent={pickTerm} />
+
       {error ? <Notice type="error">{error}</Notice> : null}
 
       {/* ── مواعيد التسليم: الموضعُ الوحيد الذي يُكتب منه الموعدُ واستثناءاتُه ── */}
@@ -1506,7 +1514,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       {!termId ? (
         <EmptyState title="اختر الفصل" detail="تُعرض تغييرات الجداول لفصلٍ واحد في كل مرّة." />
       ) : active ? (
-        <Report key={reloadKey} termId={termId} termName={term?.AdTermName || ""} scope={active} role={role} archive={termIsArchive(term, terms || [])} onBack={opened ? () => setOpened(null) : undefined} />
+        <Report key={reloadKey} termId={termId} termName={term?.AdTermName || ""} scope={active} role={role} archive={termIsArchive(term, terms || []) || frozenTerm} frozen={frozenTerm} onBack={opened ? () => setOpened(null) : undefined} />
       ) : (
         <Surface>
           <Inbox_

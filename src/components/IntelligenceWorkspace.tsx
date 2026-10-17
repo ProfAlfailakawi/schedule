@@ -90,6 +90,7 @@ import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import StudentCasesTable from "./StudentCasesTable";
+import { RegistrationJourney, journeyFromViews, viewStatuses, type StatusFilter as CaseStatusFilter } from "./StudentCaseStatus";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import PagedImportPreview, { PageReviewWait } from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
@@ -568,7 +569,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
      Loaded with everything else, and empty is the ordinary state: a department
      that has never opened the survey sees the door and nothing more. */
   const [demand, setDemand] = useState<any>(null);
-  const studentCases = Array.isArray(demand?.cases) ? demand.cases : [];
+  const allStudentCases = Array.isArray(demand?.cases) ? demand.cases : [];
+  /* «رحلة الطلب» نفسُها التي في كشف التسجيل: السجلّ واحد، والتصفيةُ بالمحطة محليّة. */
+  const [caseJourneyFilter, setCaseJourneyFilter] = useState<CaseStatusFilter>("all");
+  const caseJourney = useMemo(() => journeyFromViews(allStudentCases), [allStudentCases]);
+  const studentCases = useMemo(() => caseJourneyFilter === "all" ? allStudentCases
+    : allStudentCases.filter((item: any) => viewStatuses(item).includes(caseJourneyFilter)), [allStudentCases, caseJourneyFilter]);
   /* من أجاب — عددٌ واحد تقرؤه البطاقةُ ونصُّها، لا أربعُ صيغٍ مكرّرة. */
   const answered = Number(demand?.totalRespondents || demand?.totalCases || demand?.cases?.length || demand?.respondents || 0);
   /* كلية البنات: «طالبتان أجابتا» — القاعدة في arabicCount وحدها. */
@@ -3408,14 +3414,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <StudentCasesTable cases={entry.data.cases} sectionId={entry.scope.sectionId} print={{ scope: entry.data.sectionName, college: entry.scope.collegeName || "" }} />
                 </section>
               ) : (
+              <>
+              {allStudentCases.some((item: any) => item.caseLevel || item.courses?.some((course: any) => course.settled !== undefined))
+                ? <RegistrationJourney totals={caseJourney} active={caseJourneyFilter} onPick={setCaseJourneyFilter} /> : null}
               <StudentCasesTable
                 cases={studentCases}
+                total={allStudentCases.length}
+                exportName="طلبات_الطلبة.xlsx"
                 sectionId={Number(sectionId)}
                 print={{
                   scope: [demand.sectionName, terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName].filter(Boolean).join(" · "),
                   college: colleges.find((college: any) => Number(college.AdCollegeId) === Number(collegeId))?.AdCollegeName || "",
                 }}
               />
+              </>
               )}
 
               {/* ── الشعب ────────────────────────────────────────────────────

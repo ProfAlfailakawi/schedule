@@ -351,7 +351,9 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const write = between(server, 'app.post("/api/student-registration/:id/course-state"', 'app.post("/api/student-registration/:id/case-state"');
   check(write.includes("هذا المقرّر لقسمٍ آخر؛ تقرّر فيه لجنةُ ذلك القسم."), "S14 ولجنة قسم الاستبيان لا تقرّر في مقرّر غيرها");
   const sheet = read("src/components/StudentRegistration.tsx");
-  check(sheet.includes("`يقرّره قسم ${course.decidedBySectionName") && sheet.includes("!course.readOnly && !course.droppedByStudent"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
+  /* عبارةُ «يقرّره قسم …» صارت في الرسم المشترك (كشف التسجيل ومركز الذكاء يقرآنها معاً). */
+  const sharedStatus = read("src/components/StudentCaseStatus.tsx");
+  check(sharedStatus.includes("`يقرّره قسم ${course.decidedBySectionName") && sheet.includes("courseStateLabel(course)") && sheet.includes("!course.readOnly && !course.droppedByStudent"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
 }
 
 /* ── S15 «سلّمته للتسجيل» لا يُقال قبل التوقيعين ─────────────────────────── */
@@ -370,10 +372,12 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const list = between(server, 'app.get("/api/student-registration"', 'app.post("/api/student-registration/:id/course-state"');
   check(list.includes("partnerCourses:") && (list.match(/details: String\(need\.details \|\| ""\)/g) || []).length === 2, "S16 الخادم يرسل الملاحظات والمقرّر الشريك");
   const sheet = read("src/components/StudentRegistration.tsx");
-  check(sheet.includes("REQUEST_TYPE_LABEL[row.requestType]") && sheet.includes("row.partnerCourses") && /* الملاحظة صارت شارةً (#311): التسمية للقارئ الآلي والنص كاملاً في title، والنص نفسه ظاهر. */
+  /* التصدير صار في المكوّن المشترك StudentCasesTable (يخدم الكشف ومركز الذكاء). */
+  const table = read("src/components/StudentCasesTable.tsx");
+  check(table.includes("STUDENT_CASE_TYPE_LABEL[typeOf(row)]") && sheet.includes("row.partnerCourses") && /* الملاحظة صارت شارةً (#311): التسمية للقارئ الآلي والنص كاملاً في title، والنص نفسه ظاهر. */
     sheet.includes('<span className="sr-only">ملاحظات الطالب: </span>') && sheet.includes("row.details.replace("),
     "S16 الكشف يعرض نوع الطلب والملاحظات و«يتعارض مع»");
-  check(sheet.includes('"نوع الطلب"') && sheet.includes('"ملاحظات الطالب"'), "S16 والتصدير يحملها");
+  check(table.includes('"نوع الطلب"') && table.includes('"ملاحظات الطالب"'), "S16 والتصدير يحملها");
 }
 
 /* ── S17 لا بيانات طالب في المتصفح، ولا جدول قسم برابط الطلبة ─────────────── */

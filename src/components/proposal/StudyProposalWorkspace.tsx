@@ -11,7 +11,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, ArrowLeftRight, Ban, CalendarClock, CircleAlert, ClipboardList, Eye, LoaderCircle, Pencil, RefreshCw, Save, Send, ShieldCheck, ShieldAlert, Trash2, CheckCircle2, History, Table2, Plus, UserRoundPlus, X,
+  AlertTriangle, ArrowLeftRight, Ban, CalendarClock, CircleAlert, ClipboardList, Eye, LoaderCircle, Pencil, RefreshCw, Save, Send, ShieldCheck, ShieldAlert, Trash2, CheckCircle2, History, Table2, Plus, Lock, UserRoundPlus, X,
 } from "lucide-react";
 import { useDrawerA11y } from "../ui";
 import { commitReadiness, effectiveStatus, type GridItem } from "../../utils/studyProposal";
@@ -25,6 +25,7 @@ import ProposalOps from "./ProposalOps";
 import ProposalChecks from "./ProposalChecks";
 import { CommitDialog, ProposalResponses, SendDialog } from "./ProposalDialogs";
 import { relativeSaved, num } from "./proposalFormat";
+import { TERM_FROZEN_LABEL } from "../../utils/termSequence";
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
@@ -37,6 +38,9 @@ function useMedia(query: string) {
   }, [query]);
   return match;
 }
+
+/** popstate الذي نُحدثه نحن بسحب مدخلنا عند الإغلاق: لا يُعامل كأنّه رجوعٌ من المستخدم. */
+let ownPops = 0;
 
 type Dialog = null | "send" | "commit" | "close" | "withdraw";
 
@@ -89,6 +93,33 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
   }, [hasCtx]);
 
   const requestClose = () => { if (dialogRef.current) return; if (wsRef.current.dirty) setDialog("close"); else onClose(); };
+
+  /* ── زرُّ الرجوع في المتصفّح ─────────────────────────────────────────────
+     المساحةُ تُفتح فوق القائمة بلا عنوانٍ جديد، فكان «رجوع» المتصفّح يُخرج المستخدم من الشاشة كلها.
+     نُضيف مدخلاً واحداً في السجلّ عند الفتح: الرجوعُ يغلق المساحة (ويسأل إن كانت هناك تعديلاتٌ غير محفوظة
+     ويُبقي المستخدم فيها)، والإغلاقُ بالزرّ يسحب المدخل نفسه فلا يتراكم في السجلّ شيء. */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    let ownsEntry = false;
+    try { window.history.pushState({ ...(window.history.state || {}), studyProposalWorkspace: true }, ""); ownsEntry = true; } catch { /* بلا سجلّ: يعمل الزرّ وحده */ }
+    const onPop = () => {
+      if (ownPops > 0) { ownPops -= 1; return; }
+      if (!ownsEntry) return;
+      ownsEntry = false;
+      if (wsRef.current.dirty || dialogRef.current) {
+        try { window.history.pushState({ ...(window.history.state || {}), studyProposalWorkspace: true }, ""); ownsEntry = true; } catch { /* نكمل */ }
+        if (!dialogRef.current) setDialog("close");
+        return;
+      }
+      onCloseRef.current();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      if (ownsEntry && (window.history.state as any)?.studyProposalWorkspace) { try { ownPops += 1; window.history.back(); } catch { ownPops = Math.max(0, ownPops - 1); } }
+    };
+  }, []);
   const rootRef = useDrawerA11y<HTMLDivElement>(requestClose);
 
   /* المعاينةُ تُظهر أثر المقترح ما إن توجد مادة، وتعود إلى الحالي بلا مواد. */
@@ -101,7 +132,9 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
   const sent = Boolean(proposal && proposal.sentVersion > 0);
   const commit = proposal ? commitReadiness(proposal) : null;
   const canCommit = Boolean(commit?.ok) && !ws.dirty;
-  const terminal = status === "committed" || status === "withdrawn";
+  /* فصلٌ سابق: المقترحُ يُقرأ ولا يُعدَّل (والخادم يرفض أيضاً). يُعامل كالمنتهي في الواجهة، ببيانٍ يخصّه. */
+  const frozen = Boolean(ws.ctx?.term.frozen);
+  const terminal = status === "committed" || status === "withdrawn" || frozen;
   const checked = ws.evalCurrent && ws.evaluation;
   const blockers = checked ? ws.evaluation!.counts.blockers : null;
   const reviews = checked ? ws.evaluation!.counts.reviews : null;
@@ -193,7 +226,9 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
         ) : null;
       })()}
       {ctx.term.closed ? <div className="sp-banner" role="status" data-tone="bad"><Ban aria-hidden="true" /><span>انتهى هذا الفصل؛ لا تُرسل فيه مقترحات جديدة.</span></div> : null}
-      {terminal ? (
+      {frozen ? (
+        <div className="sp-banner" role="status" data-tone="bad"><Lock aria-hidden="true" /><span>{TERM_FROZEN_LABEL} — لا تعديل ولا إرسال ولا تثبيت.</span></div>
+      ) : terminal ? (
         <div className="sp-banner" role="status" data-tone="neutral"><CheckCircle2 aria-hidden="true" /><span>{status === "committed" ? "ثُبّت هذا المقترح ولم يعد قابلاً للتعديل." : "سُحب هذا المقترح. أنشئ مقترحاً جديداً من الحوار."}</span></div>
       ) : null}
     </>

@@ -82,7 +82,16 @@ export interface DossierTimelineStep {
   id: string; kind: "submitted" | "returned" | "accepted" | "signed" | "head-returned";
   round?: number; at: string; date: string; title: string; by?: string; detail?: string; verifyCode?: string;
 }
-export interface DossierChangeItem { kind: DossierKind; scheduleId: number; section: string; where: string; lines: string[] }
+export interface DossierMove { field: string; label: string; before: string; after: string }
+export interface DossierChangeItem {
+  kind: DossierKind; scheduleId: number; section: string; where: string; lines: string[];
+  /** Structured pieces of the same facts, for the visual list (the text lines above stay for print/tests). */
+  days: string; time: string; room: string; instructor: string;
+  /** Section renumbering (e.g. 517 ← 518), kept apart from the other moves. */
+  renumber: { before: string; after: string } | null;
+  /** Every other changed field, old → new. */
+  moves: DossierMove[];
+}
 export interface DossierCourseGroup { key: string; code: string; course: string; items: DossierChangeItem[] }
 export interface DossierBlockerLine { title: string; detail?: string }
 
@@ -216,6 +225,16 @@ function baselineBlock(report: DossierReport | null): ApprovalDossierModel["base
   return { available: true, kind, title: "منذ آخر مراجعة", sourceLine: "المقارنة مع الجدول كما رآه التسجيل آخر مرة — لا وثيقة معتمدة لهذا القسم." };
 }
 
+const DAY_SHORT: Array<[RegExp, string]> = [
+  [/السبت/g, "س"], [/الأحد|الاحد/g, "ح"], [/الاثنين|الإثنين/g, "ن"], [/الثلاثاء/g, "ث"], [/الأربعاء|الاربعاء/g, "ر"], [/الخميس/g, "خ"], [/الجمعة/g, "ج"],
+];
+/** «الثلاثاء والخميس» → «ث خ» for compact chips; the full text stays in the tooltip. */
+export function compactDays(days: string): string {
+  let out = String(days || "");
+  for (const [pattern, short] of DAY_SHORT) out = out.replace(pattern, short);
+  return out.replace(/\s*و(?=[سحنثرخج](?:\s|$))/g, " ").replace(/\s*(?:،|,|\/|-)\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
 /** قيمةٌ لاتينية/رقمية (وقت، قاعة) تُعزل لتبقى في ترتيبها داخل جملةٍ عربية. */
 const ltr = (value: string) => (value && /^[\d\s:.\-–/A-Za-z]+$/.test(value) ? `\u2066${value}\u2069` : value);
 
@@ -230,7 +249,16 @@ function describeItem(entry: DossierDiffEntry, kind: DossierKind): DossierChange
     const detail = [display.room, display.instructor].filter(value => value && value !== "—").join(" · ");
     if (detail) lines.push(detail);
   }
-  return { kind, scheduleId: Number(entry.scheduleId), section: String(display.sectionCode || ""), where, lines };
+  const all = kind === "modified" ? (entry.changes || []) : [];
+  const renumberChange = all.find(change => change.field === "sectionCode");
+  const moves = all.filter(change => change !== renumberChange).map(change => ({ field: String(change.field || ""), label: change.label, before: change.before || "—", after: change.after || "—" }));
+  const clean = (value: unknown) => (value && value !== "—" ? String(value) : "");
+  return {
+    kind, scheduleId: Number(entry.scheduleId), section: String(display.sectionCode || ""), where, lines,
+    days: clean(display.days), time: clean(display.time), room: clean(display.room), instructor: clean(display.instructor),
+    renumber: renumberChange ? { before: renumberChange.before || "—", after: renumberChange.after || "—" } : null,
+    moves,
+  };
 }
 
 export function buildApprovalDossier(input: DossierInput): ApprovalDossierModel {

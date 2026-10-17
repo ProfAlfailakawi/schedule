@@ -207,7 +207,10 @@ export function TopologyScene({ topology, context }: { topology: any; context?: 
 
   const hotspots = (topology.hotspots || []).filter((h: any) => Number(h.issues) > 0);
   const worst = Math.max(1, ...hotspots.map((h: any) => Number(h.issues) || 0));
+  /* `conflicts` counts only what blocks (isBlockingConflict). Soft findings — a short
+     turnaround, a section recorded twice in distinct halls — are `advisories`: said, never «مانع». */
   const conflicts = Number(topology.conflicts || 0);
+  const advisories = Number(topology.advisories || 0);
 
   return (
     <div className="topology-scene">
@@ -218,7 +221,9 @@ export function TopologyScene({ topology, context }: { topology: any; context?: 
           <p>
             {conflicts
               ? "هذه ليست تعارضات مبنية داخل الجدول؛ إنها مواضع موروثة أو حجوزات متزامنة تستحق التحقق، مرتبة بالأكثر تأثيراً."
-              : "لا يوجد حجز مزدوج ظاهر لأستاذ أو قاعة في هذا الفصل."}
+              : advisories
+                ? `لا مانع. ${countOf(advisories, AR.alert)} للعلم فقط (فاصل قصير أو شعبة مسجّلة مرتين) ولا تمنع التوقيع.`
+                : "لا يوجد حجز مزدوج ظاهر لأستاذ أو قاعة في هذا الفصل."}
           </p>
         </div>
         <Badge tone={conflicts ? "warning" : "success"}>

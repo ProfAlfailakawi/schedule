@@ -16,7 +16,7 @@ const BASE = "http://localhost:3000";
 const up = async () => { try { return (await fetch(BASE + "/api/public/me/state")).ok; } catch { return false; } };
 
 {
-  const hero = read("src/components/SemesterReadiness.tsx"), radar = read("src/components/RegistrationRehearsal.tsx"), apply = read("src/components/ApplyProposal.tsx"), intel = read("src/components/IntelligenceWorkspace.tsx");
+  const hero = read("src/components/SemesterReadiness.tsx"), radar = read("src/components/RegistrationRehearsal.tsx") + read("src/components/RadarSchedule.tsx"), /* RadarSchedule انتقل إلى ملفه ليشاركه الرادار ولوحة التنبّؤ */ apply = read("src/components/ApplyProposal.tsx"), intel = read("src/components/IntelligenceWorkspace.tsx");
   check(radar.includes("<SemesterReadiness") && radar.includes("/api/simulation/insight") && hero.includes("مقارنة سيناريوهات"), "W1 جاهزية الفصل في أعلى الرادار وتقول إنها مقارنة سيناريوهات");
   check(apply.includes("/api/schedules/what-if") && apply.includes("اعتمد رغم الضرر") && apply.includes("preview"), "W2 «ماذا لو؟» داخل بطاقة الاعتماد، والضررُ الأكبر يُسمّى باسمه");
   check(radar.includes("postWhatIf({ kind: \"opening\"") && intel.includes("postWhatIf({ kind: fix.swapWith") && intel.includes("kind: \"opening\", collegeId: source.collegeId"), "W3 الرادار ومركز الذكاء يقيسان الفتح والنقل والتبديل قبل الاعتماد");

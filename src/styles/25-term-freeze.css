@@ -1,0 +1,27 @@
+/* ── فصلٌ سابق: للعرض فقط ─────────────────────────────────────────────────
+   شريطٌ ثابتٌ بقفل، ومعطِّلٌ بصريّ لأدوات الكتابة (تبقى ظاهرةً لا تُحذف).
+   الخادمُ يرفض الكتابة أيضاً (code: term-frozen)، فهذا الرسمُ بيانٌ لا حارس. */
+.term-frozen-ribbon{
+  display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2) var(--s3);
+  padding:var(--s2) var(--s4);border-radius:var(--r-lg);
+  background:repeating-linear-gradient(135deg,var(--warning-soft) 0 12px,color-mix(in srgb,var(--warning-soft) 82%,var(--surface)) 12px 24px);
+  border:1px solid color-mix(in srgb,var(--warning) 38%,transparent);color:var(--warning);
+}
+.term-frozen-ribbon b{font-size:var(--t-sm);font-weight:700}
+.term-frozen-ribbon small{display:inline-flex;align-items:center;gap:var(--s1);color:var(--muted);font-size:var(--t-sm)}
+.term-frozen-ribbon svg{inline-size:15px;block-size:15px;flex:none}
+.term-frozen-ribbon .tfr-lock{display:grid;place-items:center;inline-size:28px;block-size:28px;border-radius:50%;background:var(--surface);border:1px solid var(--line)}
+.term-frozen-ribbon .tfr-go{margin-inline-start:auto;border:1px solid var(--line-strong);background:var(--surface);color:var(--accent-ink);border-radius:999px;padding:4px 12px;font:inherit;font-size:var(--t-sm);cursor:pointer}
+[data-term-frozen-scope="true"] :is(button,input,select,textarea)[disabled]{cursor:not-allowed}
+
+/* ── رجوعٌ من مساحة المقترح إلى قائمة الرغبات ── */
+.sp-head .sp-back{
+  display:inline-flex;align-items:center;gap:var(--s2);align-self:flex-start;margin-block-end:var(--s2);
+  padding:6px 14px 6px 12px;border-radius:999px;border:1px solid var(--line-strong);
+  background:var(--surface);color:var(--accent-ink);font:inherit;font-size:var(--t-sm);font-weight:700;cursor:pointer;
+  transition:background .15s,border-color .15s;
+}
+.sp-head .sp-back:hover{background:var(--accent-softer);border-color:var(--accent)}
+.sp-head .sp-back:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sp-head .sp-back svg{inline-size:16px;block-size:16px}
+.student-case-state svg{inline-size:13px;block-size:13px;margin-inline-end:4px;flex:none}

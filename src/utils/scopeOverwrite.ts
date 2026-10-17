@@ -7,6 +7,9 @@
  * starts one of those actions asks the same question the same way, through
  * this one helper, and repeats the request only with the person's yes.
  */
+import React from "react";
+import { ScopeOverwriteBody } from "../components/ScopeOverwriteBody";
+
 export const SCOPE_CHANGED_CODE = "scope-changed-since-base";
 
 export const withOverwriteNewer = (confirm: string) => `${confirm}, overwrite-newer`;
@@ -26,8 +29,12 @@ export function overwriteConfirmOptions(refusal: { message: string; changes: str
   return {
     title: "تغيّر الجدول بعد هذه النسخة",
     message: [refusal.message, ...shown.map(line => `• ${line}`), more > 0 ? `• و${more} غيرها` : ""].filter(Boolean).join("\n"),
+    /* Visual body; `message` stays the accessible/plain text. */
+    body: React.createElement(ScopeOverwriteBody, { changes: refusal.changes }),
     confirmLabel: "امحُ هذه التغييرات وتابع",
     tone: "danger" as const,
+    /* Keeping the newer schedule is the safe choice, so «إلغاء» leads visually. */
+    safeCancel: true,
   };
 }
 

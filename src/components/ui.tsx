@@ -92,9 +92,15 @@ export function visualConfirm({
   cancelLabel = "إلغاء",
   tone = "warning",
   compact = false,
+  body,
+  safeCancel = false,
 }: {
   title?: string;
   message: string;
+  /** Rich visual body shown instead of the plain message paragraph (message stays the accessible text). */
+  body?: React.ReactNode;
+  /** Cancel is the recommended choice: it takes the primary look and the destructive button stays a plain warning. */
+  safeCancel?: boolean;
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: ConfirmTone;
@@ -188,11 +194,11 @@ export function visualConfirm({
             <div className="schedule-confirm-copy">
               <small>{eyebrow}</small>
               <strong id="schedule-confirm-title">{heading}</strong>
-              <p id="schedule-confirm-message">{message}</p>
+              {body ? <><p id="schedule-confirm-message" className="sr-only">{message}</p>{body}</> : <p id="schedule-confirm-message">{message}</p>}
             </div>
             <div className="schedule-confirm-actions">
-              <button ref={cancelRef} type="button" className="btn btn-secondary" data-guide-ignore="حوار تأكيد عام لا يمثل ميزة مستقلة في المرشد" onClick={() => close(false)}>{cancelLabel}</button>
-              <button type="button" className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`} data-guide-ignore="حوار تأكيد عام لا يمثل ميزة مستقلة في المرشد" onClick={() => close(true)}>{confirmLabel}</button>
+              <button ref={cancelRef} type="button" className={`btn ${safeCancel ? "btn-primary" : "btn-secondary"}`} data-guide-ignore="حوار تأكيد عام لا يمثل ميزة مستقلة في المرشد" onClick={() => close(false)}>{cancelLabel}</button>
+              <button type="button" className={`btn ${safeCancel ? "so-destroy" : tone === "danger" ? "btn-danger" : "btn-primary"}`} data-guide-ignore="حوار تأكيد عام لا يمثل ميزة مستقلة في المرشد" onClick={() => close(true)}>{confirmLabel}</button>
             </div>
           </section>
         </div>

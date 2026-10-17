@@ -6,6 +6,7 @@
  * علويٌّ يبدأ مقترحاً لأيِّ أستاذٍ له طلبٌ في الوارد (الرابط الشخصي يقوم على الطلب).
  */
 import React, { useMemo, useState } from "react";
+import { useFrozenScreen } from "../TermFrozenRibbon";
 import { CalendarClock, CheckCircle2, ClipboardPen, MessageSquareWarning, Send, ShieldCheck, ThumbsUp, Clock, Ban, FileClock } from "lucide-react";
 import { countOf } from "../../utils/arabicCount";
 import { commitReadiness, effectiveStatus, OP_KIND_LABEL, STATUS_LABEL } from "../../utils/studyProposal";
@@ -30,11 +31,13 @@ const EVENT_TEXT: Record<string, string> = {
 };
 
 function ProposalCard({ view, onOpen }: { key?: React.Key; view: StaffProposalView; onOpen: (open: OpenWorkspace) => void }) {
+  const frozenScreen = useFrozenScreen();
   const p: StudyProposal = view.proposal;
   const status = effectiveStatus(p);
   const Icon = STATUS_ICON[status] || FileClock;
   const readiness = commitReadiness(p);
-  const ready = readiness.ok && status !== "committed";
+  /* فصلٌ سابق: يُفتح المقترحُ للقراءة (فتح)، ولا «مراجعة وتثبيت». */
+  const ready = readiness.ok && status !== "committed" && !frozenScreen;
   return (
     <li className="sp-pcard" data-status={status}>
       <span className="sp-status" data-status={status}><i aria-hidden="true" /><Icon aria-hidden="true" />{STATUS_LABEL[status]}</span>
@@ -57,6 +60,7 @@ export function ProposalStrip({ requestId, proposals, onOpen, itemIndex = null, 
   itemIndex?: number | null;
   compact?: boolean;
 }) {
+  const frozenScreen = useFrozenScreen();
   const visible = proposals.filter(view => itemIndex === null ? true : view.proposal.itemIndex === itemIndex);
   const [showAll, setShowAll] = useState(false);
   const list = showAll ? visible : visible.slice(0, 2);
@@ -66,7 +70,7 @@ export function ProposalStrip({ requestId, proposals, onOpen, itemIndex = null, 
       {list.length ? <ul className="sp-thread-list">{list.map(view => <ProposalCard key={view.proposal.id} view={view} onOpen={onOpen} />)}</ul> : null}
       {visible.length > 2 ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={() => setShowAll(v => !v)}>{showAll ? "عرض الأحدث فقط" : `عرض الكل (${num(visible.length)})`}</button> : null}
       {compact ? null : (
-        <button type="button" className="btn btn-secondary sp-start-btn" onClick={() => onOpen({ requestId, itemIndex })} data-guide-target="proposal-start">
+        <button type="button" className="btn btn-secondary sp-start-btn" disabled={frozenScreen} onClick={() => onOpen({ requestId, itemIndex })} data-guide-target="proposal-start">
           <ClipboardPen aria-hidden="true" />مقترح دراسي
         </button>
       )}
@@ -80,6 +84,7 @@ export function ProposalLauncherBar({ rows, proposals, onOpen }: {
   proposals: StaffProposalView[];
   onOpen: (open: OpenWorkspace) => void;
 }) {
+  const frozenScreen = useFrozenScreen();
   const [picking, setPicking] = useState(false);
   const [pick, setPick] = useState("");
   const toCommit = useMemo(() => proposals.filter(view => { const s = effectiveStatus(view.proposal); return s === "approved" || s === "partial"; }), [proposals]);
@@ -87,7 +92,7 @@ export function ProposalLauncherBar({ rows, proposals, onOpen }: {
   return (
     <section className="sp-launch" aria-label="المقترحات الدراسية" data-guide-ignore="بدء مقترح دراسي — لا يكتب في الجدول">
       {toCommit.length ? (
-        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-primary"
+        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-primary" disabled={frozenScreen}
           onClick={() => onOpen({ requestId: toCommit[0].proposal.requestId, proposalId: toCommit[0].proposal.id, startWith: "commit" })}>
           <CheckCircle2 aria-hidden="true" />{countOf(toCommit.length, { one: "مقترح", two: "مقترحان", few: "مقترحات", many: "مقترحاً" })} للتثبيت
         </button>
@@ -104,7 +109,7 @@ export function ProposalLauncherBar({ rows, proposals, onOpen }: {
           <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={() => { setPicking(false); setPick(""); }}>إلغاء</button>
         </>
       ) : (
-        <button type="button" className="btn btn-secondary" onClick={() => setPicking(true)} data-guide-target="proposal-start">
+        <button type="button" className="btn btn-secondary" disabled={frozenScreen} onClick={() => setPicking(true)} data-guide-target="proposal-start">
           <ClipboardPen aria-hidden="true" />مقترح دراسي
         </button>
       )}

@@ -12619,7 +12619,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <span><MapPin aria-hidden="true" /><bdi>{roomDisplay(context.selected) || "—"}</bdi></span>
                   {historicalLocationNeedsReview(context.selected) ? <small>بيانات مكان تاريخية غير موثقة</small> : null}
                 </div>
-                <RowHistory key={context.selected.id} rowId={Number(context.selected.id)} origin={(context.selected as any).origin || null} />
+                <RowHistory key={context.selected.id} rowId={Number(context.selected.id)} origin={(context.selected as any).origin || null} facts={[
+                  context.conflicts?.length
+                    ? { tone: "warn", kind: "conflict", label: countOf(context.conflicts.length, AR.conflict) }
+                    : { tone: "good", kind: "clear", label: "بلا تعارض" },
+                  ...(!context.conflicts?.length && context.selected.AdInstructorId ? [{ tone: "good", kind: "instructor", label: "الأستاذ متفرغ" } as const] : []),
+                  ...(!context.conflicts?.length && roomDisplay(context.selected) ? [{ tone: "good", kind: "room", label: "القاعة خالية" } as const] : []),
+                ]} />
               </div>
             </div>
             <nav className="context-tabs" aria-label="أقسام تفاصيل الموعد">

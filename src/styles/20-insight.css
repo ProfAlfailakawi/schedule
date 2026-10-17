@@ -76,3 +76,9 @@
 .rh-list li:not(:last-child)::before{content:"";position:absolute;inset-block:26px 0;inset-inline-start:12px;inline-size:2px;background:var(--line)}
 .rh-dot{display:grid;place-items:center;inline-size:26px;block-size:26px;border-radius:50%;background:var(--accent-softer);border:1px solid var(--line);color:var(--accent-ink)}.rh-dot svg{inline-size:13px;block-size:13px}
 .rh-list b{display:block;font-size:.8rem;line-height:1.5}.rh-list small{font-size:.7rem;color:var(--muted)}.rh-more{color:var(--muted);font-size:.72rem}
+
+.rh-facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.rh-chip{display:inline-flex;align-items:center;gap:5px;min-block-size:24px;padding:0 9px;border-radius:var(--r-full);border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:.72rem}
+.rh-chip svg{inline-size:13px;block-size:13px}
+.rh-chip.is-good{color:var(--success,var(--accent));border-color:color-mix(in srgb,var(--success,var(--accent)) 35%,var(--line))}
+.rh-chip.is-warn{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}

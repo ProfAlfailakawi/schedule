@@ -125,8 +125,11 @@ check(server.includes('? "awaiting-signatures" : (state?.state || "")'), "وحا
 /* «لم يُقل فيه شيء» ليس «بانتظار التسجيل»: الانتظارُ قولٌ يقوله القسمُ حين
    يسلّم، لا حالةٌ تُفترض على من لم يُسلَّم بعد. */
 check(server.includes("ولا يُسمّى «بانتظار التسجيل»"), "وما لم يُقل فيه شيءٌ لا يُسمّى انتظاراً");
-check(screen.includes('const PENDING_COMMITTEE = "بانتظار اللجنة";')
-  && screen.includes("course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE"),
+/* الكلماتُ وشارةُ الحالة صارت في StudentCaseStatus.tsx: يقرؤها الكشفُ ومركزُ الذكاء معاً (طلبات الطلبة = كشف التسجيل). */
+const sharedStatus = fs.readFileSync(path.join(process.cwd(), "src/components/StudentCaseStatus.tsx"), "utf8");
+check(sharedStatus.includes('export const PENDING_COMMITTEE = "بانتظار اللجنة";')
+  && sharedStatus.includes("course.settled ? STATE_LABEL[course.state || \"\"] || String(course.state) : PENDING_COMMITTEE")
+  && screen.includes("courseStateLabel(course)"),
   "والكشفُ يفرّق بينهما كذلك: ما لم يُقل فيه شيءٌ «بانتظار اللجنة»");
 
 /* ── اللجنةُ أولاً، ثم التسجيل ──────────────────────────────────────────── */
@@ -152,7 +155,8 @@ check(server.includes("هذا المقرّر لقسمٍ آخر؛ تقرّر في
 check(screen.includes("filterChosen.current") && screen.includes('nextViewer === "registration" ? "approved"'),
   "وكلٌّ يبدأ من طابوره: اللجنةُ بما ينتظرها، والتسجيلُ بما سُلّم إليه");
 check(screen.includes("const exportVisible = async () =>")
-  && screen.includes('.filter(course => statusFilter === "all" || statusOf(course) === statusFilter)'),
+  && screen.includes('course.partner || statusFilter === "all" || statusOf(course) === statusFilter')
+  && screen.includes("exportStudentCasesXlsx(shownViews"),
   "والتصديرُ يُخرج ما يُعرض بالتصفية نفسها، فلا يخرج في ملف التسجيل ما لم توافق عليه اللجنة");
 check(screen.includes('takeNotifyFocus("studentRegistration")') && !screen.includes("schedule:notify-focus"),
   "والإشعارُ يفتح الكشفَ على قسمه — بالقارئ الواحد (takeNotifyFocus)");
@@ -325,8 +329,9 @@ check(["الشاملة", "فتح مقرر", "التعارض", "الخريج"].ev
 check(registerSrc.includes("renderCourseDecision") && registerSrc.includes("renderCaseDecision")
   && regSrc.includes("renderCourseDecision=") && regSrc.includes("renderCaseDecision="),
   "والقرار طبقةٌ داخل السجلّ: لكل مقرّر، وللحالة كلها في طلب الخريج");
-check(["الكل", "PENDING_COMMITTEE", "لم توافق اللجنة", "بانتظار التسجيل", "سُجّل", "ردّه التسجيل", "تصدير Excel", "اسأل: رقم الحالة أو اسم الطالب", "سطرٌ للطالب", "موافقة مقررات الطالب"].every(text => regSrc.includes(text))
-  && regSrc.includes("renderCaseAction={caseAction}"),
+check(["الكل", "PENDING_COMMITTEE", "لم توافق اللجنة", "بانتظار التسجيل", "سُجّل", "ردّه التسجيل", "اسأل: رقم الحالة أو اسم الطالب", "سطرٌ للطالب", "موافقة مقررات الطالب"].every(text => regSrc.includes(text))
+  && regSrc.includes("renderCaseAction={caseAction}")
+  && registerSrc.includes("تصدير Excel") && regSrc.includes("onExport={() => void exportVisible()}"),
   "وبقي كلُّ ما في الكشف: مرشّحات الحالة، والتصدير، والبحث، وسطرُ الطالب، والموافقة على الكل");
 
 /* ── الهوية لمن يعمل على الحالة، لا لصفة العرض ─────────────────────────── */

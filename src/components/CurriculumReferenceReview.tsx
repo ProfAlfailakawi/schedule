@@ -50,9 +50,11 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
 
   const references = sections.find(row => row.sectionId === selectedSectionId)?.references || [];
   const reference = references.find(row => row.id === selected);
-  /* مقررات القسم وحدها: مقررات الكلية العامة (ثقافة عامة ومتطلبات الكلية) تُصحَّح عند أقسامها، وعرضها هنا يوهم القسم أنها له.
-     ما لم تُحسم ملكيته (ownerSectionId = 0) يبقى ظاهراً لأنه يحتاج قراراً. */
-  const entries = useMemo<CourseEntry[]>(() => reference ? reference.groups.flatMap(group => group.courses.filter(course => !course.ownerSectionId || course.ownerSectionId === selectedSectionId).map(course => ({
+  /* مقررات القسم المفتوح وحده، حذفاً لا تصفية: مقررات الكلية العامة (ثقافة عامة ومتطلبات الكلية) تُصحَّح عند أقسامها.
+     فكلُّ تبويبٍ ومجموعةٍ ومستوىً وعدّادٍ يُشتقّ من هذه القائمة، فلا يظهر ما ليس فيه مقرر للقسم.
+     ما لم تُحسم ملكيته (ownerSectionId = 0) لا يُحتسب هنا، وينبَّه إلى عدده في سطرٍ مستقل. */
+  const undecided = useMemo(() => reference ? reference.groups.reduce((sum, group) => sum + group.courses.filter(course => !course.ownerSectionId).length, 0) : 0, [reference]);
+  const entries = useMemo<CourseEntry[]>(() => reference ? reference.groups.flatMap(group => group.courses.filter(course => course.ownerSectionId === selectedSectionId).map(course => ({
     course, groupId: group.id, groupName: group.name, category: group.category, requiredUnits: group.requiredUnits, elective: group.elective,
     level: courseLevelFromCode(course.code) || 0,
   }))) : [], [reference, selectedSectionId]);
@@ -126,6 +128,8 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
       <div className="reference-summary-item is-ok"><span className="reference-summary-icon"><Check size={17} /></span><span><small>مطابقة</small><b>{countOf(matches, AR.course)}</b></span></div>
       <div className={`reference-summary-item${missing ? " is-missing" : ""}`}><span className="reference-summary-icon"><AlertCircle size={17} /></span><span><small>تحتاج متابعة</small><b>{countOf(missing + review, AR.course)}</b></span></div>
     </div>
+
+    {undecided ? <Notice type="info" inline>{countOf(undecided, AR.course)} بلا قسمٍ مالك محسوم، ولا تُحتسب هنا حتى تُحسم ملكيتها.</Notice> : null}
 
     {canApply ? <ReferenceApplyPanel key={`${selectedSectionId}:${reference.id}`} referenceId={reference.id} referenceName={reference.name} onApplied={() => setReload(n => n + 1)} /> : null}
 

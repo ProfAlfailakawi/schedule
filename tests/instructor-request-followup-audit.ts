@@ -215,7 +215,10 @@ check(inbox.includes("function RequestThread(") && inbox.includes("/reply`") && 
 
 /* ── بابُ التعديل في بطاقتي لا يختفي ──────────────────────────────────────── */
 check(staffHtml.includes('id="tab-requests" role="tab" aria-selected="false">طلب تعديل الجدول</button>') && !/id="tab-requests"[^>]*display:none/.test(staffHtml),
-  "تبويبُ «طلب تعديل الجدول» ظاهرٌ دائماً — لا يختفي مع رابط القسم");
+  "تبويبُ «طلب تعديل الجدول» موجودٌ في الصفحة ولا يُخفى بالتنسيق (رابط القسم كالشخصي)");
+check(staffHtml.includes("tab.hidden=!links.length") && staffHtml.includes("if(!l.windowOpen||seen[l.linkId])return false")
+  && !staffHtml.includes("انتهت فترة الطلبات'"),
+  "ويُخفى التبويبُ كلُّه حين لا نافذةَ طلباتٍ مفتوحة، ولا بطاقةَ «انتهت فترة الطلبات» ولا زرَّ فتح نموذجٍ لنافذةٍ مغلقة");
 check(!staffHtml.includes('id="edit"') && staffHtml.includes("tabRequests.onclick=function"),
   "لا زرّ «تعديل» مكرر في الأدوات: «طلب تعديل الجدول» هو البابُ الوحيد");
 check(server.includes("const requestLinks = (await Promise.all(requestRows.map(") && !server.includes("(personal ? requestRows : []).map"),

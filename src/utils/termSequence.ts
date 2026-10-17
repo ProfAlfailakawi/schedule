@@ -269,6 +269,29 @@ export function termIsArchive(
   return term.AdTermClosed === true || termHasEnded(term, now);
 }
 
+/**
+ * ── تجميدُ الفصل السابق: للعرض فقط ───────────────────────────────────────────
+ *
+ * إذا صار فصلٌ جديدٌ هو الجاري، صار ما قبله سجلًّا يُقرأ ولا يُكتب فيه: لا قرارَ في
+ * كشف التسجيل، ولا ردَّ على رغبات الأساتذة، ولا إرسالَ ولا قرارَ في تغييرات الجدول.
+ * القاعدةُ واحدةٌ للشاشة وللخادم: فصلٌ مغلقٌ صراحةً، أو أرشيفٌ (انقضى وليس الجاري)،
+ * أو أقدمُ زمنياً من الجاري. أما الفصلُ القادم (التخطيط) فمفتوح. وفصلٌ مجهول (معرّف 0
+ * أو غير موجود) لا يُجمَّد، كي لا ينكسر ما لا ندري عنه شيئاً.
+ */
+export const TERM_FROZEN_LABEL = "فصل سابق · للعرض فقط";
+export const TERM_FROZEN_MESSAGE = "هذا فصلٌ سابق: يُعرض للاطّلاع فقط ولا يُعدَّل. اعمل في الفصل الجاري.";
+
+type FreezeTerm = { AdTermId?: number; AdTermName?: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean };
+export function termIsFrozen(termId: number | null | undefined, terms: ReadonlyArray<FreezeTerm>, now: number = Date.now()): boolean {
+  const id = Number(termId || 0);
+  if (!id) return false;
+  const term = terms.find(item => Number(item.AdTermId) === id);
+  if (!term) return false;
+  if (term.AdTermClosed === true || termIsArchive(term, terms, now)) return true;
+  const current = terms.find(item => Number(item.AdTermId) === currentTermId(terms, now));
+  return Boolean(current) && Number(current!.AdTermId) !== id && termChronology(term) < termChronology(current);
+}
+
 export function isTermClosed(
   term: { AdTermId?: number; AdTermClosed?: boolean; AdTermName?: string;
           AdTermStart?: string; AdTermWeeks?: number } | null | undefined,

@@ -8,7 +8,7 @@
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Ticket, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Sparkles, Ticket, TrendingUp, Users } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
@@ -18,6 +18,9 @@ import { writeSharedScope } from "../utils/sharedScope";
 import CourseImpact from "./CourseImpact";
 import { OutcomeCourse, OutcomeLegend } from "./OutcomeStory";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
+import { orderRadarCourses } from "../utils/registrationSim";
+import RadarSchedule, { request } from "./RadarSchedule";
+import PredictiveInsightPanel from "./PredictiveInsightPanel";
 
 interface Unmet { "not-offered": number; conflict: number; full: number; prereq: number; units: number }
 interface CourseRow { courseId: number; code: string; name: string; sections: number; capacity: number; taken: number; wanted: number; seated: number; unmet: Unmet }
@@ -36,15 +39,6 @@ interface Summary {
   courses: CourseRow[];
   projectedCourses?: CourseRow[];
 }
-
-const request = async (url: string, init?: RequestInit) => {
-  const response = await fetch(url, init);
-  const text = await response.text();
-  let data: any = {};
-  try { data = text ? JSON.parse(text) : {}; } catch { throw new Error("وصل ردٌّ غير متوقّع من الخادم."); }
-  if (!response.ok) throw new Error(data.error || "تعذّر تنفيذ العملية");
-  return data;
-};
 
 /* كلُّ عددٍ هنا طلبةٌ، وتُقرأ الجملةُ بعده: «9 طلاب — لن يجدوا مقعداً». */
 const WHY: Array<[keyof Unmet, string, string]> = [
@@ -70,7 +64,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const [all, setAll] = useState(false);
   const [q, setQ] = useState("");
   const [scenario, setScenario] = useState<"actual" | "projected">("actual");
-  const [view, setView] = useState<"capacity" | "decide" | "outcome" | null>(null);
+  const [view, setView] = useState<"capacity" | "decide" | "outcome" | "predict" | null>(null);
   const [insight, setInsight] = useState<Insight | null>(null);
   const [insightFailed, setInsightFailed] = useState(false);
   const autoRunInFlight = useRef(false);
@@ -126,7 +120,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
     XLSX.writeFile(wb, "تقرير_رادار_التسجيل.xlsx");
   };
 
-  const rows = useMemo(() => [...(scenario === "projected" ? data?.projectedCourses || [] : data?.courses || [])].sort((a, b) => weight(b) - weight(a) || b.wanted - a.wanted || a.code.localeCompare(b.code, "en")), [data, scenario]);
+  const rows = useMemo(() => orderRadarCourses(scenario === "projected" ? data?.projectedCourses || [] : data?.courses || [], scenario, weight), [data, scenario]);
   const decide = rows.filter(needsDecision);
   const calm = rows.filter(c => !needsDecision(c));
   const shown = (all ? rows : decide).filter(c => !q.trim() || `${c.code} ${c.name}`.includes(q.trim()));
@@ -170,9 +164,10 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
           <div className="sm-views" role="tablist" aria-label="أقسام الرادار">
             <button type="button" role="tab" aria-selected={shownView === "decide"} onClick={() => setView("decide")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className={`sm-ic${decide.length ? " hot" : ""}`}><CircleAlert /></span><b>{decide.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>تحتاج قراراً</small></button>
             <button type="button" role="tab" aria-selected={shownView === "capacity"} onClick={() => setView("capacity")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><GraduationCap /></span><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>أقل من 12 وحدة</small></button>
+            <button type="button" role="tab" aria-selected={shownView === "predict"} onClick={() => setView("predict")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><Sparkles /></span><b>تنبّؤ</b><small>الفصل القادم</small></button>
             {outcome && outcome.answers > 0 ? <button type="button" role="tab" aria-selected={shownView === "outcome"} onClick={() => setView("outcome")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><Ticket /></span><b>{(outcome.answered ?? outcome.answers).toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا بعد التسجيل</small></button> : null}
           </div>
-          {shownView !== "outcome" ? <div className="sm-scenario-tabs" role="tablist" aria-label="مصدر تحليل التسجيل">
+          {shownView !== "outcome" && shownView !== "predict" ? <div className="sm-scenario-tabs" role="tablist" aria-label="مصدر تحليل التسجيل">
             <button type="button" role="tab" aria-selected={scenario === "actual"} onClick={() => setScenario("actual")} data-guide-ignore="اختيار مصدر الرغبات داخل شاشة مرشد التسجيل">الرغبات الفعلية <small>{r.students.toLocaleString("ar-KW-u-nu-latn")}</small></button>
             <button type="button" role="tab" aria-selected={scenario === "projected"} onClick={() => setScenario("projected")} disabled={!r.projected} data-guide-ignore="اختيار التوقعات داخل شاشة مرشد التسجيل">التوقعات <small>{(r.projected?.students || 0).toLocaleString("ar-KW-u-nu-latn")}</small></button>
           </div> : null}
@@ -207,6 +202,8 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
 
           </> : null}
 
+          {shownView === "predict" ? <PredictiveInsightPanel canSchedule={canSchedule} onNavigate={onNavigate} onChanged={() => void load()} /> : null}
+
           {shownView === "outcome" && outcome ? <OutcomeBlock outcome={outcome} predictedStudents={r.students} /> : null}
 
           {shownView === "decide" ? <section className="sm-list">
@@ -235,70 +232,6 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
           </section> : null}
         </>
       )}
-    </div>
-  );
-}
-
-/**
- * اقتراحُ الجدول لمقرّرٍ يحتاج قراراً: يُقرأ من محرّك فتح الشعب نفسِه (الطلبُ ÷ السعة − المفتوح، موضوعاً في
- * أسبوعٍ حقيقيّ بلا تعارض)، ويُعتمد في الجدول الأصلي بضغطةٍ واحدة بعد التأكيد. لا يُقرأ شيءٌ حتى يُطلب.
- */
-function RadarSchedule({ course, termId, onChanged }: { course: CourseRow & { collegeId?: number; sectionId?: number }; termId: number; onChanged: () => void }) {
-  const [state, setState] = useState<"idle" | "loading" | "ready">("idle");
-  const [proposal, setProposal] = useState<any>(null);
-  const [message, setMessage] = useState("");
-  const read = async () => {
-    setState("loading"); setMessage("");
-    try {
-      const data = await request(`/api/schedules/demand?collegeId=${course.collegeId}&sectionId=${course.sectionId}&termId=${termId}`);
-      setProposal((data?.openings?.proposals || []).find((item: any) => Number(item.courseId) === course.courseId) || null);
-      setState("ready");
-    } catch (e: any) { setMessage(e.message || "تعذّرت قراءة الاقتراح."); setState("idle"); }
-  };
-  return (
-    <div className="sm-act">
-      {state === "idle" ? <SecondaryButton type="button" onClick={read} data-guide-ignore="يقرأ اقتراح فتح شعبة لهذا المقرر؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> ماذا لو فتحنا شعبة؟</SecondaryButton> : null}
-      {state === "loading" ? <small>يبحث عن وقتٍ خالٍ من التعارض…</small> : null}
-      {message ? <small className="sm-act-note">{message}</small> : null}
-      {state === "ready" && !proposal ? <small className="sm-act-note">لا يقترح المحرّك شعبةً لهذا المقرر الآن: إمّا أن الطلب لا يُنتج مقاعد ناقصة، أو لا وقتَ خالياً من التعارض. راجع الجدول في ورشة القسم.</small> : null}
-      {state === "ready" && proposal ? (
-        <div className="sm-act-list">
-          {proposal.simulationImpact ? (() => {
-            type Cap = { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number };
-            const impact = proposal.simulationImpact as { before?: Cap; after?: Cap; delta12: number; delta15: number; conflictsBefore: number; conflictsAfter: number };
-            const total = impact.after ? Object.values(impact.after).reduce((sum, n) => sum + Number(n || 0), 0) : 0;
-            const reach = (cap?: Cap) => (cap ? cap.canReach15 + cap.canReach12To14 : 0);
-            const nf = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
-            if (!total || impact.delta12 <= 0 && impact.delta15 <= 0 && impact.conflictsAfter >= impact.conflictsBefore) return null;
-            return (
-              <div className="sm-impact" aria-label="أثر فتح الشعبة">
-                <b><TrendingUp aria-hidden="true" /> أثر فتحها</b>
-                {([["قبل", reach(impact.before), "was"], ["بعد", reach(impact.after), "now"]] as const).map(([label, value, tone]) => (
-                  <div key={label} className="sm-ba"><span>{label}</span><div className="sm-ba-bar"><i className={tone} style={{ inlineSize: `${Math.min(100, (value / total) * 100)}%` }} /></div><em>{nf(value)}</em></div>
-                ))}
-                <small>طلبةٌ يبلغون 12 وحدة فأكثر من {nf(total)}{impact.conflictsAfter < impact.conflictsBefore ? ` · التعارضات ${nf(impact.conflictsBefore)} ← ${nf(impact.conflictsAfter)}` : ""}</small>
-              </div>
-            );
-          })() : null}
-          {(proposal.placements || []).map((slot: any) => slot.instructorId ? (
-            <ApplyProposal
-              key={slot.index}
-              compact
-              lines={[`شعبة ${slot.sectionCode} لـ«${course.name}» · ${slot.dayLabel} ${formatScheduleTimeRange(slot.start, slot.end)} · ${slot.roomCode}${slot.roomHall ? `/${slot.roomHall}` : ""} · ${slot.instructorName}`]}
-              why={`تخدم ${countOf(proposal.shortfall, AR.student)} بلا مقعدٍ في هذا المقرر.`}
-              preview={() => postWhatIf({ kind: "opening", collegeId: course.collegeId, sectionId: course.sectionId, termId, courseId: course.courseId, placement: slot })}
-              run={async () => {
-                const result = await postScheduleProposal({
-                  kind: "opening", collegeId: course.collegeId, sectionId: course.sectionId, termId, courseId: course.courseId, placement: slot,
-                  origin: { kind: "radar", refId: `course:${course.courseId}`, note: `فتح شعبة لـ«${course.name}» من رادار التسجيل` },
-                });
-                return { summary: `فُتحت شعبة ${result.applied[0].row.SCode} لـ«${course.name}» في الجدول`, amendment: Boolean(result.amendment) };
-              }}
-              onApplied={() => onChanged()}
-            />
-          ) : <small key={slot.index} className="sm-act-note">{slot.dayLabel} {formatScheduleTimeRange(slot.start, slot.end)}: لا أستاذَ خالياً — اختره من ورشة الجدول.</small>)}
-        </div>
-      ) : null}
     </div>
   );
 }

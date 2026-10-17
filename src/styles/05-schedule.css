@@ -1984,6 +1984,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
   align-items:end;gap:var(--s2);
   height:70px;margin-top:var(--s4);
+  /* Day labels are ::after boxes hung BELOW the bars (top:100%). The card is
+     overflow:hidden, so they were clipped whenever the card's own bottom
+     padding was shorter than the label. Reserve the room inside the chart. */
+  margin-bottom:18px;
   padding-top:var(--s3);border-top:1px solid var(--line);
 }
 .dna-bars i{
