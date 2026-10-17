@@ -795,7 +795,7 @@ async function main() {
     check(head.students === B.students + 2 && head.visits === B.visits + 55 && head.instructorOpens === B.instructorOpens + 1 && head.instructorOpenRate === 90, "الرصيد: headlineTotals = الرصيد + ما بعده، والنسبة حدٌّ أدنى 90", head);
     const kitPage = (await import("../src/server/adsPages")).partnerKitPage({ stats: stats as any, liveBySlot: {}, today: "2026-11-20", nonce: "N" });
     check(kitPage.includes("80,000+") && kitPage.includes("5,300,000+") && kitPage.includes("90%+"), "الرصيد: ملف الشراكة يعرض الأرقام نفسها (80,000+ و5,300,000+ و90%+)");
-    check(kitPage.includes("تقديراتٌ تقريبية"), "الرصيد: ملف الشراكة يذكر أن الإجماليات تقديراتٌ تقريبية من الإدارة في ذيله");
+    check(kitPage.includes("بحسب إدارة النظام حتى") && !kitPage.includes("تقديراتٌ تقريبية") && !kitPage.includes("الأرقام تقريبية"), "الرصيد: ملف الشراكة ينسب الإجماليات إلى إدارة النظام في ذيله (بلا وصفها بالتقدير)");
     const fp = (n: number, pre: string) => Array.from({ length: n }, (_, i) => nd(`${pre}${i}`, "2026-05-01"));
     const t1 = [...fp(20, "a"), ...fp(20, "b")], t2 = [...fp(20, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
     const cont = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }] as any[], currentTermId: 2, profiles: [], instructorRequests: [],

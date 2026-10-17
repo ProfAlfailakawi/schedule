@@ -146,7 +146,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
 
       <section className="pt-card pt-estimates" aria-label="الجمهور منذ البداية">
         <h3>الجمهور منذ {AUDIENCE_BASELINE.since}</h3>
-        <p className="pt-sub">تقديرات الإدارة حتى {sinceDate}، ويُضاف إليها ما يُقاس بعدها.</p>
+        <p className="pt-sub">بحسب إدارة النظام حتى {sinceDate}، ويُضاف إليها ما يُقاس بعدها.</p>
         <div className="pt-kpis">
           <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.students} /></b><span>إجمالي الطلبة المستفيدين</span>{grew(s.reach.newSinceBaseline)}</div>
           <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.visits} /></b><span>إجمالي دخول الطلبة</span>{grew(visits?.afterBaseline || 0)}</div>
@@ -285,7 +285,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <li><b>الاستمرارية:</b> نسبة طلبة فصلٍ ما (ببصمات الاستبيان) الذين أجابوا أيضاً في الفصل التالي له مباشرةً، وبعيّنةٍ لا تقل عن {countOf(CONTINUITY_MIN_STUDENTS, AR.student)}؛ دونها لا تظهر نسبة.</li>
           <li><b>أداء المواقع:</b> ظهورٌ ونقراتٌ صحيحة لكل موقع إعلاني، من حملاته كلها.</li>
           <li><b>الكليات:</b> مرتّبة بالحجم ومسمّاة بأرقام؛ لا تُكشف أسماؤها.</li>
-          <li><b>الجمهور منذ {AUDIENCE_BASELINE.since}:</b> أرقامٌ تقريبية تقدّرها إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ويُضاف إلى الطلبة المستفيدين وإلى مرّات الدخول ما يُقاس بعده؛ أما الطلبة الحاليون وأعضاء هيئة التدريس فتقديرٌ ثابت. ونسبة فتح البطاقات حدٌّ أدنى 90% يظهر المقيس إن زاد عليه.</li>
+          <li><b>الجمهور منذ {AUDIENCE_BASELINE.since}:</b> أرقامٌ بحسب إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ويُضاف إلى الطلبة المستفيدين وإلى مرّات الدخول ما يُقاس بعده؛ أما الطلبة الحاليون وأعضاء هيئة التدريس فرقمان ثابتان لا يتغيران بالقياس. ونسبة فتح البطاقات حدٌّ أدنى 90% يظهر المقيس إن زاد عليه.</li>
           <li>القياس يبدأ من يوم تفعيله ولا يرجع إلى الماضي؛ أما الاستبيان وبطاقات الأساتذة فمن سجلات التشغيل كاملة.</li>
         </ul>
       </details>
@@ -306,7 +306,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
         {hasVisits && visits!.peakDay ? <p className="pt-kit-line">أنشط أيام الأسبوع: <b>{visits!.peakDay}</b></p> : null}
         {s.demand.top.length ? <div className="pt-kit-block"><h3>ما يطلبه الطلبة هذا الفصل</h3><ol>{s.demand.top.slice(0, 5).map(d => <li key={d.name}>{d.name}</li>)}</ol></div> : null}
         {s.adsBySlot.length ? <div className="pt-kit-block"><h3>مواقع الإعلان</h3><ul>{s.adsBySlot.slice(0, 4).map(r => <li key={r.slot}>{r.label} · نسبة النقر <b>{pct(r.ctr)}</b></li>)}</ul></div> : null}
-        <footer>أرقامٌ مجمّعة ومجهولة، بلا اسمٍ ولا هوية. الإجماليات منذ {AUDIENCE_BASELINE.since} تقديراتٌ تقريبية من إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليها ما يُقاس بعدها.</footer>
+        <footer>أرقامٌ مجمّعة ومجهولة، بلا اسمٍ ولا هوية. الإجماليات منذ {AUDIENCE_BASELINE.since} بحسب إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليها ما يُقاس بعدها.</footer>
       </section>
     </div>
   );
