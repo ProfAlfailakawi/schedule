@@ -242,6 +242,10 @@
 .ad-lead{margin:0;color:var(--muted);line-height:1.9}
 .ad-field{display:grid;gap:7px;font-size:13.5px;font-weight:600}
 .ad-field small,.ad-lab small{font-weight:400;color:var(--muted)}
+.ad-field{min-inline-size:0}
+.ad-field input,.ad-field select{inline-size:100%;min-inline-size:0}
+.ad-flab{display:block;line-height:1.7}.ad-flab small{display:block}
+.ad-grid2>.ad-field{grid-template-rows:1fr auto}
 .ad-field input,.ad-field select,.ad-dates input{min-block-size:44px;border-radius:12px;border:1px solid var(--line-strong,var(--line));background:var(--surface);color:var(--ink);padding:6px 12px;font:inherit;font-weight:400}
 .ad-field input:focus,.ad-dates input:focus{border-color:var(--accent);box-shadow:var(--ring);outline:0}
 .ad-field-big input{font-size:20px;font-weight:700;min-block-size:54px}

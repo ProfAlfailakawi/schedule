@@ -193,9 +193,9 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
             </label>
             <details className="ad-more"><summary>خياراتٌ إضافية: كود خصم وملاحظة وبريد</summary>
               <div className="ad-grid2">
-                <label className="ad-field">كود الخصم <small>(يظهر تحت الإعلان ويقيس التحويل)</small><input dir="ltr" maxLength={24} value={form.coupon} onChange={e => set("coupon", e.target.value)} /></label>
-                <label className="ad-field">ملاحظة داخلية<input maxLength={300} value={form.note} onChange={e => set("note", e.target.value)} /></label>
-                <label className="ad-field">بريد الشركة <small>(اختياري: للتقرير الأسبوعي وتذكير التجديد إن فُعّل البريد)</small><input dir="ltr" type="email" maxLength={120} value={form.contactEmail} onChange={e => set("contactEmail", e.target.value)} /></label>
+                <label className="ad-field"><span className="ad-flab">كود الخصم <small>(يظهر تحت الإعلان ويقيس التحويل)</small></span><input dir="ltr" maxLength={24} value={form.coupon} onChange={e => set("coupon", e.target.value)} /></label>
+                <label className="ad-field"><span className="ad-flab">ملاحظة داخلية</span><input maxLength={300} value={form.note} onChange={e => set("note", e.target.value)} /></label>
+                <label className="ad-field"><span className="ad-flab">بريد الشركة <small>(اختياري: للتقرير الأسبوعي وتذكير التجديد إن فُعّل البريد)</small></span><input dir="ltr" type="email" maxLength={120} value={form.contactEmail} onChange={e => set("contactEmail", e.target.value)} /></label>
               </div>
             </details>
           </section>
