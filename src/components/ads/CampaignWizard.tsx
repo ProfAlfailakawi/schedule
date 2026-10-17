@@ -89,7 +89,13 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
   const goto = (n: number) => { if (n <= step || (n === 3 && savedId) || (n === 4 && savedId)) { setErr([]); setStep(n); } };
 
   const quick = (days: number, trial = false) => setForm(f => ({ ...f, endDay: addDay(f.startDay || data.today, days - 1), trial }));
+  /* كل خروجٍ أو اعتماد يحفظ النموذج الحالي أولاً؛ وإلا بقيت القيم القديمة في الخادم رغم ما يراه المدير. */
+  const persist = async (): Promise<boolean> => {
+    if (stepOneProblems.length) { setStep(1); setErr(stepOneProblems); return false; }
+    return save();
+  };
   const finish = async (approve: boolean) => {
+    if (!(await persist())) return;
     if (!approve) { onClose(); return; }
     await act(`ap-${savedId}`, async () => {
       await api(`/api/admin/ads/campaigns/${savedId}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve", rulesAccepted: true }) });
@@ -232,7 +238,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
         <span className="ad-spacer" />
         {step < 4 ? (
           <>
-            {savedId ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={onClose}>حفظ وإغلاق</button> : null}
+            {savedId ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" disabled={saving} onClick={() => void finish(false)}>حفظ وإغلاق</button> : null}
             <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-primary" disabled={saving} onClick={() => void next()}>{saving ? "يحفظ…" : step === 2 ? "حفظ والمتابعة إلى الصورة" : "التالي"} <ChevronLeft aria-hidden="true" size={15} /></button>
           </>
         ) : (
