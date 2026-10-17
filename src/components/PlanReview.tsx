@@ -9,12 +9,13 @@
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
+import PlanMapLines, { planEdges } from "./PlanMapLines";
 import { arabicMatchKey } from "../utils/arabicText";
 /* اسمُ القسم في القائمة يحمل كليته («قسم تكنولوجيا التعليم · التربية الأساسية - بنات»): يُطابَق بالاحتواء. */
 const isTechnologyEducation = (label: string) => arabicMatchKey(label).includes(arabicMatchKey("تكنولوجيا التعليم"));
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, ChevronDown, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, courseLevelFromCode, dependentsOf, describePrereq } from "../utils/curriculumRules";
@@ -133,7 +134,8 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [expandedLevels, setExpandedLevels] = useState<number[]>([]);
+  const [focus, setFocus] = useState(0);
+  const mapRef = useRef<HTMLDivElement | null>(null);
   const [confirmApprove, setConfirmApprove] = useState(false);
 
   const loadStatus = useCallback(async () => {
@@ -156,9 +158,8 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
 
   useEffect(() => {
     if (!planId || !sectionId) { setView(null); return; }
-    setExpandedLevels([]);
     let live = true;
-    setView(null); setSelected(0);
+    setView(null); setSelected(0); setFocus(0);
     request(`/api/plan-review/plan?planId=${encodeURIComponent(planId)}&sectionId=${sectionId}`)
       .then(next => { if (live) { setView(next); setError(""); } })
       .catch(e => { if (live) setError(e.message); });
@@ -204,28 +205,32 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
 
   const levels = useMemo(() => view ? byLevel(view.courses.map(c => c.id), view.rules, new Map(view.courses.map(c => [c.id, c.code]))) : new Map<number, number[]>(), [view]);
   const upstream = useMemo(() => {
-    if (!view || !selected) return new Set<number>();
+    if (!view || !focus) return new Set<number>();
     const out = new Set<number>();
     const walk = (id: number) => {
       const p = view.rules.find(r => r.courseId === id)?.prereq;
       if (!p) return;
       [...p.all, ...p.anyOf.flat()].forEach(x => { if (!out.has(x)) { out.add(x); walk(x); } });
     };
-    walk(selected);
+    walk(focus);
     return out;
-  }, [view, selected]);
+  }, [view, focus]);
   const downstream = useMemo(() => {
-    if (!view || !selected) return new Set<number>();
+    if (!view || !focus) return new Set<number>();
     const out = new Set<number>();
     const walk = (id: number) => dependentsOf(view.rules, id).forEach(x => { if (!out.has(x)) { out.add(x); walk(x); } });
-    walk(selected);
+    walk(focus);
     return out;
-  }, [view, selected]);
+  }, [view, focus]);
+  const edges = useMemo(() => view ? planEdges(view.rules, new Set(view.courses.map(c => c.id))) : [], [view]);
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
   const isTechSection = isTechnologyEducation(status?.sections.find(s => s.sectionId === sectionId)?.sectionName || "");
   const sel = view?.courses.find(c => c.id === selected);
+  const focusCourse = view?.courses.find(c => c.id === focus);
+  const focusRule = focusCourse ? ruleOf(focusCourse.id) : undefined;
+  const focusOpens = focusCourse && view ? dependentsOf(view.rules, focusCourse.id) : [];
 
   return (
     <div className="pr-page" dir="rtl">
@@ -292,7 +297,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
               {view.issues.length ? (
                 <ul className="pr-issues">
                   {view.issues.map((i, k) => (
-                    <li key={k} className={i.severity} onClick={() => i.courseId && setSelected(i.courseId)}>
+                    <li key={k} className={i.severity} onClick={() => { if (i.courseId) { setFocus(i.courseId); setSelected(i.courseId); } }}>
                       <AlertTriangle size={14} /> {i.text}
                     </li>
                   ))}
@@ -310,27 +315,43 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 </div>
               </section>
 
-              <div className="pr-map" aria-label="خريطة المستويات">
+              <div className="pr-map" ref={mapRef} aria-label="خريطة المستويات">
                 {[...levels.entries()].map(([level, ids]) => (
                   <section key={level} className="pr-col">
-                    <button type="button" className="pr-level-head" aria-expanded={expandedLevels.includes(level)} data-guide-ignore="فتح مجموعة مستوى الصحيفة وعرض مقرراتها" onClick={() => setExpandedLevels(current => current.includes(level) ? current.filter(item => item !== level) : [...current, level])}>
-                      <span className="pr-level-head-icon"><GraduationCap size={16} aria-hidden="true" /></span><span><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)} · {countOf(ids.reduce((sum, id) => sum + (view.courses.find(course => course.id === id)?.credit || 0), 0), AR.unit)}</small></span><ChevronDown size={16} aria-hidden="true" />
-                    </button>
-                    {expandedLevels.includes(level) ? ids.map(id => {
+                    <div className="pr-level-head">
+                      <span className="pr-level-head-icon"><GraduationCap size={16} aria-hidden="true" /></span><span><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)} · {countOf(ids.reduce((sum, id) => sum + (view.courses.find(course => course.id === id)?.credit || 0), 0), AR.unit)}</small></span>
+                    </div>
+                    {ids.map(id => {
                       const c = view.courses.find(x => x.id === id)!;
                       const rule = ruleOf(id);
-                      const cls = ["pr-card", `k-${KIND_TONE[rule?.kind || "none"]}`, selected === id ? "sel" : "", upstream.has(id) ? "up" : "", downstream.has(id) ? "down" : "", c.owned ? "" : "lock"].join(" ");
+                      const opens = dependentsOf(view.rules, id).length;
+                      const cls = ["pr-card", `k-${KIND_TONE[rule?.kind || "none"]}`, focus === id ? "sel" : "", upstream.has(id) ? "up" : "", downstream.has(id) ? "down" : "", focus && focus !== id && !upstream.has(id) && !downstream.has(id) ? "dim" : "", c.owned ? "" : "lock"].join(" ");
                       return (
-                        <button key={id} type="button" className={cls} onClick={() => setSelected(selected === id ? 0 : id)} data-guide-ignore="بطاقةُ مقررٍ داخل خريطة شاشةٍ مسجّلة في المرشد باسم page.planReview">
+                        <button key={id} type="button" data-cid={id} aria-pressed={focus === id} className={cls} onClick={() => setFocus(focus === id ? 0 : id)} data-guide-ignore="بطاقةُ مقررٍ داخل خريطة شاشةٍ مسجّلة في المرشد باسم page.planReview">
                           <b>{c.code}</b><span>{c.name}</span>
                           {c.external ? <em className="pr-ext" title={`مقرر عام يملكه ${c.ownerSectionName || "قسمٌ آخر"}`}>عام</em> : null}
-                          <i>{countOf(c.credit, AR.unit)}{rule?.prereq ? " · " : ""}{rule?.prereq ? <Link2 size={11} /> : null}{c.owned ? null : <Lock size={11} />}</i>
+                          <i>{countOf(c.credit, AR.unit)}{rule?.prereq ? " · " : ""}{rule?.prereq ? <Link2 size={11} /> : null}{opens ? <> · يفتح {opens.toLocaleString("ar-KW-u-nu-latn")}</> : null}{c.owned ? null : <Lock size={11} />}</i>
                         </button>
                       );
-                    }) : null}
+                    })}
                   </section>
                 ))}
+                <PlanMapLines mapRef={mapRef} edges={edges} focus={focus} up={upstream} down={downstream} layoutKey={`${view.courses.length}:${levels.size}`} />
               </div>
+
+              {focusCourse ? (
+                <section className="pr-focus" aria-live="polite">
+                  <div className="pr-focus-head">
+                    <div><b><bdi dir="ltr">{focusCourse.code}</bdi> · {focusCourse.name}</b><small>{focusRule?.kind ? KIND_LABEL[focusRule.kind] : "بلا نوع"} · {countOf(focusCourse.credit, AR.unit)}</small></div>
+                    <div className="pr-focus-actions">
+                      <SecondaryButton onClick={() => setSelected(focusCourse.id)} data-guide-ignore="فتح محرّر قواعد المقرر من لوحة الخريطة">{view.can.edit && focusCourse.owned ? "تعديل القواعد" : "عرض التفاصيل"}</SecondaryButton>
+                      <button type="button" className="pr-focus-x" aria-label="إلغاء التحديد" onClick={() => setFocus(0)} data-guide-ignore="إلغاء تحديد المقرر في الخريطة"><X size={14} /></button>
+                    </div>
+                  </div>
+                  <p><em>يتطلب</em> {focusRule?.prereq ? describePrereq(focusRule.prereq, nameOf) : "لا شيء — مقرر مفتوح من البداية"}</p>
+                  <p><em>يفتح</em> {focusOpens.length ? focusOpens.map(nameOf).join("، ") : "لا يتطلبه مقرر آخر"}</p>
+                </section>
+              ) : null}
 
               {sel ? <CourseEditor key={sel.id} course={sel} rule={ruleOf(sel.id)} view={view} nameOf={nameOf} busy={busy} onClose={() => setSelected(0)}
                 onSaveCourse={values => saveCourseDetails(sel, values)}
