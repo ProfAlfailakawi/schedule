@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Brain, ClipboardList, Layers, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
+import { Brain, CheckCircle2, AlertTriangle, DoorOpen, UserCheck, FileDown, ClipboardList, Layers, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ScheduleOrigin } from "../types";
 
 /**
@@ -18,7 +18,11 @@ interface EventRow { at: string; who: string; action: string; what: string }
 const stamp = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toLocaleString("ar-KW-u-nu-latn", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""; };
 const iconOf = (action: string) => /إضافة/.test(action) ? <Plus aria-hidden="true" /> : /حذف/.test(action) ? <Trash2 aria-hidden="true" /> : <Pencil aria-hidden="true" />;
 
-export default function RowHistory({ rowId, origin }: { key?: React.Key; rowId: number; origin?: ScheduleOrigin | null }) {
+/** حقائقُ محسوبة من سياق الموعد نفسه (لا تخزين جديد): تُعرض رقائقَ موجزة بدل جملةٍ طويلة. */
+export interface RowFact { tone: "good" | "warn"; kind: "room" | "instructor" | "clear" | "conflict"; label: string }
+const FACT_ICON = { room: <DoorOpen aria-hidden="true" />, instructor: <UserCheck aria-hidden="true" />, clear: <CheckCircle2 aria-hidden="true" />, conflict: <AlertTriangle aria-hidden="true" /> };
+
+export default function RowHistory({ rowId, origin, facts = [] }: { key?: React.Key; rowId: number; origin?: ScheduleOrigin | null; facts?: RowFact[] }) {
   const [state, setState] = useState<"idle" | "loading" | "open" | "failed">("idle");
   const [events, setEvents] = useState<EventRow[]>([]);
   const [more, setMore] = useState(false);
@@ -41,6 +45,7 @@ export default function RowHistory({ rowId, origin }: { key?: React.Key; rowId: 
           <History aria-hidden="true" /> {state === "loading" ? "…" : "لماذا؟"}
         </button>
       </div>
+      {facts.length ? <div className="rh-facts">{facts.map((f, i) => <span key={i} className={`rh-chip is-${f.tone}`}>{FACT_ICON[f.kind]}{f.label}</span>)}</div> : null}
       {origin?.note ? <small className="rh-note">{origin.note}</small> : null}
       {state === "failed" ? <small className="rh-fail">تعذّرت قراءة السجلّ.</small> : null}
       {state === "open" ? (
@@ -49,7 +54,7 @@ export default function RowHistory({ rowId, origin }: { key?: React.Key; rowId: 
             {events.map((event, i) => <li key={i}><span className="rh-dot">{iconOf(event.action)}</span><div><b>{event.what || event.action}</b><small>{event.who} · {stamp(event.at)}</small></div></li>)}
             {more ? <li className="rh-more">وأقدم من ذلك…</li> : null}
           </ol>
-        ) : <small className="rh-note">لا سجلَّ مكتوباً لهذا الموعد (قبل بدء تسجيل التغييرات، أو أُدخل بالاستيراد).</small>
+        ) : <span className="rh-chip is-muted" title="لا سجلّ تغييرات لهذا الموعد؛ أُدخل قبل بدء التسجيل أو بالاستيراد"><FileDown aria-hidden="true" />مستورد · بلا سجل</span>
       ) : null}
     </div>
   );

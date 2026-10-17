@@ -31,7 +31,7 @@
     "test:demo-radar": "tsx tests/demo-radar-audit.ts",
     "test:term-forecast": "tsx tests/term-forecast-audit.ts",
     "test:public-kit": "tsx tests/public-kit-audit.ts",
-    "test:room-occupancy": "tsx tests/room-occupancy-audit.ts",
+    "test:room-occupancy": "tsx tests/room-occupancy-audit.ts && tsx tests/instructor-request-room-universe-audit.ts",
     "test:behavior": "tsx tests/run-tests.ts",
     "test:shared-scope": "tsx tests/shared-scope-audit.ts",
     "test:student-journey": "tsx tests/student-journey-audit.ts",

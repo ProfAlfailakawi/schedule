@@ -141,6 +141,8 @@ export interface VerdictContext {
   placeholderInstructorIds?: Iterable<number>;
   /** القاعات المعروفة في هذا النطاق، بمفاتيح هويّتها. */
   knownRoomKeys?: string[];
+  /** مفتاحُ كل قاعةٍ مسجّلة (id:…) ← مفتاحُها النصيّ (legacy:…): صفوفٌ مستوردةٌ تشغلها بالنص فقط. */
+  roomAliases?: Record<string, string>;
   /** سُلّمُ البدايات الذي يدرّس به القسم فعلاً. حين يغيب لا تُقترح أوقات. */
   startLadder?: string[];
   nature?: Map<number, CourseNature> | null;
@@ -218,12 +220,14 @@ export function rowFromRequest(request: RequestedRow, base: Partial<FSchedule>):
  * ويُحترم الفاصلُ المقرَّر بين محاضرتين: قاعةٌ تنتهي محاضرتُها الساعةَ التاسعة
  * ليست حرّةً في التاسعة تماماً — بينهما عشرُ دقائق أو ربعُ ساعةٍ بحسب اليوم.
  */
-function roomFree(roomKey: string, days: DayKey[], start: string, end: string, rows: FSchedule[], ignoreRowId: number | null): boolean {
+function roomFree(roomKey: string, days: DayKey[], start: string, end: string, rows: FSchedule[], ignoreRowId: number | null, aliases?: Record<string, string>): boolean {
+  const alias = aliases?.[roomKey];
   const gap = requiredGapForDays(days);
   const from = toMinutes(start), to = toMinutes(end);
   for (const row of rows) {
     if (ignoreRowId != null && Number(row.id) === ignoreRowId) continue;
-    if (roomIdentityKey(row) !== roomKey) continue;
+    const occupant = roomIdentityKey(row);
+    if (occupant !== roomKey && !(alias && occupant === alias)) continue;
     if (!days.some(day => Boolean((row as any)[day]))) continue;
     const otherFrom = toMinutes(row.fstarttime), otherTo = toMinutes(row.fendtime);
     if (from < otherTo + gap && otherFrom < to + gap) return false;
@@ -283,7 +287,7 @@ function nearestFree(request: RequestedRow, context: VerdictContext, roomKeys: s
     const end = endForRequest(days, start, request.blockMinutes);
     if (!end || toMinutes(end) > SCHEDULE_DAY_END) continue;
     if (!instructorFree(context.instructorId, days, start, end, week, identity)) continue;
-    if (roomKeys.length && !roomKeys.some(roomKey => roomFree(roomKey, days, start, end, week, identity))) continue;
+    if (roomKeys.length && !roomKeys.some(roomKey => roomFree(roomKey, days, start, end, week, identity, context.roomAliases))) continue;
     if (cohortClash(request.AdCourseId, days, start, end, week, context.cohortPairs, identity)) continue;
     found.push({ day: days[0], days, dayLabel: days.map(dayLabel).join(" · "), start, end, distance: Math.abs(minutes - current) });
   }
@@ -541,7 +545,7 @@ export function judgeRequest(inbound: RequestedRow, context: VerdictContext): Re
 
   /* ── القاعة ───────────────────────────────────────────────────────────── */
   const roomKeys = (context.knownRoomKeys || []).filter(Boolean);
-  const candidates = roomKeys.filter(key => roomFree(key, request.days, request.start, computedEnd, week, identity));
+  const candidates = roomKeys.filter(key => roomFree(key, request.days, request.start, computedEnd, week, identity, context.roomAliases));
   const roomAvailable = roomKeys.length ? candidates.length > 0 : null;
   if (roomAvailable === false) {
     reasons.push({ source: "room", text: "لا تتوفّر قاعةٌ في هذا الوقت.", blocking: true });
