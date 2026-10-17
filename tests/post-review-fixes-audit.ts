@@ -26,5 +26,10 @@ check(/const termClosed = await termShutOf\(world, Number\(proposal\.AdTermId\)\
 
 check(/hallByKey/.test(server) && /const registered = rules\.hallByKey\.get\(key\);/.test(server), "خياراتُ القاعة السريعة تُحلّ من سجلّ القاعات أولاً");
 
+const ads = read("src/server/adsRoutes.ts");
+check(/process\.once\(signal, \(\) => \{[\s\S]{0,400}process\.exit\(/.test(ads), "مستمع SIGTERM/SIGINT في الإعلانات ينهي العملية بعد التفريغ (وإلا بقي الخادم حياً بعد الإيقاف)");
+const ci = fs.readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+check(/pkill -9 -f "\[t\]sx server\.ts"/.test(ci) && /pkill -9 -f "\[s\]erver\.ts"/.test(ci), "خطوة CI تغلق الخوادم المتبقية بـSIGKILL");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

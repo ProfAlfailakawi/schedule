@@ -324,7 +324,14 @@ async function audienceInputs(requestedTermId: number) {
 export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
   const timer = setInterval(() => { sweepLimiters(); void flushAdsCounters(); }, 30_000);
   timer.unref?.();
-  for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => { void flushAdsCounters(); });
+  /* تسجيل مستمعٍ لـSIGTERM/SIGINT يُلغي إنهاء Node الافتراضي: كان المستمع يفرّغ العدّادات ولا ينهي العملية، فيبقى الخادم حيّاً
+     بعد إيقافه (Ctrl-C، وإيقاف المنصة، وخوادم الاختبارات اليتيمة على المنفذ 3000). نفرّغ ثم ننهي، بمهلة تحمي من تعليق الكتابة. */
+  for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => {
+    const finish = () => process.exit(signal === "SIGINT" ? 130 : 0);
+    const guard = setTimeout(finish, 4_000);
+    guard.unref?.();
+    flushAdsCounters().catch(() => { /* الإنهاءُ أهمّ من العدّاد */ }).finally(() => { clearTimeout(guard); finish(); });
+  });
 
   /* ── العامة ── */
   app.get("/_ads/ad.js", (_req, res) => {
