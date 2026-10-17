@@ -797,10 +797,16 @@ async function main() {
     check(kitPage.includes("60,000+") && kitPage.includes("5,300,000+") && kitPage.includes("90%+"), "الرصيد: ملف الشراكة يعرض الأرقام نفسها (60,000+ و5,300,000+ و90%+)");
     check(kitPage.includes("رصيداً افتتاحياً"), "الرصيد: ملف الشراكة يذكر الرصيد الافتتاحي في ذيله");
     const fp = (n: number, pre: string) => Array.from({ length: n }, (_, i) => nd(`${pre}${i}`, "2026-05-01"));
-    const t1 = [...fp(10, "a"), ...fp(10, "b")], t2 = [...fp(10, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
+    const t1 = [...fp(20, "a"), ...fp(20, "b")], t2 = [...fp(20, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
     const cont = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }] as any[], currentTermId: 2, profiles: [], instructorRequests: [],
       needsByTerm: new Map([[1, t1 as any[]], [2, t2 as any[]]]) });
-    check(cont.continuity.length === 1 && cont.continuity[0].before === 20 && cont.continuity[0].stayed === 10 && cont.continuity[0].rate === 50, "الاستمرارية: 10 من 20 = 50% بين فصلين", cont.continuity);
+    check(cont.continuity.length === 1 && cont.continuity[0].before === 40 && cont.continuity[0].stayed === 20 && cont.continuity[0].rate === 50, "الاستمرارية: 20 من 40 = 50% بين فصلين متتاليين", cont.continuity);
+    const tiny = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }] as any[], currentTermId: 2, profiles: [], instructorRequests: [],
+      needsByTerm: new Map([[1, fp(10, "a") as any[]], [2, fp(10, "a").map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" })) as any[]]]) });
+    check(tiny.continuity.length === 0, "الاستمرارية: عيّنة أقل من 30 طالباً لا تُنتج نسبة (لا 0% من طالبٍ واحد)", tiny.continuity);
+    const gap = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }, { AdTermId: 3, AdTermName: "صيف" }] as any[], currentTermId: 3, profiles: [], instructorRequests: [],
+      needsByTerm: new Map([[1, fp(40, "a") as any[]], [3, fp(40, "a").map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" })) as any[]]]) });
+    check(gap.continuity.length === 0, "الاستمرارية: فصلٌ بلا إجابات بينهما يقطع التتالي فلا تُقارَن فصلان غير متتاليين", gap.continuity);
     const adSlotStats = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [], currentTermId: 0, needsByTerm: new Map(), profiles: [], instructorRequests: [],
       campaigns: [{ id: "c1", slot: "me", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }, { id: "c2", slot: "schedule", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }] as any[],
       adStats: [{ id: "1", campaignId: "c1", creativeId: "x", day: "2026-10-05", impressions: 1000, uniques: 500, clicks: 30, filteredClicks: 0 }, { id: "2", campaignId: "c2", creativeId: "x", day: "2026-10-05", impressions: 400, uniques: 300, clicks: 4, filteredClicks: 0 }, { id: "3", campaignId: "gone", creativeId: "x", day: "2026-10-05", impressions: 99, uniques: 9, clicks: 9, filteredClicks: 0 }] as any[] });

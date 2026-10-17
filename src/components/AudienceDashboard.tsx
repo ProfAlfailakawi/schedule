@@ -6,10 +6,10 @@
  * يملأ الشاشة. كل رقمٍ تقديري يشرح طريقته في «كيف نحسب؟».
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Expand, Megaphone, Minimize, Printer, RefreshCw } from "lucide-react";
+import { Expand, Megaphone, Minimize } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton, PrimaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
-import { headlineTotals, type AudienceStats } from "../utils/audienceStats";
+import { CONTINUITY_MIN_STUDENTS, headlineTotals, type AudienceStats } from "../utils/audienceStats";
 import { AUDIENCE_BASELINE } from "../utils/audienceBaseline";
 
 type Payload = AudienceStats & { termChoices: Array<{ id: number; name: string }> };
@@ -74,26 +74,23 @@ const SOURCE_LABEL: Record<string, string> = { me: "«مساري»", schedule: "
 export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState("");
-  const [termId, setTermId] = useState(0);
   const [stage, setStage] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [stamp, setStamp] = useState<Date | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setBusy(true);
+  /* لا اختيار فصل ولا زر تحديث: اللوحة للعرض العام وتتجدد وحدها كل دقيقة، والفصل هو الجاري. */
+  const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/admin/audience-stats${termId ? `?termId=${termId}` : ""}`, { credentials: "include" });
+      const res = await fetch("/api/admin/audience-stats", { credentials: "include" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "تعذّر تحميل الأرقام.");
       setData(body); setError(""); setStamp(new Date());
     } catch (e: any) { setError(String(e?.message || e)); }
-    finally { setBusy(false); }
-  }, [termId]);
+  }, []);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const id = window.setInterval(() => { if (!document.hidden) void load(true); }, 60_000);
+    const id = window.setInterval(() => { if (!document.hidden) void load(); }, 60_000);
     return () => window.clearInterval(id);
   }, [load]);
   useEffect(() => {
@@ -130,11 +127,6 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
         subtitle="أرقام الجمهور مجمّعة ومجهولة؛ مناسبة للعرض على الشركات."
         action={
           <div className="pt-tools">
-            <select aria-label="الفصل" value={s.term?.id || 0} onChange={e => setTermId(Number(e.target.value))} className="pt-hide-in-stage">
-              {s.termChoices.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <SecondaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => void load()} disabled={busy} aria-label="تحديث الآن"><RefreshCw aria-hidden="true" size={16} /> تحديث</SecondaryButton>
-            <SecondaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => window.print()}><Printer aria-hidden="true" size={16} /> طباعة ملف الجمهور</SecondaryButton>
             <PrimaryButton data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" onClick={() => void toggleStage()}>{document.fullscreenElement || stage ? <Minimize aria-hidden="true" size={16} /> : <Expand aria-hidden="true" size={16} />} وضع العرض</PrimaryButton>
           </div>
         }
@@ -220,7 +212,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           </div>
           {s.continuity.length > 1 ? <div style={{ marginTop: 14 }}><Bars label="نسبة الاستمرارية بين الفصول" points={s.continuity.slice(0, 8).map(p => ({ key: p.toTerm, value: p.rate, tip: `${p.fromTerm} ← ${p.toTerm} · ${pct(p.rate)} (${fmt(p.stayed)} من ${fmt(p.before)})` }))} /></div> : null}
           <p className="pt-note">من بصمات الاستبيان وحدها، فلا تشمل من لم يُجب. إن كان الفصل الأخير لم يكتمل فقد ترتفع نسبته.</p>
-        </> : <div className="pt-empty">تظهر حين يتوفر فصلان فيهما إجابات.</div>}
+        </> : <div className="pt-empty">تظهر حين يتوفر فصلان متتاليان وعيّنة كافية من الإجابات.</div>}
       </section>
 
       <section className="pt-card">
@@ -278,7 +270,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <li><b>الطلبة المؤكَّدون:</b> الأكبر من عدد الطلبة الفريدين في الاستبيان وعدد ملفات «مساري». نعرف الطالب ببصمةٍ مشفّرة لا باسمه، فلا يُعدّ مرتين.</li>
           <li><b>الزيارات:</b> إشارةٌ مجهولة واحدة لكل متصفحٍ في اليوم لكل نوع صفحة. تقدير؛ فمن يمسح بيانات متصفحه قد يُعدّ مرتين، ومن يمنع التخزين يُعدّ كل مرة.</li>
           <li><b>العائدون والجوال:</b> من الإشارة نفسها؛ لا تُحفظ أي هوية أو عنوان.</li>
-          <li><b>الاستمرارية:</b> نسبة طلبة فصلٍ ما (ببصمات الاستبيان) الذين أجابوا أيضاً في الفصل التالي له.</li>
+          <li><b>الاستمرارية:</b> نسبة طلبة فصلٍ ما (ببصمات الاستبيان) الذين أجابوا أيضاً في الفصل التالي له مباشرةً، وبعيّنةٍ لا تقل عن {countOf(CONTINUITY_MIN_STUDENTS, AR.student)}؛ دونها لا تظهر نسبة.</li>
           <li><b>أداء المواقع:</b> ظهورٌ ونقراتٌ صحيحة لكل موقع إعلاني، من حملاته كلها.</li>
           <li><b>الكليات:</b> مرتّبة بالحجم ومسمّاة بأرقام؛ لا تُكشف أسماؤها.</li>
           <li><b>منذ {AUDIENCE_BASELINE.since}:</b> «الطلبة» و«الزيارات» ومرّات فتح بطاقات الأساتذة الإجمالية تشمل رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه ما يُقاس بعده (طلبة ظهروا لأول مرة، وزيارات، وبطاقات فُتحت). أما نسبة فتح البطاقات فحدٌّ أدنى 90%، ويظهر المقيس إن زاد عليه.</li>
