@@ -17,13 +17,13 @@
 .pt-hero p{margin:0;color:var(--muted);max-inline-size:62ch}
 .pt-eyebrow{font-size:12px;letter-spacing:.14em;color:var(--muted)}
 
-.pt-kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
-.pt-kpi{position:relative;border:1px solid var(--line);border-radius:22px;background:var(--surface);padding:18px 20px;box-shadow:var(--shadow-sm);overflow:hidden}
-.pt-kpi::after{content:"";position:absolute;inset-inline-end:-30px;inset-block-start:-30px;inline-size:110px;block-size:110px;border-radius:50%;background:var(--accent-soft);opacity:.7}
-.pt-kpi b{position:relative;display:block;font-size:clamp(30px,5vw,46px);line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.pt-kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+.pt-kpi{position:relative;border:1px solid var(--line);border-radius:22px;background:var(--surface);padding:18px 20px;box-shadow:var(--shadow-sm);overflow:hidden;container-type:inline-size}
+.pt-kpi::after{content:"";position:absolute;inset-inline-end:-30px;inset-block-start:-30px;inline-size:110px;block-size:110px;border-radius:50%;background:var(--accent-soft);opacity:.7;z-index:0}
+.pt-kpi b{position:relative;z-index:1;display:block;font-size:clamp(20px,10cqi,44px);white-space:nowrap;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .pt-kpi b .pt-more{display:block;font-size:13px;font-weight:600;font-style:normal;letter-spacing:0;color:var(--muted,#6b7280);margin-bottom:2px}
-.pt-kpi span{position:relative;display:block;margin-top:4px;font-weight:600}
-.pt-kpi small{position:relative;display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.pt-kpi span{position:relative;z-index:1;display:block;margin-top:4px;font-weight:600}
+.pt-kpi small{position:relative;z-index:1;display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
 
 .pt-grid2{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr))}
 .pt-card{border:1px solid var(--line);border-radius:22px;background:var(--surface);padding:18px 20px;box-shadow:var(--shadow-sm);min-inline-size:0}
@@ -64,7 +64,34 @@
 /* وضع العرض: يملأ الشاشة ويخفي الأدوات */
 .pt-stage{background:var(--canvas);padding:clamp(16px,3vw,40px);overflow:auto}
 .pt-stage .pt-tools .pt-hide-in-stage{display:none}
-.pt-stage .pt-kpi b{font-size:clamp(38px,6vw,64px)}
+.pt-stage .pt-kpi b{font-size:clamp(20px,10cqi,56px)}
+.pt-slots{display:grid;gap:6px;font-size:13.5px}
+.pt-slots>div{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 1fr 70px;gap:10px;align-items:center;padding:6px 0;border-block-end:1px solid var(--line)}
+.pt-slots b,.pt-slots span+span{font-variant-numeric:tabular-nums;text-align:end}
+.pt-slots-head{color:var(--muted);font-size:12px}
+/* ملف الجمهور للطباعة: صفحةٌ واحدة تظهر عند الطباعة وحدها، وكل ما عداها يختفي */
+.pt-kit{display:none}
+@media print{
+  @page{size:A4 portrait;margin:14mm}
+  .pt-page>*:not(.pt-kit){display:none!important}
+  .pt-page.pt-stage{padding:0;overflow:visible}
+  .pt-kit{display:block!important;color:#111;font-size:12.5pt;line-height:1.7}
+  .pt-kit header{border-block-end:3px solid var(--accent);padding-block-end:10pt;margin-block-end:16pt}
+  .pt-kit .pt-kit-brand{display:block;color:var(--accent);font-weight:700;font-size:10pt;letter-spacing:.04em}
+  .pt-kit h2{margin:4pt 0 2pt;font-size:24pt}
+  .pt-kit header small{color:#555}
+  .pt-kit-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10pt;margin-block-end:14pt}
+  .pt-kit-kpis>div{border:1px solid #cfd8d6;border-radius:10pt;padding:10pt 12pt;break-inside:avoid}
+  .pt-kit-kpis b{display:block;font-size:24pt;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .pt-kit-kpis b em{display:block;font-style:normal;font-size:9.5pt;font-weight:600;color:#555}
+  .pt-kit-kpis span{color:#333;font-size:11pt}
+  .pt-kit-line{margin:6pt 0}
+  .pt-kit-block{margin-block-start:12pt;break-inside:avoid}
+  .pt-kit-block h3{margin:0 0 4pt;font-size:13pt;color:var(--accent)}
+  .pt-kit-block ol,.pt-kit-block ul{margin:0;padding-inline-start:18pt}
+  .pt-kit footer{margin-block-start:18pt;padding-block-start:8pt;border-block-start:1px solid #cfd8d6;color:#555;font-size:9pt}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
 @media print{.pt-tools,.pt-bar button{display:none!important}.pt-page{gap:12px}.pt-hero,.pt-kpi,.pt-card{box-shadow:none;break-inside:avoid}}
 @media (prefers-reduced-motion:reduce){.pt-live i{animation:none}}
 

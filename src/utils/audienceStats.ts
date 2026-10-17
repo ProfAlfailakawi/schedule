@@ -11,11 +11,13 @@
  */
 import type { AdCampaign, AdCourse, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
 import { AUDIENCE_BASELINE } from "./audienceBaseline";
-import { addDays, endingSoon, isLive, kuwaitDay, totalsOf } from "./adsEngine";
+import { addDays, ctrOf, endingSoon, isLive, kuwaitDay, slotById, totalsOf } from "./adsEngine";
 
 export interface TermPoint { termId: number; termName: string; answers: number; students: number }
 export interface CollegePoint { label: string; count: number }
 export interface DayPoint { day: string; count: number }
+export interface SlotPerformance { slot: string; label: string; campaigns: number; impressions: number; clicks: number; ctr: number }
+export interface ContinuityPair { fromTerm: string; toTerm: string; before: number; stayed: number; rate: number }
 
 export interface AudienceStats {
   generatedAt: string;
@@ -51,6 +53,10 @@ export interface AudienceStats {
     peakDay: string;
   };
   ads: { live: number; endingSoon: number; impressions: number; clicks: number; ctr: number };
+  /** أداء الإعلانات لكل موقع إعلاني (من حملاته كلها). مواقع بلا ظهور لا تُعرض. */
+  adsBySlot: SlotPerformance[];
+  /** استمرارية الطلبة: من أجاب في فصلٍ ثم أجاب في الفصل التالي (بصمات الاستبيان). أحدث الأزواج أولاً. */
+  continuity: ContinuityPair[];
   /** ما يطلبه الطلبة هذا الفصل (رغباتهم وطلباتهم)، مجمّعاً بالمقرر. مقرراتٌ بأقل من `DEMAND_MIN_STUDENTS` طلاب لا تظهر أبداً. */
   demand: { top: Array<{ name: string; students: number }>; hidden: number; minStudents: number };
   /** الجمهور الكلي المقدَّر: أدنى عددٍ مؤكد من الطلبة (الأكبر من الاستبيان وملفات مساري). */
@@ -89,6 +95,12 @@ const anonymous = (counts: Map<number, number>): CollegePoint[] =>
 const bump = (map: Map<number, number>, key: number) => map.set(key, (map.get(key) || 0) + 1);
 const dayKey = (iso: string) => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : "");
 const dayTotal = (d: AudienceDay) => sum(Object.values(d.visits || {}));
+
+/** مرّات فتح بطاقةٍ بعد الرصيد: من سجلّ الأيام، وللبطاقات القديمة بلا سجلٍّ فتحُها الأول إن جاء بعد التاريخ. */
+const opensAfterBaseline = (r: InstructorRequest): number => {
+  if (r.linkOpenDays) return sum(Object.entries(r.linkOpenDays).filter(([day]) => day > AUDIENCE_BASELINE.asOf).map(([, n]) => Number(n) || 0));
+  return dayKey(r.linkOpenedAt || "") > AUDIENCE_BASELINE.asOf ? 1 : 0;
+};
 
 export function buildAudienceStats(input: AudienceInput): AudienceStats {
   const term = input.terms.find(t => Number(t.AdTermId) === input.currentTermId) || null;
@@ -195,6 +207,34 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
   const demandTop = ranked.filter(r => r.students >= DEMAND_MIN_STUDENTS).slice(0, DEMAND_TOP);
   const demandHidden = ranked.filter(r => r.students < DEMAND_MIN_STUDENTS).length;
 
+  /* ── استمرارية الطلبة: كل فصلٍ مع الفصل السابق له (من الفصول التي فيها إجابات) ── */
+  const withRows = [...input.terms].sort((a, b) => Number(a.AdTermId) - Number(b.AdTermId))
+    .map(t => ({ term: t, people: new Set((input.needsByTerm.get(Number(t.AdTermId)) || []).map(r => r.fingerprint).filter(Boolean)) }))
+    .filter(x => x.people.size > 0);
+  const continuity: ContinuityPair[] = [];
+  for (let i = 1; i < withRows.length; i++) {
+    const prev = withRows[i - 1], cur = withRows[i];
+    let stayed = 0;
+    for (const fp of prev.people) if (cur.people.has(fp)) stayed++;
+    continuity.push({ fromTerm: prev.term.AdTermName, toTerm: cur.term.AdTermName, before: prev.people.size, stayed, rate: ratio(stayed, prev.people.size) });
+  }
+  continuity.reverse();
+
+  /* ── أداء الإعلانات لكل موقع ── */
+  const slotOf = new Map(campaigns.map(c => [c.id, c.slot] as const));
+  const perSlot = new Map<string, { impressions: number; clicks: number; ids: Set<string> }>();
+  for (const row of input.adStats || []) {
+    const slot = slotOf.get(row.campaignId);
+    if (!slot) continue;
+    const cur = perSlot.get(slot) || { impressions: 0, clicks: 0, ids: new Set<string>() };
+    cur.impressions += row.impressions; cur.clicks += row.clicks; cur.ids.add(row.campaignId);
+    perSlot.set(slot, cur);
+  }
+  const adsBySlot: SlotPerformance[] = [...perSlot.entries()]
+    .filter(([, v]) => v.impressions > 0)
+    .map(([slot, v]) => ({ slot, label: slotById(slot)?.label || slot, campaigns: v.ids.size, impressions: v.impressions, clicks: v.clicks, ctr: ctrOf(v.clicks, v.impressions) }))
+    .sort((a, b) => b.impressions - a.impressions);
+
   return {
     generatedAt: input.now.toISOString(),
     term: term ? { id: Number(term.AdTermId), name: term.AdTermName } : null,
@@ -215,7 +255,7 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
     instructors: {
       invited: requests.length,
       opened,
-      openedAfterBaseline: (input.openRequests || requests).filter(r => dayKey(r.linkOpenedAt || "") > AUDIENCE_BASELINE.asOf).length,
+      openedAfterBaseline: sum((input.openRequests || requests).map(opensAfterBaseline)),
       submitted,
       openRate: ratio(opened, requests.length),
       submitRate: ratio(submitted, requests.length),
@@ -245,6 +285,22 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
       ctr: adTotals.ctr,
     },
     reach: { studentsMin: Math.max(everyone.size, input.profiles.length), instructors: opened, newSinceBaseline },
+    adsBySlot,
+    continuity,
     demand: { top: demandTop, hidden: demandHidden, minStudents: DEMAND_MIN_STUDENTS },
+  };
+}
+
+/**
+ * الأرقام الكبرى منذ 2016 كما تعرضها اللوحة وملف الشراكة معاً: الرصيد الافتتاحي الذي أقرّته الإدارة
+ * (`AUDIENCE_BASELINE`) + ما قيس بعد تاريخه. دالةٌ واحدة كي لا يختلف رقمٌ بين الصفحتين.
+ */
+export function headlineTotals(s: AudienceStats) {
+  return {
+    students: AUDIENCE_BASELINE.students + (s.reach.newSinceBaseline || 0),
+    visits: AUDIENCE_BASELINE.visits + (s.visits.afterBaseline || 0),
+    instructorOpens: AUDIENCE_BASELINE.instructorOpens + (s.instructors.openedAfterBaseline || 0),
+    /** حدٌّ أدنى: يظهر المقيس إن زاد عليه. */
+    instructorOpenRate: Math.max(AUDIENCE_BASELINE.instructorOpenRate, s.instructors.openRate || 0),
   };
 }

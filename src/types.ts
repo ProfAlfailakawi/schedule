@@ -1406,6 +1406,10 @@ export interface InstructorRequest {
   linkId: string;
   /** أولُ فتحٍ للرابط. غيابُه يعني أنه لم يُفتح، لا أنه لم يصل. */
   linkOpenedAt?: string;
+  /** مرّات فتح الرابط لكل يومٍ (توقيت الكويت). تُسجَّل مرةً كل نصف ساعة على الأكثر فلا تُضخّمها إعادة التحميل. */
+  linkOpenDays?: Record<string, number>;
+  /** آخر فتحٍ سُجّل في `linkOpenDays`. */
+  linkLastOpenAt?: string;
   window: { opensAt: string; closesAt: string };
   /**
    * من أين جاءت المسوّدة: من جدولٍ منسوخٍ لهذا الفصل، أو من الفصل السابق حين

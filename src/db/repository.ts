@@ -77,6 +77,7 @@ import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } fr
 import { caseRefFromId, mergeStudentResubmission } from "../utils/studentNeedMerge";
 import { cleanSeenIds, mergeSeenIds, seenUnchanged } from "../utils/notificationSeen";
 import { termChronology } from "../utils/termSequence";
+import { kuwaitDayOfIso, recordLinkOpen } from "../utils/linkOpens";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -4623,6 +4624,40 @@ export const Repository = {
     if (at >= 0) db.instructorRequests[at] = next; else db.instructorRequests.unshift(next);
     saveDatabase();
     return next;
+  },
+
+  /**
+   * يسجّل فتحاً جديداً لبطاقة الأستاذ بتحديث حقول العدّ وحدها، لا بإعادة حفظ الطلب كله:
+   * ردٌّ من القسم أو إرسالٌ من الأستاذ يصل بين القراءة والكتابة لا يجوز أن يُمحى بفتحٍ عابر.
+   * في Firestore داخل معاملة (القراءة والقرار والتحديث معاً) فلا يضيع عدٌّ عند فتحين متزامنين.
+   */
+  recordInstructorRequestOpen: async (id: string, nowIso: string): Promise<{ fields: NonNullable<ReturnType<typeof recordLinkOpen>>; first: boolean } | null> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("instructorRequests").doc(id);
+      return firestoreDb.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return null;
+        const row = snap.data() as InstructorRequest;
+        const rec = recordLinkOpen(row, nowIso);
+        if (!rec) return null;
+        const first = !row.linkOpenedAt;
+        tx.update(ref, {
+          ...(first ? { linkOpenedAt: rec.linkOpenedAt, timeline: FieldValue.arrayUnion({ kind: "link-opened", at: nowIso }) } : {}),
+          [`linkOpenDays.${kuwaitDayOfIso(nowIso)}`]: FieldValue.increment(1),
+          linkLastOpenAt: nowIso,
+        });
+        return { fields: rec, first };
+      });
+    }
+    const row = (db.instructorRequests || []).find(item => item.id === id);
+    if (!row) return null;
+    const rec = recordLinkOpen(row, nowIso);
+    if (!rec) return null;
+    const first = !row.linkOpenedAt;
+    Object.assign(row, rec);
+    if (first) row.timeline = [...(row.timeline || []), { kind: "link-opened", at: nowIso }];
+    saveDatabase();
+    return { fields: rec, first };
   },
 
   getInstructorRequest: async (id: string): Promise<InstructorRequest | undefined> => {

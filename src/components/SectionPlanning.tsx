@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Building2, CheckCircle2, ChevronDown, FileQuestion, FileText, FileUp, Hash, History, Layers, Lightbulb, MinusCircle, MousePointerClick, PencilLine, Printer, RotateCcw, ScanLine, Trash2, Users, X } from "lucide-react";
-import { PrimaryButton, PrintPortal, SecondaryButton, useDialogDismiss } from "./ui";
+import { PrimaryButton, PrintPortal, SecondaryButton, useDialogDismiss, visualConfirm } from "./ui";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import {
   departmentLoadWarning, departmentTypicalTotal, suggestSectionCount,
@@ -265,9 +265,15 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   /* كشفٌ استُورد خطأً (قسمٌ أو فرعٌ آخر قبل التحقق): يُزال كله — المتبقي وشاغره ومصدره — ويُحفظ،
      فيعود الاقتراح إلى التاريخ وحده حتى يُستورد الكشف الصحيح. «المختار» بيد القسم لا يُمسّ. */
   /* يظهر الزر ما دام للفصل أيُّ «متبقٍّ» محفوظ: كشفٌ موسوم، أو «بيانات قديمة» بعمودٍ آخر، أو أرقامٌ بلا مصدر. */
-  const clearImport = () => {
+  /* التأكيد داخل التطبيق لا window.confirm: المتصفحات وتطبيق الهاتف تحجبه فيرجع «لا» بصمتٍ ولا يُزال شيء. */
+  const clearImport = async () => {
     const name = source?.fileName || data?.legacyRemaining?.fileName || "";
-    if (!window.confirm(`إزالة ${name ? `الكشف المستورد «${name}»` : "أرقام «المتبقي» المحفوظة"} وأرقام «المتبقي» كلها لهذا الفصل؟ يبقى «المختار» كما هو.`)) return;
+    const sure = await visualConfirm({
+      title: "إزالة الكشف المستورد؟",
+      message: `ستُزال ${name ? `بيانات الكشف «${name}»` : "أرقام «المتبقي» المحفوظة"} وأرقام «المتبقي» كلها لهذا الفصل. يبقى «المختار» كما هو.`,
+      confirmLabel: "نعم، أزِل", cancelLabel: "لا", tone: "danger",
+    });
+    if (!sure) return;
     setRemaining({}); setVacant({}); setSource(null); setPreview(null); setLegacyCleared(true);
     setEdits(n => n + 1);
   };
