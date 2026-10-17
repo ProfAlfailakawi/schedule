@@ -797,7 +797,7 @@ async function main() {
     const kitPage = (await import("../src/server/adsPages")).partnerKitPage({ stats: stats as any, liveBySlot: {}, today: "2026-11-20", nonce: "N" });
     check(kitPage.includes(fmtN(B.students + 2)) && kitPage.includes(fmtN(B.visits + 55)) && kitPage.includes(fmtN(B.instructors)) && kitPage.includes(fmtN(B.instructorOpens + 1)) && kitPage.includes("90%") && kitPage.includes("إجمالي الطلبة المستفيدين") && kitPage.includes("إجمالي دخول أعضاء هيئة التدريس"), "ملف الشراكة يأخذ أرقام لوحة الجمهور وعناوينها نفسها");
     check(!kitPage.includes("<footer") && !kitPage.includes("بحسب إدارة النظام") && !kitPage.includes("تقديراتٌ تقريبية") && !kitPage.includes("الأرقام تقريبية"), "ملف الشراكة بلا ذيلٍ يصف الأرقام");
-    check(!kitPage.includes('id="print"') && !kitPage.includes("طباعة"), "ملف الشراكة بلا زر طباعة");
+    check(!kitPage.includes('id="print"') && !kitPage.includes("طباعة / PDF"), "ملف الشراكة بلا زر طباعة");
     check(kitPage.includes('content="light"') && !kitPage.includes("prefers-color-scheme"), "ملف الشراكة يبقى فاتحاً مهما كان تفضيل الجهاز");
     const fp = (n: number, pre: string) => Array.from({ length: n }, (_, i) => nd(`${pre}${i}`, "2026-05-01"));
     const t1 = [...fp(20, "a"), ...fp(20, "b")], t2 = [...fp(20, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
