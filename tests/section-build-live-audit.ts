@@ -21,6 +21,9 @@ check(srv.includes('applyProposalCore(req, {\n        kind: "opening"') && !/sec
 check(srv.includes("section-build:${collegeId}:${sectionId}:${termId}") && srv.includes("String(req.body?.fingerprint"), "قفلٌ متسلسل وبصمة أسبوع قبل الكتابة");
 check(plan.includes("<SectionBuild") && plan.includes("buildReady") && fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8").includes("xlsxPreview.editable") && ui.includes("/api/section-build/review-rows") && ui.includes("/api/section-build/apply") && ui.includes('role="alertdialog"'), "الواجهة موصولة في تخطيط الشعب وفيها تأكيدٌ قبل الكتابة");
 
+const transferSrc = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");
+check(transferSrc.includes('className="tp-banner"') && transferSrc.includes("const goTab = ") && transferSrc.includes("fromPlanning ? null : (<>") && transferSrc.includes('transfer-import-commit-wrap${fromPlanning') && transferSrc.includes("نزّل ${countOf(planningMeta.added, AR.section)} في الجدول") && transferSrc.includes("نزّل الشعب (من تخطيط الشعب)"), "مراجعة التخطيط لها هويتها المستقلة عن استيراد الملف/PDF: شارة، بلا رفع ملف، زر «نزّل» ثابت، ومغادرتها تُفرغها");
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-section-build-"));
 let child: ReturnType<typeof spawn> | null = null;
 try {

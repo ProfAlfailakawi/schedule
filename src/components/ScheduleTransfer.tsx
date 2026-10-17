@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Layers, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton, useDialogDismiss, visualConfirm } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
@@ -92,7 +92,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
    * كان الضغط على «تعبئة ونشرها» يعيد صاحبه إلى نافذة النقل الصغيرة بتبويباتها
    * الخمسة، وكأن شيئاً لم يقع. والنشر خاتمة لا خطوة: تُعرض حصيلته وحدها — كم
    * موعداً نُشر، وفي أي موقع — ثم يُغلق الباب بيده هو. */
-  const [publishReceipt, setPublishReceipt] = useState<{count:number;scopes:Array<{siteLabel:string;count:number}>}|null>(null);
+  const [publishReceipt, setPublishReceipt] = useState<{count:number;scopes:Array<{siteLabel:string;count:number}>;planning?:{existing:number;added:number;pending:number}}|null>(null);
   /* مقررات نُسخت إلى كتالوج موقع آخر أثناء النشر: تُقال صراحةً، فإضافةُ سطرٍ
      إلى كتالوج قسمٍ لا تمرّ بلا خبر. */
   const [plantedCourses, setPlantedCourses] = useState<string[]>([]);
@@ -491,6 +491,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
      baseline must still generate a report with every source row marked deleted. */
   const authorityBaselineCount = importKind === "authority-pdf" && Array.isArray(xlsxPreview?.baselineRows) ? xlsxPreview.baselineRows.length : 0;
   const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0);
+  /* مراجعة «نزّل الشعب» القادمة من تخطيط الشعب: هويةٌ مستقلة عن استيراد الملف/PDF، فلا يُخلط بينهما. */
+  const fromPlanning = Boolean(xlsxPreview?.planning);
+  const planningMeta = (xlsxPreview?.planning || { existing: 0, added: 0, pending: 0 }) as { existing: number; added: number; pending: number };
   /* Pages still waiting for «راجعت الصفحة» — named beside the publish button,
      which otherwise just disappears with no word about why. */
   const pagesPendingReview = importKind === "authority-pdf" ? pagesAwaitingReview(xlsxPreview?.pageDiagnostics, reviewedImportPages) : [];
@@ -500,6 +503,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
      had to travel in two directions to read one row. While the PDF preview is
      open the sheet takes the page, and the table fits its width: one scroll,
      downward, the way the document itself is read. */
+  /* مراجعة التخطيط لا تبقى تحت تبويبٍ آخر: من غادرها يعود إلى شاشةٍ نظيفة، فلا تظهر شعب التخطيط في «استيراد». */
+  const goTab = (next: Tab) => { if (fromPlanning) { setXlsxPreview(null); setXlsxDraft(""); } setTab(next); };
   const importPreviewOpen = tab === "import" && importKind === "authority-pdf" && Boolean(xlsxPreview?.rows?.length) && !xlsxDraft;
 
   const rotatedPdfGuidance = Boolean(error && /دوّر صفحات الجدول للوضع الأفقي/.test(error));
@@ -651,7 +656,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
 
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   /** صفوفٌ بشكل النموذج (من ملفٍ أو من «نزّل الشعب») تُعرض في شاشة المراجعة نفسها. */
-  const previewWorksheetRows = async (rows: any[], fileName: string, editable = false) => {
+  const previewWorksheetRows = async (rows: any[], fileName: string, editable = false, planning?: { existing: number; added: number; pending: number }) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
     setImportSectionId(0); setPdfScopeFix(null);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishReceipt(null);
@@ -669,7 +674,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       const fresh = editable && Array.isArray(data.rows)
         ? data.rows.map((row: any) => (!row.roomId && row.buildingId && row.locationStatus !== "PENDING_ROOM") ? { ...row, locationStatus: "PENDING_ROOM" } : row)
         : data.rows;
-      setXlsxPreview({ ...data, rows: fresh, fileName, editable, ...(editable ? { issues: [] } : {}) });
+      setXlsxPreview({ ...data, rows: fresh, fileName, editable, ...(editable ? { issues: [] } : {}), ...(planning ? { planning } : {}) });
       /* منتقي المقرر في الجدول يحتاج مقررات القسم (يحمّلها مسار PDF وحده). */
       if (editable && !deptCourses.length) {
         try {
@@ -973,7 +978,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         body: JSON.stringify({
           collegeId, sectionId:activeImportSectionId, termId,
           source: "import",
-          name: `${importKind==="authority-pdf"?"نسخة PDF المعتمدة":"استيراد النموذج"} — ${xlsxPreview.fileName || ""}`.trim(),
+          name: xlsxPreview.planning ? "نزّل الشعب (من تخطيط الشعب)" : `${importKind==="authority-pdf"?"نسخة PDF المعتمدة":"استيراد النموذج"} — ${xlsxPreview.fileName || ""}`.trim(),
           rows: xlsxPreview.rows,
           baselineRows:importKind==="authority-pdf"&&Array.isArray(xlsxPreview.baselineRows)?withoutImportEvidence(xlsxPreview.baselineRows):undefined,
           importLayout:importKind,
@@ -1012,7 +1017,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         /* لا عودة إلى النافذة الصغيرة ولا إلى جدول المعاينة: حصيلة النشر تحلّ
            محلّ الشاشة كلها، ومنها يُغلق. */
         const total=scopes.reduce((sum,scope)=>sum+Number(scope?.count||0),0)||Number(xlsxPreview?.count||0);
-        setPublishReceipt({count:total,scopes});
+        setPublishReceipt({count:total,scopes,...(xlsxPreview?.planning?{planning:xlsxPreview.planning}:{})});
       } else {
         setXlsxDraft(id||"تم");
       }
@@ -1145,19 +1150,19 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
             تبويبات النقل إلا بعد إغلاقها. */}
         {publishReceipt ? null : (
         <nav className={`transfer-tabs${termEnded ? " is-ended" : ""}`}>
-          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")} title="تصدير"><Download />تصدير</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => goTab("export")} title="تصدير"><Download />تصدير</button>
           {termEnded ? null : (
-            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")} title="استيراد"><Upload />استيراد</button>
+            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" && !fromPlanning ? "active" : ""} onClick={() => goTab("import")} title="استيراد"><Upload />استيراد</button>
           )}
-          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "publish" ? "active" : ""} onClick={() => setTab("publish")} title="نشر"><Link2 />نشر</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "publish" ? "active" : ""} onClick={() => goTab("publish")} title="نشر"><Link2 />نشر</button>
           {termEnded ? null : (
-            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")} title="استبدال"><UserMinus />استبدال</button>
-          )}
-          {termEnded ? null : (
-            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
+            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => goTab("retire")} title="استبدال"><UserMinus />استبدال</button>
           )}
           {termEnded ? null : (
-            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "planning" ? "active" : ""} onClick={() => setTab("planning")} title="تخطيط الشعب"><UsersRound />تخطيط الشعب</button>
+            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "visiting" ? "active" : ""} onClick={() => goTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
+          )}
+          {termEnded ? null : (
+            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "planning" || (tab === "import" && fromPlanning) ? "active is-planning" : ""} onClick={() => goTab("planning")} title="تخطيط الشعب"><UsersRound />تخطيط الشعب</button>
           )}
         </nav>
         )}
@@ -1166,8 +1171,17 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           <div className="transfer-body">
             <div className="transfer-receipt" role="status" aria-live="polite">
               <span className="transfer-receipt-mark"><Check aria-hidden="true" /></span>
-              <h3>نُشر الجدول</h3>
-              <p><b>{countOf(publishReceipt.count, AR.appointment)}</b> في مكانها من الجدول المعتمد.</p>
+              {publishReceipt.planning ? (
+                <>
+                  <h3>نُزّلت الشعب</h3>
+                  <p><b>{countOf(publishReceipt.planning.added, AR.section)}</b> من تخطيط الشعب صارت في الجدول، وبقيت مواعيد القسم الحالية ({countOf(publishReceipt.planning.existing, AR.appointment)}) كما هي. المجموع <b>{countOf(publishReceipt.count, AR.appointment)}</b>.</p>
+                </>
+              ) : (
+                <>
+                  <h3>نُشر الجدول</h3>
+                  <p><b>{countOf(publishReceipt.count, AR.appointment)}</b> في مكانها من الجدول المعتمد.</p>
+                </>
+              )}
               {publishReceipt.scopes.length > 1 ? (
                 <ul className="transfer-receipt-scopes">
                   {publishReceipt.scopes.map(scope => (
@@ -1232,7 +1246,22 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
             </>
           ) : null}
 
-          {tab === "import" && branchSite ? (
+          {tab === "import" && fromPlanning && xlsxPreview && !xlsxDraft.startsWith("published:") ? (
+            <section className="tp-banner" aria-label="مراجعة نزّل الشعب">
+              <span className="tp-mark" aria-hidden="true"><Layers /></span>
+              <div>
+                <span className="tp-kicker">من تخطيط الشعب</span>
+                <strong>مراجعة «نزّل الشعب»</strong>
+                <p>
+                  هذه ليست استيراد ملف. تظهر مواعيد القسم الحالية (<b>{countOf(planningMeta.existing, AR.appointment)}</b>) مع الشعب المقترحة (<b>{countOf(planningMeta.added, AR.section)}</b>)،
+                  فعدّل ما شئت بـ«تعديل سريع» ثم انزل بها في الجدول. النزول يستبدل جدول القسم في الفصل بما تراه هنا، والمواعيد الحالية محمولة معه.
+                  {planningMeta.pending > 0 ? ` منها ${countOf(planningMeta.pending, AR.section)} قاعتها وأستاذها بانتظار التثبيت.` : ""}
+                </p>
+              </div>
+              <SecondaryButton type="button" data-guide-ignore="يعود إلى شاشة تخطيط الشعب دون كتابة شيء في الجدول" onClick={() => goTab("planning")}>رجوع إلى التخطيط</SecondaryButton>
+            </section>
+          ) : null}
+          {tab === "import" && branchSite && !fromPlanning ? (
             <div className="transfer-branch-import" role="note">
               <span className="transfer-branch-import-mark"><Building2 aria-hidden="true" /></span>
               <div>
@@ -1243,6 +1272,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           ) : null}
           {tab === "import" && !branchSite ? (
             <>
+              {fromPlanning ? null : (<>
               <div className="transfer-import-hero">
                 <span><Sparkles aria-hidden="true" /></span>
                 <div><strong>المسار الافتراضي والأسهل</strong><p>نزّل النموذج، املؤه ، ثم ارفعه؛ يطابق النظام البيانات ويجهزها للنشر تلقائياً. ويمكنك أيضاً نسخ جدول الجهة المعتمد من PDF إلى فصل فارغ.</p></div>
@@ -1262,6 +1292,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <Upload />رفع جدول بيانات أو PDF
                 </SecondaryButton>
               </div>
+              </>)}
               {readProgress ? (
                 <div className="import-progress">
                   {/* Only the message is a live region: the stations are read on demand, not re-announced on every phase. */}
@@ -1288,7 +1319,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               {xlsxPreview ? (
                 <div className={`transfer-preview${smartBusy ? " is-smart-locked" : ""}`} aria-busy={smartBusy}>
                   <div className="transfer-counts import-summary-cards">
-                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(Number(xlsxPreview.count || 0), AR.row)}</small></span>
+                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(Number(xlsxPreview.count || 0), fromPlanning ? AR.appointment : AR.row)}</small></span>
                     {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(xlsxPreview.issues?.length || 0, AR.note)}</small></span>:null}
                     {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(Number(xlsxPreview.pages||0), AR.page)}</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز للنشر</small></span>:null}
@@ -1486,7 +1517,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   {xlsxDraft ? (
                     <p className="transfer-done"><Check /> حُفظت المسودة داخل أدوات البيانات. يمكنك نشرها من هنا متى شئت.</p>
                   ) : (
-                    <div className="transfer-import-commit-wrap">
+                    <div className={`transfer-import-commit-wrap${fromPlanning ? " is-planning" : ""}`}>
                       {/* الرسالة عند اليد التي تضغط. كانت تُعرض في أعلى النافذة
                           وحدها، وأعلى النافذة يكون قد غاب عن الشاشة بعد جدول
                           من ثلاثين صفاً — فيبدو الزر وكأنه لا يفعل شيئاً. */}
@@ -1499,15 +1530,21 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                           </div>
                         </div>
                       ) : null}
-                      <div className="transfer-import-commit">
+                      <div className={`transfer-import-commit${fromPlanning ? " is-planning" : ""}`}>
                         {/* بلا صفوف تختفي معاينة الصفحات، فيقف زرّ المراجعة في سطر الانتظار. */}
                         <PageReviewWait pages={pagesPendingReview} onReviewPage={confirmImportPage} withButtons={!xlsxPreview?.rows?.length} />
+                        {fromPlanning && !importReady ? (
+                          <p className="tp-blocked" role="status">
+                            <AlertTriangle aria-hidden="true" />
+                            <span>لا يمكن النزول بعد: {importBlockingIssues.length ? `${countOf(importBlockingIssues.length, AR.note)} تمنعه، أولها — ${importBlockingIssues[0]}` : "الجدول فارغ."}</span>
+                          </p>
+                        ) : null}
                         {importReady && !publishGateSatisfied ? (
                           <p className="transfer-preflight-wait" role="status">جارٍ فحص التعارض مع بقية الأقسام في هذا الفصل…</p>
                         ) : null}
                         {importReady && publishGateSatisfied ? (
                           <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady}>
-                            {busy ? "يجهّز…" : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
+                            {busy ? "يجهّز…" : fromPlanning ? <><Layers aria-hidden="true" /> {`نزّل ${countOf(planningMeta.added, AR.section)} في الجدول`}</> : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                           </PrimaryButton>
                         ) : null}
                         {/* «حفظ كمسودة فقط» is gone on purpose: a saved draft
@@ -1570,7 +1607,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <p>كشف «المتبقي» من عمادة التسجيل، ومدى شعبٍ يرسيه ما فتحه القسم فعلاً، ثم تقريرٌ يُطبع.</p>
                 </div>
               </div>
-              {collegeId && sectionId && termId ? <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} onReviewRows={rows => { setTab("import"); void previewWorksheetRows(rows, "تخطيط الشعب", true); }} /> : <p>اختر القسم والفصل أولاً.</p>}
+              {collegeId && sectionId && termId ? <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} onReviewRows={(rows, meta) => { setTab("import"); void previewWorksheetRows(rows, "تخطيط الشعب", true, meta); }} /> : <p>اختر القسم والفصل أولاً.</p>}
             </>
           ) : null}
 
