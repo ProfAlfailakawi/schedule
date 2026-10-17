@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import NotificationCenter from "./components/NotificationCenter";
 import {
   BookOpen,
+  BrainCircuit,
   Building2,
   CalendarDays,
   ChevronLeft,
@@ -2376,6 +2377,16 @@ export default function App() {
                 active={searchViews.includes(activeView as ReportMode) || reportViews.includes(activeView as ReportMode)}
                 icon={<FileSearch />}
                 label="الاستعلامات والتقارير"
+              />
+            ) : null}
+            {allowed.schedule ? (
+              <NavButton
+                activeView={activeView}
+                onGo={go}
+                view="intelligence"
+                icon={<BrainCircuit />}
+                label="مركز الذكاء"
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.intelligence"
               />
             ) : null}
             {opensChangesScreen(sessionRole) ? (
