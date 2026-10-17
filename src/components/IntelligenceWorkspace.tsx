@@ -363,7 +363,7 @@ const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
               <strong>{card.label}</strong>
               <small>{card.detail}</small>
             </span>
-            {card.metric ? (ringFromScoreText(card.metric) ? <b className="insight-preview-ring">{ringFromScoreText(card.metric)}</b> : <b>{card.metric}</b>) : null}
+            {card.metric ? (ringFromScoreText(card.metric) ? <b className="insight-preview-ring">{ringFromScoreText(card.metric)}</b> : <b data-long={card.metric.length > 7 || undefined}>{card.metric}</b>) : null}
           </button>
         ))}
       </div>
@@ -2266,6 +2266,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     };
     void run();
   }, [collegeId, overview?.rooms, rows, sectionId, termId]);
+  /* ملخّصُ بطاقة «تنبّؤ الفصل القادم»: يُقرأ من الخادم (أعدادٌ فقط، من القراءة المخزَّنة نفسها) فتظهر قيمتُها قبل فتح اللوحة، ويتبع مفتاحَ الكلية/القسم. */
+  const [predictSummary, setPredictSummary] = useState<{ historyTerms: number; thin: boolean; actions: number } | null>(null);
+  useEffect(() => {
+    if (!overview || !collegeId || !sectionId) return;
+    let live = true;
+    setPredictSummary(null);
+    fetchJson(`/api/simulation/predictive-summary?analysisScope=${readingMode}&collegeId=${collegeId}&sectionId=${sectionId}`)
+      .then(body => { if (live && body?.ready && body.summary) setPredictSummary(body.summary); })
+      .catch(() => undefined);
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(overview), collegeId, sectionId, readingMode, termId]);
   const insightScenes: Array<{
     value: InsightScene;
     label: string;
@@ -2372,8 +2384,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         {
           value: "predict" as const,
           label: "تنبّؤ الفصل القادم",
-          detail: "ما سيحتاجه الفصل، وبأي ثقة",
-          metric: "—",
+          detail: predictSummary?.thin ? "التاريخ لا يكفي بعد" : predictSummary ? `من ${countOf(predictSummary.historyTerms, AR.term)} سابقة · وبأي ثقة` : "ما سيحتاجه الفصل، وبأي ثقة",
+          metric: !predictSummary ? "—" : predictSummary.thin ? "تاريخ غير كافٍ" : predictSummary.actions ? countOf(predictSummary.actions, AR.procedure) : "لا مقترح",
           icon: <Sparkles />,
         },
       ]

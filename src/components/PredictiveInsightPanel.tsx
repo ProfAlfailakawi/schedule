@@ -22,7 +22,7 @@ const nf = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
 export function ConfidenceMeter({ confidence, compact = false }: { confidence: Confidence; compact?: boolean }) {
   const filled = confidence.level === "high" ? 3 : confidence.level === "medium" ? 2 : confidence.level === "low" ? 1 : 0;
   const label = CONFIDENCE_LABEL[confidence.level];
-  const title = `الثقة ${label}${confidence.level === "insufficient" ? "" : ` (${nf(confidence.score)}٪)`} · ${confidence.termsUsed ? countOf(confidence.termsUsed, AR.term) + " سابقة" : "بلا فصولٍ سابقة"}${confidence.backtestError != null ? ` · خطأ الاختبار الرجعي ${nf(Math.round(confidence.backtestError * 100))}٪` : ""}${confidence.caveat ? ` · ${confidence.caveat}` : ""}`;
+  const title = `الثقة ${label}${confidence.level === "insufficient" ? "" : ` (${nf(confidence.score)}٪)`} · ${confidence.termsUsed ? "التاريخ " + countOf(confidence.termsUsed, AR.term) : "بلا فصولٍ سابقة"}${confidence.backtestError != null ? ` · خطأ الاختبار الرجعي ${nf(Math.round(confidence.backtestError * 100))}٪` : confidence.level === "insufficient" ? "" : " · لم يُختبر رجعياً (تاريخٌ قصير)"}${confidence.caveat ? ` · ${confidence.caveat}` : ""}`;
   return (
     <span className="pi-conf" data-level={confidence.level} title={title} role="img" aria-label={title}>
       <span className="pi-conf-bars" aria-hidden="true"><i data-on={filled >= 1} /><i data-on={filled >= 2} /><i data-on={filled >= 3} /></span>
@@ -63,7 +63,7 @@ export default function PredictiveInsightPanel({ canSchedule, onNavigate, onChan
   useEffect(() => {
     let live = true;
     setState("loading");
-    const query = scope?.collegeId ? `?analysisScope=${scope.mode}&collegeId=${scope.collegeId}${scope.mode === "department" ? `&sectionId=${scope.sectionId}` : ""}` : "";
+    const query = scope?.collegeId ? `?analysisScope=${scope.mode}&collegeId=${scope.collegeId}${scope.sectionId ? `&sectionId=${scope.sectionId}` : ""}` : "";
     request(`/api/simulation/predictive${query}`)
       .then(body => { if (!live) return; if (body.ready) { setReading(body.reading); setState("ready"); } else setState("none"); })
       .catch((e: any) => { if (live) { setError(e.message || "تعذّر حساب التنبّؤات."); setState("error"); } });
