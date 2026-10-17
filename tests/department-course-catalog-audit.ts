@@ -26,6 +26,8 @@ check(/sectionIdsByCollegeCode\.get\(`\$\{Number\(target\.AdCollegeId\)\}:\$\{co
 check(/course\.ownerSectionId === selectedSectionId/.test(referenceView)
   && /course\.current!\.id/.test(referenceView),
   "تصحيح السجل وبدء الإضافة يظهران للقسم المالك المختار وحده");
+check(!/!course\.ownerSectionId \|\|/.test(referenceView) && !referenceView.includes("كل الأقسام") && /categoryOptions\.map/.test(referenceView) && /inCategory/.test(referenceView),
+  "صحيفة التخرج تحذف ما ليس للقسم المفتوح (لا تبويب «كل الأقسام»)، وخيارات المجموعة والمستوى من مقررات القسم وحدها");
 check(/collegeName/.test(referenceView) && /body\.sections/.test(referenceView)
   && /deps\.isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId\)\)/.test(reviewRoutes),
   "مقارنة كل كلية تبقى محصورة بأقسام المستخدم المصرح بها");

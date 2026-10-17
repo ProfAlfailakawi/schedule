@@ -54,15 +54,20 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
 
   const references = sections.find(row => row.sectionId === selectedSectionId)?.references || [];
   const reference = references.find(row => row.id === selected);
-  /* مقررات القسم وحدها: مقررات الكلية العامة (ثقافة عامة ومتطلبات الكلية) تُصحَّح عند أقسامها، وعرضها هنا يوهم القسم أنها له.
-     ما لم تُحسم ملكيته (ownerSectionId = 0) يبقى ظاهراً لأنه يحتاج قراراً. */
-  const entries = useMemo<CourseEntry[]>(() => reference ? reference.groups.flatMap(group => group.courses.filter(course => !course.ownerSectionId || course.ownerSectionId === selectedSectionId).map(course => ({
+  /* مقررات القسم المفتوح وحده، حذفاً لا تصفية: مقررات الكلية العامة (ثقافة عامة ومتطلبات الكلية) تُصحَّح عند أقسامها.
+     فكلُّ تبويبٍ ومجموعةٍ ومستوىً وعدّادٍ يُشتقّ من هذه القائمة، فلا يظهر ما ليس فيه مقرر للقسم.
+     ما لم تُحسم ملكيته (ownerSectionId = 0) لا يُحتسب هنا، وينبَّه إلى عدده في سطرٍ مستقل. */
+  const undecided = useMemo(() => reference ? reference.groups.reduce((sum, group) => sum + group.courses.filter(course => !course.ownerSectionId).length, 0) : 0, [reference]);
+  const entries = useMemo<CourseEntry[]>(() => reference ? reference.groups.flatMap(group => group.courses.filter(course => course.ownerSectionId === selectedSectionId).map(course => ({
     course, groupId: group.id, groupName: group.name, category: group.category, requiredUnits: group.requiredUnits, elective: group.elective,
     level: courseLevelFromCode(course.code) || 0,
   }))) : [], [reference, selectedSectionId]);
   const categoryOptions = useMemo(() => [...new Set(entries.map(row => row.category))], [entries]);
-  const groupOptions = useMemo(() => [...new Map<string, string>(entries.map(row => [row.groupId, row.groupName] as const)).entries()], [entries]);
-  const levelOptions = useMemo<number[]>(() => [...new Set<number>(entries.map(row => row.level))].sort((a, b) => a - b), [entries]);
+  /* لا تبويبَ «الكل»: أول تبويبٍ للقسم هو الافتراضي. */
+  const activeCategory = categoryOptions.includes(category) ? category : (categoryOptions[0] || "");
+  const inCategory = useMemo(() => entries.filter(row => row.category === activeCategory), [entries, activeCategory]);
+  const groupOptions = useMemo(() => [...new Map<string, string>(inCategory.map(row => [row.groupId, row.groupName] as const)).entries()], [inCategory]);
+  const levelOptions = useMemo<number[]>(() => [...new Set<number>(inCategory.map(row => row.level))].sort((a, b) => a - b), [inCategory]);
   const focused = entries.find(row => row.course.code === focusedCode);
 
   const ancestry = useMemo(() => {
@@ -86,12 +91,12 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
 
   const visibleEntries = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("ar");
-    return entries.filter(row => (category === "all" || row.category === category)
+    return entries.filter(row => (!activeCategory || row.category === activeCategory)
       && (groupKind === "all" || row.groupId === groupKind)
       && (levelFilter === "all" || row.level === Number(levelFilter))
       && (statusFilter === "all" || (statusFilter === "attention" ? row.course.state !== "matched" : row.course.state === statusFilter))
       && (!q || `${row.course.name} ${row.course.code}`.toLocaleLowerCase("ar").includes(q)));
-  }, [entries, category, groupKind, levelFilter, statusFilter, query]);
+  }, [entries, activeCategory, groupKind, levelFilter, statusFilter, query]);
 
   const levels = useMemo(() => {
     const result = new Map<number, CourseEntry[]>();
@@ -101,7 +106,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
 
   useEffect(() => {
     setExpandedLevels([]);
-  }, [selectedSectionId, selected, category, groupKind, levelFilter, statusFilter, query]);
+  }, [selectedSectionId, selected, activeCategory, groupKind, levelFilter, statusFilter, query]);
 
   if (error) return <Notice type="error">{error}</Notice>;
   if (!reference) return null;
@@ -141,20 +146,22 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
     </div>
 
     <div className="reference-sections" role="tablist" aria-label="أقسام الصحيفة">
-      {["all", ...categoryOptions].map(option => {
-        const rows = option === "all" ? entries : entries.filter(row => row.category === option);
-        return <button key={option} type="button" role="tab" aria-selected={category === option} className={category === option ? "on" : ""} onClick={() => setCategory(option)} data-guide-ignore="تصفية مقررات الصحيفة بحسب قسمها: ثقافة عامة وتخصصية ومهنية وتدريب ميداني">
-          <b>{option === "all" ? "كل الأقسام" : option}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small>
+      {categoryOptions.map(option => {
+        const rows = entries.filter(row => row.category === option);
+        return <button key={option} type="button" role="tab" aria-selected={activeCategory === option} className={activeCategory === option ? "on" : ""} onClick={() => { setCategory(option); setGroupKind("all"); setLevelFilter("all"); }} data-guide-ignore="تصفية مقررات الصحيفة بحسب قسمها: ثقافة عامة وتخصصية ومهنية وتدريب ميداني">
+          <b>{option}</b><small>{countOf(rows.length, AR.course)} · {countOf(rows.reduce((sum, row) => sum + row.course.credit, 0), AR.unit)}</small>
         </button>;
       })}
     </div>
+
+    {undecided ? <Notice type="info" inline>{countOf(undecided, AR.course)} بلا قسمٍ مالك محسوم، ولا تُحتسب هنا حتى تُحسم ملكيتها.</Notice> : null}
 
     {canApply ? <ReferenceApplyPanel key={`${selectedSectionId}:${reference.id}`} referenceId={reference.id} referenceName={reference.name} onApplied={() => setReload(n => n + 1)} /> : null}
 
     <div className="reference-filterbar" aria-label="تصفية المقررات">
       <label className="reference-search"><Search size={16} aria-hidden="true" /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="ابحث باسم المقرر أو رمزه" aria-label="ابحث باسم المقرر أو رمزه" /></label>
-      <label><Layers3 size={15} aria-hidden="true" /><select aria-label="المجموعة" value={groupKind} onChange={event => setGroupKind(event.target.value)}><option value="all">كل المجموعات</option>{groupOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-      <label><span className="reference-level-mark" aria-hidden="true">١٠٠</span><select aria-label="المستوى" value={levelFilter} onChange={event => setLevelFilter(event.target.value)}><option value="all">كل المستويات</option>{levelOptions.map(value => <option key={value} value={String(value)}>{value ? `المستوى ${value}` : "تمهيدي / غير مصنف"}</option>)}</select></label>
+      {groupOptions.length > 1 ? <label><Layers3 size={15} aria-hidden="true" /><select aria-label="المجموعة" value={groupKind} onChange={event => setGroupKind(event.target.value)}><option value="all">كل المجموعات</option>{groupOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label> : null}
+      {levelOptions.length > 1 ? <label><span className="reference-level-mark" aria-hidden="true">١٠٠</span><select aria-label="المستوى" value={levelFilter} onChange={event => setLevelFilter(event.target.value)}><option value="all">كل المستويات</option>{levelOptions.map(value => <option key={value} value={String(value)}>{value ? `المستوى ${value}` : "تمهيدي / غير مصنف"}</option>)}</select></label> : null}
       <label><AlertCircle size={15} aria-hidden="true" /><select aria-label="حالة المطابقة" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">كل الحالات</option><option value="attention">تحتاج متابعة</option><option value="matched">مطابقة</option><option value="different">تحتاج تصحيحًا</option><option value="missing">غير مضافة</option><option value="ambiguous">هوية غير محسومة</option></select></label>
     </div>
 
@@ -176,7 +183,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
     </aside> : null}
 
     {!reference.planId ? <Notice type="info" inline>لا توجد صحيفة تشغيلية مرتبطة بهذه النسخة؛ هذه المقارنة للمرجع فقط.</Notice> : null}
-    {!visibleEntries.length ? <div className="reference-empty"><Search size={19} /><b>لا توجد مقررات بهذا الاختيار</b><span>غيّر المرشحات أو امسح البحث لعرض الصحيفة كاملة.</span><button type="button" onClick={() => { setQuery(""); setCategory("all"); setGroupKind("all"); setLevelFilter("all"); setStatusFilter("all"); }} data-guide-ignore="مسح مرشحات صحيفة التخرج وإظهار كل المقررات">مسح المرشحات</button></div> : (
+    {!visibleEntries.length ? <div className="reference-empty"><Search size={19} /><b>لا توجد مقررات بهذا الاختيار</b><span>غيّر المرشحات أو امسح البحث لعرض الصحيفة كاملة.</span><button type="button" onClick={() => { setQuery(""); setCategory(""); setGroupKind("all"); setLevelFilter("all"); setStatusFilter("all"); }} data-guide-ignore="مسح مرشحات صحيفة التخرج وإظهار كل المقررات">مسح المرشحات</button></div> : (
       <div className="reference-level-map" aria-label="المقررات مرتبة حسب المستوى">
         {levels.map(([level, rows]) => {
           const expanded = expandedLevels.includes(level);
