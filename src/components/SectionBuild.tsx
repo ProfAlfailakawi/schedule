@@ -68,7 +68,7 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
   };
   const review = async () => {
     setBusy(true); setError("");
-    try { const data = await call("/api/section-build/review-rows", base); setBuilt(null); onReview?.(data.rows || []); }
+    try { const data = await call("/api/section-build/review-rows", { ...base, pick: [...picked, ...(built?.rows.flatMap(row => row.placements.filter(p => p.pending).map(p => `${row.courseId}:${p.sectionCode}`)) || [])] }); setBuilt(null); onReview?.(data.rows || []); }
     catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const toggle = (key: string) => setPicked(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
@@ -154,11 +154,15 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
           {impact ? <ImpactCard impact={impact} /> : null}
           {!totals.placeable && totals.remaining ? <Notice type="warning" inline><CircleAlert aria-hidden="true" /> لا شعبة قابلة للبناء الآن؛ أسباب كل مقرر أعلاه.</Notice> : null}
           {!totals.remaining ? <Notice type="success" inline>كل ما اخترته موجودٌ في الجدول.</Notice> : null}
-          {totals.pending > 0 && onReview ? (
+          {totals.placeable > 0 && onReview ? (
             <div className="sb-review">
               <ClipboardPenLine aria-hidden="true" />
-              <p><b>{countOf(totals.pending, AR.section)}</b> بأوقات الفصل المماثل، بانتظار القاعة والأستاذ. تُثبَّت في شاشة المراجعة نفسها التي بعد الاستيراد.</p>
-              <PrimaryButton type="button" disabled={busy} onClick={review} data-guide-ignore="فتح الشعب الباقية في شاشة مراجعة الاستيراد لتثبيت القاعة والأستاذ قبل النشر">راجع وعدّل</PrimaryButton>
+              <p>
+                <b>راجع وعدّل</b> في شاشة المراجعة نفسها التي بعد استيراد الملف: تظهر مواعيد القسم الحالية والشعب المقترحة (<b>{countOf(chosenCount, AR.section)}</b>) معاً، فتعدّل المقرر والأستاذ والقاعة والوقت ثم تنشر.
+                {totals.pending > 0 ? ` منها ${countOf(totals.pending, AR.section)} بأوقات الفصل المماثل بانتظار القاعة والأستاذ.` : ""}
+                {" "}النشر هناك يستبدل جدول القسم في الفصل بما تراه في الشاشة.
+              </p>
+              <PrimaryButton type="button" disabled={busy} onClick={review} data-guide-ignore="فتح الشعب المقترحة مع مواعيد القسم الحالية في شاشة مراجعة الاستيراد للتعديل قبل النشر">راجع وعدّل</PrimaryButton>
             </div>
           ) : null}
           {chosenCount ? (
