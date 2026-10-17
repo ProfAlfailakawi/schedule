@@ -118,6 +118,11 @@ const ctx = (plan: number[]) => ({
     "R6 الضغط على مقرر يبرز ما يسبقه وما يفتحه ويعرض لوحته (يتطلب/يفتح) دون فتح نافذة التعديل");
   check(lines.includes("levelHue") && planUi.includes("data-lvl") && css.includes("var(--level-1)") && planUi.includes("--series-") && css.includes(".pr-card .pr-code{") && css.includes("var(--src"),
     "R6 لكل مستوى لونٌ (عمودٌ وترويسةٌ وشارة وحدات)، ولكل مقررٍ لونٌ مميّز يحمله رقمُه وأسهمُه الخارجة منه");
+  const routes = read("src/server/planReviewRoutes.ts");
+  check(routes.includes("REFERENCE_CATEGORIES") && routes.includes("category: categoryOf(course)") && routes.includes("categories: categorized ? REFERENCE_CATEGORIES.order : []") && routes.includes("isTechnologyEducation(planSection?.AdSectionName)"),
+    "R6 تصنيف كل مقرر (ثقافة عامة/تخصصية/مهنية/تدريب ميداني) يأتي من الصحيفة المرجعية ولقسم تكنولوجيا التعليم وحده");
+  check(planUi.includes("pr-cats") && planUi.includes("pickCat") && planUi.includes("view.categories") && planUi.includes("disabled={cat ? !isActive(c) : false}") && planUi.includes("off={offIds}") && css.includes(".pr-card.off{") && css.includes(".pr-line.off path"),
+    "R6 فلتر التصنيف فوق الخريطة: مقررات القسم في التصنيف المختار فعّالة والباقي غير فعال وأسهمه تخفت");
   check(lines.includes("animateMotion") && css.includes("prefers-reduced-motion:reduce){.pr-line .pr-dot{display:none}"),
     "R6 نقاط متحركة على الأسهم وتُخفى عند تفضيل تقليل الحركة");
   check(source.includes("course.ownerSectionId === selectedSectionId"),

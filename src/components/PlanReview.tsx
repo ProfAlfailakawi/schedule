@@ -28,8 +28,10 @@ interface Status {
   canApprove: boolean;
   canImport?: boolean;
 }
-interface CourseRow { id: number; code: string; name: string; credit: number; hours: number; capacity: number; collegeId: number; sectionId: number; ownerSectionName: string; owned: boolean; external?: boolean }
+interface CourseRow { id: number; code: string; name: string; credit: number; hours: number; capacity: number; collegeId: number; sectionId: number; ownerSectionName: string; owned: boolean; external?: boolean; category?: string }
 interface View {
+  /** تصنيفات الصحيفة بترتيبها (لقسم له صحيفة مرجعية)؛ فارغة لغيره فلا يظهر الفلتر. */
+  categories?: string[];
   plan: { id: string; name: string; sectionId: number; sectionName: string };
   courses: CourseRow[];
   referenced: Array<{ id: number; code: string; name: string }>;
@@ -135,6 +137,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [focus, setFocus] = useState(0);
+  const [cat, setCat] = useState("");
   const mapRef = useRef<HTMLDivElement | null>(null);
   const [confirmApprove, setConfirmApprove] = useState(false);
 
@@ -159,7 +162,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   useEffect(() => {
     if (!planId || !sectionId) { setView(null); return; }
     let live = true;
-    setView(null); setSelected(0); setFocus(0);
+    setView(null); setSelected(0); setFocus(0); setCat("");
     request(`/api/plan-review/plan?planId=${encodeURIComponent(planId)}&sectionId=${sectionId}`)
       .then(next => { if (live) { setView(next); setError(""); } })
       .catch(e => { if (live) setError(e.message); });
@@ -232,6 +235,12 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     const map = new Map(sources.map((id, i) => [id, i % 10 + 1] as const));
     return { edges: raw.map(e => ({ ...e, hue: map.get(Number(e.from)) })), series: map };
   }, [view]);
+
+  /* الفلتر: مقررات القسم نفسه في التصنيف المختار فعّالة، وما سواها (تصنيفٌ آخر أو مقررات أقسامٍ أخرى) غير فعال. */
+  const deptCourses = view ? view.courses.filter(c => c.sectionId === view.plan.sectionId && !c.external) : [];
+  const isActive = (c: CourseRow) => !cat || (c.category === cat && c.sectionId === view?.plan.sectionId && !c.external);
+  const offIds = useMemo(() => new Set<number>(view && cat ? view.courses.filter(c => !(c.category === cat && c.sectionId === view.plan.sectionId && !c.external)).map(c => c.id) : []), [view, cat]);
+  const pickCat = (name: string) => { setCat(name); const f = view?.courses.find(c => c.id === focus); if (f && name && !(f.category === name && f.sectionId === view?.plan.sectionId && !f.external)) setFocus(0); };
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
@@ -324,6 +333,16 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 </div>
               </section>
 
+              {view.categories?.length ? (
+                <nav className="pr-cats" aria-label="تصفية مقررات الصحيفة بحسب تصنيفها">
+                  {[{ name: "", label: "كل الأقسام", rows: deptCourses }, ...view.categories.map(name => ({ name, label: name, rows: deptCourses.filter(c => c.category === name) }))].map(chip => (
+                    <button key={chip.name || "all"} type="button" className={`pr-cat${cat === chip.name ? " on" : ""}`} aria-pressed={cat === chip.name} disabled={chip.name !== "" && !chip.rows.length} onClick={() => pickCat(chip.name)} data-guide-ignore="تصفية مقررات الصحيفة بحسب قسمها: ثقافة عامة وتخصصية ومهنية وتدريب ميداني">
+                      <b>{chip.label}</b><small>{countOf(chip.rows.length, AR.course)} · {countOf(chip.rows.reduce((sum, c) => sum + c.credit, 0), AR.unit)}</small>
+                    </button>
+                  ))}
+                </nav>
+              ) : null}
+
               <div className="pr-map" ref={mapRef} style={{ ["--cols" as string]: levels.size }} aria-label="خريطة المستويات">
                 {[...levels.entries()].map(([level, ids]) => (
                   <section key={level} className="pr-col" data-lvl={levelHue(level)}>
@@ -334,9 +353,9 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                       const c = view.courses.find(x => x.id === id)!;
                       const rule = ruleOf(id);
                       const opens = dependentsOf(view.rules, id).length;
-                      const cls = ["pr-card", `k-${KIND_TONE[rule?.kind || "none"]}`, focus === id ? "sel" : "", upstream.has(id) ? "up" : "", downstream.has(id) ? "down" : "", focus && focus !== id && !upstream.has(id) && !downstream.has(id) ? "dim" : "", c.owned ? "" : "lock"].join(" ");
+                      const cls = ["pr-card", `k-${KIND_TONE[rule?.kind || "none"]}`, focus === id ? "sel" : "", upstream.has(id) ? "up" : "", downstream.has(id) ? "down" : "", focus && focus !== id && !upstream.has(id) && !downstream.has(id) ? "dim" : "", cat && !isActive(c) ? "off" : "", c.owned ? "" : "lock"].join(" ");
                       return (
-                        <button key={id} type="button" data-cid={id} aria-pressed={focus === id} className={cls} style={{ ["--src" as string]: series.has(id) ? `var(--series-${series.get(id)})` : undefined }} onClick={() => setFocus(focus === id ? 0 : id)} data-guide-ignore="بطاقةُ مقررٍ داخل خريطة شاشةٍ مسجّلة في المرشد باسم page.planReview">
+                        <button key={id} type="button" data-cid={id} disabled={cat ? !isActive(c) : false} title={cat && !isActive(c) ? "خارج التصنيف المحدد" : undefined} aria-pressed={focus === id} className={cls} style={{ ["--src" as string]: series.has(id) ? `var(--series-${series.get(id)})` : undefined }} onClick={() => setFocus(focus === id ? 0 : id)} data-guide-ignore="بطاقةُ مقررٍ داخل خريطة شاشةٍ مسجّلة في المرشد باسم page.planReview">
                           <i className="pr-credit" aria-hidden="true">{c.credit}</i>
                           <span className="pr-name">{c.name}{c.external ? <em className="pr-ext" title={`مقرر عام يملكه ${c.ownerSectionName || "قسمٌ آخر"}`}>عام</em> : null}{c.owned ? null : <Lock size={11} aria-hidden="true" />}</span>
                           <b className="pr-code">{c.code}</b>
@@ -346,7 +365,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                     })}
                   </section>
                 ))}
-                <PlanMapLines mapRef={mapRef} edges={edges} focus={focus} up={upstream} down={downstream} layoutKey={`${view.courses.length}:${levels.size}`} />
+                <PlanMapLines mapRef={mapRef} edges={edges} focus={focus} up={upstream} down={downstream} off={offIds} layoutKey={`${view.courses.length}:${levels.size}`} />
               </div>
 
               {edges.length ? <p className="pr-key">السهم يصل إلى المقرر الذي يتطلبه · ولون الرقم هو لون أسهمه</p> : null}

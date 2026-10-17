@@ -67,6 +67,17 @@ export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "i
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+/** تصنيف كل مقرر في صحيفة تكنولوجيا التعليم كما تكتبه الصحيفة (ثقافة عامة، تخصصية، مهنية، تدريب ميداني)، وترتيب ظهور التصنيفات فيها. */
+const REFERENCE_CATEGORIES = (() => {
+  const byCode = new Map<string, string>(), order: string[] = [];
+  for (const reference of [...TECHNOLOGY_EDUCATION_CURRICULA].sort((a, b) => Number(b.id === "new") - Number(a.id === "new")))
+    for (const group of reference.groups) {
+      if (!order.includes(group.category)) order.push(group.category);
+      for (const course of group.courses) if (!byCode.has(course.code)) byCode.set(course.code, group.category);
+    }
+  return { byCode, order };
+})();
+
 /** مقارنة صحائف تكنولوجيا التعليم المرجعية بكتالوج موقعٍ واحد: للعرض وللتطبيق معاً، فلا يفترقان. */
 export function referenceSnapshotFor(sections: any[], courses: AdCourse[]) {
     const sectionCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
@@ -162,12 +173,22 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     const [sectionRows, collegeRows] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
     const sections = sectionLabels(sectionRows as any[], collegeRows as any[]);
     const issues = issuesOf(ctx, shown);
+    /* التصنيف لقسم تكنولوجيا التعليم وحده (له صحيفة مرجعية)؛ الرمز القصير يُوسَّع برمز قسم المالك كما في المقارنة. */
+    const planSection = (sectionRows as any[]).find(row => Number(row.AdSectionId) === Number(ctx.plan.AdSectionId));
+    const categorized = isTechnologyEducation(planSection?.AdSectionName);
+    const ownerCodes = new Map((sectionRows as any[]).map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
+    const categoryOf = (course: { code: string; sectionId: number }) => {
+      if (!categorized) return "";
+      const key = referenceCodeKey(course.code), owner = ownerCodes.get(Number(course.sectionId)) || "";
+      return REFERENCE_CATEGORIES.byCode.get(/^\d{1,3}$/.test(key) && /^\d{2}$/.test(owner) ? `01${owner}${key.padStart(3, "0")}` : key) || "";
+    };
     return {
+      categories: categorized ? REFERENCE_CATEGORIES.order : [],
       plan: { id: ctx.plan.id, name: ctx.plan.name, status: ctx.plan.status, sectionId: ctx.plan.AdSectionId, sectionName: ctx.sectionName },
       courses: ctx.courseIds.map(id => {
         const course = ctx.catalog.get(id) || { id, code: "", name: `مقرر ${id}`, credit: 0, hours: 0, capacity: 0, collegeId: 0, sectionId: 0 };
         return { id, code: course.code, name: course.name, credit: course.credit, hours: course.hours, capacity: course.capacity,
-          collegeId: course.collegeId, sectionId: course.sectionId, ownerSectionId: course.sectionId,
+          collegeId: course.collegeId, sectionId: course.sectionId, ownerSectionId: course.sectionId, category: categoryOf(course),
           ownerSectionName: sections.get(course.sectionId) || "", owned: ownsCourse(req, course), external: ctx.externalIds.includes(id) };
       }),
       /* مقرراتٌ يشير إليها مسبقٌ أو مقرن ولا تقع في الصحيفة: تُعرض أسماؤها لا غير. */
