@@ -146,6 +146,20 @@
   /* The smallest text that still carries meaning (field captions, chips, legends). */
   --t-micro:12px;
 
+  /* Intelligence Center scale (27-intelligence-type.css). Sizes are theme
+     independent; label/eyebrow colours reuse --ink-2/--brass/--muted, which
+     already carry the light and dark values (AA on canvas and surfaces). */
+  --ix-title:clamp(28px,3vw,36px);   /* page title */
+  --ix-section:clamp(20px,2vw,24px); /* section title */
+  --ix-card:17px;                    /* card title */
+  --ix-body:14.5px;                  /* body */
+  --ix-secondary:13.5px;             /* secondary / labels / tabs */
+  --ix-caption:13px;                 /* caption, eyebrow */
+  --ix-metric:30px;                  /* tile numeral */
+  --ix-metric-word:20px;             /* tile word value */
+  --ix-metric-sm:22px;               /* numeral inside a card (facts, counts) */
+  --ix-tap:44px;                     /* comfortable touch height */
+
   /* Layout */
   --sidebar-w:266px;
   --content-max:1460px;
