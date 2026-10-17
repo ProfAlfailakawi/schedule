@@ -23,6 +23,7 @@ import { byLevel } from "../utils/curriculumRules";
 import { isTechnologyEducation, referenceCodeKey } from "../utils/curriculumReference";
 import { buildPlanSheet } from "./planSheetPage";
 import { REFERENCE_CATEGORIES } from "./planReviewRoutes";
+import { AR, countOf } from "../utils/arabicCount";
 
 export interface PlanSheetDeps {
   requireAuth: RequestHandler;
@@ -192,7 +193,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
       else skipped.push({ planId: target.planId, reason: result.error || "" });
     }
     if (!done.length) return fail(res, 409, "لا صحيفةَ معتمدة في هذا النطاق لتُنشر.");
-    res.locals.auditChanges = `نشر ${done.length} صحيفة للعامة`;
+    res.locals.auditChanges = `نشر ${countOf(done.length, AR.sheet)} للعامة`;
     res.json({ published: done, skipped });
   });
 
@@ -222,7 +223,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
       /* صفحةُ قسم تكنولوجيا التعليم الأولى ثابتةٌ: تبقى في الفهرس ما لم يُنشر القسمُ من البرنامج. */
       const hasTech = [...groups.values()].some(list => isTechnologyEducation(list[0].sectionName));
       const cards = [...groups.entries()].sort((a, b) => a[1][0].sectionName.localeCompare(b[1][0].sectionName, "ar")).map(([sectionId, list]) =>
-        `<a class="c" href="/plans/s${sectionId}/"><b>${esc(deptTitle(list[0].sectionName))}</b><span>${esc(list.length === 1 ? list[0].planName : `${list.length} صحائف`)}</span><i>افتح الخطة</i></a>`);
+        `<a class="c" href="/plans/s${sectionId}/"><b>${esc(deptTitle(list[0].sectionName))}</b><span>${esc(list.length === 1 ? list[0].planName : countOf(list.length, AR.sheet))}</span><i>افتح الخطة</i></a>`);
       if (!hasTech) cards.unshift(`<a class="c" href="/plans/educational-technology/"><b>قسم تكنولوجيا التعليم</b><span>الخطة الدراسية</span><i>افتح الخطة</i></a>`);
       res.type("text/html; charset=utf-8").send(shell("الخطط الدراسية", `<h1>الخطط الدراسية</h1><p class="s">اختر القسم لتفتح خطته التفاعلية وتحمّلها PDF.</p>${cards.length > 6 ? '<input id="q" class="q" type="search" placeholder="ابحث عن قسم" aria-label="ابحث عن قسم">' : ""}<div class="g">${cards.join("") || '<div class="e">لم تُنشر خططٌ بعد.</div>'}</div>`, FILTER_SCRIPT));
     } catch (error) { next(error); }
@@ -236,7 +237,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
       const list = (await Repository.listPublishedSheets()).filter(sheet => sheet.AdSectionId === sectionId).sort((a, b) => a.planName.localeCompare(b.planName, "ar"));
       if (!list.length) return res.status(404).type("text/html; charset=utf-8").send(shell("غير منشورة", `<div class="e"><h1>لا خطة منشورة</h1><p>لم يُنشر لهذا القسم شيء بعد.</p><p><a href="/plans/">الخطط الدراسية</a></p></div>`));
       if (list.length === 1) return res.redirect(302, `/plans/s${sectionId}/${encodeURIComponent(list[0].planId)}/`);
-      const cards = list.map(sheet => `<a class="c" href="/plans/s${sectionId}/${encodeURIComponent(sheet.planId)}/"><b>${esc(sheet.planName || "الخطة الدراسية")}</b><span>${sheet.model.courses.length + sheet.model.groups.reduce((n, g) => n + g.courses.length, 0)} مقرراً</span><i>افتح الخطة</i></a>`);
+      const cards = list.map(sheet => `<a class="c" href="/plans/s${sectionId}/${encodeURIComponent(sheet.planId)}/"><b>${esc(sheet.planName || "الخطة الدراسية")}</b><span>${countOf(sheet.model.courses.length + sheet.model.groups.reduce((n, g) => n + g.courses.length, 0), AR.course)}</span><i>افتح الخطة</i></a>`);
       res.type("text/html; charset=utf-8").send(shell(`خطط ${deptTitle(list[0].sectionName)}`, `<h1>${esc(deptTitle(list[0].sectionName))}</h1><p class="s">اختر الصحيفة.</p>${cards.length > 6 ? '<input id="q" class="q" type="search" placeholder="ابحث عن صحيفة" aria-label="ابحث عن صحيفة">' : ""}<div class="g">${cards.join("")}</div>`, FILTER_SCRIPT));
     } catch (error) { next(error); }
   });

@@ -10,6 +10,7 @@
  * في public/plans/_template/sheet.html ويُمرَّر هنا نصّاً، فلا قراءةَ ملفاتٍ داخل الطلب.
  */
 import qrFactory from "../utils/qrcodeGenerator";
+import { AR, countOf } from "../utils/arabicCount";
 import type { SheetCourse, SheetElective, SheetGroup, SheetModel } from "../types";
 
 export type { SheetCourse, SheetElective, SheetGroup, SheetModel };
@@ -290,7 +291,7 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): st
     const hasArrows = group.courses.some(c => prereqOf(c.code).length);
     const rowH = hasArrows ? 170 : 80, h = 58 + (rows - 1) * rowH + (hasArrows ? 148 : 90);
     bandSvg.push(`<rect x="42" y="${y}" width="${W - 84}" height="${h}" rx="28" fill="#FEF3C7" fill-opacity=".6" stroke="#D97706" stroke-opacity=".5" stroke-width="1.5"/>`);
-    bandSvg.push(`<text x="${cx}" y="${y + 41}" text-anchor="middle" font-size="24" font-weight="900" fill="#92400E">${esc(group.title)}${group.pick ? ` - اختر ${AR_PICK[group.pick] || `${group.pick} مقررات`}` : ""}</text>`);
+    bandSvg.push(`<text x="${cx}" y="${y + 41}" text-anchor="middle" font-size="24" font-weight="900" fill="#92400E">${esc(group.title)}${group.pick ? ` - اختر ${AR_PICK[group.pick] || countOf(group.pick, AR.course)}` : ""}</text>`);
     group.courses.forEach((c, i) => {
       const r = Math.floor(i / perRow), k = i % perRow, inRow = Math.min(perRow, group.courses.length - r * perRow);
       const rowW = inRow * 350 + (inRow - 1) * 60, cxx = cx + rowW / 2 - 350 - k * 410, top = y + 58 + r * rowH;

@@ -15,7 +15,7 @@ interface SectionRow { sectionId: number; sectionName: string; sheets: SheetRow[
 interface State { sections: SectionRow[]; canPublish: boolean }
 type QrFactory = (t: number, e: "L" | "M" | "Q" | "H") => { addData(s: string): void; make(): void; createSvgTag(o?: { cellSize?: number; margin?: number; scalable?: boolean }): string };
 
-const dateOf = (iso: string) => { try { return new Date(iso).toLocaleDateString("ar-KW", { year: "numeric", month: "long", day: "numeric", numberingSystem: "latn" } as any); } catch { return ""; } };
+const dateOf = (iso: string) => { try { return new Date(iso).toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" }); } catch { return ""; } };
 
 async function call(url: string, body?: unknown) {
   const res = await fetch(url, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -138,7 +138,7 @@ export default function PlanSheetPublisher({ onChanged }: { onChanged?: () => vo
             <div className="psh-qr-img" dangerouslySetInnerHTML={{ __html: qr.svg }} />
             <input readOnly value={qr.url} dir="ltr" onFocus={event => event.currentTarget.select()} aria-label="الرابط" />
             <div className="psh-qr-actions">
-              <SecondaryButton onClick={() => copy(qr.url)} data-guide-ignore="نسخ رابط الصحيفة من نافذة رمز QR">{copied === qr.url ? <Check /> : <Copy />} نسخ الرابط</SecondaryButton>
+              <SecondaryButton onClick={() => copy(qr.url)} data-guide-ignore="نسخ رابط الصحيفة من نافذة رمز QR">{copied === qr.url ? <Check /> : <Copy />} انسخ الرابط</SecondaryButton>
               <SecondaryButton onClick={downloadQr} data-guide-ignore="تنزيل رمز QR صورةً"><Download /> تنزيل QR</SecondaryButton>
             </div>
           </div>
