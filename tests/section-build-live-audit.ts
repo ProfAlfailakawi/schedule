@@ -19,7 +19,7 @@ const up = async () => { try { return (await fetch(BASE + "/api/public/me/state"
 const srv = fs.readFileSync("server.ts", "utf8"), ui = fs.readFileSync("src/components/SectionBuild.tsx", "utf8"), plan = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
 check(srv.includes('applyProposalCore(req, {\n        kind: "opening"') && !/section-build\/apply[\s\S]{0,3000}Repository\.(createSchedule|updateSchedule)\(/.test(srv), "الإنزال يمرّ من باب الاعتماد المشترك لا من الكتابة المباشرة");
 check(srv.includes("section-build:${collegeId}:${sectionId}:${termId}") && srv.includes("String(req.body?.fingerprint"), "قفلٌ متسلسل وبصمة أسبوع قبل الكتابة");
-check(plan.includes("<SectionBuild") && ui.includes("/api/section-build/apply") && ui.includes('role="alertdialog"'), "الواجهة موصولة في تخطيط الشعب وفيها تأكيدٌ قبل الكتابة");
+check(plan.includes("<SectionBuild") && plan.includes("buildReady") && fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8").includes("xlsxPreview.editable") && ui.includes("/api/section-build/review-rows") && ui.includes("/api/section-build/apply") && ui.includes('role="alertdialog"'), "الواجهة موصولة في تخطيط الشعب وفيها تأكيدٌ قبل الكتابة");
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-section-build-"));
 let child: ReturnType<typeof spawn> | null = null;
@@ -66,6 +66,24 @@ try {
     const undone = await call("POST", "/api/section-build/undo", { ...scope, batchId: applied.body.batchId });
     check(undone.status === 200 && undone.body.removed === pick.length, "التراجع يمحو الدفعة", undone.body);
     check(((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).length === before.length, "الجدول عاد كما كان");
+
+    /* ── فصلٌ فارغ: وقتٌ من الفصل المماثل وقاعةٌ بانتظار التثبيت، ومراجعةٌ في شاشة الاستيراد نفسها ── */
+    check((await call("POST", "/api/section-build/review-rows", { collegeId: 1, sectionId: 2, termId: 1, targets: { "1": 1 } })).status === 409, "قسمٌ فيه مواعيد: المراجعة (التي تستبدل الجدول) مرفوضة");
+    for (const row of before) await call("DELETE", `/api/schedules/${row.id}`);
+    const empty = await call("POST", "/api/section-build/preview", base);
+    const all = empty.body.rows.flatMap((r: any) => r.placements);
+    const pendingOnly = all.filter((p: any) => p.pending);
+    check(empty.status === 200 && empty.body.started === false && all.length === empty.body.totals.placeable && pendingOnly.length === empty.body.totals.pending && pendingOnly.length > 0 && pendingOnly.every((p: any) => !p.roomId), "فصلٌ فارغ: ما لا قاعة له يُبنى بانتظار التثبيت، والباقي بقاعاته", empty.body.totals);
+    check(empty.body.rows.every((r: any) => { const keys = r.placements.filter((p: any) => p.pending).map((p: any) => `${p.dayLabel}@${p.start}`); return new Set(keys).size === keys.length; }), "شعبتان معلّقتان لمقررٍ واحد لا تقعان في الوقت نفسه");
+    check(all.some((p: any) => p.note === "كالفصل المماثل"), "الأوقات من الفصل المماثل حين تتوفّر");
+    const pendPick = empty.body.rows.flatMap((r: any) => r.placements.map((p: any) => `${r.courseId}:${p.sectionCode}`));
+    check((await call("POST", "/api/section-build/apply", { ...base, fingerprint: empty.body.fingerprint, pick: pendPick })).status === 409, "المعلّقة لا تُكتب مباشرةً: تُراجَع أولاً");
+    const review = await call("POST", "/api/section-build/review-rows", base);
+    check(review.status === 200 && review.body.count === empty.body.totals.placeable && review.body.pending === empty.body.totals.pending && review.body.rows[0]["الوقت"] && review.body.rows[0]["رمز المقرر"], "صفوف المراجعة بشكل نموذج الاستيراد", { status: review.status, count: review.body?.count, pending: review.body?.pending });
+    const imp = await call("POST", "/api/intelligence/import-preview", { collegeId: 1, sectionId: 1, termId: 1, rows: review.body.rows });
+    check(imp.status === 200 && imp.body.count === review.body.count, "شاشة الاستيراد نفسها تفهم الصفوف (المراجعة والتعديل هناك)", { status: imp.status, error: imp.body?.error, count: imp.body?.count, expected: review.body.count });
+    check((imp.body?.rows || []).every((r: any) => r.fstarttime && r.fendtime && r.fstarttime < r.fendtime), "الوقت يصل مرتَّباً (البداية قبل النهاية): لا ينقلب في القارئ", (imp.body?.rows || []).slice(0, 2).map((r: any) => [r.fstarttime, r.fendtime]));
+    check(((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).length === 0, "لا شيء كُتب في الجدول قبل النشر من شاشة المراجعة");
   }
 } finally {
   if (child?.pid) try { process.kill(-child.pid); } catch { /* gone */ }
