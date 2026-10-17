@@ -5108,15 +5108,17 @@ export const Repository = {
    * `droppedByStudent` (rule: src/utils/studentNeedMerge.ts). It used to delete
    * and recreate, discarding those decisions, in two non-atomic steps.
    */
-  /* «اليد الواحدة» يدٌ لكل نوع طلب: كان طلبُ التعارض يمحو طلبَ فتح المقرّر قبله،
+  /* في «مساري» (byKind) «اليد الواحدة» يدٌ لكل نوع طلب: كان طلبُ التعارض يمحو طلبَ فتح المقرّر قبله،
      وجوابُ «بعد التسجيل» يمحو حالةَ الخريج وقرارَ لجنتها (studentNeedKind). */
-  saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">): Promise<StudentNeed> => {
+  saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">, options: { byKind?: boolean } = {}): Promise<StudentNeed> => {
     const now = new Date().toISOString();
     const sameHand = (item: StudentNeed) => {
       const itemSurveySection = Number(item.surveySectionId || item.AdSectionId || 0);
       const entrySurveySection = Number(entry.surveySectionId || entry.AdSectionId || 0);
       return item.fingerprint === entry.fingerprint && Number(item.AdTermId) === Number(entry.AdTermId)
-        && itemSurveySection === entrySurveySection && studentNeedKind(item) === studentNeedKind(entry);
+        && itemSurveySection === entrySurveySection
+        /* «مساري» وحده يفصل بالنوع؛ الاستبيان القديم يبقى حالةً واحدة برقمٍ واحد (تحقّقُ رقم الحالة فيه يفترض ذلك). */
+        && (!options.byKind || studentNeedKind(item) === studentNeedKind(entry));
     };
 
     if (firestoreDb && !demoSandboxContext.getStore()) {

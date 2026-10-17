@@ -652,7 +652,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       curriculumPlanId: checked.provenPlanId || profile.curriculumPlanId, nameCipher: profile.nameCipher!, civilCipher: profile.civilCipher!, details,
       graduateReason: reason, passedUnits: checked.passedUnits, requiredUnits: checked.requiredUnits, degreeUnits: checked.degreeUnits,
       eligibility: checked.eligibility, proofNameMatched: checked.nameMatched,
-    });
+    }, { byKind: true });
     const sections = await Repository.getSections();
     noStore(res);
     res.status(201).json({ ok: true, requestType: "graduate", termId, caseRef: caseRefFor(saved), cases: [{
@@ -788,7 +788,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         requestGroupId, nameCipher: profile.nameCipher, civilCipher: profile.civilCipher,
         details: ownerDetails, eligibility: "not-checked",
       };
-      const saved = await Repository.saveStudentNeed(entry);
+      const saved = await Repository.saveStudentNeed(entry, { byKind: true });
       byOwner.push({ sectionId: ownerSectionId, caseRef: caseRefFor(saved), courseIds: ownerCourseIds });
     }
     const primary = byOwner.find(row => row.sectionId === Number(profile.AdSectionId)) || byOwner[0];
@@ -969,7 +969,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
           curriculumPlanId: profile.curriculumPlanId, courseIds: list.map(answer => answer.courseId), requestType: "new-course",
           nameCipher, civilCipher, eligibility: "not-checked",
           details: `من «مساري» بعد التسجيل — ${list.map(answer => `${ctx.info(answer.courseId).name}: ${REASON_TEXT[answer.reason || "other"]}`).join("؛ ")}`,
-        } as any);
+        } as any, { byKind: true });
         cases.push({ sectionName: String((sections as any[]).find(row => Number(row.AdSectionId) === ownerSectionId)?.AdSectionName || ""), caseRef: caseRefFor(need) });
       }
     }

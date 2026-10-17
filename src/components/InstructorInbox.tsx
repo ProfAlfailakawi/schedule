@@ -1181,18 +1181,32 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         }),
       });
       createdId = Number(saved?.id || 0);
-      await request(`/api/instructor-requests/${row.id}/decide`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemIndex: index, state: "fixed", scheduleId: createdId }),
-      });
+      /* تسجيلُ القرار بلا `request()`: نحتاج أن نفرّق رفضاً صريحاً من الخادم
+         (فيُسحب الصفّ) عن ردٍّ ضائع أو خطأ خادم قد يكون القرارُ فيه قد حُفظ
+         (فلا يُحذف صفٌّ صار القرارُ يشير إليه). */
+      let response: Response | null = null;
+      let body: any = {};
+      try {
+        response = await fetch(`/api/instructor-requests/${row.id}/decide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemIndex: index, state: "fixed", scheduleId: createdId }),
+        });
+        body = await response.json().catch(() => ({}));
+      } catch { response = null; }
+      const refused = Boolean(response && response.status >= 400 && response.status < 500 && body?.code !== "already-fixed");
+      if (refused) {
+        /* حُفظ الصفّ ورفض الخادمُ القرارَ صراحةً: لا يبقى صفٌّ يتيمٌ بلا طلب،
+           ولا تُنشئ الإعادةُ صفّاً ثانياً. */
+        await request(`/api/schedules/${createdId}`, { method: "DELETE" }).catch(() => undefined);
+        createdId = 0;
+        throw new Error(body?.error || "تعذّر تسجيل القرار، فسُحب الموعد الجديد.");
+      }
       createdId = 0;
       setQuick(null);
       await load();
+      if (!response || !response.ok) setError("حُفظ الموعد، ولم يتأكد تسجيلُ القرار. راجع حالة البند بعد التحديث.");
     } catch (e: any) {
-      /* حُفظ الصفّ ورُفض تسجيلُ القرار: لا يبقى صفٌّ يتيمٌ في الجدول بلا طلب،
-         ولا تُنشئ الإعادةُ صفّاً ثانياً. */
-      if (createdId) await request(`/api/schedules/${createdId}`, { method: "DELETE" }).catch(() => undefined);
       setQuickError(e.message);
     }
     finally { setQuickSaving(false); }
