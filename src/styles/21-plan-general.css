@@ -6,3 +6,7 @@
 .pr-confirm-ic{display:grid;place-items:center;inline-size:38px;block-size:38px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink)}.pr-confirm-ic svg{inline-size:20px;block-size:20px}
 .pr-confirm ul{margin:6px 0 0;padding-inline-start:18px;display:grid;gap:3px;font-size:.82rem;line-height:1.6}
 .pr-confirm-actions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── صحيفة التخرج: قائمةٌ واحدة مرتّبة بالمستوى بدل أعمدة المستويات المطويّة ── */
+.reference-flat{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.reference-level-pill{display:inline-grid;place-items:center;min-inline-size:34px;padding:1px 8px;border-radius:999px;background:var(--accent-softer);color:var(--accent-ink);font-style:normal;font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums}

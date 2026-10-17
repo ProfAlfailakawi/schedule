@@ -109,14 +109,16 @@ const ctx = (plan: number[]) => ({
 
 {
   const source = read("src/components/CurriculumReferenceReview.tsx");
-  check(source.includes("reference-level-map") && source.includes("courseLevelFromCode") && source.includes("reference-filterbar"),
-    "R6 المقارنة تعرض المستويات وتتيح البحث والفلاتر داخل الصفحة نفسها");
+  check(source.includes("reference-flat") && source.includes("reference-level-pill") && source.includes("courseLevelFromCode") && source.includes("reference-filterbar") && !source.includes("reference-level-map"),
+    "R6 المقارنة قائمةٌ واحدة مرتّبة بالمستوى (شارة مستوى لكل مقرر) مع البحث والفلاتر، بلا أعمدة مستوياتٍ مطويّة");
   check(source.includes("ancestry.up") && source.includes("ancestry.down") && source.includes("reference-selected-links"),
     "R6 اختيار مقرر يبرز المتطلبات السابقة والمقررات التي تعتمد عليه");
   check(source.includes('aria-label="أقسام الصحيفة"') && source.includes('role="tab"') && source.includes('aria-label="المجموعة"') && source.includes('aria-label="حالة المطابقة"'),
     "R6 تبويب أقسام الصحيفة (ثقافة عامة/تخصصية/مهنية/تدريب) والمجموعة وحالة المطابقة قابلة للوصول");
-  check(source.includes("reference-guide") && source.includes("reference-level-toggle") && source.includes("reference-course-group-block"),
-    "R6 القراءة البصرية مختصرة: دليل الربط مطوي والمستويات ومجموعاتها قابلة للفتح");
+  check(source.includes("reference-guide") && !source.includes("reference-level-toggle") && !source.includes("expandedLevels"),
+    "R6 القراءة البصرية مختصرة: دليل الربط مطوي ولا أعمدة مستوياتٍ تُفتح وتُطوى");
+  check(source.includes("course.ownerSectionId === selectedSectionId"),
+    "R6 مقررات القسم المحدد وحدها (لا مقررات كليةٍ عامة)");
   const approveUi = read("src/components/PlanReview.tsx");
   check(approveUi.includes("setConfirmApprove(true)") && approveUi.includes("تأكيد اعتماد الصحيفة") && approveUi.includes("تختفي أيقونةُ «مراجعة الصحيفة»") && !/PrimaryButton[^>]*onClick=\{\(\) => act\("\/api\/plan-review\/approve"/.test(approveUi), "R6 «اعتماد الصحيفة» يمرّ بتأكيدٍ يقول إن الأيقونة تختفي وتعود إن عُدّلت");
   const reviewUi = read("src/components/PlanReview.tsx");
