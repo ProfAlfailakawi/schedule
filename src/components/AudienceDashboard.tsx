@@ -286,7 +286,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
         </ul>
       </details>
 
-      <section className="pt-kit" aria-hidden="true">
+      <section className="pt-kit print-only" aria-hidden="true">
         <header>
           <span className="pt-kit-brand">SCHEDULE · نظام القرار الأكاديمي</span>
           <h2>ملف الجمهور</h2>

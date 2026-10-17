@@ -1,5 +1,4 @@
 import { compareIntelligenceTerms, rowsForIntelligenceScope } from "./src/utils/intelligenceReadingScope";
-import { recordLinkOpen } from "./src/utils/audienceStats";
 import express, { Request, Response, NextFunction } from "express";
 import { rateLimit } from "express-rate-limit";
 import compression from "compression";
@@ -19335,13 +19334,14 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
   /* أولُ فتحٍ يُسجَّل مرّةً واحدة. وهو لا يقول «وصلت الرسالة» — يقول «فُتح
      الرابط»، وهذا كلُّ ما يعرفه النظام بصدق. */
   let request = await refreshUnsubmittedInstructorRequest(resolved.request);
-  const opened = recordLinkOpen(request, new Date().toISOString());
+  const openedAt = new Date().toISOString();
+  const opened = await Repository.recordInstructorRequestOpen(request.id, openedAt);
   if (opened) {
-    const firstOpen = !request.linkOpenedAt;
-    request = await Repository.saveInstructorRequest({
-      ...request, ...opened,
-      ...(firstOpen ? { timeline: [...(request.timeline || []), { kind: "link-opened" as const, at: opened.linkOpenedAt! }] } : {}),
-    });
+    /* نُحدّث نسخة العرض المحلية فقط؛ المخزَّن حُدّثت حقول العدّ فيه وحدها. */
+    request = {
+      ...request, ...opened.fields,
+      ...(opened.first ? { timeline: [...(request.timeline || []), { kind: "link-opened" as const, at: openedAt }] } : {}),
+    };
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
 
