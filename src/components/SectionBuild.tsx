@@ -125,7 +125,7 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
             {built.rows.filter(row => row.state !== "unset").map(row => (
               <li key={row.courseId} className={`sb-row s-${row.state}`}>
                 <div className="sb-name"><b>{row.name}</b><small dir="ltr">{row.code}</small></div>
-                <div className="sb-gap" aria-label={`مطلوب ${row.target}، موجود ${row.existing}، باقٍ ${row.remaining}`}>
+                <div className="sb-gap" aria-label={row.state === "over" ? `مطلوب ${row.target}، موجود ${row.existing}، زائد ${row.existing - (row.target ?? 0)}` : `مطلوب ${row.target}، موجود ${row.existing}، باقٍ ${row.remaining}`}>
                   <span><b>{row.target}</b><small>مطلوبة</small></span>
                   <span><b>{row.existing}</b><small>في الجدول</small></span>
                   <span className={row.remaining ? "is-gap" : "is-ok"}>{row.state === "done" ? <CheckCircle2 aria-hidden="true" /> : <b>{row.state === "over" ? row.existing - (row.target ?? 0) : row.remaining}</b>}<small>{row.state === "done" ? "مكتمل" : row.state === "over" ? "زائدة" : "باقية"}</small></span>
