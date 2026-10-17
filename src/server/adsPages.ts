@@ -66,6 +66,7 @@ td.n{font-variant-numeric:tabular-nums}
 .btn{appearance:none;border:0;background:var(--accent);color:#fff;border-radius:12px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer}
 .bar{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .callout{display:grid;gap:4px;margin:0 0 12px;padding:14px 16px;border-radius:14px;background:var(--brand-soft,#e8f1ee);border:1px solid var(--line)}.callout b{color:var(--brand,#1f6b5a)}.callout span{font-size:.9rem;line-height:1.7}
+a.btn{display:inline-block;text-decoration:none}.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0}
 .reach{color:var(--brand,#1f6b5a)}
 .slot{display:grid;gap:10px;grid-template-columns:minmax(0,1fr) 190px;align-items:center}
 .mock{border:1.5px dashed var(--accent);border-radius:10px;background:var(--soft);display:grid;place-items:center;color:var(--accent);font-size:12px;max-width:100%}
@@ -122,6 +123,8 @@ export interface CampaignReportInput {
   weekly?: WeeklyCompare;
   /** متوسط نسبة النقر لباقي حملات الموقع، أو null/undefined إن قلّت العيّنة. */
   benchmarkCtr?: number | null;
+  /** أصلُ الموقع (https://المضيف) لرابط اشتراك التقويم. */
+  origin?: string;
 }
 
 const arrow = (v: number | null): string => (v === null ? "—" : v > 0 ? `▲ ${pct(v)}` : v < 0 ? `▼ ${pct(Math.abs(v))}` : "ثابت");
@@ -167,6 +170,15 @@ export function campaignReportPage(input: CampaignReportInput): string {
     : phase === "ended" ? `انتهى العرض في ${dateAr(c.endDay)}`
     : phase === "scheduled" ? `يبدأ العرض في ${dateAr(c.startDay)}` : "";
 
+  const reportPath = `/ad-report/${encodeURIComponent(c.reportToken)}`;
+  const origin = (input.origin || "").replace(/\/$/, "");
+  const endingBanner = phase === "live" && left <= 7
+    ? `<div class="callout"><b>حملتكم تنتهي بعد ${esc(countOf(Math.max(0, left), AR.day))}</b><span>للتجديد أو تثبيت مكانكم في الفصل القادم تواصلوا مع إدارة البرنامج قبل الانتهاء.</span></div>` : "";
+  const calendarCard = phase === "ended" ? "" : `
+<h2>تنبيهاتٌ تصلك بلا حساب</h2>
+<div class="card"><p>لا حاجة لإنشاء حساب: اشترك بهذا الرابط في تقويم جوالك فيذكّرك بنفسه قبل انتهاء الحملة بأسبوع وفي يوم انتهائها، وكل أحدٍ بتقريرك الأسبوعي. وإن تغيّرت تواريخ الحملة يتحدّث وحده.</p>
+<p class="btnrow">${origin ? `<a class="btn" href="${esc(origin.replace(/^https?:/, "webcal:") + reportPath)}/calendar.ics">اشترك في تقويمي</a>` : ""}<a class="btn" style="background:transparent;color:var(--accent);border:1px solid var(--line)" href="${esc(reportPath)}/calendar.ics?dl=1">تنزيل الملف</a></p>
+<p class="note">يعمل مع تقويم آيفون وجوجل وأوتلوك. لا نجمع بريداً ولا رقماً، والتقويم يقرأ الرابط وحده.</p></div>`;
   return page(`تقرير حملة ${c.company}`, nonce, `
 <div class="bar noprint"><p class="brand">SCHEDULE · تقرير الحملة</p><button class="btn" id="print" type="button">طباعة / حفظ PDF</button></div>
 <section class="hero">
@@ -177,7 +189,7 @@ export function campaignReportPage(input: CampaignReportInput): string {
     <span class="chip ${phase === "live" ? "live" : ""}">${esc(PHASE_LABEL[phase])}</span>
     ${c.trial ? `<span class="chip warn">حملة تجريبية</span>` : ""}
     <span class="chip">الموقع: ${esc(slot?.label || c.slot)}</span>
-    ${slot?.wholeUniversity ? `<span class="chip">يصل كل طلبة الجامعة</span>` : ""}
+    ${slot?.wholeUniversity && !c.colleges?.length ? `<span class="chip">يصل كل طلبة الجامعة</span>` : ""}
     <span class="chip">من ${esc(dateAr(c.startDay))} إلى ${esc(dateAr(c.endDay))}</span>
     ${phaseNote ? `<span class="chip">${esc(phaseNote)}</span>` : ""}
   </div>
@@ -189,7 +201,7 @@ export function campaignReportPage(input: CampaignReportInput): string {
   <div class="kpi"><b>${pct(totals.ctr)}</b><span>نسبة النقر</span><small>النقرات ÷ الظهور</small></div>
 </div>
 ${c.trial ? trialCard({ phase, totals, benchmark: input.benchmarkCtr, days: series.length }) : ""}
-${input.weekly && (input.weekly.hasLastWeek || input.weekly.thisWeek.impressions > 0) ? weeklyCard(input.weekly) : ""}
+${endingBanner}${input.weekly && (input.weekly.hasLastWeek || input.weekly.thisWeek.impressions > 0) ? weeklyCard(input.weekly) : ""}${calendarCard}
 <h2>الأداء اليومي</h2>
 <div class="card">${barChart(series.map(p => ({ day: p.day, a: p.impressions, b: p.clicks })), "الظهور", "النقرات")}</div>
 ${input.liveInSlot > 1 ? `<p class="note">يتناوب في هذا الموقع ${countOf(input.liveInSlot, AR.campaign)}، فحصتك المتوقعة من الظهور نحو ${pct(share * 100)}.</p>` : ""}
@@ -249,7 +261,7 @@ ${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2>
 ${s.demand.top.length >= 3 ? `<h2>ما يبحث عنه الطلبة هذا الفصل</h2><div class="card"><table><thead><tr><th>المقرر</th><th>طلبةٌ يريدونه</th></tr></thead><tbody>${s.demand.top.slice(0, 6).map(d => `<tr><td>${esc(d.name)}</td><td class="n">${approx(d.students)}</td></tr>`).join("")}</tbody></table><p class="note">أعدادٌ تقريبية مجمّعة، ولا يظهر مقررٌ يطلبه أقل من ${countOf(s.demand.minStudents, AR.student)} مختلفين.</p></div>` : ""}
 ${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
 <h2>أين يظهر إعلانك</h2>
-<div class="callout"><b>«مساري» لكل الجامعة</b><span>إعلانك في «مساري» ومحطة الاستراحة يراه كل طالبٍ يدخل، من كل الكليات، دون تخصيص. هذه ميزةٌ خاصة بهذين الموقعين؛ أما الجدول العام فيمكن حصره بكليات معينة.</span></div>
+<div class="callout"><b>«مساري» لكل الجامعة</b><span>إعلانك في «مساري» ومحطة الاستراحة يراه كل طالبٍ يدخل، من كل الكليات، دون أي تخصيص؛ وإن أردتَ كليةً بعينها فيمكن حصر الحملة بها (لمن أكمل ملفه الشخصي).</span></div>
 <div class="card">${activeSlots().map(slot => {
   const live = input.liveBySlot[slot.id] || 0;
   const free = slot.exclusive ? (live ? 0 : 1) : Math.max(0, slot.capacity - live);

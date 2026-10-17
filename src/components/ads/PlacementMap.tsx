@@ -31,7 +31,7 @@ export function PlacementMap({ data }: { data: Payload }) {
           <SlotBlock slot={by("sponsor")} thin /><SlotBlock slot={by("me")} />
           <div className="ad-sk ad-sk-tabs" />
         </div>
-        <figcaption><b>«مساري» · كل الجامعة</b><span>يصل كل الطلبة من كل الكليات. على الجوال: «محطة الاستراحة» داخل التذكرة، و«مساري» أسفل الصفحة، والراعي فوقها. لا إعلان قبل الدخول.</span></figcaption>
+        <figcaption><b>«مساري» · كل الجامعة</b><span>يصل كل الطلبة من كل الكليات افتراضياً، ويمكن حصره بكلية. على الجوال: «محطة الاستراحة» داخل التذكرة، و«مساري» أسفل الصفحة، والراعي فوقها. لا إعلان قبل الدخول.</span></figcaption>
       </figure>
       <figure className="ad-surface">
         <div className="ad-desk">

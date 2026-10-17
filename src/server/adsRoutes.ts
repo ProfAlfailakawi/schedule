@@ -25,6 +25,7 @@ import {
   trialProblems, weeklyCompare, slotBenchmarkCtr, TRIAL_DAYS, normCompany, activeSlots,
 } from "../utils/adsEngine";
 import { buildAudienceStats } from "../utils/audienceStats";
+import { reportCalendar } from "../utils/adCalendar";
 import { SEASONS, activeSeasons, seasonCalendar, seasonsText } from "../utils/adSeasons";
 import { AR, countOf } from "../utils/arabicCount";
 import type { CenterNotification } from "../utils/notificationCenter";
@@ -351,7 +352,11 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const hasToken = Boolean(String(req.query.t || ""));
     const link = hasToken ? await linkInfo(req.query.t) : null;
     if (link && (!link.known || !AD_LINK_KINDS.has(link.kind))) { res.json({ items: [], sponsor: null, rotateMs: 9000 }); return; }
-    const ctx = { today, seasons: await currentSeasons(), collegeId: link?.collegeId || undefined };
+    /* «مساري» والاستراحة بلا رابط: الصفحةُ تعرف كلية الطالب بعد إكمال ملفه وترسلها رقماً مجرّداً (c). رقمٌ عامٌّ لا يدلّ على أحد،
+       ولا يغيّر إلا أي إعلانٍ يراه صاحبُه هو. أما صفحات الروابط فكليتُها من الرابط نفسه لا من الطلب. */
+    const claimed = Number.parseInt(String(req.query.c || ""), 10);
+    const profileCollege = !hasToken && slot.wholeUniversity && Number.isInteger(claimed) && claimed > 0 && claimed < 100_000 ? claimed : undefined;
+    const ctx = { today, seasons: await currentSeasons(), collegeId: link?.collegeId || profileCollege };
     const live = (await campaigns()).filter(c => eligibleNow(c, ctx));
     const heads = new Map((await Promise.all([...new Set(live.flatMap(c => c.creativeIds))].map(async id => [id, await Repository.getAdCreative(id)] as const))).filter(([, v]) => v).map(([k, v]) => [k, v!] as const));
     const itemFor = (c: AdCampaign) => {
@@ -439,6 +444,18 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     res.send(measurementPage(deps.publicPageNonce(res)));
   });
 
+  /* اشتراكُ تقويمٍ للشركة (تنبيهاتٌ بلا حساب): الرمزُ هو الهوية. بلا بياناتٍ تتجاوز اسمَ الشركة وتواريخَ حملتها وهي تعرفها. */
+  app.get("/ad-report/:token/calendar.ics", async (req, res) => {
+    const token = String(req.params.token || "");
+    const campaign = token.length >= 20 ? (await Repository.listAdCampaigns()).find(c => c.reportToken === token) : undefined;
+    if (!campaign) { missing(res); return; }
+    noindex(res);
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Cache-Control", "private, max-age=600");
+    if (req.query.dl) res.setHeader("Content-Disposition", 'attachment; filename="campaign.ics"');
+    res.send(reportCalendar(campaign, `${req.protocol}://${req.get("host")}/ad-report/${token}`, kuwaitDay()));
+  });
+
   app.get("/ad-report/:token", async (req, res) => {
     const token = String(req.params.token || "");
     const campaign = token.length >= 20 ? (await Repository.listAdCampaigns()).find(c => c.reportToken === token) : undefined;
@@ -450,7 +467,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const nonce = deps.publicPageNonce(res);
     const allStats = await Repository.listAdStats();
     res.send(campaignReportPage({
-      campaign, creatives: heads, stats, nonce, today,
+      campaign, creatives: heads, stats, nonce, today, origin: `${req.protocol}://${req.get("host")}`,
       weekly: weeklyCompare(stats, today), benchmarkCtr: slotBenchmarkCtr(campaign.id, campaign.slot, all, allStats),
       liveInSlot: Math.max(1, all.filter(x => x.slot === campaign.slot && isLive(x, today)).length),
     }));

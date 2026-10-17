@@ -186,7 +186,7 @@ async function summaryOf(profile: StudentProfile) {
     }
   }
   return {
-    setupDone, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
+    setupDone, collegeId: profile.AdCollegeId || 0, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
     passedCourseIds: profile.passedCourseIds, passedUnits: profile.passedUnits,
     progress, wishes: profile.wishes || null,
     createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason, hasIdentity: Boolean(profile.nameCipher && profile.civilCipher),
