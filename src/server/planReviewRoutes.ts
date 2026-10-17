@@ -78,6 +78,15 @@ export const REFERENCE_CATEGORIES = (() => {
   return { byCode, order };
 })();
 
+/** تصنيفُ مقررٍ بحسب الصحيفة المرجعية: الرمزُ القصير يُوسَّع برمز قسم المالك كما في المقارنة. */
+export function referenceCategoryResolver(sections: readonly any[]): (code: string, ownerSectionId: number) => string {
+  const ownerCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
+  return (code, ownerSectionId) => {
+    const key = referenceCodeKey(code), owner = ownerCodes.get(Number(ownerSectionId)) || "";
+    return REFERENCE_CATEGORIES.byCode.get(/^\d{1,3}$/.test(key) && /^\d{2}$/.test(owner) ? `01${owner}${key.padStart(3, "0")}` : key) || "";
+  };
+}
+
 /** مقارنة صحائف تكنولوجيا التعليم المرجعية بكتالوج موقعٍ واحد: للعرض وللتطبيق معاً، فلا يفترقان. */
 export function referenceSnapshotFor(sections: any[], courses: AdCourse[]) {
     const sectionCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));

@@ -2451,6 +2451,12 @@ export const Repository = {
   createDemoSandbox: (sessionId: string, ttlMs: number): void => {
     demoSandboxes.set(sessionId, { state: createDemoSandboxState() as DBState, expiresAt: Date.now() + ttlMs });
   },
+  /** صندوقُ «مساري» التجريبي: حالةٌ فارغةٌ تُملأ بما يمرَّر، لا نسخةٌ من بيانات حقيقية ولا من صندوق الصفات. */
+  createShowcaseSandbox: (sessionId: string, ttlMs: number, seed: Partial<DBState>): void => {
+    const empty = Object.fromEntries(Object.entries(baseDb).filter(([, value]) => Array.isArray(value)).map(([key]) => [key, []]));
+    demoSandboxes.set(sessionId, { state: { ...empty, ...structuredClone(seed) } as DBState, expiresAt: Date.now() + ttlMs });
+  },
+  dropDemoSandbox: (sessionId: string): void => { demoSandboxes.delete(sessionId); },
   resetDemoSandbox: (sessionId: string, ttlMs: number): boolean => {
     if (!sessionId.startsWith("demo_")) return false;
     demoSandboxes.set(sessionId, { state: createDemoSandboxState() as DBState, expiresAt: Date.now() + ttlMs });

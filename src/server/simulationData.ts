@@ -412,7 +412,9 @@ const SIGNED = new Set(["head", "submitted", "accepted"]);
 const contextMemo = createTtlMemo<TicketContext>({ ttlMs: 5 * 60_000 });
 
 export function ticketContext(termId: number): Promise<TicketContext> {
-  return contextMemo.get(String(termId), async () => {
+  /* صندوقُ التجربة لا يدخل الذاكرة المشتركة (أرقامُ فصله تتصادم مع الحقيقي). */
+  const memo = Repository.isDemoRequest() ? { get: (_key: string, load: () => Promise<TicketContext>) => load() } : contextMemo;
+  return memo.get(String(termId), async () => {
     const [schedules, approvals] = await Promise.all([Repository.getSchedulesByScope({ termId }), Repository.getScheduleApprovalsForTerm(termId)]);
     const offerings: TicketContext["offerings"] = new Map();
     const legacyKeys = new Map<string, string[]>();
