@@ -112,6 +112,9 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
 
   const s = data;
   const head = headlineTotals(s);
+  const sinceDate = new Date(`${AUDIENCE_BASELINE.asOf}T00:00:00Z`).toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+  /** سطرٌ صغير يظهر حين تُضيف الفترةُ المقيسة شيئاً: يبيّن أن الرقم حيّ ويزيد. */
+  const grew = (n: number) => (n > 0 ? <small>+{fmt(n)} منذ التفعيل</small> : null);
   const hasVisits = (visits?.days || 0) > 0;
   const typeTotal = s.survey.current.byType.newCourse + s.survey.current.byType.conflict + s.survey.current.byType.graduate;
   const typeBars = [
@@ -141,11 +144,20 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
         <div className="pt-live" style={{ marginTop: 14 }}><i aria-hidden="true" /> تحديثٌ تلقائي كل دقيقة{stamp ? ` · آخر تحديث ${stamp.toLocaleTimeString("ar-KW-u-nu-latn", { hour: "2-digit", minute: "2-digit" })}` : ""}</div>
       </section>
 
+      <section className="pt-card pt-estimates" aria-label="الجمهور منذ البداية">
+        <h3>الجمهور منذ {AUDIENCE_BASELINE.since}</h3>
+        <p className="pt-sub">تقديرات الإدارة حتى {sinceDate}، ويُضاف إليها ما يُقاس بعدها.</p>
+        <div className="pt-kpis">
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.students} /></b><span>إجمالي الطلبة المستفيدين</span>{grew(s.reach.newSinceBaseline)}</div>
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.visits} /></b><span>إجمالي دخول الطلبة</span>{grew(visits?.afterBaseline || 0)}</div>
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={AUDIENCE_BASELINE.currentStudents} /></b><span>الطلبة الحاليون</span></div>
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={AUDIENCE_BASELINE.instructors} /></b><span>أعضاء هيئة التدريس</span></div>
+          <div className="pt-kpi"><b><em className="pt-more">حوالي</em> <CountUp value={head.instructorOpens} /></b><span>إجمالي دخول أعضاء هيئة التدريس</span>{grew(s.instructors.openedAfterBaseline)}</div>
+        </div>
+      </section>
+
       <div className="pt-kpis">
-        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={head.students} /></b><span>طالب استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
-        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={head.visits} /></b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
-        <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={head.instructorOpens} /></b><span>فتحُ أعضاء هيئة التدريس لبطاقاتهم منذ {AUDIENCE_BASELINE.since}</span><small>عدد مرّات الفتح، وليس عدد الأشخاص</small></div>
-        <div className="pt-kpi"><b><CountUp value={s.instructors.opened} /></b><span>أعضاء هيئة التدريس هذا الفصل</span><small>فتحوا بطاقاتهم في {s.term?.name || "الفصل الجاري"}</small></div>
+        <div className="pt-kpi"><b><CountUp value={s.instructors.opened} /></b><span>فتحوا بطاقاتهم هذا الفصل</span><small>أعضاء هيئة التدريس في {s.term?.name || "الفصل الجاري"}</small></div>
         <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> {pct(head.instructorOpenRate)}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ عالٍ يعني جمهوراً منتبهاً</small></div>
         <div className="pt-kpi"><b>{hasVisits ? <CountUp value={visits!.last30} /> : "—"}</b><span>زيارة آخر 30 يوماً</span><small>{hasVisits ? `مقيسة منذ ${visits!.since}` : "القياس يبدأ بأول زيارة بعد التفعيل"}</small></div>
       </div>
@@ -273,7 +285,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <li><b>الاستمرارية:</b> نسبة طلبة فصلٍ ما (ببصمات الاستبيان) الذين أجابوا أيضاً في الفصل التالي له مباشرةً، وبعيّنةٍ لا تقل عن {countOf(CONTINUITY_MIN_STUDENTS, AR.student)}؛ دونها لا تظهر نسبة.</li>
           <li><b>أداء المواقع:</b> ظهورٌ ونقراتٌ صحيحة لكل موقع إعلاني، من حملاته كلها.</li>
           <li><b>الكليات:</b> مرتّبة بالحجم ومسمّاة بأرقام؛ لا تُكشف أسماؤها.</li>
-          <li><b>منذ {AUDIENCE_BASELINE.since}:</b> «الطلبة» و«الزيارات» ومرّات فتح بطاقات الأساتذة الإجمالية تشمل رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه ما يُقاس بعده (طلبة ظهروا لأول مرة، وزيارات، وبطاقات فُتحت). أما نسبة فتح البطاقات فحدٌّ أدنى 90%، ويظهر المقيس إن زاد عليه.</li>
+          <li><b>الجمهور منذ {AUDIENCE_BASELINE.since}:</b> أرقامٌ تقريبية تقدّرها إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ويُضاف إلى الطلبة المستفيدين وإلى مرّات الدخول ما يُقاس بعده؛ أما الطلبة الحاليون وأعضاء هيئة التدريس فتقديرٌ ثابت. ونسبة فتح البطاقات حدٌّ أدنى 90% يظهر المقيس إن زاد عليه.</li>
           <li>القياس يبدأ من يوم تفعيله ولا يرجع إلى الماضي؛ أما الاستبيان وبطاقات الأساتذة فمن سجلات التشغيل كاملة.</li>
         </ul>
       </details>
@@ -285,16 +297,16 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
           <small>{stamp ? stamp.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" }) : ""}</small>
         </header>
         <div className="pt-kit-kpis">
-          <div><b><em>أكثر من</em> {fmt(head.students)}</b><span>الطلبة الذين استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span></div>
-          <div><b><em>أكثر من</em> {fmt(head.visits)}</b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span></div>
-          <div><b><em>أكثر من</em> {fmt(head.instructorOpens)}</b><span>فتحٌ لبطاقات أعضاء هيئة التدريس</span></div>
+          <div><b><em>حوالي</em> {fmt(head.students)}</b><span>الطلبة الذين استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span></div>
+          <div><b><em>حوالي</em> {fmt(head.visits)}</b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span></div>
+          <div><b><em>حوالي</em> {fmt(head.instructorOpens)}</b><span>فتحٌ لبطاقات أعضاء هيئة التدريس</span></div>
           <div><b><em>أكثر من</em> {pct(head.instructorOpenRate)}</b><span>نسبة فتح بطاقات الأساتذة</span></div>
         </div>
         {s.continuity.length ? <p className="pt-kit-line">استمرارية الطلبة من {s.continuity[0].fromTerm} إلى {s.continuity[0].toTerm}: <b>{pct(s.continuity[0].rate)}</b></p> : null}
         {hasVisits && visits!.peakDay ? <p className="pt-kit-line">أنشط أيام الأسبوع: <b>{visits!.peakDay}</b></p> : null}
         {s.demand.top.length ? <div className="pt-kit-block"><h3>ما يطلبه الطلبة هذا الفصل</h3><ol>{s.demand.top.slice(0, 5).map(d => <li key={d.name}>{d.name}</li>)}</ol></div> : null}
         {s.adsBySlot.length ? <div className="pt-kit-block"><h3>مواقع الإعلان</h3><ul>{s.adsBySlot.slice(0, 4).map(r => <li key={r.slot}>{r.label} · نسبة النقر <b>{pct(r.ctr)}</b></li>)}</ul></div> : null}
-        <footer>أرقامٌ مجمّعة ومجهولة، بلا اسمٍ ولا هوية. الإجماليات منذ {AUDIENCE_BASELINE.since} تشمل رصيداً افتتاحياً أقرّته إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليه ما يُقاس بعده.</footer>
+        <footer>أرقامٌ مجمّعة ومجهولة، بلا اسمٍ ولا هوية. الإجماليات منذ {AUDIENCE_BASELINE.since} تقديراتٌ تقريبية من إدارة النظام حتى {AUDIENCE_BASELINE.asOf}، ثم يُضاف إليها ما يُقاس بعدها.</footer>
       </section>
     </div>
   );
