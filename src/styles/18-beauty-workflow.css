@@ -89,10 +89,15 @@
 @media (prefers-reduced-motion:no-preference){
   .changes-screen>.page-heading,.intelligence-page>.page-heading,
   .changes-screen>.sd-panel,.changes-screen>.inbox-glance,.changes-screen>.request-filters,
-  .intelligence-page>.intel-context,.intelligence-page>.intelligence-scenes{animation:beauty-rise-w .42s var(--ease-out,ease-out) backwards}
-  .changes-screen>.sd-panel,.changes-screen>.inbox-glance,.intelligence-page>.intel-context{animation-delay:.05s}
+  .intelligence-page>.intelligence-scenes{animation:beauty-rise-w .42s var(--ease-out,ease-out) backwards}
+  .changes-screen>.sd-panel,.changes-screen>.inbox-glance{animation-delay:.05s}
   .changes-screen>.request-filters,.intelligence-page>.intelligence-scenes{animation-delay:.1s}
 }
+/* The scope card is a standing control, not an arrival. Any style
+   recalculation on the page (the :has() reading rule, live refreshes) made
+   WebKit replay its fade, so the card blinked out and back while you worked.
+   It never animates. */
+.content-stack.intelligence-page>.intel-context{animation:none!important;opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){
   .glance-card,.request-card,.scene-subnav>button{transition:none}
   .glance-card:hover,.scene-subnav>button:hover:not(.active){transform:none}
