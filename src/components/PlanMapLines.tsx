@@ -2,21 +2,24 @@ import React, { useEffect, useState } from "react";
 import type { CurriculumCourseRule } from "../types";
 
 export type PlanId = string | number;
-export interface PlanEdge { from: PlanId; to: PlanId; optional: boolean }
+export interface PlanEdge { from: PlanId; to: PlanId; optional: boolean; /** رقم لون مستوى المقرر السابق (١–٥). */ hue?: number }
+
+/** لونُ المستوى: ١٠٠→١ … ٤٠٠→٤، وغير المصنف→٥. الرقمُ يحمل لون أسهمه (كما في صفحة الخطة). */
+export const levelHue = (level: number) => level >= 100 && level <= 400 ? Math.floor(level / 100) : 5;
 
 /** كلُّ مسبقٍ يربط مقرره بالمقرر الذي يشترطه؛ «أحدها» يُرسم متقطعاً. */
-export function planEdges(rules: readonly CurriculumCourseRule[], visible: ReadonlySet<number>): PlanEdge[] {
+export function planEdges(rules: readonly CurriculumCourseRule[], visible: ReadonlySet<number>, hueOf?: (id: number) => number): PlanEdge[] {
   const out: PlanEdge[] = [];
   for (const rule of rules) {
     if (!rule.prereq || !visible.has(rule.courseId)) continue;
     const seen = new Set<number>();
-    for (const id of rule.prereq.all) if (visible.has(id) && !seen.has(id)) { seen.add(id); out.push({ from: id, to: rule.courseId, optional: false }); }
-    for (const id of rule.prereq.anyOf.flat()) if (visible.has(id) && !seen.has(id)) { seen.add(id); out.push({ from: id, to: rule.courseId, optional: true }); }
+    for (const id of rule.prereq.all) if (visible.has(id) && !seen.has(id)) { seen.add(id); out.push({ from: id, to: rule.courseId, optional: false, hue: hueOf?.(id) }); }
+    for (const id of rule.prereq.anyOf.flat()) if (visible.has(id) && !seen.has(id)) { seen.add(id); out.push({ from: id, to: rule.courseId, optional: true, hue: hueOf?.(id) }); }
   }
   return out;
 }
 
-interface Path { key: string; d: string; head: string; from: PlanId; to: PlanId; optional: boolean }
+interface Path { key: string; d: string; head: string; from: PlanId; to: PlanId; optional: boolean; hue: number; dur: number; delay: number }
 
 /** خيوطُ المسبقات فوق الخريطة: ظاهرةٌ دائماً، وعند تحديد مقررٍ تُضاء سلسلته ويخفت الباقي. */
 export default function PlanMapLines({ mapRef, edges, focus, up, down, layoutKey }: {
@@ -47,8 +50,10 @@ export default function PlanMapLines({ mapRef, edges, focus, up, down, layoutKey
         }
         /* رأسُ السهم عند المقرر الذي يشترط: يتجه مع مماسّ المنحنى عند نهايته. */
         const ang = Math.atan2(0, x2 - c2 || 1), L = 8, W = 4.5, ux = Math.cos(ang), uy = Math.sin(ang);
+        /* نقطةٌ تسير على السهم من المسبق إلى ما يفتحه بسرعةٍ ثابتة تقريباً، وتتفاوت بدايات النقاط فلا تتزامن. */
+        const dur = Math.max(2.4, (Math.abs(x2 - x1) + Math.abs(by - ay)) / 90);
         const head = `M${x2},${by} L${x2 - ux * L - uy * W},${by - uy * L + ux * W} L${x2 - ux * L + uy * W},${by - uy * L - ux * W} Z`;
-        paths.push({ key: `${e.from}-${e.to}`, d: `M${x1},${ay} C${c1},${ay} ${c2},${by} ${x2},${by}`, head, from: e.from, to: e.to, optional: e.optional });
+        paths.push({ key: `${e.from}-${e.to}`, d: `M${x1},${ay} C${c1},${ay} ${c2},${by} ${x2},${by}`, head, from: e.from, to: e.to, optional: e.optional, hue: e.hue || 5, dur, delay: -((paths.length * 0.61) % dur) });
       }
       setGeo({ w: box.width, h: box.height, paths });
     };
@@ -66,9 +71,10 @@ export default function PlanMapLines({ mapRef, edges, focus, up, down, layoutKey
       {geo.paths.map(p => {
         const tone = !focus ? "" : up.has(p.from) && (up.has(p.to) || p.to === focus) ? "up" : (p.from === focus || down.has(p.from)) && down.has(p.to) ? "down" : "dim";
         return (
-          <g key={p.key} className={`pr-line ${tone}${p.optional ? " opt" : ""}`}>
+          <g key={p.key} className={`pr-line ${tone}${p.optional ? " opt" : ""}`} style={{ ["--arrow" as string]: `var(--lvl-${p.hue})` }}>
             <path d={p.d} />
             <path className="pr-head" d={p.head} />
+            <circle className="pr-dot" r="3.2"><animateMotion dur={`${p.dur.toFixed(2)}s`} begin={`${p.delay.toFixed(2)}s`} repeatCount="indefinite" path={p.d} /></circle>
           </g>
         );
       })}

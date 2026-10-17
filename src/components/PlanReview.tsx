@@ -9,7 +9,7 @@
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
-import PlanMapLines, { planEdges } from "./PlanMapLines";
+import PlanMapLines, { levelHue, planEdges } from "./PlanMapLines";
 import { arabicMatchKey } from "../utils/arabicText";
 /* اسمُ القسم في القائمة يحمل كليته («قسم تكنولوجيا التعليم · التربية الأساسية - بنات»): يُطابَق بالاحتواء. */
 const isTechnologyEducation = (label: string) => arabicMatchKey(label).includes(arabicMatchKey("تكنولوجيا التعليم"));
@@ -189,11 +189,6 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     finally { setBusy(false); }
   };
 
-  const openCatalogCorrection = (action: { kind: "edit" | "create"; sectionId: number; collegeId: number; courseId?: number; code: string; name: string; credit: number; hours: number }) => {
-    sessionStorage.setItem("schedule-reference-course-action", JSON.stringify(action));
-    onNavigate?.("courses");
-  };
-
   const names = useMemo(() => {
     const map = new Map<number, CourseRow | { id: number; code: string; name: string }>();
     view?.courses.forEach(c => map.set(c.id, c));
@@ -222,7 +217,12 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     walk(focus);
     return out;
   }, [view, focus]);
-  const edges = useMemo(() => view ? planEdges(view.rules, new Set(view.courses.map(c => c.id))) : [], [view]);
+  const edges = useMemo(() => {
+    if (!view) return [];
+    const levelById = new Map<number, number>();
+    levels.forEach((ids, level) => ids.forEach(id => levelById.set(id, level)));
+    return planEdges(view.rules, new Set(view.courses.map(c => c.id)), id => levelHue(levelById.get(id) || 0));
+  }, [view, levels]);
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
@@ -257,7 +257,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
           <CurriculumReferenceReview sectionId={sectionId} canApply={Boolean(status?.canImport)}
             onPick={(id, _ref, plan) => { setSectionId(id); const own = status.sections.find(x => x.sectionId === id); setPlanId(plan || own?.plans[0]?.id || ""); setSelected(0); }}
             others={status.sections.filter(x => !isTechnologyEducation(x.sectionName)).map(x => ({ sectionId: x.sectionId, label: x.sectionName }))}
-            onPickOther={id => { const own = status.sections.find(x => x.sectionId === id); setSectionId(id); setPlanId(own?.plans[0]?.id || ""); setSelected(0); }} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
+            onPickOther={id => { const own = status.sections.find(x => x.sectionId === id); setSectionId(id); setPlanId(own?.plans[0]?.id || ""); setSelected(0); }} />
           {!planId ? <EmptyState title="لم تُجهّز صحيفة تشغيلية بعد" detail="المرجع المرفق متاح للمطابقة. إنشاء الصحيفة وربط مقرراتها يسبق اعتماد قواعدها." /> : !view ? <MicroLoader /> : (
             <>
               <div className={`pr-state ${view.state.status}`}>
@@ -317,7 +317,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
 
               <div className="pr-map" ref={mapRef} aria-label="خريطة المستويات">
                 {[...levels.entries()].map(([level, ids]) => (
-                  <section key={level} className="pr-col">
+                  <section key={level} className="pr-col" data-lvl={levelHue(level)}>
                     <div className="pr-level-head">
                       <span className="pr-level-head-icon"><GraduationCap size={16} aria-hidden="true" /></span><span><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)} · {countOf(ids.reduce((sum, id) => sum + (view.courses.find(course => course.id === id)?.credit || 0), 0), AR.unit)}</small></span>
                     </div>

@@ -109,14 +109,17 @@ const ctx = (plan: number[]) => ({
 
 {
   const source = read("src/components/CurriculumReferenceReview.tsx");
-  check(source.includes("reference-level-map") && source.includes("courseLevelFromCode") && !source.includes("reference-filterbar") && !source.includes("reference-sections") && !source.includes("reference-flat"),
-    "R6 المقارنة تعرض المستويات أعمدةً مفتوحة مباشرة بلا شريط أقسام ولا بحث ولا فلاتر");
-  check(source.includes("ancestry.up") && source.includes("ancestry.down") && source.includes("reference-selected-links"),
-    "R6 اختيار مقرر يبرز المتطلبات السابقة والمقررات التي تعتمد عليه");
-  check(source.includes("reference-guide") && !source.includes("expandedLevels") && source.includes("PlanMapLines") && source.includes("data-cid") && source.includes("reference-course-more"),
-    "R6 المستويات مفتوحة دائماً وبينها خيوط المسبقات، والبطاقة خفيفة وتفاصيلها (الوحدات والساعات والحالة) عند الضغط");
-  check(source.includes("reference-course-group") && source.includes("requiredUnits") && source.includes("غير مصنف"),
-    "R6 كل بطاقة تحمل مجموعتها (إجباري/اختياري والمطلوب) ووسمَ المستوى أو «غير مصنف»");
+  const planUi = read("src/components/PlanReview.tsx"), lines = read("src/components/PlanMapLines.tsx"), css = read("src/styles/12-deadlines.css");
+  check(!source.includes("reference-level-map") && !source.includes("reference-filterbar") && !source.includes("reference-sections") && !source.includes("reference-flat") && !source.includes("PlanMapLines"),
+    "R6 صحيفة التخرج (المقارنة) بلا خريطة مكرّرة ولا شريط أقسام ولا بحث ولا فلاتر");
+  check((planUi.match(/<PlanMapLines/g) || []).length === 1 && planUi.includes("data-cid") && !planUi.includes("expandedLevels"),
+    "R6 خريطة واحدة للمستويات في الصفحة: مفتوحة دائماً وبينها خيوط المسبقات");
+  check(planUi.includes("upstream") && planUi.includes("downstream") && planUi.includes("pr-focus") && planUi.includes("setFocus"),
+    "R6 الضغط على مقرر يبرز ما يسبقه وما يفتحه ويعرض لوحته (يتطلب/يفتح) دون فتح نافذة التعديل");
+  check(lines.includes("levelHue") && planUi.includes("data-lvl") && css.includes("--lvl-1") && css.includes(".pr-card>b{color:var(--lvl"),
+    "R6 لكل مستوى لون، ورقم المقرر وأسهمه بلون مستواه");
+  check(lines.includes("animateMotion") && css.includes("prefers-reduced-motion:reduce){.pr-line .pr-dot{display:none}"),
+    "R6 نقاط متحركة على الأسهم وتُخفى عند تفضيل تقليل الحركة");
   check(source.includes("course.ownerSectionId === selectedSectionId"),
     "R6 مقررات القسم المحدد وحدها (لا مقررات كليةٍ عامة)");
   const approveUi = read("src/components/PlanReview.tsx");
@@ -340,7 +343,7 @@ const ctx = (plan: number[]) => ({
   check(app.includes("planReviewCount > 0") && app.includes("planReviewAccess ? <PlanReview") && app.includes('addEventListener("schedule:plan-review-updated"'), "R6 تختفي أيقونة المراجعة بعد آخر اعتماد وتبقى الصفحة مفتوحة حتى المغادرة");
   check(ui.includes("schedule:plan-review-updated") && ui.includes("createPortal(editor, document.body)") && ui.includes('aria-modal="true"'), "R6 اعتماد الصحيفة يحدّث الأيقونة فوراً ومحرّر المقرر نافذة حوار");
   check(ui.includes('localeCompare(b.code, "en", { numeric: true') && ui.includes("const electives = [...view.courses].sort"), "R6 قوائم اختيار المقررات مرتبة رقمياً");
-  check(refs.includes("تعديل الوحدات والساعات والسعة") && refs.includes('kind: "edit"'), "R6 المقارنة تتيح فتح بيانات المقرر المملوك لتعديل وحداته وساعاته وسعته");
+  check(ui.includes("onSaveCourse") && ui.includes("/api/plan-review/course-details") && ui.includes("حفظ بيانات المقرر"), "R6 محرر المقرر في الخريطة يحفظ وحداته وساعاته وسعته");
   check(styles.includes(".schedule-status .schedule-status-head .dna-hsub") && styles.includes("overflow-wrap:anywhere"), "R6 نص حالة الجدول يلتف داخل الإطار المرن");
 }
 
