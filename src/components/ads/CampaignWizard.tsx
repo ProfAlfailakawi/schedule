@@ -4,7 +4,7 @@
  * تُحفظ الحملةُ مسودةً عند الانتقال من الثانية إلى الثالثة (الصورة تحتاج رقم حملة)، وللإدارة أن تغلق في أي وقتٍ فتبقى المسودة.
  */
 import React, { useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, ImagePlus, Upload } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ImagePlus, Upload, Globe2 } from "lucide-react";
 import { CatalogFormDrawer } from "../ui";
 import { AR, countOf } from "../../utils/arabicCount";
 import type { DrawerActions } from "./CampaignDrawer";
@@ -72,7 +72,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
   const save = async (): Promise<boolean> => {
     setSaving(true); setErr([]);
     try {
-      const out = await api<{ id: string }>("/api/admin/ads/campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, id: savedId || form.id || undefined }) });
+      const out = await api<{ id: string }>("/api/admin/ads/campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, colleges: slot?.wholeUniversity ? [] : form.colleges, id: savedId || form.id || undefined }) });
       setSavedId(out.id);
       await onSaved(out.id);
       return true;
@@ -180,7 +180,9 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
               })}
             </div>
           </div>
-          <div className="ad-field">
+          {slot?.wholeUniversity ? (
+            <div className="ad-reach"><Globe2 aria-hidden="true" size={18} /><div><b>يصل كل طلبة الجامعة</b><span>«{slot.label.replace(/[«»]/g, "")}» يعرض إعلانك لكل طالبٍ يدخل، من كل الكليات، بلا حاجةٍ لأي تخصيص.</span></div></div>
+          ) : <div className="ad-field">
             <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-link" onClick={() => setShowColleges(v => !v)}>{showColleges ? "إخفاء تخصيص الكليات" : "تخصيص الكليات (اختياري)"}</button>
             {showColleges ? (
               <>
@@ -188,8 +190,8 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
                 <p className="ad-note">يعمل الاستهداف بالكلية في صفحتي الجدول العام وجدول الطلبة (تعرفان كلية الطالب)؛ لا تظهر الحملة المستهدَفة بكلية داخل «مساري».</p>
               </>
             ) : null}
-          </div>
-          <div className="ad-sumline"><b>ستظهر في:</b> {slot?.label || form.slot} · {seasonText} · {form.colleges.length ? countOf(form.colleges.length, AR.college) : "كل الكليات"}</div>
+          </div>}
+          <div className="ad-sumline"><b>ستظهر في:</b> {slot?.label || form.slot} · {seasonText} · {slot?.wholeUniversity ? "كل الجامعة" : form.colleges.length ? countOf(form.colleges.length, AR.college) : "كل الكليات"}</div>
         </div>
       ) : null}
 
@@ -223,7 +225,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
             <div><dt>الشركة</dt><dd>{form.company}{form.trial ? " · تجريبية" : ""}</dd></div>
             <div><dt>الموقع</dt><dd>{slot?.label} <bdi dir="ltr">({slot?.width}×{slot?.height})</bdi></dd></div>
             <div><dt>المدة</dt><dd><bdi dir="ltr">{form.startDay} ← {form.endDay}</bdi> · {countOf(Math.max(1, span), AR.day)}</dd></div>
-            <div><dt>الجمهور</dt><dd>{seasonText} · {form.colleges.length ? countOf(form.colleges.length, AR.college) : "كل الكليات"}</dd></div>
+            <div><dt>الجمهور</dt><dd>{seasonText} · {slot?.wholeUniversity ? "كل الجامعة" : form.colleges.length ? countOf(form.colleges.length, AR.college) : "كل الكليات"}</dd></div>
             <div><dt>الصور</dt><dd>{saved?.creatives.length ? "مرفوعة" : "لم تُرفع بعد"}</dd></div>
             <div><dt>الوجهة</dt><dd><bdi dir="ltr" className="ad-url">{form.linkUrl}</bdi></dd></div>
           </dl>
