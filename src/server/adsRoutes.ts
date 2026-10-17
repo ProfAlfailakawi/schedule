@@ -366,7 +366,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
   const timer = setInterval(() => { sweepLimiters(); void flushAdsCounters(); }, 30_000);
   timer.unref?.();
   /* الإرسال التلقائي بالبريد: فحصٌ كل ساعة، ولا يفعل شيئاً ما لم يُفعَّل البريد بإعدادات البيئة. */
-  const mailTimer = setInterval(() => { void autoMailTick(String(process.env.AD_PUBLIC_ORIGIN || "https://schedule.dr-alfailakawi.com")).catch(() => undefined); }, 3_600_000);
+  const mailTimer = setInterval(() => { void autoMailTick(String(process.env.AD_PUBLIC_ORIGIN || "https://schedule-kw.com")).catch(() => undefined); }, 3_600_000);
   mailTimer.unref?.();
   /* تسجيل مستمعٍ لـSIGTERM/SIGINT يُلغي إنهاء Node الافتراضي: كان المستمع يفرّغ العدّادات ولا ينهي العملية، فيبقى الخادم حيّاً
      بعد إيقافه (Ctrl-C، وإيقاف المنصة، وخوادم الاختبارات اليتيمة على المنفذ 3000). نفرّغ ثم ننهي، بمهلة تحمي من تعليق الكتابة. */

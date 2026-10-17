@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to the official service (schedule.dr-alfailakawi.com)
+    name: Deploy to the official service (schedule-kw.com)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success')
@@ -47,7 +47,7 @@ jobs:
           docker push "$IMAGE"
 
       # ── الوجهة الرسمية: خدمة schedule في gen-lang-client-0379571946 ─────────
-      # schedule.dr-alfailakawi.com is a Cloud Run domain mapping on THIS
+      # schedule-kw.com is a Cloud Run domain mapping on THIS
       # service (europe-west1), and it has served the site for months. The
       # image is built in schedule-863eb's registry above, but the release must
       # land here or the official domain never sees it (2026-10-16: it did not,
@@ -68,19 +68,19 @@ jobs:
             --quiet
 
       # «Deploy: success» is not proof the site changed (2026-10-16). The release
-      # counts only when schedule.dr-alfailakawi.com serves the same build as the
+      # counts only when schedule-kw.com serves the same build as the
       # official service it is mapped to.
       - name: Verify the official domain serves this release
         run: |
           official="https://schedule-34704073784.europe-west1.run.app/sw.js"
-          domain="https://schedule.dr-alfailakawi.com/sw.js"
+          domain="https://schedule-kw.com/sw.js"
           want=$(curl -fsS --max-time 20 "$official" | grep -o 'BUILD="[^"]*"' || true)
           echo "official service: $want"
           for attempt in $(seq 1 20); do
             got=$(curl -fsS --max-time 20 "$domain" | grep -o 'BUILD="[^"]*"' || true)
             echo "domain (try $attempt): ${got:-unreachable}"
-            if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "✓ schedule.dr-alfailakawi.com serves this release"; exit 0; fi
+            if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "✓ schedule-kw.com serves this release"; exit 0; fi
             sleep 30
           done
-          echo "::error::schedule.dr-alfailakawi.com is not serving the deployed build. Do NOT touch the domain mapping — see AGENTS.md."
+          echo "::error::schedule-kw.com is not serving the deployed build. Do NOT touch the domain mapping — see AGENTS.md."
           exit 1

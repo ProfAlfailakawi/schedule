@@ -3,7 +3,7 @@
  *
  * On 2026-10-16 a single commit quietly pointed every deploy at a different
  * Google Cloud project. CI stayed green and "Deploy SCHEDULE" said success,
- * while schedule.dr-alfailakawi.com — mapped to the official service — never
+ * while schedule-kw.com — mapped to the official service — never
  * received another release. Then re-creating the domain mapping took HTTPS down
  * while a new certificate was issued.
  *
@@ -36,7 +36,7 @@ for (const region of OFFICIAL_REGIONS) {
 for (const region of RETIRED_REGIONS) {
   if (deploys.some(block => block.includes(region)) || new RegExp(`for region[^\\n]*${region}`).test(workflow)) failures.push(`النشر يعود إلى المنطقة المحذوفة ${region} (يعيد إنشاء الخدمة).`);
 }
-if (!/schedule\.dr-alfailakawi\.com/.test(workflow)) failures.push("سير النشر لا يتحقق من الدومين الرسمي بعد النشر.");
+if (!/schedule-kw\.com/.test(workflow)) failures.push("سير النشر لا يتحقق من الدومين الرسمي بعد النشر.");
 
 /* ٢. لا أمر يمسّ ربط الدومين في أي ملف من المستودع. */
 const SKIP = new Set(["node_modules", ".git", "dist", "AGENTS.md", "deploy-target-guard.mjs"]);
