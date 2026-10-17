@@ -278,7 +278,7 @@ async function campaignView(c: AdCampaign, stats: AdStatsDay[], heads: Array<Omi
     creatives,
     totals: totalsOf(mine),
     breakdown: creativeBreakdown(mine),
-    ab: abVerdict(creativeBreakdown(mine)),
+    ab: abVerdict(c.creativeIds.map(id => creativeBreakdown(mine).find(b => b.creativeId === id) ?? { creativeId: id, impressions: 0, clicks: 0 })),
     series: dailySeries(mine, c.startDay, c.endDay, today).slice(-30),
     weekly: weeklyCompare(mine, today),
     sharePct: Math.round(expectedShare(c.slot, Math.max(1, live)) * 100),
@@ -287,16 +287,18 @@ async function campaignView(c: AdCampaign, stats: AdStatsDay[], heads: Array<Omi
 }
 
 /** يرسل تقرير الأسبوع أو تذكير التجديد لبريد الحملة ويسجّل ما أُرسل لئلا يتكرر. */
-async function mailCampaign(c: AdCampaign, kind: "weekly" | "renewal", origin: string, cfg: NonNullable<ReturnType<typeof mailConfig>>, today = kuwaitDay()): Promise<{ ok: boolean; error?: string }> {
+async function mailCampaign(c: AdCampaign, kind: "weekly" | "renewal", origin: string, cfg: NonNullable<ReturnType<typeof mailConfig>>, today = kuwaitDay(), manual = false): Promise<{ ok: boolean; error?: string }> {
   if (!c.contactEmail) return { ok: false, error: "لا بريد." };
   const url = `${origin}/ad-report/${c.reportToken}`;
   const msg = kind === "weekly"
     ? weeklyMail(c, weeklyCompare((await Repository.listAdStats(c.id)), today), url)
     : renewalMail(c, daysLeft(c, today), url);
-  /* تُسجَّل المحاولةُ قبل الإرسال: خطأٌ عابر لا يُغرق الشركة برسائل مكرّرة، وتعدّد النسخ لا يضاعف الإرسال. */
-  const log = { ...(c.mailLog || {}), weekly: weekKey(today), ...(kind === "renewal" ? { renewal: c.endDay } : {}) };
-  await Repository.saveAdCampaign({ ...c, mailLog: log });
+  /* يُحجز الإرسال ذرّياً قبل خروج الرسالة (معاملة تكتب mailLog وحده): نسختان على قاعدةٍ واحدة لا ترسلان الرسالة مرتين،
+     وخطأٌ عابر لا يُغرق الشركة بالتكرار. الإرسال اليدوي (manual) صريحٌ فلا يُمنع بحجزٍ سابق. */
+  const key = kind === "weekly" ? weekKey(today) : c.endDay;
+  const claimed = await Repository.claimAdMail(c.id, kind, key, { weekly: weekKey(today), ...(kind === "renewal" ? { renewal: c.endDay } : {}) }, manual);
   dropCampaignCache();
+  if (!claimed) return { ok: false, error: "سبق إرسال هذه الرسالة." };
   return sendMail(cfg, c.contactEmail, msg);
 }
 
@@ -612,7 +614,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     if (!cfg) { fail(res, 503, "الإرسال بالبريد غير مفعّل بعد؛ يُفعَّل بإعدادات البيئة (AD_MAIL_API_KEY وAD_MAIL_FROM)."); return; }
     if (!campaign.contactEmail) { fail(res, 400, "لا بريد محفوظ لهذه الحملة؛ أضفه من «تعديل»."); return; }
     const kind = req.body?.kind === "renewal" ? "renewal" : "weekly";
-    const out = await mailCampaign(campaign, kind, `${req.protocol}://${req.get("host")}`, cfg);
+    const out = await mailCampaign(campaign, kind, `${req.protocol}://${req.get("host")}`, cfg, kuwaitDay(), true);
     if (!out.ok) { fail(res, 502, out.error || "تعذّر الإرسال."); return; }
     audit(res, campaign.id, `إرسال ${kind === "renewal" ? "تذكير تجديد" : "التقرير الأسبوعي"} بالبريد لحملة «${campaign.company}»`);
     res.json({ ok: true });

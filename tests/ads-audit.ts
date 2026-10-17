@@ -75,6 +75,12 @@ async function main() {
     check(INS.abVerdict([{ creativeId: "a", impressions: 1000, clicks: 30 }, { creativeId: "b", impressions: 1000, clicks: 27 }]).state === "tie", "A14 A/B: فرقٌ صغير = لا فرق معنوي");
     const win = INS.abVerdict([{ creativeId: "a", impressions: 2000, clicks: 40 }, { creativeId: "b", impressions: 2000, clicks: 100 }]);
     check(win.state === "winner" && (win as any).winner === "b" && (win as any).loser === "a" && (win as any).winnerCtr === 5, "A14 A/B: فرقٌ معنوي يسمّي الفائز", win);
+    const onlyB = INS.wrapUp([row("2026-11-01", "a", 900, 40), row("2026-11-02", "b", 900, 10), row("2026-11-03", "c", 900, 80)], ["a", "b"]);
+    check(onlyB.bestCreative?.creativeId === "a", "A14 خلاصة الحملة: تُقارن الصور الحالية وحدها (المحذوفة لا تُرشَّح)", onlyB.bestCreative);
+    const endedMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, -12, "https://x.test/r");
+    const todayMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, 0, "https://x.test/r");
+    const soonMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, 3, "https://x.test/r");
+    check(endedMail.text.includes("انتهت حملة «ش» قبل") && !endedMail.text.includes("اليوم") && todayMail.text.includes("اليوم") && soonMail.text.includes("بعد"), "A14 تذكير التجديد: صياغةٌ صادقة للمنتهية واليوم والقادمة", endedMail.text);
     const heat = Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => (d === 0 || d === 1 ? 10 : 2) * (h >= 10 && h <= 12 ? 5 : 1)));
     const pk = INS.peakSummary(heat)!;
     check(pk.topDays[0].name === "الأحد" && pk.window?.from === 10 && pk.window.to === 13 && pk.hourTotals.length === 24, "A14 الذروة: أيامٌ ونافذةٌ ١٠–١٣", pk);
@@ -557,6 +563,12 @@ async function main() {
     check(!pubReport.text.includes("owner@company.co") && !JSON.stringify(pubServe.json).includes("owner@company.co"), "A14 البريد لا يظهر في صفحةٍ عامة ولا في الخدمة");
     const keep = await call("POST", "/api/admin/ads/campaigns", { id: mailed.id, company: mc.company, category: mc.category, slot: mc.slot, startDay: mc.startDay, endDay: mc.endDay, linkUrl: mc.linkUrl });
     check(keep.status === 200 && (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === mailed.id).contactEmail === "owner@company.co", "A14 تعديلٌ لا يرسل حقل البريد لا يمسحه");
+    const c1 = await Repository.claimAdMail(mailed.id, "weekly", "K-1", { weekly: "K-1" });
+    const c2 = await Repository.claimAdMail(mailed.id, "weekly", "K-1", { weekly: "K-1" });
+    const c3 = await Repository.claimAdMail(mailed.id, "weekly", "K-1", { weekly: "K-1" }, true);
+    const afterClaim = (await Repository.listAdCampaigns()).find(x => x.id === mailed.id)!;
+    check(c1 === true && c2 === false && c3 === true && afterClaim.mailLog?.weekly === "K-1" && afterClaim.contactEmail === "owner@company.co" && afterClaim.company === mc.company, "A14 حجز الإرسال: الأول يفوز والثاني يُمنع واليدوي يتجاوز ولا يمسّ بقية الحقول", afterClaim.mailLog);
+    check(await Repository.claimAdMail("no-such", "weekly", "K", {}) === false, "A14 حجز حملةٍ غير موجودة: false");
     const off = await call("POST", `/api/admin/ads/campaigns/${mailed.id}/send-report`, { kind: "weekly" });
     check(off.status === 503 && String(off.json?.error).includes("غير مفعّل"), "A14 الإرسال بلا إعدادات: ٥٠٣ واضح", off.json);
     const stubState = (globalThis as any).__adStub;

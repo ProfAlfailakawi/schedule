@@ -218,7 +218,7 @@ export function campaignReportPage(input: CampaignReportInput): string {
   <div class="kpi"><b>${pct(totals.ctr)}</b><span>نسبة النقر</span><small>النقرات ÷ الظهور</small></div>
 </div>
 ${c.trial ? trialCard({ phase, totals, benchmark: input.benchmarkCtr, days: series.length }) : ""}
-${phase === "ended" && totals.impressions > 0 ? wrapUpCard(wrapUp(stats), { company: c.company, labelOf, benchmark: input.benchmarkCtr }) : ""}
+${phase === "ended" && totals.impressions > 0 ? wrapUpCard(wrapUp(stats, creatives.map(x => x.id)), { company: c.company, labelOf, benchmark: input.benchmarkCtr }) : ""}
 ${endingBanner}${input.weekly && (input.weekly.hasLastWeek || input.weekly.thisWeek.impressions > 0) ? weeklyCard(input.weekly) : ""}${calendarCard}
 <h2>الأداء اليومي</h2>
 <div class="card">${barChart(series.map(p => ({ day: p.day, a: p.impressions, b: p.clicks })), "الظهور", "النقرات")}</div>

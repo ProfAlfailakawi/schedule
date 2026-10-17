@@ -19,7 +19,7 @@ export function attentionItems(data: Payload): AttentionItem[] {
   for (const c of by(c => c.creatives.some(x => x.qualityOverride) && c.phase !== "ended")) out.push({ key: `q-${c.id}`, tone: "bad", icon: <ImageOff size={16} aria-hidden="true" />, text: `حملة «${c.company}» تحمل صورةً رُفعت رغم تحذير الجودة.`, campaignId: c.id });
   for (const s of data.slots) {
     const cap = s.exclusive ? 1 : s.capacity;
-    if (cap > 1 && s.live >= cap) out.push({ key: `full-${s.id}`, tone: "info", icon: <Users size={16} aria-hidden="true" />, text: `${s.label} ممتلئ؛ ${s.nextFree ? "أقرب خلوّ بعد انتهاء إحدى الحملات." : "لا مكان لحملةٍ جديدة الآن."}`, tab: "placements" });
+    if (s.live >= cap) out.push({ key: `full-${s.id}`, tone: "info", icon: <Users size={16} aria-hidden="true" />, text: s.exclusive ? `${s.label} محجوزٌ لحملةٍ واحدة الآن${s.nextFree ? "؛ يخلو بعد انتهائها." : "."}` : `${s.label} ممتلئ؛ ${s.nextFree ? "أقرب خلوّ بعد انتهاء إحدى الحملات." : "لا مكان لحملةٍ جديدة الآن."}`, tab: "placements" });
   }
   return out;
 }

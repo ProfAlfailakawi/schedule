@@ -57,7 +57,7 @@ export function renewalMail(c: Pick<AdCampaign, "company" | "endDay">, daysLeft:
     subject: `حملة ${c.company}: تثبيت مكانكم في الفصل القادم`,
     text: [
       "السلام عليكم،", "",
-      daysLeft > 0 ? `تنتهي حملة «${c.company}» بعد ${countOf(daysLeft, AR.day)}.` : `تنتهي حملة «${c.company}» اليوم.`,
+      daysLeft > 0 ? `تنتهي حملة «${c.company}» بعد ${countOf(daysLeft, AR.day)}.` : daysLeft === 0 ? `تنتهي حملة «${c.company}» اليوم.` : `انتهت حملة «${c.company}» قبل ${countOf(-daysLeft, AR.day)}.`,
       "يسعدنا تثبيت مكانكم في الفصل القادم؛ نحجز لكم الموقع نفسه قبل أن يمتلئ. للتجديد تواصلوا مع إدارة البرنامج.", "",
       `نتائجكم الحية: ${reportUrl}`,
     ].join("\n"),

@@ -23,7 +23,7 @@ export interface WrapUp {
   bestCreative: { creativeId: string; ctr: number; impressions: number } | null;
 }
 
-export function wrapUp(rows: readonly AdStatsDay[]): WrapUp {
+export function wrapUp(rows: readonly AdStatsDay[], currentCreativeIds?: readonly string[]): WrapUp {
   const byDay = new Map<string, number>();
   for (const r of rows) byDay.set(r.day, (byDay.get(r.day) || 0) + r.impressions);
   const totals = totalsOf(rows as AdStatsDay[]);
@@ -36,7 +36,7 @@ export function wrapUp(rows: readonly AdStatsDay[]): WrapUp {
   const topDow = [...byDow].sort((a, b) => b[1] - a[1])[0];
   /* الأقوى صورةً: لا تُذكر إلا إن كان للمقارنة معنى (صورتان فأكثر بظهورٍ كافٍ لكلٍّ منهما). */
   const perCreative = [...new Set(rows.map(r => r.creativeId))].map(id => ({ creativeId: id, ...totalsOf(rows.filter(r => r.creativeId === id) as AdStatsDay[]) }));
-  const eligible = perCreative.filter(c => c.impressions >= 200);
+  const eligible = perCreative.filter(c => c.impressions >= 200 && (!currentCreativeIds || currentCreativeIds.includes(c.creativeId)));
   const topCreative = eligible.length > 1 ? [...eligible].sort((a, b) => b.ctr - a.ctr)[0] : null;
   return {
     days, totals,
