@@ -103,3 +103,18 @@ export const hourAr = (h: number): string => {
   const n = hh % 12 === 0 ? 12 : hh % 12;
   return `${n} ${hh < 12 ? "ص" : "م"}`;
 };
+
+/* ── التحويل المُبلَّغ من الشركة ──
+   تُدخله الشركةُ بنفسها (كم استعمل الكود) فلا نعدّه موثَّقاً: يُعرض في تقريرها ولمديرها بوسم «مُبلَّغ»، ولا يدخل ملفَّ الشراكة
+   ولا أي مجموعٍ تسويقي. إن غابت الأرقام أو بُولغ فيها لا يتأثر شيءٌ مما نقيسه نحن (الظهور والنقر)؛ ونكتفي بتنبيهٍ محايد. */
+export interface Redemption { day: string; count: number; at: string }
+export interface Conversion { total: number; days: number; perClick: number | null; note: "none" | "ok" | "above-clicks" }
+
+export function conversionOf(reports: readonly Redemption[] | undefined, clicks: number): Conversion {
+  const list = reports || [];
+  const total = list.reduce((s, r) => s + (Number(r.count) || 0), 0);
+  if (!list.length) return { total: 0, days: 0, perClick: null, note: "none" };
+  const perClick = clicks > 0 ? Math.round((total / clicks) * 1000) / 10 : null;
+  /* الكود ظاهرٌ في الإعلان ويُشارَك، فقد يفوق عددُ استعماله النقرات بلا كذب؛ لذا ملاحظةٌ لا اتهام. */
+  return { total, days: list.length, perClick, note: clicks > 0 && total > clicks ? "above-clicks" : "ok" };
+}

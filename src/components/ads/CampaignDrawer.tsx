@@ -113,6 +113,13 @@ export default function CampaignDrawer({ campaign: c, data, onClose, actions }: 
           <div><b>{fmt(c.totals.clicks)}</b><span>عدد النقرات الصحيحة</span><small>{c.totals.filteredClicks ? `استُبعدت ${countOf(c.totals.filteredClicks, AR.click)}` : c.weekly?.hasLastWeek ? `${arrowOf(c.weekly.clicksChange)} عن الأسبوع الماضي` : "بعد استبعاد الروبوتات"}</small></div>
           <div><b>{pct1(c.totals.ctr)}</b><span>نسبة النقر</span><small>النقرات ÷ الظهور</small></div>
         </div>
+        {c.coupon ? (
+          <p className="ad-ab">
+            {c.conversion && c.conversion.total
+              ? <><b>تحويلٌ مُبلَّغ من الشركة (غير موثَّق):</b> استعمالات الكود: {fmt(c.conversion.total)}{c.conversion.perClick != null ? ` · ${pct1(c.conversion.perClick)} من النقرات` : ""}{c.conversion.note === "above-clicks" ? " · يفوق النقرات (قد يكون الكود شورك خارج الإعلان)" : ""}. لا يدخل ملف الشراكة.</>
+              : "لم تُبلِّغ الشركة عن استعمال الكود بعد؛ تستطيع ذلك من صفحة تقريرها (اختياري)."}
+          </p>
+        ) : null}
         {series.length > 1 ? <Bars values={series.map(p => p.impressions)} labels={series.map(p => p.day.slice(5))} /> : <p className="ad-note">يظهر الرسم بعد أول يومٍ من العرض.</p>}
       </section>
 

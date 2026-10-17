@@ -83,6 +83,42 @@ async function main() {
     check(endedMail.text.includes("انتهت حملة «ش» قبل") && !endedMail.text.includes("اليوم") && todayMail.text.includes("اليوم") && soonMail.text.includes("بعد"), "A14 تذكير التجديد: صياغةٌ صادقة للمنتهية واليوم والقادمة", endedMail.text);
     const { AD_CLIENT_SCRIPT: adScript } = await import("../src/server/adClientScript");
     check(adScript.includes('var sponsor=slot==="break"?null:'), "A14 محطة الاستراحة لا تكرر شريط الراعي (يظهر مرةً مع إعلان «مساري»)");
+    /* A15: الرابط المتتبَّع، والتحويل المُبلَّغ، والشارة، وسقف الظهور اليومي */
+    const tl = (url: string) => E.trackedLink(url, { id: "ABCD-1234-xyz", slot: "me" } as any);
+    check(tl("https://a.example.com/x?y=1") === "https://a.example.com/x?y=1&utm_source=schedule&utm_medium=banner&utm_campaign=ad-abcd1234&utm_content=me", "A15 رابط متتبَّع: يُضاف utm مع بقاء بارامترات الشركة");
+    check(tl("https://a.example.com/x?UTM_source=mine") === "https://a.example.com/x?UTM_source=mine" && tl("not a url") === "not a url", "A15 رابط متتبَّع: وسوم الشركة تُحترم، والفاسد يُترك");
+    check(tl("https://a.example.com/p#frag").endsWith("#frag") && tl("https://a.example.com/p#frag").includes("utm_source=schedule"), "A15 رابط متتبَّع: الجزء # محفوظ");
+    const cv0 = INS.conversionOf(undefined, 100), cv1 = INS.conversionOf([{ day: "2026-11-01", count: 10, at: "" }, { day: "2026-11-02", count: 5, at: "" }], 100), cv2 = INS.conversionOf([{ day: "2026-11-01", count: 300, at: "" }], 100), cv3 = INS.conversionOf([{ day: "2026-11-01", count: 4, at: "" }], 0);
+    check(cv0.note === "none" && cv0.total === 0 && cv0.perClick === null, "A15 التحويل: بلا تبليغ لا ادّعاء");
+    check(cv1.total === 15 && cv1.perClick === 15 && cv1.note === "ok" && cv1.days === 2, "A15 التحويل: مجموعٌ ونسبةٌ من النقرات", cv1);
+    check(cv2.note === "above-clicks" && cv3.perClick === null && cv3.note === "ok", "A15 التحويل: ملاحظةٌ محايدة إن فاق النقرات، ولا نسبة بلا نقرات");
+    const BG = await import("../src/utils/adBadge");
+    const badge = BG.partnerBadgeSvg({ company: `<script>alert(1)</script>"&'شركة`, startDay: "2026-11-01", endDay: "2026-12-01" });
+    check(badge.startsWith("<?xml") && badge.includes("<svg") && !badge.includes("<script") && !/href=|xlink|onload|javascript:/i.test(badge) && badge.includes("&lt;script&gt;") && badge.includes("1 نوفمبر 2026") && badge.includes("\u2067"), "A15 الشارة: SVG بلا سكربت ولا مراجع، والنص مُهرَّب، والتاريخ بالعربية");
+    check(BG.partnerBadgeSvg({ company: "ش".repeat(80), startDay: "2026-11-01", endDay: "2026-12-01" }).includes("…"), "A15 الشارة: الاسم الطويل يُقتطع");
+    /* سقف الظهور اليومي: السكربت الحقيقي في بيئة وهمية؛ عند ٦٠ لا طلبَ خدمة، وتحته يُطلب */
+    {
+      const elStub = (): any => new Proxy({ style: {}, classList: { add() {}, remove() {}, toggle() {} } } as any, { get: (t: any, p: string) => (p in t ? t[p] : typeof p === "string" ? () => elStub() : undefined), set: () => true });
+      const run = (stored: string | null) => {
+        const store: Record<string, string> = {}; const todayK = new Date(Date.now() + 10800000).toISOString().slice(0, 10);
+        if (stored !== null) store["adx:t:" + todayK] = stored;
+        let fetched = 0;
+        const box: any = { classList: { add() {} } };
+        const ctx: any = {
+          document: new Proxy({ currentScript: { getAttribute: () => "" }, hidden: false, readyState: "complete", head: elStub(), body: elStub(), documentElement: Object.assign(elStub(), { contains: () => true }), createElement: () => elStub() } as any, { get: (target: any, prop: string) => (prop in target ? target[prop] : () => null) }),
+          localStorage: { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = String(v); }, removeItem: (k: string) => { delete store[k]; } },
+          fetch: () => { fetched++; return new Promise(() => undefined); },
+          navigator: {}, location: { pathname: "/me", search: "" }, setTimeout, clearTimeout, Date, parseInt, JSON, Blob: function () {}, Promise,
+          matchMedia: () => ({ matches: false }), addEventListener() {}, IntersectionObserver: undefined,
+        };
+        ctx.window = ctx; vm.createContext(ctx);
+        try { vm.runInContext(adScript, ctx); ctx.window.AdxMount(box, "me"); } catch (e: any) { return { fetched: -1, err: String(e?.message || e) } as any; }
+        return { fetched };
+      };
+      const capped = run("60"), under = run("59"), fresh = run(null);
+      check(capped.fetched === 0, "A15 سقف الظهور: بعد ٦٠ ظهوراً في اليوم لا يُطلب إعلان", capped);
+      check(under.fetched === 1 && fresh.fetched === 1, "A15 سقف الظهور: تحت السقف يُطلب الإعلان", { under, fresh });
+    }
     const heat = Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => (d === 0 || d === 1 ? 10 : 2) * (h >= 10 && h <= 12 ? 5 : 1)));
     const pk = INS.peakSummary(heat)!;
     check(pk.topDays[0].name === "الأحد" && pk.window?.from === 10 && pk.window.to === 13 && pk.hourTotals.length === 24, "A14 الذروة: أيامٌ ونافذةٌ ١٠–١٣", pk);
@@ -426,7 +462,7 @@ async function main() {
 
     // النقر: الأول صحيح، والمتكرر خلال ثوانٍ يُرشَّح، والروبوت يُرشَّح.
     r = await call("GET", item.href);
-    check(r.status === 302 && r.headers.get("location") === "https://oasis.example.com/offer", "A6 النقر يحوّل إلى رابط الشركة", r.headers.get("location"));
+    check(r.status === 302 && String(r.headers.get("location")).startsWith("https://oasis.example.com/offer?utm_source=schedule&utm_medium=banner&utm_campaign=ad-") && String(r.headers.get("location")).includes("utm_content=me"), "A6 النقر يحوّل إلى رابط الشركة موسوماً بـutm لتتحقق من أرقامنا", r.headers.get("location"));
     r = await call("GET", item.href);
     r = await call("GET", item.href, undefined, { "User-Agent": "curl/8.0" });
     // مستخدمٌ آخر خلف العنوان نفسه (وكيل متصفحٍ مختلف) ينقر فوراً: نقرةٌ صحيحة لا مكرَّرة (شبكة الجامعة عنوانٌ واحد).
@@ -444,7 +480,7 @@ async function main() {
     // تقرير الشركة
     const report = await call("GET", mine.reportUrl);
     check(report.status === 200 && report.text.includes("مطعم الواحة") && report.text.includes("النقرات الصحيحة") && report.text.includes('nonce="TESTNONCE"'), "A6 صفحة تقرير الشركة تعمل بنونس");
-    check(!report.text.includes("curl") && !report.text.replace(/webcal:\/\/127\.0\.0\.1:\d+/g, "").includes("127.0.0.1"), "A6 التقرير لا يكشف عناوين ولا وكلاء مستخدمين");
+    check(!report.text.includes("curl") && !report.text.replace(/(?:webcal|https?):\/\/127\.0\.0\.1:\d+/g, "").includes("127.0.0.1"), "A6 التقرير لا يكشف عناوين ولا وكلاء مستخدمين");
     // تنبيهات الشركة بلا حساب: اشتراك تقويم برمز التقرير نفسه
     const repToken = String(mine.reportUrl).split("/").pop();
     const ics = await call("GET", `/ad-report/${repToken}/calendar.ics`);
@@ -452,6 +488,34 @@ async function main() {
     check(ics.text.includes(`DTSTART;VALUE=DATE:${mine.endDay.replace(/-/g, "")}`) && ics.text.includes("RRULE:FREQ=WEEKLY;BYDAY=SU") && ics.text.includes("TRIGGER;RELATED=START:PT9H"), "A6 اشتراك التقويم: يوم الانتهاء وتذكيرٌ أسبوعي وتنبيه");
     check(ics.text.split("\r\n").every(l => Buffer.byteLength(l) <= 75), "A6 اشتراك التقويم: الأسطر ≤٧٥ بايتاً");
     check(report.text.includes("calendar.ics") && report.text.includes("webcal://"), "A6 صفحة التقرير تعرض زر الاشتراك");
+    /* A15: شارة الشراكة والتحويل المُبلَّغ (غير موثَّق) عبر مسارات الخادم */
+    check(report.text.includes("استعمال كود الخصم عندكم") && report.text.includes("مُبلَّغاً منكم") && report.text.includes(`/ad-report/${repToken}/badge.svg`) && report.text.includes("utm_source=schedule"), "A15 صفحة التقرير: نموذج التحويل والشارة ووسم utm");
+    const bd = await call("GET", `/ad-report/${repToken}/badge.svg`);
+    const bdText = await (await fetch(base + `/ad-report/${repToken}/badge.svg`, { headers: { "User-Agent": UA } })).text();
+    check(bd.status === 200 && String(bd.headers.get("content-type")).startsWith("image/svg+xml") && String(bd.headers.get("content-security-policy")).includes("default-src 'none'") && bd.headers.get("x-content-type-options") === "nosniff" && bdText.includes("<svg") && bdText.includes("مطعم الواحة"), "A15 الشارة: SVG بترويسات أمان واسم الشركة");
+    check(String((await call("GET", `/ad-report/${repToken}/badge.svg?dl=1`)).headers.get("content-disposition")).includes("attachment"), "A15 الشارة: تنزيل");
+    check((await call("GET", "/ad-report/" + "z".repeat(32) + "/badge.svg")).status === 404, "A15 الشارة برمزٍ خاطئ: ٤٠٤");
+    const draftC = await call("POST", "/api/admin/ads/campaigns", { company: "مسودة الشارة", category: "ترفيه", slot: "dashboard", startDay: today, endDay: dayPlus(3), linkUrl: "https://draft-badge.example.com" });
+    const draftView = (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === draftC.json.id);
+    check((await call("GET", draftView.reportUrl + "/badge.svg")).status === 404, "A15 الشارة: لا تُصدَر لمسودة");
+    const form = (tok: string, body: Record<string, string>) => fetch(base + `/ad-report/${tok}/redemptions`, { method: "POST", redirect: "manual", headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body).toString() });
+    const conv = async () => (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === id).conversion;
+    check((await conv()).total === 0 && (await conv()).note === "none", "A15 التحويل: يبدأ بلا تبليغ");
+    const r1 = await form(String(repToken), { day: today, count: "7" });
+    check(r1.status === 303 && String(r1.headers.get("location")).includes("red=ok"), "A15 التبليغ: يُسجَّل ويعود لصفحة التقرير", r1.headers.get("location"));
+    check((await conv()).total === 7 && (await conv()).days === 1, "A15 التبليغ: ظهر للإدارة مجموعاً", await conv());
+    await form(String(repToken), { day: today, count: "9" });
+    check((await conv()).total === 9 && (await conv()).days === 1, "A15 التبليغ: إدخالٌ واحدٌ لكل يوم يُستبدل", await conv());
+    const badInputs: Array<Record<string, string>> = [{ day: dayPlus(2), count: "5" }, { day: E.addDays(today, -400), count: "5" }, { day: today, count: "-1" }, { day: today, count: "1.5" }, { day: today, count: "abc" }, { day: today, count: "100001" }, { day: "nope", count: "3" }];
+    const badResults = await Promise.all(badInputs.map(async b => { const r = await form(String(repToken), b); return r.status === 303 && String(r.headers.get("location")).includes("red=bad"); }));
+    check(badResults.every(Boolean) && (await conv()).total === 9, "A15 التبليغ: المستقبل وخارج الحملة والسالب والكسر والنص والفلكي كلها تُرفض ولا تغيّر شيئاً", badResults);
+    check((await form("z".repeat(32), { day: today, count: "1" })).status === 404, "A15 التبليغ برمزٍ خاطئ: ٤٠٤");
+    const afterReport = await call("GET", `${mine.reportUrl}?red=ok`);
+    check(afterReport.text.includes("سُجِّل رقمكم") && afterReport.text.includes("المُبلَّغة") && afterReport.text.includes("(9)") === false && afterReport.text.includes(">9<"), "A15 صفحة التقرير تعرض ما بلّغته الشركة بوسم «مُبلَّغ»", afterReport.status);
+    const kitTok = (await call("POST", "/api/admin/ads/partner-kit")).json.url;
+    const kitHtml = (await call("GET", kitTok)).text;
+    const serveJson = JSON.stringify((await call("GET", "/_ads/serve?slot=me")).json);
+    check(!kitHtml.includes("مُبلَّغ") && !kitHtml.includes("استعمالات الكود") && !serveJson.includes("redemptions") && !serveJson.includes("conversion"), "A15 التحويل المُبلَّغ لا يدخل ملف الشراكة ولا خدمة الإعلانات");
     check((await call("GET", "/ad-report/" + "z".repeat(32) + "/calendar.ics")).status === 404 && (await call("GET", "/ad-report/short/calendar.ics")).status === 404, "A6 اشتراك التقويم برمزٍ خاطئ: ٤٠٤");
     check((await call("GET", "/ad-report/short")).status === 404 && (await call("GET", "/ad-report/" + "z".repeat(32))).status === 404, "A6 رمزٌ خاطئ: ٤٠٤");
 

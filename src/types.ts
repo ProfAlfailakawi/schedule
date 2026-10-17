@@ -1852,6 +1852,8 @@ export interface AdCampaign {
   contactEmail?: string;
   /** آخر ما أُرسل بالبريد: أحدُ الأسبوع الأخير، وآخر تذكيرِ تجديدٍ لتاريخ نهايةٍ معيّن. يمنع التكرار. */
   mailLog?: { weekly?: string; renewal?: string };
+  /** تحويلٌ تُبلِّغ عنه الشركةُ بنفسها (عدد من استعملوا الكود في يوم): غير موثَّق، لا يدخل ملف الشراكة ولا أي مجموعٍ تسويقي. يومٌ واحد = إدخالٌ واحد. */
+  redemptions?: Array<{ day: string; count: number; at: string }>;
   createdAt: string;
   updatedAt: string;
   approvedAt?: string;
