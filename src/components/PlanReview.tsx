@@ -208,7 +208,9 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
 
   /* مقررات المجموعات الاختيارية تُعرض في شريطها (لا مرتين): تخرج من أعمدة المستويات وتُرسم متطلباتها أسهماً صغيرة تحت بطاقاتها. */
   const grouped = useMemo(() => new Set<number>((view?.groups || []).flatMap(g => g.courseIds)), [view]);
-  const levels = useMemo(() => view ? byLevel(view.courses.filter(c => !grouped.has(c.id)).map(c => c.id), view.rules, new Map(view.courses.map(c => [c.id, c.code]))) : new Map<number, number[]>(), [view, grouped]);
+  /* القسم يرى مقرراته فقط: مقررات الأقسام الأخرى (ومنها العامة) لا تظهر في خريطته ولا عدّاداته؛ تبقى محسوبةً في الصحيفة وتُذكر عند المتطلبات. */
+  const ownIds = useMemo(() => new Set<number>(view ? view.courses.filter(c => c.sectionId === view.plan.sectionId).map(c => c.id) : []), [view]);
+  const levels = useMemo(() => view ? byLevel(view.courses.filter(c => ownIds.has(c.id) && !grouped.has(c.id)).map(c => c.id), view.rules, new Map(view.courses.map(c => [c.id, c.code]))) : new Map<number, number[]>(), [view, grouped, ownIds]);
   const upstream = useMemo(() => {
     if (!view || !focus) return new Set<number>();
     const out = new Set<number>();
@@ -231,18 +233,35 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const { edges, series } = useMemo(() => {
     const none = { edges: [] as ReturnType<typeof planEdges>, series: new Map<number, number>() };
     if (!view) return none;
-    const raw = planEdges(view.rules, new Set(view.courses.map(c => c.id)));
+    const raw = planEdges(view.rules, ownIds);
     const codeOf = new Map(view.courses.map(c => [c.id, c.code] as const));
     const sources = [...new Set(raw.map(e => Number(e.from)))].sort((a, b) => String(codeOf.get(a)).localeCompare(String(codeOf.get(b)), "en", { numeric: true }));
     const map = new Map(sources.map((id, i) => [id, i % 10 + 1] as const));
     return { edges: raw.filter(e => !grouped.has(Number(e.from)) && !grouped.has(Number(e.to))).map(e => ({ ...e, hue: map.get(Number(e.from)) })), series: map };
-  }, [view, grouped]);
+  }, [view, grouped, ownIds]);
 
   /* الفلتر: مقررات القسم نفسه في التصنيف المختار فعّالة، وما سواها (تصنيفٌ آخر أو مقررات أقسامٍ أخرى) غير فعال. */
-  const deptCourses = view ? view.courses.filter(c => c.sectionId === view.plan.sectionId && !c.external) : [];
-  const isActive = (c: CourseRow) => !cat || (c.category === cat && c.sectionId === view?.plan.sectionId && !c.external);
-  const offIds = useMemo(() => new Set<number>(view && cat ? view.courses.filter(c => !(c.category === cat && c.sectionId === view.plan.sectionId && !c.external)).map(c => c.id) : []), [view, cat]);
-  const pickCat = (name: string) => { setCat(name); const f = view?.courses.find(c => c.id === focus); if (f && name && !(f.category === name && f.sectionId === view?.plan.sectionId && !f.external)) setFocus(0); };
+  const deptCourses = view ? view.courses.filter(c => ownIds.has(c.id)) : [];
+  const isActive = (c: CourseRow) => !cat || (c.category === cat && ownIds.has(c.id));
+  const offIds = useMemo(() => new Set<number>(view && cat ? view.courses.filter(c => !(c.category === cat && ownIds.has(c.id))).map(c => c.id) : []), [view, cat, ownIds]);
+  const pickCat = (name: string) => { setCat(name); const f = view?.courses.find(c => c.id === focus); if (f && name && !(f.category === name && ownIds.has(f.id))) setFocus(0); };
+  /* متطلباتٌ لمقرراتِ القسم يملكها قسمٌ آخر: تُذكر ملاحظةً تحت الخريطة (لا بطاقةً ولا سهماً). */
+  const crossNotes = useMemo(() => {
+    if (!view) return [] as Array<{ key: string; code: string; pre: { code: string; name: string; owner: string } }>;
+    const info = new Map<number, { code: string; name: string; owner: string }>();
+    view.referenced.forEach(c => info.set(c.id, { code: c.code, name: c.name, owner: "" }));
+    view.courses.forEach(c => info.set(c.id, { code: c.code, name: c.name, owner: c.ownerSectionName }));
+    const out: Array<{ key: string; code: string; pre: { code: string; name: string; owner: string } }> = [];
+    for (const c of view.courses) {
+      if (!ownIds.has(c.id)) continue;
+      const pre = view.rules.find(r => r.courseId === c.id)?.prereq;
+      for (const x of new Set([...(pre?.all || []), ...(pre?.anyOf || []).flat()].filter(id => !ownIds.has(id)))) {
+        const p = info.get(x);
+        if (p) out.push({ key: `${c.id}-${x}`, code: c.code, pre: p });
+      }
+    }
+    return out;
+  }, [view, ownIds]);
 
   if (loading) return <MicroLoader />;
   const sectionPlans = status?.sections.find(s => s.sectionId === sectionId)?.plans || [];
@@ -294,7 +313,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
               </div>
 
               {view.courses.some(c => c.external) ? (
-                <p className="pr-ext-note" role="status"><Lock size={14} aria-hidden="true" /> {countOf(view.courses.filter(c => c.external).length, AR.course)} عامّاً ({countOf(view.courses.filter(c => c.external).reduce((sum, c) => sum + c.credit, 0), AR.unit)}) تُحتسب في صحيفتك وتبقى لأقسامها: تراها ولا تعدّلها.</p>
+                <p className="pr-ext-note" role="status"><Lock size={14} aria-hidden="true" /> {countOf(view.courses.filter(c => c.external).length, AR.course)} عامّاً ({countOf(view.courses.filter(c => c.external).reduce((sum, c) => sum + c.credit, 0), AR.unit)}) تُحتسب في وحدات صحيفتك وتبقى لأقسامها، ولا تظهر هنا.</p>
               ) : null}
               {confirmApprove ? (
                 <div className="pr-confirm" role="alertdialog" aria-modal="false" aria-labelledby="pr-confirm-title">
@@ -326,11 +345,11 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
               {view.blockers ? <Notice type="block" inline>{countOf(view.blockers, AR.blocker)} يمنع الاعتماد حتى يُصلَح.</Notice> : null}
 
               <section className="pr-infographic" aria-label="ملخص الصحيفة">
-                <div className="pr-infographic-stat"><span><GraduationCap /></span><div><small>مقررات الصحيفة</small><strong>{view.courses.length.toLocaleString("ar-KW-u-nu-latn")}</strong></div></div>
+                <div className="pr-infographic-stat"><span><GraduationCap /></span><div><small>مقررات الصحيفة</small><strong>{ownIds.size.toLocaleString("ar-KW-u-nu-latn")}</strong></div></div>
                 <div className="pr-infographic-stat"><span><Layers /></span><div><small>المستويات</small><strong>{levels.size.toLocaleString("ar-KW-u-nu-latn")}</strong></div></div>
                 <div className="pr-level-ribbon" aria-label="توزيع المقررات على المستويات">
                   {[...levels.entries()].map(([level, ids]) => <div className="pr-level-chip" key={level} title={`${level ? `المستوى ${level}` : "بلا مستوى"}: ${countOf(ids.length, AR.course)}`}>
-                    <span className="pr-level-chip-icon"><Layers size={15} aria-hidden="true" /></span><span className="pr-level-chip-label"><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)}</small><i><b style={{ inlineSize: `${view.courses.length ? ids.length / view.courses.length * 100 : 0}%` }} /></i></span>
+                    <span className="pr-level-chip-icon"><Layers size={15} aria-hidden="true" /></span><span className="pr-level-chip-label"><b>{level ? `المستوى ${level}` : "بلا مستوى"}</b><small>{countOf(ids.length, AR.course)}</small><i><b style={{ inlineSize: `${ownIds.size ? ids.length / ownIds.size * 100 : 0}%` }} /></i></span>
                   </div>)}
                 </div>
               </section>
@@ -367,9 +386,10 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                     })}
                   </section>
                 ))}
-                <PlanMapLines mapRef={mapRef} edges={edges} focus={focus} up={upstream} down={downstream} off={offIds} layoutKey={`${view.courses.length}:${levels.size}`} />
+                <PlanMapLines mapRef={mapRef} edges={edges} focus={focus} up={upstream} down={downstream} off={offIds} layoutKey={`${ownIds.size}:${levels.size}`} />
               </div>
 
+              {crossNotes.length ? <ul className="pr-cross" aria-label="متطلبات من أقسام أخرى">{crossNotes.map(n => <li key={n.key}><em>ملاحظة:</em> المقرر <b>{n.code}</b> يتطلب أيضاً المقرر <b>{n.pre.code}</b> «{n.pre.name}»{n.pre.owner ? ` من ${n.pre.owner}` : ""}.</li>)}</ul> : null}
               {edges.length ? <p className="pr-key">السهم يصل إلى المقرر الذي يتطلبه · ولون الرقم هو لون أسهمه</p> : null}
 
               {focusCourse ? (
@@ -390,7 +410,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 onSaveCourse={values => saveCourseDetails(sel, values)}
                 onSave={rule => act("/api/plan-review/rule", "PUT", { rule })} /> : null}
 
-              <GroupsPanel view={view} nameOf={nameOf} busy={busy} series={series}
+              <GroupsPanel view={view} nameOf={nameOf} busy={busy} series={series} own={ownIds}
                 isOff={id => { const c = view.courses.find(x => x.id === id); return Boolean(cat && c && !isActive(c)); }} onOpen={id => setSelected(id)}
                 onSave={group => act("/api/plan-review/group", "PUT", { group })}
                 onDelete={groupId => act("/api/plan-review/group/delete", "POST", { groupId })} />
@@ -510,9 +530,9 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave, onSav
   return createPortal(editor, document.body);
 }
 
-function GroupsPanel({ view, nameOf, busy, series, isOff, onOpen, onSave, onDelete }: { view: View; nameOf: (id: number) => string; busy: boolean; series: Map<number, number>; isOff: (id: number) => boolean; onOpen: (id: number) => void; onSave: (g: ElectiveGroup) => void; onDelete: (id: string) => void }) {
+function GroupsPanel({ view, nameOf, busy, series, own, isOff, onOpen, onSave, onDelete }: { view: View; nameOf: (id: number) => string; busy: boolean; series: Map<number, number>; own: ReadonlySet<number>; isOff: (id: number) => boolean; onOpen: (id: number) => void; onSave: (g: ElectiveGroup) => void; onDelete: (id: string) => void }) {
   const [draft, setDraft] = useState<ElectiveGroup | null>(null);
-  const electives = [...view.courses].sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }));
+  const electives = view.courses.filter(c => own.has(c.id)).sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }));
   return (
     <section className="pr-groups">
       <h3>المجموعات الاختيارية</h3>
@@ -530,7 +550,7 @@ function GroupsPanel({ view, nameOf, busy, series, isOff, onOpen, onSave, onDele
               ) : null}
             </header>
             <div className="pr-group-cards">
-              {g.courseIds.map(id => {
+              {g.courseIds.filter(id => own.has(id)).map(id => {
                 const c = view.courses.find(x => x.id === id);
                 const pre = view.rules.find(r => r.courseId === id)?.prereq;
                 const codeOf = (x: number) => view.courses.find(y => y.id === x)?.code || view.referenced.find(y => y.id === x)?.code || "";

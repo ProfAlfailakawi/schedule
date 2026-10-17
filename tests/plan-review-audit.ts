@@ -125,6 +125,8 @@ const ctx = (plan: number[]) => ({
     "R6 فلتر التصنيف فوق الخريطة: مقررات القسم في التصنيف المختار فعّالة والباقي غير فعال وأسهمه تخفت");
   check(planUi.includes("pr-group-cards") && planUi.includes("pr-pre-item") && planUi.includes("ArrowUp") && planUi.includes("grouped.has") && css.includes(".pr-pre-item{") && css.includes(".pr-groups .pr-group{"),
     "R6 الاختياري بجمال الصحيفة: شريطٌ ذهبي ببطاقات المجموعة، وتحت كل بطاقة أسهمُ متطلباتها بلون كل مسبق، ولا تتكرر بطاقاتها في أعمدة المستويات");
+  check(planUi.includes("ownIds") && planUi.includes("c.sectionId === view.plan.sectionId") && planUi.includes("planEdges(view.rules, ownIds)") && planUi.includes("crossNotes") && planUi.includes("يتطلب أيضاً المقرر") && planUi.includes("own.has(id)"),
+    "R6 القسم يرى مقرراته فقط في الخريطة والعدّادات والمجموعات؛ مقررات الأقسام الأخرى لا تظهر، ومتطلبها منها يُذكر ملاحظةً");
   check(lines.includes("animateMotion") && css.includes("prefers-reduced-motion:reduce){.pr-line .pr-dot{display:none}"),
     "R6 نقاط متحركة على الأسهم وتُخفى عند تفضيل تقليل الحركة");
   check(source.includes("course.ownerSectionId === selectedSectionId"),
@@ -349,7 +351,7 @@ const ctx = (plan: number[]) => ({
   const app = read("src/App.tsx"), ui = read("src/components/PlanReview.tsx"), refs = read("src/components/CurriculumReferenceReview.tsx"), styles = read("src/styles/05-schedule.css");
   check(app.includes("planReviewCount > 0") && app.includes("planReviewAccess ? <PlanReview") && app.includes('addEventListener("schedule:plan-review-updated"'), "R6 تختفي أيقونة المراجعة بعد آخر اعتماد وتبقى الصفحة مفتوحة حتى المغادرة");
   check(ui.includes("schedule:plan-review-updated") && ui.includes("createPortal(editor, document.body)") && ui.includes('aria-modal="true"'), "R6 اعتماد الصحيفة يحدّث الأيقونة فوراً ومحرّر المقرر نافذة حوار");
-  check(ui.includes('localeCompare(b.code, "en", { numeric: true') && ui.includes("const electives = [...view.courses].sort"), "R6 قوائم اختيار المقررات مرتبة رقمياً");
+  check(ui.includes('localeCompare(b.code, "en", { numeric: true') && ui.includes("const electives = view.courses.filter(c => own.has(c.id)).sort("), "R6 قوائم اختيار المقررات مرتبة رقمياً");
   check(ui.includes("onSaveCourse") && ui.includes("/api/plan-review/course-details") && ui.includes("حفظ بيانات المقرر"), "R6 محرر المقرر في الخريطة يحفظ وحداته وساعاته وسعته");
   check(refs.includes("تعديل الوحدات والساعات والسعة") && refs.includes('kind: "edit"') && refs.includes("reference-followups") && refs.includes('state !== "matched"'), "R6 صحيفة التخرج تبقي قائمة المتابعة (غير المطابق فقط) بتفاصيلها وأزرار التصحيح والإضافة، دون خريطة مكرّرة");
   check(styles.includes(".schedule-status .schedule-status-head .dna-hsub") && styles.includes("overflow-wrap:anywhere"), "R6 نص حالة الجدول يلتف داخل الإطار المرن");
