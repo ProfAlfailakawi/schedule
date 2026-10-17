@@ -152,7 +152,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
         <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.students + s.reach.newSinceBaseline} /></b><span>طالب استخدموا النظام منذ {AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
         <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.visits + (visits?.afterBaseline || 0)} /></b><span>زيارة منذ {AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
         <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> <CountUp value={AUDIENCE_BASELINE.instructorOpens + s.instructors.openedAfterBaseline} /></b><span>فتحُ أعضاء هيئة التدريس لبطاقاتهم منذ {AUDIENCE_BASELINE.since}</span><small>عدد مرّات الفتح، وليس عدد الأشخاص</small></div>
-        <div className="pt-kpi"><b><CountUp value={s.instructors.opened} /></b><span>عضو هيئة تدريس فتح بطاقته</span><small>في {s.term?.name || "الفصل الجاري"}</small></div>
+        <div className="pt-kpi"><b><CountUp value={s.instructors.opened} /></b><span>أعضاء هيئة التدريس هذا الفصل</span><small>فتحوا بطاقاتهم في {s.term?.name || "الفصل الجاري"}</small></div>
         <div className="pt-kpi"><b><em className="pt-more">أكثر من</em> {pct(Math.max(AUDIENCE_BASELINE.instructorOpenRate, s.instructors.openRate))}</b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ عالٍ يعني جمهوراً منتبهاً</small></div>
         <div className="pt-kpi"><b>{hasVisits ? <CountUp value={visits!.last30} /> : "—"}</b><span>زيارة آخر 30 يوماً</span><small>{hasVisits ? `مقيسة منذ ${visits!.since}` : "القياس يبدأ بأول زيارة بعد التفعيل"}</small></div>
       </div>
@@ -219,7 +219,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
 
       <div className="pt-grid2">
         <section className="pt-card">
-          <h3>تفاعل الأساتذة</h3>
+          <h3>تفاعل الأساتذة هذا الفصل</h3>
           <p className="pt-sub">من وصلته بطاقته، ومن فتحها، ومن أرسل منها.</p>
           {s.instructors.invited ? (
             <div className="pt-funnel">
