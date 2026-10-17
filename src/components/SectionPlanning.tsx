@@ -70,7 +70,7 @@ const fold = (value: string) => String(value || "").normalize("NFKC")
 const asText = (map: Record<string, number> | undefined) => Object.fromEntries(Object.entries(map || {}).map(([k, v]) => [k, String(v)]));
 const asNumbers = (map: Record<string, string>, min = 0) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).map(([k, v]) => [k, Math.max(min, Math.floor(Number(v)))]));
 
-export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows }: { collegeId: number; sectionId: number; termId: number; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number }) => void }) {
+export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows }: { collegeId: number; sectionId: number; termId: number; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});

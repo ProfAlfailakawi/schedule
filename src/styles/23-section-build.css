@@ -41,3 +41,4 @@
 .transfer-import-commit.is-planning button{background:var(--brass);border-color:var(--brass);color:#fff;display:inline-flex;align-items:center;gap:8px}.transfer-import-commit.is-planning button svg{inline-size:18px;block-size:18px}
 .transfer-import-commit.is-planning button:disabled{opacity:.55}
 .tp-blocked{display:flex;align-items:center;gap:8px;margin:0;font-size:.84rem;color:var(--warning)}.tp-blocked svg{flex:none;inline-size:18px;block-size:18px}
+.tp-banner .tp-removed{color:var(--danger);font-weight:700}

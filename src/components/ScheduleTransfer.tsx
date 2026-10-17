@@ -92,7 +92,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
    * كان الضغط على «تعبئة ونشرها» يعيد صاحبه إلى نافذة النقل الصغيرة بتبويباتها
    * الخمسة، وكأن شيئاً لم يقع. والنشر خاتمة لا خطوة: تُعرض حصيلته وحدها — كم
    * موعداً نُشر، وفي أي موقع — ثم يُغلق الباب بيده هو. */
-  const [publishReceipt, setPublishReceipt] = useState<{count:number;scopes:Array<{siteLabel:string;count:number}>;planning?:{existing:number;added:number;pending:number}}|null>(null);
+  const [publishReceipt, setPublishReceipt] = useState<{count:number;scopes:Array<{siteLabel:string;count:number}>;planning?:{existing:number;added:number;pending:number;removed:number}}|null>(null);
   /* مقررات نُسخت إلى كتالوج موقع آخر أثناء النشر: تُقال صراحةً، فإضافةُ سطرٍ
      إلى كتالوج قسمٍ لا تمرّ بلا خبر. */
   const [plantedCourses, setPlantedCourses] = useState<string[]>([]);
@@ -493,7 +493,14 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0);
   /* مراجعة «نزّل الشعب» القادمة من تخطيط الشعب: هويةٌ مستقلة عن استيراد الملف/PDF، فلا يُخلط بينهما. */
   const fromPlanning = Boolean(xlsxPreview?.planning);
-  const planningMeta = (xlsxPreview?.planning || { existing: 0, added: 0, pending: 0 }) as { existing: number; added: number; pending: number };
+  /* العدّادات من الصفوف التي بقيت في الشاشة الآن: حذفُ المراجع لشعبةٍ مقترحة أو لموعدٍ حالي يظهر في الزر والحصيلة. */
+  const planningRowsNow = (fromPlanning && Array.isArray(xlsxPreview?.rows) ? xlsxPreview.rows : []) as any[];
+  const planningMeta = (() => {
+    const existingNow = planningRowsNow.filter(row => row.planningOrigin === "existing").length;
+    const newRows = planningRowsNow.filter(row => row.planningOrigin === "new");
+    const originalExisting = Number(xlsxPreview?.planning?.existing || 0);
+    return { existing: existingNow, added: newRows.length, pending: newRows.filter(row => !row.roomId).length, removed: Math.max(0, originalExisting - existingNow) };
+  })();
   /* Pages still waiting for «راجعت الصفحة» — named beside the publish button,
      which otherwise just disappears with no word about why. */
   const pagesPendingReview = importKind === "authority-pdf" ? pagesAwaitingReview(xlsxPreview?.pageDiagnostics, reviewedImportPages) : [];
@@ -656,7 +663,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
 
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   /** صفوفٌ بشكل النموذج (من ملفٍ أو من «نزّل الشعب») تُعرض في شاشة المراجعة نفسها. */
-  const previewWorksheetRows = async (rows: any[], fileName: string, editable = false, planning?: { existing: number; added: number; pending: number }) => {
+  const previewWorksheetRows = async (rows: any[], fileName: string, editable = false, planning?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
     setImportSectionId(0); setPdfScopeFix(null);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishReceipt(null);
@@ -674,7 +681,13 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       const fresh = editable && Array.isArray(data.rows)
         ? data.rows.map((row: any) => (!row.roomId && row.buildingId && row.locationStatus !== "PENDING_ROOM") ? { ...row, locationStatus: "PENDING_ROOM" } : row)
         : data.rows;
-      setXlsxPreview({ ...data, rows: fresh, fileName, editable, ...(editable ? { issues: [] } : {}), ...(planning ? { planning } : {}) });
+      /* أصل كل صف (موعدٌ حالي أم شعبةٌ جديدة) يُوسم هنا؛ فالعدّادات والحصيلة تُحسب من الصفوف النهائية بعد حذف المراجع وتعديله، لا من لقطة الخادم. */
+      const existingKeys = new Set(planning?.existingKeys || []);
+      const sameOrder = Array.isArray(fresh) && fresh.length === rows.length;
+      const tagged = planning && Array.isArray(fresh)
+        ? fresh.map((row: any, at: number) => ({ ...row, planningOrigin: (sameOrder ? at < planning.existing : existingKeys.has(`${Number(row.AdCourseId)}|${String(row.SCode)}`)) ? "existing" : "new" }))
+        : fresh;
+      setXlsxPreview({ ...data, rows: tagged, fileName, editable, ...(editable ? { issues: [] } : {}), ...(planning ? { planning: { existing: planning.existing, added: planning.added, pending: planning.pending } } : {}) });
       /* منتقي المقرر في الجدول يحتاج مقررات القسم (يحمّلها مسار PDF وحده). */
       if (editable && !deptCourses.length) {
         try {
@@ -1019,7 +1032,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         const total=scopes.reduce((sum,scope)=>sum+Number(scope?.count||0),0)||Number(xlsxPreview?.count||0);
         setPublishReceipt({count:total,scopes});
         /* حصيلة «نزّل الشعب» تُعرَف بشعبها الجديدة ومواعيدها الباقية، لا بعنوان «نُشر الجدول». */
-        if(xlsxPreview?.planning)setPublishReceipt(prev=>prev?{...prev,planning:xlsxPreview.planning}:prev);
+        if(xlsxPreview?.planning)setPublishReceipt(prev=>prev?{...prev,planning:planningMeta}:prev);
       } else {
         setXlsxDraft(id||"تم");
       }
@@ -1176,7 +1189,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               {publishReceipt.planning ? (
                 <>
                   <h3>نُزّلت الشعب</h3>
-                  <p><b>{countOf(publishReceipt.planning.added, AR.section)}</b> من تخطيط الشعب صارت في الجدول، وبقيت مواعيد القسم الحالية ({countOf(publishReceipt.planning.existing, AR.appointment)}) كما هي. المجموع <b>{countOf(publishReceipt.count, AR.appointment)}</b>.</p>
+                  <p><b>{countOf(publishReceipt.planning.added, AR.section)}</b> من تخطيط الشعب صارت في الجدول، وبقيت مواعيد القسم الحالية ({countOf(publishReceipt.planning.existing, AR.appointment)}){publishReceipt.planning.removed ? <>، وأُزيل منها <b>{countOf(publishReceipt.planning.removed, AR.appointment)}</b> بحذفك لها في المراجعة</> : " كما هي"}. المجموع <b>{countOf(publishReceipt.count, AR.appointment)}</b>.</p>
                 </>
               ) : (
                 <>
@@ -1258,6 +1271,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   هذه ليست استيراد ملف. تظهر مواعيد القسم الحالية (<b>{countOf(planningMeta.existing, AR.appointment)}</b>) مع الشعب المقترحة (<b>{countOf(planningMeta.added, AR.section)}</b>)،
                   فعدّل ما شئت بـ«تعديل سريع» ثم انزل بها في الجدول. النزول يستبدل جدول القسم في الفصل بما تراه هنا، والمواعيد الحالية محمولة معه.
                   {planningMeta.pending > 0 ? ` منها ${countOf(planningMeta.pending, AR.section)} قاعتها وأستاذها بانتظار التثبيت.` : ""}
+                  {planningMeta.removed > 0 ? <strong className="tp-removed"> حذفتَ {countOf(planningMeta.removed, AR.appointment)} من مواعيد القسم الحالية، وستُزال من الجدول عند النزول.</strong> : null}
                 </p>
               </div>
               <SecondaryButton type="button" data-guide-ignore="يعود إلى شاشة تخطيط الشعب دون كتابة شيء في الجدول" onClick={() => goTab("planning")}>رجوع إلى التخطيط</SecondaryButton>
@@ -1546,7 +1560,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         ) : null}
                         {importReady && publishGateSatisfied ? (
                           <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady}>
-                            {busy ? "يجهّز…" : fromPlanning ? <><Layers aria-hidden="true" /> {`نزّل ${countOf(planningMeta.added, AR.section)} في الجدول`}</> : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
+                            {busy ? "يجهّز…" : fromPlanning ? <><Layers aria-hidden="true" /> {planningMeta.added > 0 ? `نزّل ${countOf(planningMeta.added, AR.section)} في الجدول` : "نزّل التعديلات في الجدول"}</> : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                           </PrimaryButton>
                         ) : null}
                         {/* «حفظ كمسودة فقط» is gone on purpose: a saved draft
