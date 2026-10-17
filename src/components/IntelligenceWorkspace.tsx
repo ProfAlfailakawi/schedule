@@ -425,7 +425,8 @@ function metricBadge(metric: unknown) {
   const pct = /^(\d{1,3}(?:\.\d+)?)\s*%$/.exec(text);
   const ring = ringFromScoreText(pct ? `${pct[1]}/100` : text);
   if (ring) return <b className="insight-preview-ring">{ring}</b>;
-  return text && !/^[0٠]$/.test(text) ? <b>{text}</b> : null;
+  /* قيمةٌ نصيةٌ طويلة («لا موانع»، «تاريخ غير كافٍ») تُصغَّر فلا تنكسر بخطّ الرقم الكبير. */
+  return text && !/^[0٠]$/.test(text) ? <b data-long={text.length > 7 || undefined}>{text}</b> : null;
 }
 
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
