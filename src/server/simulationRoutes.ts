@@ -16,6 +16,7 @@ import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { evaluateScheduleChange, loadSimulationInput, runRegistrationSimulation } from "./simulationData";
 import { radarInsightFor } from "./radarInsight";
 import { predictiveReadingFor } from "./predictiveInsight";
+import { predictiveNarrow, predictiveSummaryOf } from "../utils/predictiveScope";
 import { emptyCauseTotals } from "../utils/registrationCauses";
 
 export interface SimulationDeps {
@@ -172,29 +173,44 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
 
   /* ── الذكاء التنبّؤي: ماذا يحتاج الفصلُ القادم؟ ── قراءةٌ فقط، بحدود نطاق القارئ، وكلُّ رقمٍ يحمل ثقتَه وعددَ فصوله. */
   const predictiveMemo = createTtlMemo<Awaited<ReturnType<typeof predictiveReadingFor>>>({ ttlMs: 5 * 60_000 });
+  /* قراءةٌ واحدة تخدم اللوحة والملخّص معاً: الذاكرة نفسها، ومفتاحُها يشمل العالمَ (ctxKey) وصاحبَ الطلب والنطاق. */
+  const predictiveFor = async (req: Request) => {
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    if (!term) return null;
+    const termId = Number(term.AdTermId);
+    const run = await Repository.getRegistrationRun(termId);
+    const power = deps.isPowerUser(req);
+    /* مفتاحُ «الكلية / القسم» في مركز القراءات: يضيّق النطاقَ ولا يوسّعه أبداً (يبقى شرطُ صلاحيات القارئ). */
+    const narrow = predictiveNarrow(req.query, await Repository.getSections());
+    const permitted = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
+    const allowed = (collegeId: number, sectionId: number) => permitted(collegeId, sectionId) && (!narrow || narrow.match(collegeId, sectionId));
+    const loaded = await inputMemo.get(ctxKey(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
+    /* مفتاحُ الذاكرة يشمل صاحبَ الطلب: نطاقُه لا يُستنتج من شعب الفصل وحدها، فلا يشارك قارئٌ ذاكرةَ آخر. */
+    const scopeKey = `${power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`}:${narrow ? narrow.key : "-"}`;
+    const reading = await predictiveMemo.get(ctxKey(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`), () => predictiveReadingFor({ term, run, loaded, allowed }));
+    return { reading, scoped: !power };
+  };
   app.get("/api/simulation/predictive", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    const term = pickDoorTerm((await Repository.getTerms()) as any);
-    if (!term) { res.json({ ready: false }); return; }
-    const termId = Number(term.AdTermId);
     try {
-      const run = await Repository.getRegistrationRun(termId);
-      const power = deps.isPowerUser(req);
-      /* مفتاحُ «الكلية / القسم» في مركز القراءات: يضيّق النطاقَ ولا يوسّعه أبداً (يبقى شرطُ صلاحيات القارئ). */
-      const narrowMode = req.query.analysisScope === "department" ? "department" : req.query.analysisScope === "college" ? "college" : "";
-      const narrowCollege = Number(req.query.collegeId) || 0, narrowSection = Number(req.query.sectionId) || 0;
-      const narrow = narrowMode && narrowCollege ? { mode: narrowMode, collegeId: narrowCollege, sectionId: narrowMode === "department" ? narrowSection : 0 } : null;
-      const permitted = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
-      const allowed = (collegeId: number, sectionId: number) => permitted(collegeId, sectionId)
-        && (!narrow || (collegeId === narrow.collegeId && (narrow.mode === "college" || sectionId === narrow.sectionId)));
-      const loaded = await inputMemo.get(ctxKey(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
-      /* مفتاحُ الذاكرة يشمل صاحبَ الطلب: نطاقُه لا يُستنتج من شعب الفصل وحدها، فلا يشارك قارئٌ ذاكرةَ آخر. */
-      const scopeKey = `${power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`}:${narrow ? `${narrow.mode}:${narrow.collegeId}:${narrow.sectionId}` : "-"}`;
-      const reading = await predictiveMemo.get(ctxKey(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`), () => predictiveReadingFor({ term, run, loaded, allowed }));
-      res.json({ ready: true, scoped: !power, reading });
+      const got = await predictiveFor(req);
+      if (!got) { res.json({ ready: false }); return; }
+      res.json({ ready: true, scoped: got.scoped, reading: got.reading });
     } catch (error) {
       console.error("[simulation] predictive:", error instanceof Error ? error.message : error);
       fail(res, 500, "تعذّر حساب التنبّؤات الآن. أعد المحاولة بعد قليل.");
+    }
+  });
+  /* ملخّصٌ صغير لبطاقة مركز الذكاء: أعدادٌ فقط، من القراءة المخزَّنة نفسها (فتحُ اللوحة بعده فوريّ). */
+  app.get("/api/simulation/predictive-summary", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const got = await predictiveFor(req);
+      if (!got) { res.json({ ready: false }); return; }
+      res.json({ ready: true, scoped: got.scoped, summary: predictiveSummaryOf(got.reading) });
+    } catch (error) {
+      console.error("[simulation] predictive-summary:", error instanceof Error ? error.message : error);
+      fail(res, 500, "تعذّر حساب ملخّص التنبّؤ الآن.");
     }
   });
 

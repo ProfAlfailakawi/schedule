@@ -147,6 +147,11 @@ export interface PredictiveInput {
   students?: readonly SimStudent[];
   plans?: readonly SimPlanRules[];
   credit?: ReadonlyMap<number, number>;
+  /**
+   * اختياري — لقطاتُ الطلبة كما كانوا عند بدء فصلٍ مضى (termId → طلبة). تستعملها الاختباراتُ الرجعية للاختناقات والتخرّج؛
+   * غائبةً يُستعمل `students` الحالي لكل الفصول، وهو **تقريبٌ** يُعلَن في الوثيقة (المنجَزُ اليوم ليس المنجَزَ حينها).
+   */
+  studentsByTerm?: Readonly<Record<string, readonly SimStudent[]>> | null;
 }
 
 /* ═══════════════════════════ التاريخ ═══════════════════════════ */
@@ -441,14 +446,13 @@ export interface PrereqBottleneck {
   action: PredictiveAction | null;
 }
 
-export function predictPrereqBottlenecks(input: PredictiveInput): PrereqBottleneck[] {
-  const students = input.students || [], plans = input.plans || [], credit = input.credit || new Map<number, number>();
-  if (!students.length || !plans.length) return [];
-  const { target, past } = bookTerms(input);
-  const catalog = new Map(input.courses.map(course => [Number(course.AdCourseId), course] as const));
-  const planById = new Map(plans.map(plan => [plan.planId, plan] as const));
-  const completeness = scheduleCompleteness(input);
+interface PrereqPressure {
+  blocked: Map<number, Set<string>>; needers: Map<number, Set<string>>; gates: Map<number, Set<number>>; assessed: number;
+}
 
+/** من يحجزه كلُّ مقررٍ مسبق ومن يحتاجه الآن، لقطةً واحدة من الطلبة (بلا أي نظرٍ إلى الجدول). */
+function prereqPressure(students: readonly SimStudent[], plans: readonly SimPlanRules[], credit: ReadonlyMap<number, number>): PrereqPressure {
+  const planById = new Map(plans.map(plan => [plan.planId, plan] as const));
   const blocked = new Map<number, Set<string>>();
   const needers = new Map<number, Set<string>>();
   const gates = new Map<number, Set<number>>();
@@ -480,6 +484,74 @@ export function predictPrereqBottlenecks(input: PredictiveInput): PrereqBottlene
       if (!rule?.prereq || prereqMet(rule.prereq, passed, passedUnits)) (needers.get(required) || needers.set(required, new Set()).get(required)!).add(student.fp);
     }
   }
+  return { blocked, needers, gates, assessed };
+}
+
+/** هل المقررُ المسبق مختنق عند عددٍ معلومٍ من الشعب؟ (لا شعبةَ أصلاً، أو مقاعدُ أقلُّ ممن يحتاجه). */
+function bottleneckAt(pressure: PrereqPressure, courseId: number, sections: number, cap: number) {
+  const set = pressure.blocked.get(courseId) || new Set<string>();
+  const seats = cap > 0 ? sections * cap : null;
+  const needSeats = new Set([...(pressure.needers.get(courseId) || []), ...set]).size;
+  const short = seats === null ? null : Math.max(0, needSeats - seats);
+  return { set, seats, needSeats, short, flagged: set.size > 0 && !(sections > 0 && (short === null || short === 0)) };
+}
+
+export interface BottleneckBacktestStep { termId: number; name: string; predicted: number[]; actual: number[]; error: number | null }
+export interface BottleneckBacktest {
+  termsTested: number;
+  steps: BottleneckBacktestStep[];
+  /** |المتوقَّع Δ الفعلي| ÷ |المتوقَّع ∪ الفعلي| مجموعةً على كل الخطوات (٠–١)؛ null = لا خطوةَ قابلة للقياس. */
+  relError: number | null;
+}
+
+/**
+ * ── الاختبار الرجعي للاختناقات ────────────────────────────────────────────
+ * لكل فصلٍ N له تاريخٌ سابق: عدد الشعب المتوقَّع من فصولٍ < N فقط (predictDemand) يُقابَل بحاجة الطلبة، فتُستخرج مقرراتٌ
+ * مختنقة «متوقَّعة»؛ وبعدد الشعب الذي وقع فعلاً في N تُستخرج «الفعلية». الخطأ = اختلافُ المجموعتين.
+ * **تقريب:** لقطةُ الطلبة واحدة (`studentsByTerm` إن مُرِّرت وإلا الحالية) — فهو يقيس نموذجَ الشعب لا نموذجَ الطلبة.
+ */
+export function backtestBottlenecks(input: PredictiveInput): BottleneckBacktest {
+  const empty: BottleneckBacktest = { termsTested: 0, steps: [], relError: null };
+  const plans = input.plans || [], credit = input.credit || new Map<number, number>();
+  if (!plans.length || (!(input.students || []).length && !input.studentsByTerm)) return empty;
+  const booked = bookTerms(input);
+  const past = [...booked.all.values()].filter(book => book.termId !== input.target.termId && book.order < booked.target.order).sort((x, y) => x.order - y.order);
+  const catalog = new Map(input.courses.map(course => [Number(course.AdCourseId), course] as const));
+  const steps: BottleneckBacktestStep[] = [];
+  let sym = 0, uni = 0;
+  for (let index = 1; index < past.length; index += 1) {
+    const book = past[index];
+    const earlier = new Set(past.slice(0, index).map(item => item.termId));
+    const students = input.studentsByTerm?.[String(book.termId)] || input.students || [];
+    const pressure = prereqPressure(students, plans, credit);
+    const sub: PredictiveInput = {
+      ...input, target: { termId: book.termId, name: book.name }, rows: input.rows.filter(row => earlier.has(Number(row.AdTermId))),
+      stats: (input.stats || []).filter(stat => earlier.has(Number(stat.termId))), liveWanted: null, students: undefined, plans: undefined, studentsByTerm: null,
+    };
+    const expected = new Map(predictDemand(sub, { backtest: false }).map(item => [item.courseId, item.expected] as const));
+    const predicted: number[] = [], actual: number[] = [];
+    for (const courseId of [...pressure.blocked.keys()].sort((a, b) => a - b)) {
+      const cap = capacityOf(catalog.get(courseId));
+      if (bottleneckAt(pressure, courseId, expected.get(courseId) || 0, cap).flagged) predicted.push(courseId);
+      if (bottleneckAt(pressure, courseId, book.codes.get(courseId)?.size || 0, cap).flagged) actual.push(courseId);
+    }
+    const union = new Set([...predicted, ...actual]);
+    const diff = [...union].filter(id => predicted.includes(id) !== actual.includes(id)).length;
+    steps.push({ termId: book.termId, name: book.name, predicted, actual, error: union.size ? diff / union.size : null });
+    sym += diff; uni += union.size;
+  }
+  return { termsTested: steps.length, steps, relError: uni ? sym / uni : null };
+}
+
+export function predictPrereqBottlenecks(input: PredictiveInput, options: { backtest?: boolean; backtestError?: number | null } = {}): PrereqBottleneck[] {
+  const students = input.students || [], plans = input.plans || [], credit = input.credit || new Map<number, number>();
+  if (!students.length || !plans.length) return [];
+  const { target, past } = bookTerms(input);
+  const catalog = new Map(input.courses.map(course => [Number(course.AdCourseId), course] as const));
+  const completeness = scheduleCompleteness(input);
+  const pressure = prereqPressure(students, plans, credit);
+  const { blocked, gates, assessed } = pressure;
+  const backtestError = options.backtestError !== undefined ? options.backtestError : options.backtest === false ? null : backtestBottlenecks(input).relError;
   const quality = students.length ? assessed / students.length : 0;
   const out: PrereqBottleneck[] = [];
   for (const [courseId, set] of blocked) {
@@ -487,16 +559,13 @@ export function predictPrereqBottlenecks(input: PredictiveInput): PrereqBottlene
     if (!course) continue;
     const cap = capacityOf(course);
     const sections = target.codes.get(courseId)?.size || 0;
-    const seats = cap > 0 ? sections * cap : null;
-    /* من يحتاجه الآن ومن يحجبه: طالبٌ واحدٌ قد يكون في المجموعتين فلا يُعدّ مرتين. */
-    const needSeats = new Set([...(needers.get(courseId) || []), ...set]).size;
-    const short = seats === null ? null : Math.max(0, needSeats - seats);
-    /* اختناقٌ حين لا شعبةَ أصلاً، أو حين المقاعدُ أقلُّ ممن يحتاجه. */
-    if (sections > 0 && (short === null || short === 0)) continue;
+    /* من يحتاجه الآن ومن يحجبه: طالبٌ واحدٌ قد يكون في المجموعتين فلا يُعدّ مرتين. اختناقٌ حين لا شعبةَ أصلاً، أو المقاعدُ أقلُّ ممن يحتاجه. */
+    const { seats, needSeats, short, flagged } = bottleneckAt(pressure, courseId, sections, cap);
+    if (!flagged) continue;
     const offeredBefore = past.filter(book => book.codes.has(courseId)).length;
     const confidence = confidenceFrom({
       termsUsed: Math.max(past.length, 0), sameSeason: past.filter(book => target.season && book.season === target.season).length,
-      values: [], quality: quality * (completeness === null ? 0.7 : completeness),
+      values: [], quality: quality * (completeness === null ? 0.7 : completeness), backtestError,
     });
     if (completeness !== null && completeness < 0.6) confidence.caveat = "جدول الفصل القادم لم يكتمل بعد.";
     const dependents = [...(gates.get(courseId) || [])].map(id => String(catalog.get(id)?.CourseName || "")).filter(Boolean).slice(0, 3);
@@ -556,9 +625,44 @@ function concurrency(rows: readonly FSchedule[]): number[][] {
   return grid.map(day => day.map(set => set.size));
 }
 
-export function predictTimeHotspots(input: PredictiveInput): TimeHotspot[] {
+export interface HotspotBacktestStep { termId: number; name: string; predicted: string[]; actual: string[]; error: number | null }
+export interface HotspotBacktest { termsTested: number; steps: HotspotBacktestStep[]; relError: number | null }
+
+/** ازدحامُ ساعةٍ بمعيار «القاعات»: ≥ ٣ شعب و≥ ٩٠٪ من القاعات المعروفة (فرعُ «تجاوز التاريخ» مقارنةٌ بالتاريخ فلا يصلح هدفَ تنبّؤ). */
+const crowdedByRooms = (count: number, roomsKnown: number) => count >= 3 && roomsKnown >= 3 && count >= Math.ceil(roomsKnown * 0.9);
+
+/**
+ * ── الاختبار الرجعي للساعات المزدحمة ─────────────────────────────────────
+ * لكل فصلٍ N له تاريخٌ سابق: تزامنُ كل ساعةٍ يُتوقَّع بمتوسط الفصول < N المرجَّح بالحداثة وقاعاتُها وحدها، ثم تُقارَن الساعاتُ
+ * المزدحمة المتوقَّعة بما وقع فعلاً في N (قاعاتُ ما قبله + N). الخطأ = اختلاف المجموعتين ÷ اتحادهما. حتميّ، بلا تسرّب.
+ */
+export function backtestHotspots(input: PredictiveInput): HotspotBacktest {
+  const booked = bookTerms(input);
+  const past = [...booked.all.values()].filter(book => book.termId !== input.target.termId && book.order < booked.target.order).sort((x, y) => x.order - y.order);
+  const roomsOf = (books: readonly TermBook[]) => { const set = new Set<string>(); for (const book of books) for (const row of book.rows) { const key = roomIdentityKey(row); if (key) set.add(key); } return set; };
+  const grids = past.map(book => concurrency(book.rows));
+  const steps: HotspotBacktestStep[] = [];
+  let sym = 0, uni = 0;
+  for (let index = 1; index < past.length; index += 1) {
+    const rooms = roomsOf(past.slice(0, index)).size, roomsWithN = roomsOf(past.slice(0, index + 1)).size;
+    const predicted: string[] = [], actual: string[] = [];
+    grids[index].forEach((daySlots, day) => daySlots.forEach((count, slot) => {
+      const mean = weightedStats(grids.slice(0, index).map(grid => grid[day][slot])).mean;
+      if (crowdedByRooms(Math.round(mean), rooms)) predicted.push(`${day}:${slot}`);
+      if (crowdedByRooms(count, roomsWithN)) actual.push(`${day}:${slot}`);
+    }));
+    const union = new Set([...predicted, ...actual]);
+    const diff = [...union].filter(key => predicted.includes(key) !== actual.includes(key)).length;
+    steps.push({ termId: past[index].termId, name: past[index].name, predicted, actual, error: union.size ? diff / union.size : null });
+    sym += diff; uni += union.size;
+  }
+  return { termsTested: steps.length, steps, relError: uni ? sym / uni : null };
+}
+
+export function predictTimeHotspots(input: PredictiveInput, options: { backtest?: boolean; backtestError?: number | null } = {}): TimeHotspot[] {
   const { target, past } = bookTerms(input);
   if (!target.rows.length || past.length === 0) return [];
+  const backtestError = options.backtestError !== undefined ? options.backtestError : options.backtest === false ? null : backtestHotspots(input).relError;
   const rooms = new Set<string>();
   for (const book of past) for (const row of book.rows) { const key = roomIdentityKey(row); if (key) rooms.add(key); }
   for (const row of target.rows) { const key = roomIdentityKey(row); if (key) rooms.add(key); }
@@ -583,7 +687,7 @@ export function predictTimeHotspots(input: PredictiveInput): TimeHotspot[] {
         .sort((a, b) => a.value - b.value || a.index - b.index)[0];
       const confidence = confidenceFrom({
         termsUsed: past.length, sameSeason, values: history.map(grid => grid[day][slot]),
-        quality: (completeness ?? 0.7) * (roomsKnown >= 3 ? 1 : 0.6),
+        quality: (completeness ?? 0.7) * (roomsKnown >= 3 ? 1 : 0.6), backtestError,
       });
       if (completeness !== null && completeness < 0.6) confidence.caveat = "جدول الفصل القادم لم يكتمل بعد.";
       const from = clockOf(DAY_START + slot * SLOT), to = clockOf(DAY_START + (slot + 1) * SLOT);
@@ -649,12 +753,81 @@ function seasonAvailability(past: readonly TermBook[]): { offered: Map<string, n
   return { offered, seen };
 }
 
-export function predictGraduationDelay(input: PredictiveInput): GraduationPrediction {
+/** الإجباري كلُّه + من كل مجموعةٍ اختياريةٍ أولُ ما يلزم من المتاح (ترتيبٌ ثابت: الأكثر طرحاً ثم المعرّف). */
+function requiredCourses(plan: SimPlanRules, need: ReturnType<typeof remainingNeed>, offered: ReadonlyMap<string, number>): Set<number> {
+  const required = new Set<number>(need.compulsoryRemaining);
+  for (const progress of need.groups) {
+    if (progress.done) continue;
+    const ranked = [...progress.candidateIds].sort((a, b) => {
+      const share = (id: number) => [...offered].filter(([key]) => key.startsWith(`${id}|`)).reduce((sum, [, n]) => sum + n, 0);
+      return share(b) - share(a) || a - b;
+    });
+    const take = Math.max(progress.needCourses, progress.needUnits > 0 ? Math.ceil(progress.needUnits / 3) : 0);
+    ranked.slice(0, take).forEach(id => required.add(id));
+  }
+  return required;
+}
+
+export interface GraduationBacktestStep { termId: number; name: string; students: number; censored: number; predictedDelayed: number; realisedDelayed: number; error: number | null }
+export interface GraduationBacktest { termsTested: number; steps: GraduationBacktestStep[]; relError: number | null }
+
+/**
+ * ── الاختبار الرجعي لتأخّر التخرّج ────────────────────────────────────────
+ * عند حدٍّ N: يُحاكى التأخّرُ بتاريخ ما قبل N فقط (`predictGraduationDelay`)، ويُقارَن بالتأخّر «المتحقِّق» وهو المحاكاةُ نفسها
+ * فوق الفصول الفعلية N، N+١، … (مقررٌ متاحٌ في الفصل إن كانت له شعبةٌ فيه). طالبٌ لا يكتمل ضمن الفصول الفعلية المتاحة **يُحجب** (censored)
+ * فلا يُحتسب. الخطأ = Σ|المتوقَّع − المتحقِّق| ÷ Σ max(المتوقَّع، المتحقِّق) (٠–١). لقطةُ الطلبة: `studentsByTerm[N]` إن وُجدت وإلا الحالية (تقريب).
+ * الفصلُ الأخير في التاريخ لا يُختبر كحدٍّ إلا إن بقي بعده فصلٌ واحدٌ على الأقل لتتحقق نتيجةٌ.
+ */
+export function backtestGraduation(input: PredictiveInput): GraduationBacktest {
+  const plans = input.plans || [], credit = input.credit || new Map<number, number>();
+  const empty: GraduationBacktest = { termsTested: 0, steps: [], relError: null };
+  if (!plans.length || (!(input.students || []).length && !input.studentsByTerm)) return empty;
+  const booked = bookTerms(input);
+  const past = [...booked.all.values()].filter(book => book.termId !== input.target.termId && book.order < booked.target.order).sort((x, y) => x.order - y.order);
+  const planById = new Map(plans.map(plan => [plan.planId, plan] as const));
+  const steps: GraduationBacktestStep[] = [];
+  let diffTotal = 0, scale = 0;
+  for (let index = 1; index < past.length; index += 1) {
+    const book = past[index];
+    const earlier = new Set(past.slice(0, index).map(item => item.termId));
+    const students = input.studentsByTerm?.[String(book.termId)] || input.students || [];
+    const predicted = predictGraduationDelay({
+      ...input, target: { termId: book.termId, name: book.name }, rows: input.rows.filter(row => earlier.has(Number(row.AdTermId))),
+      stats: undefined, liveWanted: null, students, studentsByTerm: null,
+    }, { backtest: false });
+    const future = past.slice(index);
+    const offeredBefore = seasonAvailability(past.slice(0, index)).offered;
+    const sequence = future.map(() => "الأول" as TermSeason);
+    const realisedAvailable = (courseId: number, _season: TermSeason, termIndex: number) => Boolean(future[termIndex]?.codes.has(courseId));
+    let censored = 0, evaluated = 0, stepDiff = 0, stepScale = 0, predictedDelayed = 0, realisedDelayed = 0;
+    const byFp = new Map(predicted.students.map(item => [item.fp, item] as const));
+    for (const student of students) {
+      const guess = byFp.get(student.fp);
+      const plan = planById.get(student.planId);
+      if (!guess || !plan) continue;
+      const passed = new Set(student.passed);
+      const need = remainingNeed(plan.courseIds, { rules: plan.rules, groups: plan.groups }, passed, credit);
+      const sim = simulateGraduation({ required: [...requiredCourses(plan, need, offeredBefore)], plan, passed, credit, sequence, available: realisedAvailable });
+      /* الواقعُ لم يكتمل ضمن الفصول الفعلية المتاحة، أو التنبّؤُ نفسُه اصطدم بالسقف: لا مقارنةَ عادلة. */
+      if (sim.capped || guess.capped) { censored += 1; continue; }
+      const realised = Math.max(0, sim.expected - sim.ideal);
+      evaluated += 1; stepDiff += Math.abs(guess.delay - realised); stepScale += Math.max(guess.delay, realised);
+      if (guess.delay > 0) predictedDelayed += 1;
+      if (realised > 0) realisedDelayed += 1;
+    }
+    steps.push({ termId: book.termId, name: book.name, students: evaluated, censored, predictedDelayed, realisedDelayed, error: stepScale > 0 ? Math.min(1, stepDiff / stepScale) : null });
+    diffTotal += stepDiff; scale += stepScale;
+  }
+  return { termsTested: steps.filter(item => item.students > 0).length, steps, relError: scale > 0 ? Math.min(1, diffTotal / scale) : null };
+}
+
+export function predictGraduationDelay(input: PredictiveInput, options: { backtest?: boolean; backtestError?: number | null } = {}): GraduationPrediction {
   const students = input.students || [], plans = input.plans || [], credit = input.credit || new Map<number, number>();
   const { target, past } = bookTerms(input);
   const catalog = new Map(input.courses.map(course => [Number(course.AdCourseId), course] as const));
   const planById = new Map(plans.map(plan => [plan.planId, plan] as const));
   const { offered, seen } = seasonAvailability(past);
+  const backtestError = options.backtestError !== undefined ? options.backtestError : options.backtest === false ? null : backtestGraduation(input).relError;
 
   /* مقررٌ متاحٌ في موسم: طُرح في نصف فصولِ ذلك الموسم على الأقل. وموسمٌ بلا تاريخٍ ← يُفترض متاحاً (لا ندّعي تأخّراً بلا دليل). */
   const available = (courseId: number, season: TermSeason): boolean => {
@@ -680,17 +853,7 @@ export function predictGraduationDelay(input: PredictiveInput): GraduationPredic
     if (!plan?.hasApprovedRules || student.assessable === false) { unassessed += 1; continue; }
     const passed = new Set(student.passed);
     const need = remainingNeed(plan.courseIds, { rules: plan.rules, groups: plan.groups }, passed, credit);
-    /* الإجباري كلُّه + من كل مجموعةٍ اختياريةٍ أولُ ما يلزم من المتاح (ترتيبٌ ثابت: الأكثر طرحاً ثم المعرّف). */
-    const required = new Set<number>(need.compulsoryRemaining);
-    for (const progress of need.groups) {
-      if (progress.done) continue;
-      const ranked = [...progress.candidateIds].sort((a, b) => {
-        const share = (id: number) => [...offered].filter(([key]) => key.startsWith(`${id}|`)).reduce((s, [, n]) => s + n, 0);
-        return share(b) - share(a) || a - b;
-      });
-      const take = Math.max(progress.needCourses, progress.needUnits > 0 ? Math.ceil(progress.needUnits / 3) : 0);
-      ranked.slice(0, take).forEach(id => required.add(id));
-    }
+    const required = requiredCourses(plan, need, offered);
     /* المحاكاةُ تتوقف على المطلوب وعلى ما اجتازه مما هو مسبقٌ لشيء، وعلى وحداته؛ فالطلبةُ المتشابهون يتشاركون حساباً واحداً. */
     const gating = new Set<number>(plan.rules.flatMap(rule => [...(rule.prereq?.all || []), ...(rule.prereq?.anyOf.flat() || [])]));
     const passedUnits = [...passed].reduce((sum, id) => sum + (credit.get(id) || 0), 0);
@@ -713,14 +876,14 @@ export function predictGraduationDelay(input: PredictiveInput): GraduationPredic
   const seasonEvidence = [...seen.values()].reduce((a, b) => a + b, 0);
   const overall = confidenceFrom({
     termsUsed: seasonEvidence, sameSeason: target.season ? (seen.get(target.season) || 0) : 0,
-    values: [], quality: assessedShare,
+    values: [], quality: assessedShare, backtestError,
   });
   const causes: GraduationCause[] = [...causeCount].map(([courseId, delayedStudents]) => {
     const course = catalog.get(courseId);
     const missing = SEASON_CYCLE.filter(season => (seen.get(season) || 0) > 0 && !available(courseId, season));
     const missingSeason = missing[0] || null;
     const cap = capacityOf(course);
-    const conf = confidenceFrom({ termsUsed: seasonEvidence, sameSeason: missingSeason ? (seen.get(missingSeason) || 0) : 0, values: [], quality: assessedShare });
+    const conf = confidenceFrom({ termsUsed: seasonEvidence, sameSeason: missingSeason ? (seen.get(missingSeason) || 0) : 0, values: [], quality: assessedShare, backtestError });
     const count = cap > 0 ? Math.max(1, Math.ceil(delayedStudents / cap)) : 1;
     return {
       courseId, code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${courseId}`), delayedStudents, missingSeason, confidence: conf,
@@ -743,7 +906,7 @@ export function predictGraduationDelay(input: PredictiveInput): GraduationPredic
 
 function simulateGraduation(args: {
   required: number[]; plan: SimPlanRules; passed: ReadonlySet<number>; credit: ReadonlyMap<number, number>;
-  sequence: readonly TermSeason[]; available: (courseId: number, season: TermSeason) => boolean;
+  sequence: readonly TermSeason[]; available: (courseId: number, season: TermSeason, termIndex: number) => boolean;
 }): { ideal: number; expected: number; causes: number[]; capped: boolean } {
   const { required, plan, credit, sequence, available } = args;
   const ruleOf = new Map(plan.rules.map(rule => [rule.courseId, rule] as const));
@@ -765,7 +928,7 @@ function simulateGraduation(args: {
       for (const id of left) {
         const rule = ruleOf.get(id);
         if (!prereqMet(rule?.prereq, done, unitsBefore)) continue;
-        if (constrained && !available(id, season)) { causes.add(id); continue; }
+        if (constrained && !available(id, season, terms)) { causes.add(id); continue; }
         const cr = credit.get(id) || 3;
         if (units + cr > SIM_UNITS_MAX) continue;
         taken.push(id); units += cr;
@@ -797,6 +960,8 @@ export interface PredictiveReading {
   /** إجراءاتٌ مرتّبةٌ بالأثر × الثقة، حتى ستة. */
   top: Array<{ id: string; label: string; reason: string; confidence: Confidence; action: PredictiveAction; impact: number }>;
   completeness: number | null;
+  /** الخطأ الرجعي المقيس لكل تنبّؤ (٠–١؛ null = لم يُقَس) وعدد الفصول المختبرة — اصطناعيٌّ أو تاريخيٌّ بحسب المدخلات، لا دقةٌ مضمونة. */
+  backtests: { demand: number | null; prereq: number | null; hotspots: number | null; graduation: number | null; termsTested: { demand: number; prereq: number; hotspots: number; graduation: number } };
   /** تحذيراتٌ صريحة تُعرض ولا تُخفى. */
   caveats: string[];
 }
@@ -804,9 +969,11 @@ export interface PredictiveReading {
 export function readPredictive(input: PredictiveInput): PredictiveReading {
   const { target, past } = bookTerms(input);
   const demand = predictDemand(input);
-  const prereq = predictPrereqBottlenecks(input);
-  const hotspots = predictTimeHotspots(input);
-  const graduation = predictGraduationDelay(input);
+  const bPrereq = backtestBottlenecks(input), bHot = backtestHotspots(input), bGrad = backtestGraduation(input);
+  const prereq = predictPrereqBottlenecks(input, { backtestError: bPrereq.relError });
+  const hotspots = predictTimeHotspots(input, { backtestError: bHot.relError });
+  const graduation = predictGraduationDelay(input, { backtestError: bGrad.relError });
+  const bDemand = backtestDemand(input);
   const completeness = scheduleCompleteness(input);
 
   const top: PredictiveReading["top"] = [];
@@ -835,5 +1002,6 @@ export function readPredictive(input: PredictiveInput): PredictiveReading {
   return {
     target: { ...input.target, season: target.season }, historyTerms: past.length, historyNames: past.map(book => book.name).filter(Boolean),
     demand, prereq, hotspots, graduation, top: top.slice(0, 6), completeness, caveats,
+    backtests: { demand: bDemand.relError, prereq: bPrereq.relError, hotspots: bHot.relError, graduation: bGrad.relError, termsTested: { demand: bDemand.termsTested, prereq: bPrereq.termsTested, hotspots: bHot.termsTested, graduation: bGrad.termsTested } },
   };
 }
