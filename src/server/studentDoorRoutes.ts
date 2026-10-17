@@ -970,7 +970,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         const open = earlier.find(need => studentNeedKind(need) === "course"
           && Number(need.surveySectionId || need.AdSectionId) === Number(ownerSectionId) && need.requestType !== "graduate");
         if (open) {
-          const priorText = String(open.details || "").replace(/ · بعد التسجيل: .*$/, "");
+          const priorText = String(open.details || "").replace(/ · بعد التسجيل: [\s\S]*$/, "");
           const need = await Repository.saveStudentNeed({
             ...open, id: undefined, createdAt: undefined,
             courseIds: [...new Set([...(open.courseIds || []).map(Number), ...list.map(answer => answer.courseId)])],

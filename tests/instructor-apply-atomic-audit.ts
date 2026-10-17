@@ -41,6 +41,11 @@ const check = (ok: boolean, label: string, extra?: unknown) => {
   check(/dryRun: true/.test(route) && /reverted/.test(route), "L2 فحصٌ جافّ لكل خطوة قبل الكتابة، وتراجعٌ إن تعذّرت خطوة");
   check(inbox.includes("/apply`") && !inbox.includes('`/api/schedules/${item.rowId}`, {\n            method: "PUT"'), "L3 الشاشة تثبّت بنداء واحد");
   check(/revs: revsFor\(/.test(inbox), "L4 الشاشة ترسل ختم إصدار كل صف");
+  check(/!stored\.items\[i\]\.decision\?\.state\)/.test(route), "L5 البنود المترابطة تُقبل معلّقة فقط (لا يُكتب بندٌ رُفض)");
+  check(/liveRowRefusal\(live, revs\)[\s\S]{0,200}kind: "delete"/.test(route), "L6 الحذف يخضع لختم الإصدار ولملكية الأستاذ كالنقل");
+  check(/Number\(live\.AdInstructorId\) !== Number\(stored\.AdInstructorId\) \|\| Number\(live\.AdTermId\) !== termId/.test(route), "L7 الصف الحيّ يجب أن يكون للأستاذ نفسه في الفصل نفسه");
+  check(/hypotheticalWeek: originalWeek/.test(route), "L8 التراجع يُفحص على الأسبوع الأصلي فلا يتعثر بتبديلٍ داخل السلسلة");
+  check(/APPLYING_REQUESTS\.has/.test(route) && /finally \{ APPLYING_REQUESTS\.delete/.test(srv), "L9 تثبيتان متزامنان للطلب نفسه لا يقعان معاً");
 }
 
 const BASE = "http://localhost:3000";

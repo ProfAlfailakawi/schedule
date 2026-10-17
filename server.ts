@@ -19070,6 +19070,7 @@ const rowBodyOf = (row: any) => ({
   sourceBuildingText: row.sourceBuildingText, sourceRoomText: row.sourceRoomText,
 });
 
+const APPLYING_REQUESTS = new Set<string>();
 app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
   if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
@@ -19078,8 +19079,9 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
 
   const index = Number(req.body?.itemIndex);
   if (!Number.isInteger(index) || !(stored.items || [])[index]) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }
+  /* البنودُ المترابطة تُقبل معلّقةً فقط: بندٌ رفضه القسم أو ثبّته لا يُكتب لأن شاشةً قديمة أرسلته. */
   const siblings: number[] = (Array.isArray(req.body?.after) ? req.body.after : []).map(Number)
-    .filter((i: number) => Number.isInteger(i) && i !== index && (stored.items || [])[i]);
+    .filter((i: number) => Number.isInteger(i) && i !== index && (stored.items || [])[i] && !stored.items[i].decision?.state);
   const chain = [...new Set([...siblings, index])];
   const preview = req.body?.preview === true;
   const add = req.body?.add && typeof req.body.add === "object" ? req.body.add : {};
@@ -19088,11 +19090,30 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
     res.status(409).json({ error: "سبق تثبيت هذا البند في الجدول.", code: "already-fixed" });
     return;
   }
+  /* تثبيتان متزامنان للطلب نفسه (منسّقان، أو نقرةٌ مزدوجة) كانا يُنشئان صفّين: واحدٌ في كل مرة. */
+  if (APPLYING_REQUESTS.has(String(stored.id))) {
+    res.status(409).json({ error: "يجري الآن تثبيتُ بندٍ من هذا الطلب. انتظر لحظة ثم حدّث الصفحة.", code: "apply-busy" });
+    return;
+  }
+  APPLYING_REQUESTS.add(String(stored.id));
+  try {
 
   const instructor = await Repository.getInstructorById(Number(stored.AdInstructorId));
   const origin = { kind: "instructor-request", refId: String(stored.id), note: `رغبة ${String(instructor?.AdInstructorName || "أستاذ")}`.slice(0, 160) };
   const ops: ApplyOp[] = [];
   let tempSeq = -1;
+  /* الصفُّ الحيّ يجب أن يكون صفَّ هذا الأستاذ في هذا الفصل كما رآه المنسّق: لا يُنقل ولا
+     يُحذف صفٌّ أُسند لغيره أو نُقل لفصلٍ آخر أو عدّله زميلٌ بعد فتح الشاشة. */
+  const liveRowRefusal = (live: any, seen: Record<string, unknown>): { error: string; code: string } | null => {
+    if (Number(live.AdInstructorId) !== Number(stored.AdInstructorId) || Number(live.AdTermId) !== termId) {
+      return { error: "هذا الموعد لم يعد للأستاذ نفسه في هذا الفصل. حدّث الصفحة وراجعه.", code: "stale" };
+    }
+    const seenRev = seen[String(live.id)];
+    if (seenRev !== undefined && seenRev !== null && live.rev !== undefined && Number(seenRev) !== Number(live.rev)) {
+      return { error: "تغيّر هذا الموعد في الجدول بعد أن فتحت الشاشة (عدّله زميل). حدّث الصفحة وراجعه قبل التثبيت.", code: "revision" };
+    }
+    return null;
+  };
   const failItem = (status: number, itemIndex: number, error: string, code?: string) =>
     res.status(status).json({ error, code, itemIndex, applied: [], reverted: true });
 
@@ -19105,7 +19126,11 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
 
     if (item.action === "delete") {
       const live: any = item.rowId == null ? undefined : await Repository.getScheduleById(Number(item.rowId));
-      if (live) ops.push({ kind: "delete", itemIndex: i, rowId: Number(live.id), original: live });
+      if (live) {
+        const refusal = liveRowRefusal(live, revs);
+        if (refusal) { failItem(409, i, refusal.error, refusal.code); return; }
+        ops.push({ kind: "delete", itemIndex: i, rowId: Number(live.id), original: live });
+      }
       continue;  /* صفٌّ حُذف من قبل: يكفي تسجيلُ القرار. */
     }
     if (!groups.length) { failItem(400, i, "البند بلا أيام أو وقت."); return; }
@@ -19113,11 +19138,8 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
     if (item.action === "change") {
       const live: any = item.rowId == null ? undefined : await Repository.getScheduleById(Number(item.rowId));
       if (!live) { failItem(409, i, "لم يعد هذا الموعد موجوداً في الجدول. حدّث الصفحة.", "stale"); return; }
-      const seenRev = revs[String(live.id)];
-      if (seenRev !== undefined && seenRev !== null && live.rev !== undefined && Number(seenRev) !== Number(live.rev)) {
-        failItem(409, i, "تغيّر هذا الموعد في الجدول بعد أن فتحت الشاشة (عدّله زميل). حدّث الصفحة وراجعه قبل التثبيت.", "revision");
-        return;
-      }
+      const refusal = liveRowRefusal(live, revs);
+      if (refusal) { failItem(409, i, refusal.error, refusal.code); return; }
       const [first, ...rest] = groups;
       ops.push({ kind: "update", itemIndex: i, rowId: Number(live.id), original: live,
         body: { ...rowBodyOf(live), ...daysFlags(first.days), fstarttime: first.start, fendtime: first.end, rev: live.rev, origin } });
@@ -19205,11 +19227,14 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
       let reverted = true;
       for (let j = done.length - 1; j >= 0; j -= 1) {
         const step = done[j];
+        /* التراجعُ يُحكم عليه على الأسبوع الأصلي (قبل التثبيت)، لا على الجدول الحيّ وهو نصفُ
+           منقول: وإلا رُدّ إرجاعُ موعدٍ إلى وقته لأن شقيقه ما زال فيه، فبقي الجدولُ نصفَ مطبّق. */
+        const originalWeek = termRows.filter(row => Number(row.id) !== Number(step.op.kind === "delete" ? step.op.rowId : -1));
         const back = step.op.kind === "update"
-          ? await runScheduleHandler(updateScheduleHandler, req, { params: { id: String(step.op.rowId) }, body: { ...rowBodyOf(step.op.original), rev: step.row?.rev }, restoreOrigin: { value: step.op.original.origin } })
+          ? await runScheduleHandler(updateScheduleHandler, req, { params: { id: String(step.op.rowId) }, body: { ...rowBodyOf(step.op.original), rev: step.row?.rev }, hypotheticalWeek: originalWeek, restoreOrigin: { value: step.op.original.origin } })
           : step.op.kind === "create"
             ? await runScheduleHandler(deleteScheduleHandler, req, { params: { id: String(step.row?.id) }, body: {} })
-            : await runScheduleHandler(createScheduleHandler, req, { body: { ...rowBodyOf(step.op.original), origin: step.op.original.origin } });
+            : await runScheduleHandler(createScheduleHandler, req, { body: { ...rowBodyOf(step.op.original), origin: step.op.original.origin }, hypotheticalWeek: originalWeek });
         if (back.status >= 400) reverted = false;
       }
       res.status(result.status).json({
@@ -19244,6 +19269,7 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
     `${step.action === "delete" ? "حذف" : step.action === "create" ? "إضافة" : "نقل"} ${step.days.map(dayLabelOf).join(" و")} ${formatScheduleTimeRange(step.start, step.end)}`).join(" · ");
   res.locals.auditRowIds = done.map(step => Number(step.op.kind === "delete" ? step.op.rowId : step.row?.id)).filter(Number.isFinite);
   res.json({ ...(await judgeRequestItems(saved, { forDepartment: true })), applied: plan, warnings });
+  } finally { APPLYING_REQUESTS.delete(String(stored.id)); }
 });
 
 /* ── حوارُ البند: ردُّ القسم واقتراحُه ─────────────────────────────────────
