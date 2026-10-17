@@ -39,21 +39,22 @@
   .admin-quiet-summary b,.admin-quiet-summary strong{font-size:24px}
 }
 
-/* ── كشف التسجيل: table density (desktop only; the phone keeps its cards) ── */
+/* ── كشف التسجيل: table polish (all widths; density rules stay desktop-only) ── */
+.student-cases-table-wrap{border-radius:18px;box-shadow:var(--shadow-xs);background:var(--surface)}
+.student-cases-table thead th{
+  letter-spacing:.01em;
+  background:linear-gradient(180deg,var(--surface-2),color-mix(in srgb,var(--accent) 5%,var(--surface-2)));
+  border-bottom:1px solid var(--line-strong);
+}
+.student-cases-table td code{
+  display:inline-block;padding:3px 8px;border-radius:8px;
+  background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);
+}
 @media screen and (min-width:901px){
-  .student-cases-table-wrap{border-radius:18px;box-shadow:var(--shadow-xs);background:var(--surface)}
-  .student-cases-table thead th{
-    padding-block:12px;letter-spacing:.01em;
-    background:linear-gradient(180deg,var(--surface-2),color-mix(in srgb,var(--accent) 5%,var(--surface-2)));
-    border-bottom:1px solid var(--line-strong);
-  }
+  .student-cases-table thead th{padding-block:12px}
   .student-cases-table tbody td{padding-block:14px;vertical-align:top}
   .student-cases-table tbody tr{transition:background .16s var(--ease)}
   .student-cases-table tbody tr:hover{background:var(--accent-softer)}
-  .student-cases-table td code{
-    display:inline-block;padding:3px 8px;border-radius:8px;
-    background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);
-  }
 }
 /* The register beside the side rail (≈ 1024–1440px): eight columns at their roomy
    padding are wider than the card, so the last column (the date) sat cut off at
