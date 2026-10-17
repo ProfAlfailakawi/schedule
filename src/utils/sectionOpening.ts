@@ -233,10 +233,12 @@ export function readSectionOpenings(
   for (const row of history) {
     const key=roomIdentityKey(row);
     const verifiedRoom = verifiedRoomById.get(String(row.roomId || ""));
-    if (!key || !row.buildingId || !row.roomId || row.locationStatus !== "VERIFIED" || !verifiedRoom || !(Number(verifiedRoom.capacity) > 0)) continue;
+    if (!key || !row.buildingId || !row.roomId || row.locationStatus !== "VERIFIED" || !verifiedRoom) continue;
     const current=roomUse.get(key);
-    roomUse.set(key,{count:(current?.count||0)+1,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),capacity:Number(verifiedRoom.capacity)});
+    roomUse.set(key,{count:(current?.count||0)+1,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),capacity:Number(verifiedRoom.capacity) || 0});
   }
+  /* سعة القاعة مخفيّة من البرنامج فلا تُسجَّل: السعةُ المجهولة (0) لا تُقصي القاعة، والمعلومة تُشترط. */
+  const fits = (room: { capacity: number }, needed: number) => !(room.capacity > 0) || room.capacity >= needed;
   const rooms = [...roomUse.entries()]
     .sort((a, b) => b[1].count - a[1].count)
     .map(([key,item]) => ({ key, buildingId:item.buildingId, roomId:item.roomId, code:item.code, hall:item.hall, capacity:item.capacity }));
@@ -317,7 +319,7 @@ export function readSectionOpenings(
         for (const time of ladder) {
           if (placed) break;
           const at = timeToMinutes(time);
-          for (const room of rooms.filter(candidateRoom => candidateRoom.capacity >= capacity).slice(0, 24)) {
+          for (const room of rooms.filter(candidateRoom => fits(candidateRoom, capacity)).slice(0, 24)) {
             if (placed) break;
             /* An executable placement needs an active teacher with a recorded
                load allowance and a verified hall large enough for this section. */
@@ -356,7 +358,7 @@ export function readSectionOpenings(
       else break;
     }
     const unplacedReason = placements.length >= needed ? undefined
-      : !rooms.some(candidateRoom => candidateRoom.capacity >= capacity) ? "لا قاعة موثّقة بسعةٍ تكفي لهذا المقرر"
+      : !rooms.some(candidateRoom => fits(candidateRoom, capacity)) ? "لا قاعة موثّقة في تاريخ القسم تتّسع لهذا المقرر"
       : !teachers.length ? "لا أستاذ درّس هذا المقرر من قبل: اختر أستاذاً"
       : !eligibleAtStart.length ? "أحمال من درّسوه ممتلئة أو بلا نصاب مسجَّل"
       : "لا وقتَ خالياً من التعارض مع الجدول والقاعات والدفعة";
