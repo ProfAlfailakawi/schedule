@@ -117,6 +117,18 @@ export async function buildSheetModel(plan: { id: string; AdCollegeId: number; A
   return { model, sectionName };
 }
 
+/** بعد اعتماد قواعدٍ جديدة: إن كانت الصحيفة منشورة تُعاد لقطتُها، ولا يُنشر ما لم يكن منشوراً. */
+export async function republishIfPublished(planId: string, actor: string): Promise<boolean> {
+  const current = await Repository.getPublishedSheet(planId);
+  if (!current) return false;
+  const [plans, live] = await Promise.all([Repository.getCurriculumPlans(current.AdSectionId), Repository.getRuleSet(planId)]);
+  const plan = plans.find(row => row.id === planId);
+  if (!plan || !live) return false;
+  const { model, sectionName } = await buildSheetModel(plan, live);
+  await Repository.savePublishedSheet({ ...current, sectionName, planName: String(plan.name || ""), model, ruleVersion: Number(live.version) || 0, publishedAt: new Date().toISOString(), publishedBy: actor });
+  return true;
+}
+
 const PAGE_CSS = `*{box-sizing:border-box}body{margin:0;background:#EEF4FF;color:#0B2545;font-family:'Cairo','Tajawal',system-ui,sans-serif;min-height:100dvh;padding:28px 16px 60px}
 .w{max-width:960px;margin:0 auto}h1{margin:0 0 6px;font-size:clamp(26px,5vw,40px);font-weight:900}p.s{margin:0 0 26px;color:#475569;font-weight:500}
 .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}

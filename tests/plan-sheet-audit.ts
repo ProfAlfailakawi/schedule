@@ -45,6 +45,7 @@ const model: SheetModel = {
   check(html.includes("اختياري تخصصي - اختر مقررين") && html.includes("ملاحظات") && html.includes("من قسم آخر"), "S1 شريطُ الاختياري بعنوانه، وملاحظةُ المتطلب الخارجي لا بطاقةً ولا سهماً");
   check(!html.includes('data-c="150"') && !html.includes('data-s="150"'), "S1 المقررُ الخارجي لا بطاقةَ له ولا سهم");
   check(html.includes("{{") === false && html.includes("const D=") && html.includes('"LV"'), "S1 القالبُ مملوءٌ بلا علاماتٍ متروكة، وبيانات التفاعل مضمّنة");
+  check(html.includes('id="stbtn"') && html.includes("planPassed:") && html.includes("المتاح لك الآن") && html.includes("@media print") && /#stbtn,#stbar/.test(html), "S1 وضعُ الطالب: يعلّم ما اجتازه على جهازه ويضيء المتاح، ولا يُطبع");
   check(html.includes("تحميل PDF") && html.includes("window.print()") && html.includes("@page{size:420mm 297mm"), "S1 زرُّ PDF (طباعة A3) موجود");
   check(buildPlanSheet({ ...model, title: "قسم <x>&" }, { template }).includes("قسم &lt;x&gt;&amp;") && !buildPlanSheet({ ...model, title: "</script><b>" }, { template }).includes("</script><b>"), "S1 النصوصُ تُهرَّب في الصفحة والبيانات");
   const wide = buildPlanSheet({ ...model, edges: [], groups: [], notes: [], layout: "wide", courses: model.courses.map(c => ({ ...c, category: c.level < 300 ? "ثقافة عامة" : "مهنية" })) }, { template });
@@ -163,6 +164,9 @@ const model: SheetModel = {
     const stale = (await call("chair11", "GET", "/api/plan-sheets")).json.sections[0].sheets[0];
     check(stale.published && stale.stale, "S2 اعتمادُ قواعد جديدة بعد النشر يُعلَّم «أعد النشر»", stale);
     check((await call("", "GET", "/plans/s11/p11/")).status === 200 && (await Repository.getPublishedSheet("p11"))?.model.edges.length === 2, "S2 الصفحةُ المنشورة لقطةٌ ثابتة حتى إعادة النشر");
+    const { republishIfPublished } = await import("../src/server/planSheetRoutes");
+    check(await republishIfPublished("p11", "اختبار") && (await Repository.getPublishedSheet("p11"))?.model.edges.length === 0 && !(await call("chair11", "GET", "/api/plan-sheets")).json.sections[0].sheets[0].stale, "S2 الاعتمادُ يعيد نشر الصحيفة المنشورة تلقائياً بقواعدها الجديدة");
+    check(!(await republishIfPublished("p12-none", "اختبار")), "S2 ولا يُنشر بالاعتماد ما لم يكن منشوراً");
 
     check((await call("head11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 403 && (await call("chair12", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 403, "S2 إيقافُ النشر لرئيس اللجنة وحده ضمن نطاقه");
     check((await call("chair11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 200 && (await call("", "GET", "/plans/s11/p11/")).status === 404 && (await call("chair11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 404, "S2/S3 إيقافُ النشر يُسقط الصفحة، ومرتان: ٤٠٤");
@@ -179,6 +183,8 @@ const model: SheetModel = {
   const buttons = pub.match(/<(?:PrimaryButton|SecondaryButton|button)\b(?:=>|[^>])*>/g) || [];
   const undocumented = buttons.filter(tag => !/data-guide-ignore|aria-label|className="psh-link"/.test(tag) || (/psh-link/.test(tag) && !/data-guide-ignore/.test(tag)));
   check(undocumented.length === 0, "S4 كلُّ زرٍّ في لوحة النشر موثَّقٌ للمرشد أو معنون", undocumented.slice(0, 3));
+  check(pub.includes("printPoster") && pub.includes("اطبع ملصقاً") && pub.includes("@page{size:A4"), "S4 ملصقُ QR بحجم A4 للقسم أو الصحيفة");
+  check(read("src/server/planReviewRoutes.ts").includes("republishIfPublished(ctx.plan.id"), "S4 مسارُ الاعتماد يستدعي إعادة النشر");
   check(server.includes("registerPlanSheetRoutes(app") && server.includes('"plans", "_template", "sheet.html"'), "S4 المسارات مسجّلةٌ في الخادم والقالبُ يُقرأ عند الإقلاع");
 }
 

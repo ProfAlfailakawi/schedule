@@ -81,10 +81,23 @@ html.fit #plan{min-width:0}
 @media (prefers-reduced-motion:reduce){.edge.on path[marker-end]{animation:none;stroke-dasharray:none}#sheet{transition:none}.card,.card.pick{transition:none;animation:none}}
 @media (max-width:1199px){#sheet{max-height:46vh}}
 @media (max-width:640px){#sheet{margin:0;border-radius:24px 24px 0 0}#sheet .cols{grid-template-columns:1fr}#hint{font-size:13px}}
+#stbtn{position:fixed;bottom:calc(126px + env(safe-area-inset-bottom,0));right:14px;z-index:8;display:flex;align-items:center;gap:6px;border:1px solid #CBD5E1;background:#fff;color:#0B2545;font:inherit;font-size:14px;font-weight:700;padding:8px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(11,37,69,.18);cursor:pointer}
+#stbtn svg{width:17px;height:17px}
+html.student #stbtn{background:#059669;color:#fff;border-color:#059669}
+#stbar{position:fixed;bottom:calc(18px + env(safe-area-inset-bottom,0));left:50%;transform:translateX(-50%);z-index:9;display:none;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 24px);background:#fff;border:1px solid #A7F3D0;border-radius:18px;padding:8px 16px;box-shadow:0 10px 28px rgba(11,37,69,.16);font-size:14px;font-weight:700;color:#0B2545}
+html.student #stbar{display:flex}
+#stbar b{color:#059669;font-size:17px}#stbar small{color:#64748B;font-weight:500}
+#stbar button{border:0;background:none;color:#64748B;font:inherit;font-size:13px;text-decoration:underline;cursor:pointer}
+html.student #plan .card>rect:first-of-type{transition:fill .2s}
+html.student #plan .card.ok>rect:first-of-type{fill:#D1FAE5}
+html.student #plan .card.can>rect:first-of-type{fill:#FEF9C3;stroke:#CA8A04;stroke-opacity:1;stroke-width:2.5}
+html.student #plan .card.no{opacity:.42}
+html.student #plan .edge{opacity:.25}
+@media (min-width:1200px){#stbtn{bottom:calc(126px + env(safe-area-inset-bottom,0))}}
 @page{size:420mm 297mm;margin:0}
 @media print{
  html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
- #sheet,#hint,#fitbtn,#pdfbtn,#tag{display:none!important}
+ #sheet,#hint,#fitbtn,#pdfbtn,#stbtn,#stbar,#tag{display:none!important}
  .scroll{overflow:visible;padding:0}
  #plan [filter]{filter:none}
  .card,.edge{opacity:1!important}
@@ -97,6 +110,8 @@ html.fit #plan{min-width:0}
 <div id="sheet" role="dialog" aria-live="polite"></div>
 <button id="fitbtn" type="button"></button>
 <button id="pdfbtn" type="button" onclick="window.print()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>تحميل PDF</button>
+<button id="stbtn" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>وضع الطالب</button>
+<div id="stbar" role="status" aria-live="polite"></div>
 <div id="hint">اضغط على أي مقرر لترى ما يتطلبه وما يفتحه</div>
 <script>
 const D={{DATA}};
@@ -262,6 +277,42 @@ box.addEventListener('touchend',e=>{if(pz&&e.touches.length<2){pz=null;autoFit=n
 document.addEventListener('gesturestart',e=>{if(e.target.closest&&e.target.closest('.scroll'))e.preventDefault()});
 setTimeout(()=>hint.classList.add('gone'),7000);
 window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
+// Student mode: tap the courses you passed; what is open to you now lights up. Kept on this device only.
+(function(){
+ const KEY='planPassed:'+location.pathname,btn=document.getElementById('stbtn'),bar=document.getElementById('stbar');
+ let passed=new Set();try{(JSON.parse(localStorage.getItem(KEY)||'[]')||[]).forEach(c=>passed.add(String(c)))}catch(e){}
+ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify([...passed]))}catch(e){}};
+ const credit=c=>C[c]?C[c][2]:EL[c]?EL[c][1]:0;
+ const open=c=>{
+  const ors=(D.OR||[]).filter(g=>g[0]==c).map(g=>g[1].map(String)),inOr=new Set(ors.flat());
+  const req=E.filter(e=>e[1]==c).map(e=>String(e[0])).filter(s=>!inOr.has(s));
+  const units=[...passed].reduce((n,x)=>n+credit(x),0);
+  return req.every(s=>passed.has(s))&&ors.every(g=>g.some(s=>passed.has(s)))&&units>=((D.U||{})[c]||0);
+ };
+ function draw(){
+  const on=document.documentElement.classList.contains('student');
+  let can=0,units=0;passed.forEach(c=>units+=credit(c));
+  document.querySelectorAll('#plan .card').forEach(g=>{
+   const c=String(g.dataset.c),ok=passed.has(c),av=!ok&&open(c);if(av)can++;
+   g.classList.toggle('ok',on&&ok);g.classList.toggle('can',on&&av);g.classList.toggle('no',on&&!ok&&!av);
+  });
+  bar.innerHTML=`<span>الوحدات المجتازة: <b>${units}</b></span><span>المتاح لك الآن: <b>${can}</b></span><small>اضغط المقرر الذي اجتزته</small>${passed.size?'<button type="button" id="streset">ابدأ من جديد</button>':''}`;
+  btn.setAttribute('aria-pressed',on?'true':'false');
+ }
+ btn.addEventListener('click',()=>{document.documentElement.classList.toggle('student');pick(null);hov=null;paint(null);hint.classList.add('gone');draw()});
+ bar.addEventListener('click',e=>{if(e.target.id==='streset'){passed.clear();save();draw()}});
+ /* في وضع الطالب لا تُضاء السلاسل بالمرور، فلا يطغى التعتيم على ما اجتازه الطالب. */
+ ['mouseover','mouseleave','keydown'].forEach(t=>plan.addEventListener(t,e=>{if(document.documentElement.classList.contains('student')&&!(t==='keydown'&&(e.key==='Enter'||e.key===' ')))e.stopImmediatePropagation()},true));
+ plan.addEventListener('keydown',e=>{if(document.documentElement.classList.contains('student')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.stopImmediatePropagation();const g=e.target.closest('.card');if(g){const c=String(g.dataset.c);passed.has(c)?passed.delete(c):passed.add(c);save();draw()}}},true);
+ plan.addEventListener('click',e=>{
+  if(!document.documentElement.classList.contains('student'))return;
+  e.stopImmediatePropagation();
+  const g=e.target.closest('.card');if(!g)return;
+  const c=String(g.dataset.c);passed.has(c)?passed.delete(c):passed.add(c);save();draw();
+ },true);
+ draw();
+})();
+
 </script>
 </body>
 </html>
