@@ -65,6 +65,8 @@ td.n{font-variant-numeric:tabular-nums}
 .pre figcaption{font-size:12.5px;color:var(--muted);margin-top:6px}
 .btn{appearance:none;border:0;background:var(--accent);color:#fff;border-radius:12px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer}
 .bar{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.callout{display:grid;gap:4px;margin:0 0 12px;padding:14px 16px;border-radius:14px;background:var(--brand-soft,#e8f1ee);border:1px solid var(--line)}.callout b{color:var(--brand,#1f6b5a)}.callout span{font-size:.9rem;line-height:1.7}
+.reach{color:var(--brand,#1f6b5a)}
 .slot{display:grid;gap:10px;grid-template-columns:minmax(0,1fr) 190px;align-items:center}
 .mock{border:1.5px dashed var(--accent);border-radius:10px;background:var(--soft);display:grid;place-items:center;color:var(--accent);font-size:12px;max-width:100%}
 .cal{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.cal-i{border:1px solid var(--line);border-inline-start:5px solid var(--c);border-radius:14px;padding:10px 12px;display:grid;gap:1px;background:var(--card)}.cal-i.now{background:var(--soft)}.cal-i span{color:var(--muted);font-size:12.5px}.cal-i small{color:var(--muted);font-size:12px}
@@ -175,6 +177,7 @@ export function campaignReportPage(input: CampaignReportInput): string {
     <span class="chip ${phase === "live" ? "live" : ""}">${esc(PHASE_LABEL[phase])}</span>
     ${c.trial ? `<span class="chip warn">حملة تجريبية</span>` : ""}
     <span class="chip">الموقع: ${esc(slot?.label || c.slot)}</span>
+    ${slot?.wholeUniversity ? `<span class="chip">يصل كل طلبة الجامعة</span>` : ""}
     <span class="chip">من ${esc(dateAr(c.startDay))} إلى ${esc(dateAr(c.endDay))}</span>
     ${phaseNote ? `<span class="chip">${esc(phaseNote)}</span>` : ""}
   </div>
@@ -246,11 +249,12 @@ ${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2>
 ${s.demand.top.length >= 3 ? `<h2>ما يبحث عنه الطلبة هذا الفصل</h2><div class="card"><table><thead><tr><th>المقرر</th><th>طلبةٌ يريدونه</th></tr></thead><tbody>${s.demand.top.slice(0, 6).map(d => `<tr><td>${esc(d.name)}</td><td class="n">${approx(d.students)}</td></tr>`).join("")}</tbody></table><p class="note">أعدادٌ تقريبية مجمّعة، ولا يظهر مقررٌ يطلبه أقل من ${countOf(s.demand.minStudents, AR.student)} مختلفين.</p></div>` : ""}
 ${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
 <h2>أين يظهر إعلانك</h2>
+<div class="callout"><b>«مساري» لكل الجامعة</b><span>إعلانك في «مساري» ومحطة الاستراحة يراه كل طالبٍ يدخل، من كل الكليات، دون تخصيص. هذه ميزةٌ خاصة بهذين الموقعين؛ أما الجدول العام فيمكن حصره بكليات معينة.</span></div>
 <div class="card">${activeSlots().map(slot => {
   const live = input.liveBySlot[slot.id] || 0;
   const free = slot.exclusive ? (live ? 0 : 1) : Math.max(0, slot.capacity - live);
   const maxW = Math.min(180, slot.width / 3.6);
-  return `<div class="slot" style="padding:10px 0;border-bottom:1px solid var(--line)"><div><b>${esc(slot.label)}</b> <span class="note">· ${esc(slot.where)}</span><br><span class="note">المقاس <bdi dir="ltr">${slot.width}×${slot.height}</bdi> · ${slot.exclusive ? "حصري لشركة واحدة" : `يتناوب فيه حتى ${countOf(slot.capacity, AR.campaign)}`} · ${free ? `متاح` : `ممتلئ حالياً`}</span></div><div class="mock" style="width:${maxW}px;aspect-ratio:${slot.width}/${slot.height}"><bdi dir="ltr">${slot.width}×${slot.height}</bdi></div></div>`;
+  return `<div class="slot" style="padding:10px 0;border-bottom:1px solid var(--line)"><div><b>${esc(slot.label)}</b> <span class="note">· ${esc(slot.where)}</span><br><span class="note">المقاس <bdi dir="ltr">${slot.width}×${slot.height}</bdi> · ${slot.wholeUniversity ? `<b class="reach">يصل كل طلبة الجامعة</b> · ` : ""}${slot.exclusive ? "حصري لشركة واحدة" : `يتناوب فيه حتى ${countOf(slot.capacity, AR.campaign)}`} · ${free ? `متاح` : `ممتلئ حالياً`}</span></div><div class="mock" style="width:${maxW}px;aspect-ratio:${slot.width}/${slot.height}"><bdi dir="ltr">${slot.width}×${slot.height}</bdi></div></div>`;
 }).join("")}</div>
 <h2>شروطنا</h2>
 <div class="card"><ul class="rules">${AD_RULES.map(r => `<li>${esc(r)}</li>`).join("")}</ul></div>

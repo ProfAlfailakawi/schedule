@@ -24,15 +24,17 @@ export interface AdSlotSpec {
   exclusive?: boolean;
   /** موقعٌ متوقف: لا يُعرض فيه شيء ولا تُقبل فيه حملةٌ جديدة. يبقى معرَّفاً لتُقرأ حملاتٌ قديمة عليه. */
   retired?: boolean;
+  /** موقعٌ يصل كلَّ طلبة الجامعة بلا تمييز كلية (لا يعرف كليةَ الطالب، فلا يُقبل فيه استهدافٌ بالكلية). */
+  wholeUniversity?: boolean;
 }
 
 export const AD_SLOTS: readonly AdSlotSpec[] = [
   { id: "sponsor", label: "شريك الفصل", where: "شريط «برعاية» أعلى كل موقعٍ إعلاني", audience: "all", width: 640, height: 80, capacity: 1, exclusive: true },
-  { id: "me", label: "«مساري»", where: "أسفل البطاقة الرئيسية في «مساري» (/me)", audience: "students", width: 640, height: 200, capacity: 5 },
+  { id: "me", label: "«مساري»", where: "أسفل البطاقة الرئيسية في «مساري» (/me)", audience: "students", width: 640, height: 200, capacity: 5, wholeUniversity: true },
   { id: "schedule", label: "الجدول العام", where: "أسفل جدول القسم وجدول الطلبة (QR)", audience: "students", width: 640, height: 160, capacity: 3 },
   /* متوقف: صفحة «حالة طلبي» تطلب رقماً مدنياً ورقم الحالة، وشرطُنا ألا إعلان في صفحات الهوية. */
   { id: "status", label: "حالة الطلب (متوقف)", where: "متوقف: الصفحة تطلب الهوية", audience: "students", width: 600, height: 250, capacity: 3, retired: true },
-  { id: "break", label: "محطة الاستراحة", where: "داخل «تذكرتي» في «مساري» حين يكون للطالب فراغ ساعةٍ فأكثر بين محاضراته", audience: "students", width: 480, height: 160, capacity: 3 },
+  { id: "break", label: "محطة الاستراحة", where: "داخل «تذكرتي» في «مساري» حين يكون للطالب فراغ ساعةٍ فأكثر بين محاضراته", audience: "students", width: 480, height: 160, capacity: 3, wholeUniversity: true },
   { id: "dashboard", label: "لوحة الكادر", where: "بطاقة في لوحة الأساتذة والإداريين", audience: "staff", width: 480, height: 160, capacity: 3 },
 ] as const;
 
@@ -181,6 +183,7 @@ export function campaignProblems(input: Candidate): string[] {
   if (!String(input.company || "").trim()) out.push("اسم الشركة مطلوب.");
   if (!String(input.category || "").trim()) out.push("الفئة مطلوبة.");
   if (input.seasons?.some(s => !SEASON_IDS.includes(s))) out.push("موسمٌ غير معروف.");
+  if (slotById(input.slot)?.wholeUniversity && input.colleges?.length) out.push("«مساري» ومحطة الاستراحة يصلان كل طلبة الجامعة ولا يعرفان كلية الطالب؛ أزل استهداف الكليات أو اختر الجدول العام.");
   if (!isDay(input.startDay) || !isDay(input.endDay)) out.push("تاريخا البداية والنهاية مطلوبان بصيغة YYYY-MM-DD.");
   else {
     if (input.endDay < input.startDay) out.push("تاريخ النهاية قبل تاريخ البداية.");
