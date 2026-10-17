@@ -10,6 +10,7 @@
 import type { AdCampaign, AdCreative, AdStatsDay } from "../types";
 import type { AudienceStats } from "../utils/audienceStats";
 import { AD_RULES, TRIAL_DAYS, activeSlots, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase, type WeeklyCompare } from "../utils/adsEngine";
+import { hourAr, peakSummary, wrapUp, type WrapUp } from "../utils/adInsights";
 import { AR, countOf } from "../utils/arabicCount";
 import { SEASONS, seasonLabel, type CalendarItem } from "../utils/adSeasons";
 
@@ -103,7 +104,8 @@ function barChart(series: Array<{ day: string; a: number; b?: number }>, labelA:
   const line = labelB && series.some(p => p.b)
     ? `<polyline fill="none" stroke="var(--accent2)" stroke-width="2.2" stroke-linejoin="round" points="${series.map((p, i) => `${(W - padL - step * (i + 1) + step / 2).toFixed(1)},${(H - padB - ((p.b || 0) / maxB) * (H - padB - padT)).toFixed(1)}`).join(" ")}"/>`
     : "";
-  const first = series[0].day.slice(5), last = series[series.length - 1].day.slice(5);
+  const short = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? d.slice(5) : d);
+  const first = short(series[0].day), last = short(series[series.length - 1].day);
   /* التسميات خارج الـSVG: النصُّ داخله يُقصّ على الحواف في الاتجاه من اليمين إلى اليسار. */
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(labelA)}">
 <line x1="${padL}" x2="${W - padL}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line)"/>
@@ -151,6 +153,21 @@ function trialCard(args: { phase: AdPhase; totals: ReturnType<typeof totalsOf>; 
 <div class="card"><p style="margin:0 0 8px"><b>${ended ? "انتهت تجربتك" : "تجربتك جارية"}</b> (${countOf(TRIAL_DAYS, AR.day)} كحدٍّ أقصى): وصل إعلانك إلى نحو <b>${fmt(t.uniques)}</b> مشاهدٍ، وظهر <b>${countOf(t.impressions, AR.visit)}</b>، ونقر عليه <b>${fmt(t.clicks)}</b>.</p>
 ${verdict ? `<p style="margin:0 0 8px">${esc(verdict)}</p>` : ""}
 <p class="note" style="margin:0">${ended ? "لمواصلة الظهور في مساحةٍ ثابتة بعد التجربة، تواصل مع الإدارة التي أرسلت لك هذا الرابط." : "عند انتهاء التجربة يتوقف الإعلان تلقائياً، وتبقى أرقامك في هذه الصفحة."}</p></div>`;
+}
+
+/** خلاصةُ الحملة المنتهية: ما حققته بعبارةٍ واحدة، وأقوى يومٍ وصورة، ثم دعوةُ التجديد. */
+function wrapUpCard(w: WrapUp, args: { company: string; labelOf: (id: string) => string; benchmark: number | null | undefined }): string {
+  const t = w.totals;
+  const lines: string[] = [
+    `خلال <b>${esc(countOf(w.days, AR.day))}</b> بلغ عدد مشاهدي إعلانكم نحو <b>${fmt(t.uniques)}</b>، وبلغ ظهوره <b>${fmt(t.impressions)}</b>، وبلغت نقراته الصحيحة <b>${fmt(t.clicks)}</b> (${pct(t.ctr)}).`,
+  ];
+  if (w.bestDay) lines.push(`أقوى يومٍ: <b>${esc(dateAr(w.bestDay.day))}</b> بـ${fmt(w.bestDay.impressions)} ظهور.`);
+  if (w.bestWeekday && w.bestWeekday.share >= 20) lines.push(`أكثر ما شاهدكم الطلبة يوم <b>${esc(w.bestWeekday.name)}</b> (${w.bestWeekday.share}٪ من ظهوركم).`);
+  if (w.bestCreative) lines.push(`الأعلى نقراً: <b>${esc(args.labelOf(w.bestCreative.creativeId))}</b> (${pct(w.bestCreative.ctr)}).`);
+  if (args.benchmark != null && t.impressions >= 200) lines.push(t.ctr >= args.benchmark ? `نسبة نقركم أعلى من متوسط حملات هذا الموقع (${pct(args.benchmark)}).` : `نسبة نقركم دون متوسط حملات هذا الموقع (${pct(args.benchmark)}) — صورةٌ أو عرضٌ أوضح يرفعها.`);
+  return `<h2>خلاصة حملتكم</h2>
+<div class="card" style="margin-block-end:12px">${lines.map(l => `<p style="margin:0 0 8px">${l}</p>`).join("")}</div>
+<div class="callout"><b>يسعدنا تثبيت مكان ${esc(args.company)} في الفصل القادم</b><span>راجعوا الأرقام أعلاه ثم تواصلوا مع إدارة البرنامج للتجديد؛ نحجز لكم الموقع نفسه قبل أن يمتلئ.</span></div>`;
 }
 
 export function campaignReportPage(input: CampaignReportInput): string {
@@ -201,6 +218,7 @@ export function campaignReportPage(input: CampaignReportInput): string {
   <div class="kpi"><b>${pct(totals.ctr)}</b><span>نسبة النقر</span><small>النقرات ÷ الظهور</small></div>
 </div>
 ${c.trial ? trialCard({ phase, totals, benchmark: input.benchmarkCtr, days: series.length }) : ""}
+${phase === "ended" && totals.impressions > 0 ? wrapUpCard(wrapUp(stats), { company: c.company, labelOf, benchmark: input.benchmarkCtr }) : ""}
 ${endingBanner}${input.weekly && (input.weekly.hasLastWeek || input.weekly.thisWeek.impressions > 0) ? weeklyCard(input.weekly) : ""}${calendarCard}
 <h2>الأداء اليومي</h2>
 <div class="card">${barChart(series.map(p => ({ day: p.day, a: p.impressions, b: p.clicks })), "الظهور", "النقرات")}</div>
@@ -244,6 +262,11 @@ export function partnerKitPage(input: PartnerKitInput): string {
   const today = input.today || kuwaitDay();
   const reachStudents = s.reach.studentsMin;
   const hasVisits = s.visits.days > 0;
+  const peak = hasVisits ? peakSummary(s.visits.heat) : null;
+  const peakCard = peak ? `<h2>متى يفتح الطلبة البرنامج؟</h2>
+<div class="card"><p style="margin:0 0 8px">ذروة الاستخدام <b>${esc(peak.topDays.map(d => d.name).join("، "))}</b>${peak.window ? `، وأقوى ساعاتها من <b>${esc(hourAr(peak.window.from))}</b> إلى <b>${esc(hourAr(peak.window.to))}</b> (نحو ${peak.window.share}٪ من الزيارات)` : ""}.</p>
+${barChart(peak.hourTotals.map((v, h) => ({ day: hourAr(h), a: v })), "الزيارات حسب الساعة")}
+<p class="note">بتوقيت الكويت، من زياراتٍ مجهولة ومجمّعة. اختر موسم إعلانك ووقت عرضك على هذا الأساس.</p></div>` : "";
   return page("ملف الشراكة · SCHEDULE", nonce, `
 <div class="bar noprint"><p class="brand">SCHEDULE · ملف الشراكة</p><button class="btn" id="print" type="button">طباعة / حفظ PDF</button></div>
 <section class="hero">
@@ -260,6 +283,7 @@ export function partnerKitPage(input: PartnerKitInput): string {
 ${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2><div class="card">${barChart(s.visits.series.map(p => ({ day: p.day, a: p.count })), "الزيارات")}<p class="note">الذروة تأتي غالباً يوم ${esc(s.visits.peakDay || "—")}؛ ونسبة الجوال ${pct(s.visits.mobileRate)} ونسبة العائدين ${pct(s.visits.returningRate)}.</p></div>` : `<p class="note">قياس الزيارات اليومية فعّالٌ ويتراكم يوماً بعد يوم، وتظهر أرقامه هنا فور توفر بياناتٍ كافية.</p>`}
 ${s.demand.top.length >= 3 ? `<h2>ما يبحث عنه الطلبة هذا الفصل</h2><div class="card"><table><thead><tr><th>المقرر</th><th>طلبةٌ يريدونه</th></tr></thead><tbody>${s.demand.top.slice(0, 6).map(d => `<tr><td>${esc(d.name)}</td><td class="n">${approx(d.students)}</td></tr>`).join("")}</tbody></table><p class="note">أعدادٌ تقريبية مجمّعة، ولا يظهر مقررٌ يطلبه أقل من ${countOf(s.demand.minStudents, AR.student)} مختلفين.</p></div>` : ""}
 ${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
+${peakCard}
 <h2>أين يظهر إعلانك</h2>
 <div class="callout"><b>«مساري» لكل الجامعة</b><span>إعلانك في «مساري» ومحطة الاستراحة يراه كل طالبٍ يدخل، من كل الكليات، دون أي تخصيص؛ وإن أردتَ كليةً بعينها فيمكن حصر الحملة بها (لمن أكمل ملفه الشخصي).</span></div>
 <div class="card">${activeSlots().map(slot => {

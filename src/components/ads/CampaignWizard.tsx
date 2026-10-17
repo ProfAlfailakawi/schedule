@@ -12,17 +12,17 @@ import { addDay, dateShort, fmt, type Campaign, type Payload } from "./shared";
 
 export interface WizardForm {
   id: string; company: string; category: string; slot: string; startDay: string; endDay: string;
-  linkUrl: string; coupon: string; note: string; trial: boolean; seasons: string[]; colleges: number[];
+  linkUrl: string; coupon: string; note: string; trial: boolean; seasons: string[]; colleges: number[]; contactEmail: string;
 }
 const STEPS = ["الشركة والموقع", "الجمهور", "الصورة", "المراجعة"];
 
 export const blankForm = (data: Payload): WizardForm => ({
   id: "", company: "", category: data.categories[0] || "", slot: data.slots.find(s => s.id === "me")?.id || data.slots[0]?.id || "", startDay: data.today, endDay: addDay(data.today, 29),
-  linkUrl: "https://", coupon: "", note: "", trial: false, seasons: [], colleges: [],
+  linkUrl: "https://", coupon: "", note: "", trial: false, seasons: [], colleges: [], contactEmail: "",
 });
 export const formOf = (c: Campaign): WizardForm => ({
   id: c.id, company: c.company, category: c.category, slot: c.slot, startDay: c.startDay, endDay: c.endDay, linkUrl: c.linkUrl,
-  coupon: c.coupon || "", note: c.note || "", trial: Boolean(c.trial), seasons: c.seasons || [], colleges: c.colleges || [],
+  coupon: c.coupon || "", note: c.note || "", trial: Boolean(c.trial), seasons: c.seasons || [], colleges: c.colleges || [], contactEmail: c.contactEmail || "",
 });
 
 /** هاتفٌ مبسّط يعرض الصورة في موضعها: ليرى صاحبُ القرار كيف تبدو قبل الاعتماد. */
@@ -164,6 +164,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
             <div className="ad-grid2">
               <label className="ad-field">كود الخصم <small>(يظهر تحت الإعلان ويقيس التحويل)</small><input dir="ltr" maxLength={24} value={form.coupon} onChange={e => set("coupon", e.target.value)} /></label>
               <label className="ad-field">ملاحظة داخلية<input maxLength={300} value={form.note} onChange={e => set("note", e.target.value)} /></label>
+              <label className="ad-field">بريد الشركة <small>(اختياري: لإرسال تقريرها الأسبوعي وتذكير التجديد إن فُعّل البريد)</small><input dir="ltr" type="email" maxLength={120} value={form.contactEmail} onChange={e => set("contactEmail", e.target.value)} /></label>
             </div>
           </details>
         </div>
