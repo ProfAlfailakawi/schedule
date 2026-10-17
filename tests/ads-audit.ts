@@ -81,6 +81,8 @@ async function main() {
     const todayMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, 0, "https://x.test/r");
     const soonMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, 3, "https://x.test/r");
     check(endedMail.text.includes("انتهت حملة «ش» قبل") && !endedMail.text.includes("اليوم") && todayMail.text.includes("اليوم") && soonMail.text.includes("بعد"), "A14 تذكير التجديد: صياغةٌ صادقة للمنتهية واليوم والقادمة", endedMail.text);
+    const { AD_CLIENT_SCRIPT: adScript } = await import("../src/server/adClientScript");
+    check(adScript.includes('var sponsor=slot==="break"?null:'), "A14 محطة الاستراحة لا تكرر شريط الراعي (يظهر مرةً مع إعلان «مساري»)");
     const heat = Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => (d === 0 || d === 1 ? 10 : 2) * (h >= 10 && h <= 12 ? 5 : 1)));
     const pk = INS.peakSummary(heat)!;
     check(pk.topDays[0].name === "الأحد" && pk.window?.from === 10 && pk.window.to === 13 && pk.hourTotals.length === 24, "A14 الذروة: أيامٌ ونافذةٌ ١٠–١٣", pk);
