@@ -155,7 +155,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
               <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className={`ad-chip${form.trial ? " on" : ""}`} onClick={() => quick(7, true)}>تجربة ٧ أيام مجانية</button>
               <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => quick(30)}>٣٠ يوماً</button>
               <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => quick(90)}>٩٠ يوماً</button>
-              {finals ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => setForm(f => ({ ...f, endDay: finals, trial: false }))}>حتى نهاية الفصل <bdi dir="ltr">{dateShort(finals)}</bdi></button> : null}
+              {finals ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => setForm(f => ({ ...f, endDay: finals, trial: false }))}>حتى نهاية الفصل <bdi>{dateShort(finals)}</bdi></button> : null}
             </div>
           </div>
 
@@ -181,7 +181,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
             </div>
           </div>
           {slot?.wholeUniversity ? (
-            <div className="ad-reach"><Globe2 aria-hidden="true" size={18} /><div><b>يصل كل طلبة الجامعة</b><span>«{slot.label.replace(/[«»]/g, "")}» يعرض إعلانك لكل طالبٍ يدخل، من كل الكليات، بلا حاجةٍ لأي تخصيص.</span></div></div>
+            <div className="ad-reach"><Globe2 aria-hidden="true" size={18} /><div><b>يصل كل طلبة الجامعة</b><span>{slot.label} يعرض إعلانك لكل طالبٍ يدخل، من كل الكليات، بلا حاجةٍ لأي تخصيص.</span></div></div>
           ) : <div className="ad-field">
             <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-link" onClick={() => setShowColleges(v => !v)}>{showColleges ? "إخفاء تخصيص الكليات" : "تخصيص الكليات (اختياري)"}</button>
             {showColleges ? (
@@ -198,7 +198,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
       {step === 3 ? (
         <div className="ad-wbody ad-wimg">
           <div>
-            <p className="ad-lead">المقاس المطلوب لموقع «{slot?.label}» هو <bdi dir="ltr"><b>{slot?.width}×{slot?.height}</b></bdi> تماماً، بوزنٍ حتى {fmt(data.maxBytes / 1024)} كيلوبايت. اجعل الكلام المهم في وسط الصورة؛ تُعرض بنسبتها على الجوال.</p>
+            <p className="ad-lead">المقاس المطلوب لموقع {slot?.label} هو <bdi dir="ltr"><b>{slot?.width}×{slot?.height}</b></bdi> تماماً، بوزنٍ حتى {fmt(data.maxBytes / 1024)} كيلوبايت. اجعل الكلام المهم في وسط الصورة؛ تُعرض بنسبتها على الجوال.</p>
             <div className="ad-imgs">
               {(saved?.creatives || []).map(cr => (
                 <figure key={cr.id}>
@@ -224,7 +224,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
           <dl className="ad-dl ad-review">
             <div><dt>الشركة</dt><dd>{form.company}{form.trial ? " · تجريبية" : ""}</dd></div>
             <div><dt>الموقع</dt><dd>{slot?.label} <bdi dir="ltr">({slot?.width}×{slot?.height})</bdi></dd></div>
-            <div><dt>المدة</dt><dd><bdi dir="ltr">{form.startDay} ← {form.endDay}</bdi> · {countOf(Math.max(1, span), AR.day)}</dd></div>
+            <div><dt>المدة</dt><dd>من <bdi>{dateShort(form.startDay)}</bdi> إلى <bdi>{dateShort(form.endDay)}</bdi> · {countOf(Math.max(1, span), AR.day)}</dd></div>
             <div><dt>الجمهور</dt><dd>{seasonText} · {slot?.wholeUniversity ? "كل الجامعة" : form.colleges.length ? countOf(form.colleges.length, AR.college) : "كل الكليات"}</dd></div>
             <div><dt>الصور</dt><dd>{saved?.creatives.length ? "مرفوعة" : "لم تُرفع بعد"}</dd></div>
             <div><dt>الوجهة</dt><dd><bdi dir="ltr" className="ad-url">{form.linkUrl}</bdi></dd></div>

@@ -196,7 +196,7 @@ ${input.liveInSlot > 1 ? `<p class="note">يتناوب في هذا الموقع 
 ${c.coupon ? `<h2>كود الخصم</h2><div class="card"><b style="font-size:22px;letter-spacing:.04em" dir="ltr">${esc(c.coupon)}</b><p class="note">يظهر تحت إعلانك؛ تابع استخدامه عندكم لمعرفة التحويل الفعلي.</p></div>` : ""}
 ${breakdown.length > 1 ? `<h2>مقارنة الصورتين (A/B)</h2><div class="card"><table><thead><tr><th>الصورة</th><th>ظهور</th><th>نقرات</th><th>نسبة النقر</th></tr></thead><tbody>${breakdown.map(r => `<tr><td>${esc(labelOf(r.creativeId))}${best && best.creativeId === r.creativeId ? " ⭐" : ""}</td><td class="n">${fmt(r.impressions)}</td><td class="n">${fmt(r.clicks)}</td><td class="n">${pct(r.ctr)}</td></tr>`).join("")}</tbody></table>${best ? `<p class="note">الأعلى نقراً حتى الآن: «${esc(labelOf(best.creativeId))}».</p>` : ""}</div>` : ""}
 <h2>تصميم الإعلان</h2>
-<div class="pre">${creatives.map(cr => `<figure><img src="/_ads/img/${esc(cr.id)}" alt="${esc(cr.label)}" width="${cr.width}" height="${cr.height}" loading="lazy"><figcaption>${esc(cr.label)} · ${cr.width}×${cr.height}</figcaption></figure>`).join("")}</div>
+<div class="pre">${creatives.map(cr => `<figure><img src="/_ads/img/${esc(cr.id)}" alt="${esc(cr.label)}" width="${cr.width}" height="${cr.height}" loading="lazy"><figcaption>${esc(cr.label)} · <bdi dir="ltr">${cr.width}×${cr.height}</bdi></figcaption></figure>`).join("")}</div>
 <h2>كيف نعدّ؟</h2>
 <div class="card"><ul class="rules">
   <li><b>الظهور المرئي:</b> يُحتسب بعد أن يبقى نصف الإعلان على الأقل ظاهراً على الشاشة ثانيةً كاملة والصفحة مفتوحة.</li>
