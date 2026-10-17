@@ -839,6 +839,18 @@ async function main() {
     check(!!r1?.first && r2 === null && !!r3 && !r3.first, "عدّ الفتح في المخزن: الأول first، وإعادة التحميل null، والعودة بعد نصف ساعة تُعدّ", { r1, r2, r3 });
     check(saved.linkOpenDays["2026-10-20"] === 2 && saved.timeline.filter((e: any) => e.kind === "link-opened").length === 1 && saved.status === "sent", "عدّ الفتح في المخزن: عدّان في اليوم، وحدثٌ واحد في الخط الزمني، وحالة الطلب لم تُمسّ", saved);
     check(await Repo.recordInstructorRequestOpen("missing", "2026-10-20T11:00:00Z") === null, "عدّ الفتح في المخزن: طلبٌ غير موجود لا يُنشأ");
+    const { cleanLead, cleanPhone, whatsappPhone } = await import("../src/utils/adLeads");
+    const lead1 = cleanLead({ company: "  شركة  النور ", name: "سالم", phone: "٩٩٨٨ 7766", email: "A@B.com", slots: ["me", "me", "bogus"], season: "nope", note: "x\n\ny" });
+    check(!lead1.error && lead1.lead!.company === "شركة النور" && lead1.lead!.phone === "99887766" && lead1.lead!.email === "a@b.com" && lead1.lead!.slots.length === 1 && lead1.lead!.season === "" && lead1.lead!.note === "x y", "طلب حملة: تنظيف الحقول (مسافات، أرقام هندية، موقعٌ مكرر/مجهول يسقط)", lead1);
+    check(cleanLead({ company: "", name: "س", phone: "99887766" }).error === "اكتب اسم الشركة." && cleanLead({ company: "شركة", name: "سالم", phone: "12" }).error === "اكتب رقم جوّالٍ صحيحاً." && cleanLead({ company: "شركة", name: "سالم", phone: "99887766", email: "bad" }).error === "البريد غير صحيح.", "طلب حملة: الاسم والجوّال مطلوبان، والبريد اختياري لكن يُتحقَّق منه");
+    check(cleanPhone("+965 9988-7766") === "96599887766" && whatsappPhone("99887766") === "96599887766" && whatsappPhone("0096599887766") === "96599887766", "طلب حملة: أرقام الجوّال وواتساب");
+    const lead = await Repo.createAdLead({ ...lead1.lead!, email: lead1.lead!.email || undefined } as any);
+    check((await Repo.listAdLeads()).some((l: any) => l.id === lead.id && l.status === "new"), "طلب حملة: يُحفظ جديداً");
+    check(await Repo.markAdLeadContacted(lead.id, "2026-10-20T10:00:00Z") === true && await Repo.markAdLeadContacted("missing", "2026-10-20T10:00:00Z") === false, "طلب حملة: تسجيل التواصل ينجح، وطلبٌ غير موجود false");
+    const after: any = (await Repo.listAdLeads()).find((l: any) => l.id === lead.id);
+    check(after.status === "contacted" && !!after.contactedAt && after.phone === "99887766", "طلب حملة: تم التواصل يغيّر الحالة وحدها");
+    const leadForm = (await import("../src/server/adsPages")).partnerKitPage({ stats: stats as any, liveBySlot: {}, today: "2026-11-20", nonce: "N", token: "tok/1", leadResult: "ok" });
+    check(leadForm.includes('action="/partners/tok%2F1/lead"') && leadForm.includes('name="website"') && leadForm.includes('href="#new"') && leadForm.includes("وصلنا طلبك"), "ملف الشراكة: زر «حملة جديدة» ونموذجٌ يُرسل إلى مسار الطلب مع حقل الفخ ورسالة النجاح");
     check(B.instructorOpens === 75_000 && B.instructors === 786 && B.students === 80_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
   }
 

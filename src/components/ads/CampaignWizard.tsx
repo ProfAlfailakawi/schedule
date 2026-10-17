@@ -4,7 +4,7 @@
  * تُحفظ الحملةُ مسودةً عند الانتقال من الثانية إلى الثالثة (الصورة تحتاج رقم حملة)، وللإدارة أن تغلق في أي وقتٍ فتبقى المسودة.
  */
 import React, { useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, ImagePlus, Upload, Globe2 } from "lucide-react";
+import { Building2, CalendarDays, Check, ChevronLeft, ChevronRight, ImagePlus, Link2, MapPin, Upload, Globe2 } from "lucide-react";
 import { CatalogFormDrawer } from "../ui";
 import { AR, countOf } from "../../utils/arabicCount";
 import type { DrawerActions } from "./CampaignDrawer";
@@ -127,67 +127,78 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
 
       {step === 1 ? (
         <div className="ad-wbody">
-          <label className="ad-field ad-field-big">اسم الشركة<input value={form.company} maxLength={80} autoFocus onChange={e => set("company", e.target.value)} placeholder="مثال: مطعم الواحة" /></label>
+          <section className="ad-blk">
+            <h4 className="ad-blk-h"><i><Building2 aria-hidden="true" size={14} /></i>الشركة</h4>
+            <div className="ad-grid2 ad-grid-tight">
+              <label className="ad-field ad-field-big">اسم الشركة<input value={form.company} maxLength={80} autoFocus onChange={e => set("company", e.target.value)} placeholder="مثال: مطعم الواحة" /></label>
+              <label className="ad-field">الفئة
+                <select value={form.category} onChange={e => set("category", e.target.value)}>{data.categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
+              </label>
+            </div>
+            <small className="ad-note">لا يظهر منافسان من فئةٍ واحدة في الموقع نفسه.</small>
+          </section>
 
-          <div className="ad-field"><span className="ad-lab">الفئة <small>(لا يظهر منافسان من فئةٍ واحدة في الموقع نفسه)</small></span>
-            <div className="ad-chips ad-chips-wrap" role="group" aria-label="الفئة">{data.categories.map(c => <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={c} type="button" className={`ad-chip${form.category === c ? " on" : ""}`} aria-pressed={form.category === c} onClick={() => set("category", c)}>{c}</button>)}</div>
-          </div>
-
-          <div className="ad-field"><span className="ad-lab">الموقع {slotLocked ? <small>(مقفل: الصور مرتبطة بمقاس الموقع)</small> : null}</span>
+          <section className="ad-blk">
+            <h4 className="ad-blk-h"><i><MapPin aria-hidden="true" size={14} /></i>أين يظهر{slotLocked ? <small>مقفل: الصور مرتبطة بمقاس الموقع</small> : null}</h4>
             <div className="ad-slotpick" role="radiogroup" aria-label="الموقع">
               {data.slots.map(s => {
                 const cap = s.exclusive ? 1 : s.capacity, full = s.live >= cap;
                 return (
-                  <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={s.id} type="button" role="radio" aria-checked={form.slot === s.id} disabled={slotLocked && form.slot !== s.id} className={`ad-slotcard${form.slot === s.id ? " on" : ""}${full ? " full" : ""}`} onClick={() => set("slot", s.id)}>
+                  <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={s.id} type="button" role="radio" aria-checked={form.slot === s.id} disabled={slotLocked && form.slot !== s.id} title={s.where} className={`ad-slotcard${form.slot === s.id ? " on" : ""}${full ? " full" : ""}`} onClick={() => set("slot", s.id)}>
                     <span className="ad-slotart" style={{ aspectRatio: `${s.width}/${s.height}` }}><bdi dir="ltr">{s.width}×{s.height}</bdi></span>
                     <b>{s.label}</b>
-                    <small>{s.where}</small>
-                    <em>{s.exclusive ? (full ? "محجوز" : "حصري · متاح") : `${fmt(s.live)} من ${fmt(cap)} · ${full ? "ممتلئ" : "متاح"}`}</em>
+                    <em><i aria-hidden="true" />{s.exclusive ? (full ? "محجوز" : "حصري · متاح") : `${fmt(s.live)}/${fmt(cap)} · ${full ? "ممتلئ" : "متاح"}`}</em>
                   </button>
                 );
               })}
             </div>
-          </div>
+            {slot ? <small className="ad-note">{slot.where}</small> : null}
+          </section>
 
-          <div className="ad-field"><span className="ad-lab">مدة العرض</span>
+          <section className="ad-blk">
+            <h4 className="ad-blk-h"><i><CalendarDays aria-hidden="true" size={14} /></i>متى</h4>
+            <div className="ad-seg" role="group" aria-label="مدة جاهزة">
+              <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" aria-pressed={form.trial} onClick={() => quick(7, true)}>تجربة ٧ أيام</button>
+              <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" aria-pressed={!form.trial && span === 30} onClick={() => quick(30)}>٣٠ يوماً</button>
+              <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" aria-pressed={!form.trial && span === 90} onClick={() => quick(90)}>٩٠ يوماً</button>
+              {finals ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" aria-pressed={!form.trial && form.endDay === finals} onClick={() => setForm(f => ({ ...f, endDay: finals, trial: false }))}>حتى نهاية الفصل</button> : null}
+            </div>
             <div className="ad-dates">
               <label>من<input type="date" value={form.startDay} onChange={e => set("startDay", e.target.value)} /></label>
               <label>إلى (شامل)<input type="date" value={form.endDay} onChange={e => set("endDay", e.target.value)} /></label>
               <span className="ad-span">{span > 0 ? countOf(span, AR.day) : "—"}</span>
+              {seasonPresets.length ? (
+                <label className="ad-preset">أو موسمٌ جاهز
+                  <select value={seasonPresets.find(i => form.seasons.length === 1 && form.seasons[0] === i.season && form.endDay === i.to)?.from ? `${form.seasons[0]}|${seasonPresets.find(i => form.seasons.length === 1 && form.seasons[0] === i.season && form.endDay === i.to)!.from}` : ""} onChange={e => {
+                    const item = seasonPresets.find(i => `${i.season}|${i.from}` === e.target.value);
+                    if (item) setForm(f => ({ ...f, startDay: item.from > data.today ? item.from : data.today, endDay: item.to, seasons: [item.season], trial: false }));
+                  }}>
+                    <option value="">اختر…</option>
+                    {seasonPresets.map(item => <option key={`${item.season}-${item.from}`} value={`${item.season}|${item.from}`}>{item.label} · {item.term}{item.now ? " (الآن)" : ""}</option>)}
+                  </select>
+                </label>
+              ) : null}
             </div>
-            <div className="ad-quick">
-              <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className={`ad-chip${form.trial ? " on" : ""}`} onClick={() => quick(7, true)}>تجربة ٧ أيام مجانية</button>
-              <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => quick(30)}>٣٠ يوماً</button>
-              <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => quick(90)}>٩٠ يوماً</button>
-              {finals ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => setForm(f => ({ ...f, endDay: finals, trial: false }))}>حتى نهاية الفصل <bdi>{dateShort(finals)}</bdi></button> : null}
-            </div>
-            {seasonPresets.length ? (
-              <div className="ad-quick" role="group" aria-label="مواسم جاهزة">
-                <small className="ad-note">مواسم جاهزة:</small>
-                {seasonPresets.map(item => (
-                  <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={`${item.season}-${item.from}`} type="button" className={`ad-chip${form.seasons.length === 1 && form.seasons[0] === item.season && form.endDay === item.to ? " on" : ""}`} onClick={() => setForm(f => ({ ...f, startDay: item.from > data.today ? item.from : data.today, endDay: item.to, seasons: [item.season], trial: false }))}>
-                    {item.label} · {item.term}{item.now ? " (الآن)" : ""}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          </section>
 
-          <label className="ad-field">رابط الوجهة (https)
-            <span className="ad-linkrow">
-              <input dir="ltr" value={form.linkUrl} onChange={e => set("linkUrl", e.target.value)} />
-              {linkOk
-                ? <a className="ad-linktest" href={form.linkUrl.trim()} target="_blank" rel="noopener noreferrer" title="افتح الرابط في تبويب جديد للتأكد" aria-label="جرّب الرابط في تبويب جديد">↗ جرّب</a>
-                : <span className="ad-linktest is-off" aria-hidden="true" title="اكتب رابطاً يبدأ بـ https:// لتفعيل التجربة">↗ جرّب</span>}
-            </span>
-          </label>
-          <details className="ad-more"><summary>خياراتٌ إضافية: كود خصم وملاحظة</summary>
-            <div className="ad-grid2">
-              <label className="ad-field">كود الخصم <small>(يظهر تحت الإعلان ويقيس التحويل)</small><input dir="ltr" maxLength={24} value={form.coupon} onChange={e => set("coupon", e.target.value)} /></label>
-              <label className="ad-field">ملاحظة داخلية<input maxLength={300} value={form.note} onChange={e => set("note", e.target.value)} /></label>
-              <label className="ad-field">بريد الشركة <small>(اختياري: لإرسال تقريرها الأسبوعي وتذكير التجديد إن فُعّل البريد)</small><input dir="ltr" type="email" maxLength={120} value={form.contactEmail} onChange={e => set("contactEmail", e.target.value)} /></label>
-            </div>
-          </details>
+          <section className="ad-blk">
+            <h4 className="ad-blk-h"><i><Link2 aria-hidden="true" size={14} /></i>الوجهة</h4>
+            <label className="ad-field">رابط الوجهة (https)
+              <span className="ad-linkrow">
+                <input dir="ltr" value={form.linkUrl} onChange={e => set("linkUrl", e.target.value)} />
+                {linkOk
+                  ? <a className="ad-linktest" href={form.linkUrl.trim()} target="_blank" rel="noopener noreferrer" title="افتح الرابط في تبويب جديد للتأكد" aria-label="جرّب الرابط في تبويب جديد">↗ جرّب</a>
+                  : <span className="ad-linktest is-off" aria-hidden="true" title="اكتب رابطاً يبدأ بـ https:// لتفعيل التجربة">↗ جرّب</span>}
+              </span>
+            </label>
+            <details className="ad-more"><summary>خياراتٌ إضافية: كود خصم وملاحظة وبريد</summary>
+              <div className="ad-grid2">
+                <label className="ad-field">كود الخصم <small>(يظهر تحت الإعلان ويقيس التحويل)</small><input dir="ltr" maxLength={24} value={form.coupon} onChange={e => set("coupon", e.target.value)} /></label>
+                <label className="ad-field">ملاحظة داخلية<input maxLength={300} value={form.note} onChange={e => set("note", e.target.value)} /></label>
+                <label className="ad-field">بريد الشركة <small>(اختياري: للتقرير الأسبوعي وتذكير التجديد إن فُعّل البريد)</small><input dir="ltr" type="email" maxLength={120} value={form.contactEmail} onChange={e => set("contactEmail", e.target.value)} /></label>
+              </div>
+            </details>
+          </section>
         </div>
       ) : null}
 

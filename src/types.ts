@@ -1874,6 +1874,22 @@ export interface StudyProposal {
  * لا أسعار هنا عمداً: الشاشة للتتبع. التواريخ أيامٌ بتوقيت الكويت (YYYY-MM-DD) والنهاية شاملة.
  */
 export type AdStatus = "draft" | "approved" | "paused";
+/** طلبُ حملةٍ جديدة تُرسله الشركة من ملف الشراكة: بياناتُ تواصلٍ للإدارة وحدها، لا تظهر في أي صفحةٍ عامة ولا في سجل التدقيق. */
+export interface AdLead {
+  id: string;
+  createdAt: string;
+  company: string;
+  name: string;
+  phone: string;
+  email?: string;
+  /** معرّفات المواقع التي تهمّها. */
+  slots: string[];
+  /** معرّف الموسم الذي تريده، أو فارغ. */
+  season?: string;
+  note?: string;
+  status: "new" | "contacted";
+  contactedAt?: string;
+}
 export interface AdCampaign {
   id: string;
   company: string;
