@@ -19,3 +19,40 @@
 .reference-followups>ul>li{display:grid;gap:4px;align-content:start;padding:10px 12px;border:1px solid var(--line);border-inline-start:3px solid var(--warning);border-radius:var(--r-md);background:var(--bg)}
 .reference-followups>ul>li.state-ambiguous{border-inline-start-color:var(--danger)}
 .reference-followup-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.reference-followup-head>bdi{font-weight:700;color:var(--muted);font-size:.8rem}.reference-followup-head>strong{font-size:.86rem;flex:1;min-width:0}
+
+/* ── نشرُ الصحيفة للجميع (مركز الذكاء ← الصحيفة) ───────────────────────────── */
+.psh{display:grid;gap:14px}
+.psh-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.psh-ic{display:grid;place-items:center;inline-size:40px;block-size:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent);flex:none}
+.psh-ic svg{inline-size:20px;block-size:20px}
+.psh-head>div:not(.psh-head-actions){display:grid;gap:2px;flex:1;min-inline-size:200px}
+.psh-head strong{font-size:1.02rem}.psh-head small{color:var(--muted);font-size:.8rem}
+.psh-head-actions{display:flex;gap:8px;flex-wrap:wrap}
+.psh-dept{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.psh-dept-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.psh-dept-head>b{font-size:.98rem}.psh-dept-head>small{color:var(--muted);font-size:.78rem}
+.psh-dept-actions{margin-inline-start:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.psh-link{display:inline-flex;align-items:center;gap:5px;border:0;background:none;color:var(--accent);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;padding:4px 6px;border-radius:8px}
+.psh-link:hover,.psh-link:focus-visible{background:var(--accent-soft);outline:none}
+.psh-link svg{inline-size:15px;block-size:15px}
+.psh-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.psh-list>li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;border:1px solid var(--line);border-inline-start:3px solid var(--line);border-radius:var(--r-md);background:var(--bg)}
+.psh-list>li.live{border-inline-start-color:var(--success,var(--accent))}
+.psh-list>li.stale{border-inline-start-color:var(--warning)}
+.psh-name{display:grid;gap:1px;flex:1;min-inline-size:160px}.psh-name b{font-size:.9rem}.psh-name small{color:var(--muted);font-size:.76rem}
+.psh-row-actions{display:flex;align-items:center;gap:6px}
+.psh-ico{display:grid;place-items:center;inline-size:34px;block-size:34px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink,inherit);cursor:pointer;text-decoration:none}
+.psh-ico:hover,.psh-ico:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+.psh-ico svg{inline-size:16px;block-size:16px}
+.psh-stop{border:1px solid var(--line);background:none;color:var(--muted);font:inherit;font-size:.8rem;border-radius:10px;padding:6px 12px;cursor:pointer}
+.psh-stop:hover{color:var(--danger);border-color:var(--danger)}
+.psh-qr{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:rgba(10,24,17,.5)}
+.psh-qr-card{position:relative;display:grid;gap:12px;justify-items:center;inline-size:min(100%,360px);padding:22px 20px;border-radius:24px;background:var(--surface);box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.psh-qr-card>strong{text-align:center;font-size:1rem;padding-inline:28px}
+.psh-qr-img{inline-size:220px;block-size:220px;background:#fff;padding:6px;border-radius:14px}.psh-qr-img svg{inline-size:100%;block-size:100%}
+.psh-qr-card>input{inline-size:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font-size:.78rem;background:var(--bg);color:inherit}
+.psh-qr-x{position:absolute;inset-block-start:10px;inset-inline-start:10px;display:grid;place-items:center;inline-size:32px;block-size:32px;border:0;border-radius:50%;background:var(--bg);color:inherit;cursor:pointer}
+.psh-qr-x svg{inline-size:16px;block-size:16px}
+.psh-qr-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+@media (prefers-reduced-motion:reduce){.psh .spin{animation:none}}
+.psh .spin{animation:spin 1s linear infinite}

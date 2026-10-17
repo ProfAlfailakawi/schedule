@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{TITLE}}</title>
+<meta name="description" content="{{DESC}}">
+<meta name="theme-color" content="#EEF4FF">
+<style>
+@font-face{font-family:'Cairo';font-style:normal;font-weight:300;font-display:swap;src:url('/plans/fonts/cairo-arabic-300-normal.woff2') format('woff2');unicode-range:U+0600-06FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE80-FEFC}
+@font-face{font-family:'Cairo';font-style:normal;font-weight:500;font-display:swap;src:url('/plans/fonts/cairo-arabic-500-normal.woff2') format('woff2');unicode-range:U+0600-06FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE80-FEFC}
+@font-face{font-family:'Cairo';font-style:normal;font-weight:300;font-display:swap;src:url('/plans/fonts/cairo-latin-300-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Cairo';font-style:normal;font-weight:500;font-display:swap;src:url('/plans/fonts/cairo-latin-500-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Cairo';font-style:normal;font-weight:700;font-display:swap;src:url('/plans/fonts/cairo-arabic-700-normal.woff2') format('woff2');unicode-range:U+0600-06FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE80-FEFC}
+@font-face{font-family:'Cairo';font-style:normal;font-weight:700;font-display:swap;src:url('/plans/fonts/cairo-latin-700-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Cairo';font-style:normal;font-weight:900;font-display:swap;src:url('/plans/fonts/cairo-arabic-900-normal.woff2') format('woff2');unicode-range:U+0600-06FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE80-FEFC}
+@font-face{font-family:'Cairo';font-style:normal;font-weight:900;font-display:swap;src:url('/plans/fonts/cairo-latin-900-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+</style>
+<style>
+:root{color-scheme:light;--ink:#0B2545;--mut:#475569;--bg:#EEF4FF}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Cairo','Tajawal',system-ui,sans-serif;padding:env(safe-area-inset-top,0) 0 0}
+svg text{font-family:'Cairo','Tajawal',system-ui,sans-serif}
+.scroll{overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 160px;touch-action:pan-x pan-y}
+#plan{display:block;width:100%;min-width:1180px;max-width:1754px;height:auto;margin:0 auto}
+html.fit #plan{min-width:0}
+#fitbtn{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom,0));left:14px;z-index:8;display:flex;align-items:center;gap:6px;border:0;background:#0B2545;color:#fff;font:inherit;font-size:14px;font-weight:700;padding:8px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(11,37,69,.28);cursor:pointer}
+#fitbtn svg{width:17px;height:17px}
+@media (min-width:1200px){#fitbtn{display:none}}
+#pdfbtn{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom,0));right:14px;z-index:8;display:flex;align-items:center;gap:6px;border:0;background:#fff;color:#0B2545;font:inherit;font-size:14px;font-weight:700;padding:8px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(11,37,69,.18);cursor:pointer;border:1px solid #CBD5E1}
+#pdfbtn svg{width:17px;height:17px}
+.card{cursor:pointer;transition:opacity .2s,transform .3s cubic-bezier(.2,.8,.2,1);transform-box:fill-box;transform-origin:center}
+/* The chosen course lifts out of the plan */
+#plan{--pop:1.08}
+.card.pick{transform:scale(var(--pop));animation:pop .34s ease-out}
+.card.pick>rect:first-child{stroke:var(--ring,#0B2545);stroke-opacity:1;stroke-width:4.5;filter:drop-shadow(0 0 12px var(--glow,rgba(11,37,69,.45)));animation:glow 1.4s ease-in-out 2}
+@keyframes glow{50%{filter:drop-shadow(0 0 26px var(--glow,rgba(11,37,69,.45)))}}
+/* Floating name tag for the chosen course on phones: readable at any zoom without covering the arrows */
+#tag{position:fixed;left:0;top:0;z-index:8;pointer-events:none;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 16px);background:#fff;color:var(--ink);border:2px solid var(--k);border-radius:14px;padding:6px 12px;font-size:15px;font-weight:800;line-height:1.35;box-shadow:0 10px 26px rgba(11,37,69,.22);opacity:0;transform:translateY(6px) scale(.96);transition:opacity .25s,transform .25s}
+#tag.on{opacity:1;transform:none}
+#tag b{color:var(--k);font-size:17px;font-weight:900}
+#tag::after{content:"";position:absolute;left:var(--tx,50%);bottom:-8px;width:12px;height:12px;background:#fff;border:2px solid var(--k);border-top:0;border-left:0;transform:translateX(-50%) rotate(45deg)}
+#tag.below::after{bottom:auto;top:-8px;transform:translateX(-50%) rotate(225deg)}
+#tag.side-l::after,#tag.side-r::after{bottom:auto;top:var(--ty,50%)}
+#tag.side-l::after{left:auto;right:-8px;transform:translateY(-50%) rotate(-45deg)}
+#tag.side-r::after{left:-8px;transform:translateY(-50%) rotate(135deg)}
+@media (min-width:1200px){#tag{display:none}}
+@keyframes pop{0%{transform:scale(1)}60%{transform:scale(calc(var(--pop) * 1.08))}100%{transform:scale(var(--pop))}}
+.edge{transition:opacity .2s}
+.dim{opacity:.12}
+.card:focus{outline:none}
+.card:focus-visible rect{stroke:#0B2545;stroke-opacity:1;stroke-width:4}
+.card.sel rect{stroke-opacity:1;stroke-width:4}
+#sheet{position:fixed;inset:auto 0 0 0;max-width:760px;margin:0 auto 14px;background:#fff;border-radius:24px;padding:18px 20px calc(16px + env(safe-area-inset-bottom,0));box-shadow:0 24px 60px rgba(11,37,69,.25),0 0 0 1px rgba(11,37,69,.06);z-index:9;max-height:58vh;overflow:auto;transform:translateY(calc(100% + 40px));transition:transform .32s cubic-bezier(.2,.9,.25,1);border-top:6px solid var(--c,#0B2545)}
+#sheet.open{transform:none}
+#sheet.zoomed{transition:none;margin:0;max-width:none;transform-origin:0 0}
+#sheet.zoomed:not(.open){display:none}
+#sheet .hd{display:flex;align-items:center;gap:14px;padding-left:44px}
+#sheet .num{font-size:34px;font-weight:900;color:var(--c);line-height:1}
+#sheet h3{margin:0;font-size:19px;font-weight:900;line-height:1.35}
+#sheet .sub{font-size:13px;color:var(--mut);font-weight:700;margin-top:2px}
+#sheet .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px}
+#sheet .l{font-size:13px;font-weight:900;color:var(--mut);margin:0 0 6px;display:flex;align-items:center;gap:6px}
+#sheet .l i{font-style:normal;display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#EEF4FF;font-size:13px}
+.chip{display:flex;align-items:center;gap:10px;width:100%;text-align:right;border:1.5px solid #E2E8F0;background:#fff;border-radius:14px;padding:7px 12px;margin:0 0 7px;font:inherit;font-size:14px;font-weight:700;color:var(--ink);cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
+.chip b{color:var(--k);font-size:17px;font-weight:900;min-width:34px}
+.chip:hover,.chip:focus-visible{border-color:var(--k);background:color-mix(in srgb,var(--k) 7%,#fff);transform:translateX(-3px);outline:none}
+.chip.x{cursor:default;background:#F8FAFC;color:#64748b}.chip.x:hover{transform:none;border-color:#E2E8F0}
+.l.far{margin-top:12px;font-size:12px}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.chip.sm{display:inline-flex;width:auto;margin:0;padding:4px 11px;gap:6px;font-size:13px;border-style:dashed;border-radius:999px}.chip.sm b{font-size:14px;min-width:0}
+.none{font-size:14px;color:#64748b;font-weight:700;padding:6px 2px}
+.x2{position:absolute;left:14px;top:14px;border:0;background:#EEF4FF;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;color:var(--ink)}
+#hint{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0B2545;color:#fff;font-size:14.5px;font-weight:700;padding:10px 20px;border-radius:999px;box-shadow:0 10px 30px rgba(11,37,69,.3);z-index:8;white-space:nowrap;transition:opacity .4s,transform .4s;pointer-events:none}
+#hint.gone{opacity:0;transform:translate(-50%,20px)}
+.card rect{transition:stroke-width .2s,stroke-opacity .2s}
+.card:hover rect{stroke-opacity:1;stroke-width:2.5}
+.edge.on path[marker-end]{stroke-width:3.4;stroke-dasharray:9 6;animation:flow .9s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-15}}
+@media (prefers-reduced-motion:reduce){.edge.on path[marker-end]{animation:none;stroke-dasharray:none}#sheet{transition:none}.card,.card.pick{transition:none;animation:none}}
+@media (max-width:1199px){#sheet{max-height:46vh}}
+@media (max-width:640px){#sheet{margin:0;border-radius:24px 24px 0 0}#sheet .cols{grid-template-columns:1fr}#hint{font-size:13px}}
+@page{size:420mm 297mm;margin:0}
+@media print{
+ html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ #sheet,#hint,#fitbtn,#pdfbtn,#tag{display:none!important}
+ .scroll{overflow:visible;padding:0}
+ #plan [filter]{filter:none}
+ .card,.edge{opacity:1!important}
+ #plan{width:420mm;height:297mm;min-width:0;max-width:none}
+}
+</style>
+</head>
+<body>
+<section id="dview"><div class="scroll">{{SVG}}</div></section>
+<div id="sheet" role="dialog" aria-live="polite"></div>
+<button id="fitbtn" type="button"></button>
+<button id="pdfbtn" type="button" onclick="window.print()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>تحميل PDF</button>
+<div id="hint">اضغط على أي مقرر لترى ما يتطلبه وما يفتحه</div>
+<script>
+const D={{DATA}};
+const C=D.C,EL=D.EL,E=D.E,H=D.H;
+let sel=null;
+const name=c=>C[c]?C[c][1]:EL[c]?EL[c][0]:'';
+const up=(c,s=new Set())=>{E.forEach(([a,b])=>{if(b==c&&!s.has(a)){s.add(a);up(a,s)}});return s};
+const dn=(c,s=new Set())=>{E.forEach(([a,b])=>{if(a==c&&!s.has(b)){s.add(b);dn(b,s)}});return s};
+const hc=c=>H[c]||'#64748B';
+const units=n=>`${n} ${n>2?'وحدات':'وحدة'}`;
+const where=c=>C[c]?`${D.LV[C[c][0]][2]}${C[c][3]?' · '+C[c][3]:''} · ${units(C[c][2])}`:EL[c]?`${D.EL_LABEL||'اختياري'} · ${units(EL[c][1])}`:'';
+const sh=document.getElementById('sheet'),hint=document.getElementById('hint');
+let hov=null;
+function paint(c){
+ if(c==null){document.querySelectorAll('#plan .card,#plan .edge').forEach(e=>e.classList.remove('dim','sel','on'));return}
+ const A=up(c),B=dn(c),S=new Set([...A,...B,c]);
+ document.querySelectorAll('#plan .card').forEach(g=>{const k=+g.dataset.c;g.classList.toggle('dim',!S.has(k));g.classList.toggle('sel',k==c)});
+ document.querySelectorAll('#plan .edge').forEach(g=>{const s=+g.dataset.s,t=+g.dataset.t;const on=((t==c||A.has(t))&&A.has(s))||((s==c||B.has(s))&&B.has(t));g.classList.toggle('dim',!on);g.classList.toggle('on',on)});
+}
+function render(){
+ paint(sel??hov);
+ plan.querySelectorAll('.card.pick').forEach(g=>g.classList.remove('pick'));
+ if(sel!=null){const g=plan.querySelector(`.card[data-c="${sel}"]`);if(g){const f=document.activeElement===g;g.parentNode.appendChild(g);if(f)g.focus({preventScroll:true});placePop(g);g.classList.add('pick')}}
+ if(sel==null){sh.classList.remove('open');return}
+ hint.classList.add('gone');
+ const pre=E.filter(e=>e[1]==sel).map(e=>e[0]),nx=E.filter(e=>e[0]==sel).map(e=>e[1]);
+ const far=[...up(sel)].filter(c=>!pre.includes(c)).sort((a,b)=>b-a);
+ const chip=c=>`<button class="chip" style="--k:${hc(c)}" data-go="${c}"><b>${c}</b>${name(c)}</button>`;
+ const col=hc(sel)==='#64748B'&&C[sel]?D.LV[C[sel][0]][0]:hc(sel);
+ sh.style.setProperty('--c',col);
+ const pc=plan.querySelector(`.card[data-c="${sel}"]`);if(pc){pc.style.setProperty('--glow',col+'cc');pc.style.setProperty('--ring',col)}
+ tag.style.setProperty('--k',col);tag.innerHTML=`<b>${sel}</b>${name(sel)}`;
+ sh.innerHTML=`<button class="x2" aria-label="إغلاق">✕</button>
+ <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}</div></div></div>
+ <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${pre.map(chip).join('')}${far.length?'<div class="l far">وقبلها في السلسلة</div><div class="pills">'+far.map(c=>chip(c).replace('class="chip"','class="chip sm"')).join('')+'</div>':''}${pre.length?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
+ <div><div class="l"><i>→</i>يفتح بعده</div>${nx.map(chip).join('')||'<div class="none">لا يفتح مقررات أخرى</div>'}</div></div>`;
+ sh.classList.add('open');
+}
+// On phones the plan does its own pinch-zoom (Safari won't let a page zoom itself back out),
+// so choosing a course can zoom to its chain above the sheet; closing restores the previous view.
+const small=matchMedia('(max-width:1199px)'),box=document.querySelector('.scroll');
+let autoFit=null;
+const view=()=>({fit:document.documentElement.classList.contains('fit'),w:plan.style.width,sl:box.scrollLeft,sy:scrollY});
+function setW(w){plan.style.width=w||'';plan.style.minWidth=w?'0':'';plan.style.maxWidth=w?'none':''}
+// The chosen card grows by --pop around its centre, shifted inward near the plan's edges so it never leaves the plan.
+const popOf=()=>parseFloat(getComputedStyle(plan).getPropertyValue('--pop'))||1;
+function popBox(b,f){
+ const W=plan.viewBox.baseVal.width,H=plan.viewBox.baseVal.height,w=b.width*f,h=b.height*f;
+ const x=Math.min(Math.max(b.x-(w-b.width)/2,8),W-8-w),y=Math.min(Math.max(b.y-(h-b.height)/2,8),H-8-h);
+ return {x,y,width:w,height:h,ox:(x-b.x)/(b.width-w||1),oy:(y-b.y)/(b.height-h||1)};
+}
+function placePop(g){const o=popBox(g.getBBox(),popOf());g.style.transformOrigin=`${o.ox*100}% ${o.oy*100}%`}
+// Zoom so the selected course's whole chain fills the space above the sheet.
+function zoomToChain(){
+ if(autoFit==null)autoFit=view();
+ const S=new Set([...up(sel),...dn(sel),sel]),P=24;
+ const full=plan.viewBox.baseVal.width,fullH=plan.viewBox.baseVal.height,cw=box.clientWidth,ah=innerHeight-sh.offsetHeight;
+ const g=plan.querySelector(`.card[data-c="${sel}"]`);
+ // Frame the chain with the chosen card at its enlarged size, or it can spill off screen.
+ const frame=pop=>{
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  plan.querySelectorAll('.card').forEach(e=>{const c=+e.dataset.c;if(!S.has(c))return;const b=c==sel?popBox(e.getBBox(),pop):e.getBBox();x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.width);y1=Math.max(y1,b.y+b.height)});
+  x0=Math.max(0,x0-P);y0=Math.max(0,y0-P);x1=Math.min(full,x1+P);y1=Math.min(fullH,y1+P);
+  return {x0,y0,x1,y1,W:Math.max(full*Math.min(cw/(x1-x0),ah/(y1-y0),1),cw)};
+ };
+ let f=frame(popOf());
+ const {x0,y0,x1,y1,W}=f,k=W/full;
+ if(g)placePop(g);
+ setFit(false,false);setW(W+'px');
+ // Room to scroll a low chain up above the sheet, even when the zoomed plan is shorter than the screen.
+ box.style.paddingBottom=innerHeight+'px';
+ // RTL: scrollLeft is 0 at the right edge and negative leftwards.
+ box.scrollLeft=Math.max(cw-W,Math.min(0,-(W-(x0+x1)/2*k-cw/2)));
+ // Centre the chain in the space above the sheet; near the top of the page that needs a little room above the plan.
+ box.style.paddingTop='0px';
+ const want=plan.getBoundingClientRect().top+scrollY+(y0+y1)/2*k-ah/2;
+ if(want<0)box.style.paddingTop=-want+'px';
+ window.scrollTo(0,Math.max(0,want));
+ // A wide, short chain leaves room below it: let the sheet grow up to the chain.
+ sh.style.maxHeight=Math.max(innerHeight*.46,innerHeight-(plan.getBoundingClientRect().top+y1*k)-8)+'px';
+}
+const tag=document.createElement('div');tag.id='tag';tag.setAttribute('aria-hidden','true');document.body.appendChild(tag);
+// Put the tag above or below the chosen card, on whichever side covers fewer of its chain, and keep it clear of the sheet.
+function placeTag(){
+ const g=sel!=null&&small.matches&&plan.querySelector(`.card[data-c="${sel}"]`);
+ if(!g){tag.classList.remove('on');return}
+ tag.style.left='0px';// measure at full width, not squeezed against the screen edge
+ const r=g.querySelector('rect').getBoundingClientRect(),tw=tag.offsetWidth,th=tag.offsetHeight,limit=innerHeight-sh.offsetHeight-6;
+ const S=new Set([...up(sel),...dn(sel)]),chain=[...plan.querySelectorAll('.card')].filter(e=>S.has(+e.dataset.c)).map(e=>e.querySelector('rect').getBoundingClientRect());
+ // Candidates above, below, left and right of the card; keep the one hiding the least of its chain (by area).
+ const vw=innerWidth,cx=r.left+r.width/2,cy=r.top+r.height/2,G=12;
+ const clampX=x=>Math.min(Math.max(x,8),vw-8-tw),clampY=y=>Math.min(Math.max(y,6),limit-th);
+ // Above/below may also slide sideways (the tail still points at the card), which often clears a neighbour.
+ const xs=[cx-tw/2,r.left-8,r.right+8-tw].map(clampX);
+ const spots=[
+  ...xs.map(x=>({k:'',x,y:r.top-th-G})),
+  ...xs.map(x=>({k:'below',x,y:r.bottom+G})),
+  {k:'side-l',x:r.left-tw-G,y:clampY(cy-th/2)},
+  {k:'side-r',x:r.right+G,y:clampY(cy-th/2)}
+ ].filter(p=>p.x>=6&&p.x+tw<=vw-6&&p.y>=6&&p.y+th<=limit);
+ const cover=p=>chain.reduce((n,o)=>n+Math.max(0,Math.min(o.right,p.x+tw)-Math.max(o.left,p.x))*Math.max(0,Math.min(o.bottom,p.y+th)-Math.max(o.top,p.y)),0);
+ const best=spots.map((p,i)=>({...p,c:cover(p)+i}))/* ties keep the listed order: centred above first */.sort((a,b)=>a.c-b.c)[0]||{k:'',x:clampX(cx-tw/2),y:Math.max(6,r.top-th-G)};
+ tag.style.transform='';tag.style.left=best.x+'px';tag.style.top=best.y+'px';
+ tag.classList.remove('below','side-l','side-r');if(best.k)tag.classList.add(best.k);
+ tag.style.setProperty('--tx',Math.min(Math.max(cx-best.x,16),tw-16)+'px');
+ tag.style.setProperty('--ty',Math.min(Math.max(cy-best.y,14),th-14)+'px');
+ tag.classList.add('on');
+}
+let tagRaf=0;const follow=()=>{cancelAnimationFrame(tagRaf);tagRaf=requestAnimationFrame(placeTag)};
+addEventListener('scroll',follow,{passive:true});addEventListener('resize',follow);box.addEventListener('scroll',follow,{passive:true});
+function pick(c){
+ sel=(c==null||c==sel)?null:c;hov=null;
+ if(sel==null){sh.style.removeProperty('max-height');box.style.removeProperty('padding-bottom');box.style.removeProperty('padding-top')}
+ if(small.matches&&sel==null&&autoFit!=null){const v=autoFit;autoFit=null;setFit(v.fit,false);setW(v.w);box.scrollLeft=v.sl;window.scrollTo(0,v.sy)}
+ render();
+ if(small.matches&&sel!=null)zoomToChain();
+ placeSheet();follow()}
+// Pinch-zoom scales fixed elements too; keep the sheet at its natural size inside the visible area.
+const vv=window.visualViewport;
+function placeSheet(){
+ if(!vv||vv.scale<1.05||!sh.classList.contains('open')){if(sh.classList.contains('zoomed')){sh.classList.remove('zoomed');['inset','bottom','left','top','width','max-height','transform'].forEach(k=>sh.style.removeProperty(k))}return}
+ const k=1/vv.scale,W=Math.min(760,vv.width*vv.scale);
+ sh.classList.add('zoomed');
+ Object.assign(sh.style,{inset:'auto',bottom:'auto',left:(vv.offsetLeft+(vv.width-W*k)/2)+'px',top:(vv.offsetTop+vv.height)+'px',width:W+'px',maxHeight:(vv.height*vv.scale*.6)+'px',transform:`scale(${k}) translateY(-100%)`});
+}
+vv&&vv.addEventListener('resize',placeSheet);vv&&vv.addEventListener('scroll',placeSheet);
+
+const plan=document.getElementById('plan');
+plan.addEventListener('keydown',e=>{const g=e.target.closest('.card');if(!g)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();pick(+g.dataset.c)}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')pick(null)});
+plan.addEventListener('click',e=>{const g=e.target.closest('.card');pick(g?+g.dataset.c:null)});
+const fine=matchMedia('(hover:hover) and (pointer:fine)');
+plan.addEventListener('mouseover',e=>{if(!fine.matches||sel!=null)return;const g=e.target.closest('.card');const c=g?+g.dataset.c:null;if(c!==hov){hov=c;paint(c)}});
+plan.addEventListener('mouseleave',()=>{if(sel==null&&hov!=null){hov=null;paint(null)}});
+sh.addEventListener('click',e=>{if(e.target.closest('.x2'))return pick(null);const g=e.target.closest('[data-go]');if(!g)return;const c=+g.dataset.go;sel=null;pick(c);if(autoFit==null)plan.querySelector(`.card[data-c="${c}"]`)?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'})});
+const fitbtn=document.getElementById('fitbtn');
+const ICON_OUT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+const ICON_IN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5M11 8v6M8 11h6"/></svg>';
+function setFit(on,save=true){setW('');document.documentElement.classList.toggle('fit',on);fitbtn.innerHTML=on?ICON_IN+'تكبير':ICON_OUT+'عرض كامل';if(save)try{localStorage.setItem('planFit',on?'1':'0')}catch(e){}}
+let fitPref=null;try{fitPref=localStorage.getItem('planFit')}catch(e){}
+setFit(fitPref==='1');
+fitbtn.addEventListener('click',()=>{autoFit=null;setFit(!document.documentElement.classList.contains('fit'))});
+let pz=null;
+const span=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
+box.addEventListener('touchstart',e=>{
+ if(e.touches.length!==2)return;
+ const t=e.touches,r=plan.getBoundingClientRect();
+ pz={d:span(t),w:r.width,mx:(t[0].clientX+t[1].clientX)/2,my:(t[0].clientY+t[1].clientY)/2,sl:box.scrollLeft,sy:scrollY,top:r.top+scrollY,right:box.getBoundingClientRect().right,min:box.clientWidth};
+},{passive:true});
+box.addEventListener('touchmove',e=>{
+ if(!pz||e.touches.length!==2)return;
+ e.preventDefault();
+ const k=Math.min(Math.max(pz.w*span(e.touches)/pz.d,pz.min),3600)/pz.w;
+ if(document.documentElement.classList.contains('fit')){document.documentElement.classList.remove('fit');fitbtn.innerHTML=ICON_OUT+'عرض كامل'}
+ setW(pz.w*k+'px');
+ // Keep the point between the fingers still. RTL: scrollLeft is 0 at the right edge and negative leftwards.
+ const fx=pz.right-pz.mx;
+ box.scrollLeft=-((fx-pz.sl)*k-fx);
+ window.scrollTo(0,pz.top+(pz.sy+pz.my-pz.top)*k-pz.my);
+},{passive:false});
+box.addEventListener('touchend',e=>{if(pz&&e.touches.length<2){pz=null;autoFit=null}});
+document.addEventListener('gesturestart',e=>{if(e.target.closest&&e.target.closest('.scroll'))e.preventDefault()});
+setTimeout(()=>hint.classList.add('gone'),7000);
+window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
+</script>
+</body>
+</html>

@@ -68,7 +68,7 @@ export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "i
 }
 
 /** تصنيف كل مقرر في صحيفة تكنولوجيا التعليم كما تكتبه الصحيفة (ثقافة عامة، تخصصية، مهنية، تدريب ميداني)، وترتيب ظهور التصنيفات فيها. */
-const REFERENCE_CATEGORIES = (() => {
+export const REFERENCE_CATEGORIES = (() => {
   const byCode = new Map<string, string>(), order: string[] = [];
   for (const reference of [...TECHNOLOGY_EDUCATION_CURRICULA].sort((a, b) => Number(b.id === "new") - Number(a.id === "new")))
     for (const group of reference.groups) {

@@ -112,6 +112,7 @@ export const AR = {
   appointment: { one: "موعد", two: "موعدان", few: "مواعيد", many: "موعداً" },
   lecture:     { one: "محاضرة", two: "محاضرتان", few: "محاضرات", many: "محاضرة" },
   course:      { one: "مقرر", two: "مقرران", few: "مقررات", many: "مقرراً" },
+  sheet:       { one: "صحيفة", two: "صحيفتان", few: "صحائف", many: "صحيفة" },
   instructor:  { one: "أستاذ", two: "أستاذان", few: "أساتذة", many: "أستاذاً" },
   colleague:   { one: "زميل", two: "زميلان", few: "زملاء", many: "زميلاً" },
   room:        { one: "قاعة", two: "قاعتان", few: "قاعات", many: "قاعة" },

@@ -805,6 +805,44 @@ export interface CurriculumRuleSet {
   approvedBy?: string;
 }
 
+/** ── الصحيفة العامة المنشورة ───────────────────────────────────────────────
+ * لقطةٌ نهائية من الصحيفة المعتمدة يرسمها الخادم صفحةً عامةً بلا حساب (/plans/…). تبقى بعد مسح الخطة
+ * لأنها نسخةٌ مستقلة لا قراءةٌ حيّة؛ وكلُّ إعادة نشرٍ تستبدلها.
+ */
+export interface SheetCourse { code: string; name: string; credit: number; level: number; category?: string }
+export interface SheetElective { code: string; name: string; credit: number }
+export interface SheetGroup { title: string; pick: number; courses: SheetElective[] }
+export interface SheetModel {
+  /** «قسم تكنولوجيا التعليم». */
+  title: string;
+  /** اسمُ الصحيفة كما يُكتب في الزاوية: «2026/2027». */
+  planLabel: string;
+  courses: SheetCourse[];
+  groups: SheetGroup[];
+  /** [مقرر سابق، المقرر الذي يفتحه] برمزَي المقررين الكاملين. */
+  edges: Array<[string, string]>;
+  /** متطلباتٌ من أقسامٍ أخرى: سطرٌ لكل ملاحظة، تُعرض أسفل الخريطة لا بطاقةً ولا سهماً. */
+  notes: string[];
+  /** الرابط الرسمي الذي يحمله رمز QR. */
+  url: string;
+  /** «levels» (الافتراضي)، أو «wide» لقسمٍ مساندٍ بلا تخصص: بطاقاتٌ بالعرض بحسب التصنيف. */
+  layout?: "levels" | "wide";
+  pills?: Array<{ n: number; label: string }>;
+}
+export interface PublishedPlanSheet {
+  /** = planId. */
+  id: string;
+  planId: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  sectionName: string;
+  planName: string;
+  model: SheetModel;
+  ruleVersion: number;
+  publishedAt: string;
+  publishedBy: string;
+}
+
 /**
  * ── ملفُّ الطالب: ما يحتاجه الباب ليبني له جدولاً ────────────────────────────
  *
