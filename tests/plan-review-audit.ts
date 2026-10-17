@@ -120,8 +120,8 @@ const ctx = (plan: number[]) => ({
   const approveUi = read("src/components/PlanReview.tsx");
   check(approveUi.includes("setConfirmApprove(true)") && approveUi.includes("تأكيد اعتماد الصحيفة") && approveUi.includes("تختفي أيقونةُ «مراجعة الصحيفة»") && !/PrimaryButton[^>]*onClick=\{\(\) => act\("\/api\/plan-review\/approve"/.test(approveUi), "R6 «اعتماد الصحيفة» يمرّ بتأكيدٍ يقول إن الأيقونة تختفي وتعود إن عُدّلت");
   const reviewUi = read("src/components/PlanReview.tsx");
-  check(reviewUi.includes("pr-level-chip") && reviewUi.includes("pr-level-head") && reviewUi.includes("aria-expanded={expandedLevels.includes(level)}"),
-    "R6 صحيفة المراجعة تعرض توزيعًا مصورًا وتفتح مقررات المستوى عند الحاجة");
+  check(reviewUi.includes("pr-level-chip") && reviewUi.includes("pr-level-head") && !reviewUi.includes("expandedLevels") && reviewUi.includes("PlanMapLines") && reviewUi.includes("data-cid"),
+    "R6 صحيفة المراجعة تعرض توزيعًا مصورًا ومستوياتها مفتوحة دائمًا بخيوط المسبقات، وعند الضغط تُضاء السلسلة");
 }
 
 /* ── R4: الاستيراد ───────────────────────────────────────────────────────── */
