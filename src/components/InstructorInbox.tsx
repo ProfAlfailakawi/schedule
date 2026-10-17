@@ -1002,9 +1002,30 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   const decide = async (row: InboxRequest, index: number, state: "fixed" | "rejected", extra: any = {}): Promise<boolean> => {
     if (frozen) return false;
     const key = `${row.id}:${index}`;
+    /* ما ثُبّت قد كُتب في الجدول: لا يُعاد (كان يُنشئ صفّاً مكرّراً أو يناقض الجدول). */
+    if (row.items[index]?.decision?.state === "fixed") return true;
+    /* الصفُّ الواحد له وقتٌ واحد: بندٌ بأوقاتٍ مختلفة لا يُثبَّت من هنا. */
+    const mixedTimes = (i: number) => state === "fixed" && row.items[i]?.action !== "delete"
+      && new Set((row.items[i]?.slots || []).map(slot => `${slot.start}-${slot.end}`)).size > 1;
+    if (mixedTimes(index)) {
+      setRowErrors(prev => ({ ...prev, [key]: "أوقات هذا البند مختلفة بين الأيام، والموعد الواحد له وقت واحد. ثبّته من الجدول الدراسي بصفٍّ لكل وقت." }));
+      return false;
+    }
     /* ما يعتمد عليه هذا البند يُثبَّت قبله، بالمسار نفسه. فإن رُفض الشقيقُ وقف
        هذا عنده، وقيل السببُ على صفّ الشقيق. */
     if (state === "fixed" && Array.isArray(extra?.after) && extra.after.length) {
+      /* فحصٌ قبل أي كتابة: شقيقٌ لا يمكن تثبيتُه أصلاً (صفّه غاب، أو أوقاته مختلفة)
+         كان يُكتشف بعد نقل غيره، فيبقى الجدولُ نصفَ منقول. */
+      const blocked = (extra.after as number[]).find(sibling => {
+        const it = row.items[sibling];
+        if (!it || it.decision?.state === "fixed") return false;
+        if (mixedTimes(sibling)) return true;
+        return it.action === "change" && !currentRows.has(Number(it.rowId));
+      });
+      if (blocked != null) {
+        setRowErrors(prev => ({ ...prev, [key]: "طلبُه الآخر الذي يُفرغ هذا الوقت لا يمكن تثبيته الآن — حدّث الصفحة وانظر صفّه. لم يُكتب شيء." }));
+        return false;
+      }
       for (const sibling of extra.after as number[]) {
         const ok = await decide(row, sibling, "fixed", { current: currentRows.get(Number(row.items[sibling]?.rowId)) });
         if (!ok) {
@@ -1048,7 +1069,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       if (state === "fixed") {
         const item = row.items[index];
         if (item.action === "delete" && item.rowId != null) {
-          await request(`/api/schedules/${item.rowId}`, { method: "DELETE" });
+          /* حذفٌ وقع ثم أخفق تسجيلُ قراره: الإعادةُ تسجّل القرار ولا تتعثّر بصفٍّ غائب. */
+          if (currentRows.has(Number(item.rowId))) await request(`/api/schedules/${item.rowId}`, { method: "DELETE" });
           scheduleId = Number(item.rowId);
         } else if (item.action === "change" && item.rowId != null) {
           const current = currentRows.get(Number(item.rowId));
@@ -1132,7 +1154,14 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     const item = row.items[index];
     const slots = item.slots || [];
     const days = new Set(slots.map(slot => slot.day));
+    const expectedCourse = Number(item.after?.courseId || 0);
+    if (draft.courseId && expectedCourse && Number(draft.courseId) !== expectedCourse) {
+      setQuickError("هذا البند لمقرّر الأستاذ المطلوب؛ لإضافة مقرّرٍ آخر استعمل الجدول الدراسي.");
+      return;
+    }
+    if (item.decision?.state === "fixed") { setQuick(null); return; }
     setQuickSaving(true); setQuickError(null);
+    let createdId = 0;
     try {
       const saved = await request("/api/schedules", {
         method: "POST",
@@ -1151,14 +1180,35 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           buildingId: draft.buildingId, roomId: draft.roomId, locationStatus: draft.locationStatus,
         }),
       });
-      await request(`/api/instructor-requests/${row.id}/decide`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemIndex: index, state: "fixed", scheduleId: Number(saved?.id || 0) }),
-      });
+      createdId = Number(saved?.id || 0);
+      /* تسجيلُ القرار بلا `request()`: نحتاج أن نفرّق رفضاً صريحاً من الخادم
+         (فيُسحب الصفّ) عن ردٍّ ضائع أو خطأ خادم قد يكون القرارُ فيه قد حُفظ
+         (فلا يُحذف صفٌّ صار القرارُ يشير إليه). */
+      let response: Response | null = null;
+      let body: any = {};
+      try {
+        response = await fetch(`/api/instructor-requests/${row.id}/decide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemIndex: index, state: "fixed", scheduleId: createdId }),
+        });
+        body = await response.json().catch(() => ({}));
+      } catch { response = null; }
+      const refused = Boolean(response && response.status >= 400 && response.status < 500 && body?.code !== "already-fixed");
+      if (refused) {
+        /* حُفظ الصفّ ورفض الخادمُ القرارَ صراحةً: لا يبقى صفٌّ يتيمٌ بلا طلب،
+           ولا تُنشئ الإعادةُ صفّاً ثانياً. */
+        await request(`/api/schedules/${createdId}`, { method: "DELETE" }).catch(() => undefined);
+        createdId = 0;
+        throw new Error(body?.error || "تعذّر تسجيل القرار، فسُحب الموعد الجديد.");
+      }
+      createdId = 0;
       setQuick(null);
       await load();
-    } catch (e: any) { setQuickError(e.message); }
+      if (!response || !response.ok) setError("حُفظ الموعد، ولم يتأكد تسجيلُ القرار. راجع حالة البند بعد التحديث.");
+    } catch (e: any) {
+      setQuickError(e.message);
+    }
     finally { setQuickSaving(false); }
   };
 
