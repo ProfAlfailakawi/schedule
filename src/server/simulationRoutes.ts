@@ -180,10 +180,16 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     try {
       const run = await Repository.getRegistrationRun(termId);
       const power = deps.isPowerUser(req);
-      const allowed = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
+      /* مفتاحُ «الكلية / القسم» في مركز القراءات: يضيّق النطاقَ ولا يوسّعه أبداً (يبقى شرطُ صلاحيات القارئ). */
+      const narrowMode = req.query.analysisScope === "department" ? "department" : req.query.analysisScope === "college" ? "college" : "";
+      const narrowCollege = Number(req.query.collegeId) || 0, narrowSection = Number(req.query.sectionId) || 0;
+      const narrow = narrowMode && narrowCollege ? { mode: narrowMode, collegeId: narrowCollege, sectionId: narrowMode === "department" ? narrowSection : 0 } : null;
+      const permitted = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
+      const allowed = (collegeId: number, sectionId: number) => permitted(collegeId, sectionId)
+        && (!narrow || (collegeId === narrow.collegeId && (narrow.mode === "college" || sectionId === narrow.sectionId)));
       const loaded = await inputMemo.get(ctxKey(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`), () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
       /* مفتاحُ الذاكرة يشمل صاحبَ الطلب: نطاقُه لا يُستنتج من شعب الفصل وحدها، فلا يشارك قارئٌ ذاكرةَ آخر. */
-      const scopeKey = power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`;
+      const scopeKey = `${power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`}:${narrow ? `${narrow.mode}:${narrow.collegeId}:${narrow.sectionId}` : "-"}`;
       const reading = await predictiveMemo.get(ctxKey(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`), () => predictiveReadingFor({ term, run, loaded, allowed }));
       res.json({ ready: true, scoped: !power, reading });
     } catch (error) {

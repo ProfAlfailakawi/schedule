@@ -22,7 +22,7 @@ const nf = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
 export function ConfidenceMeter({ confidence, compact = false }: { confidence: Confidence; compact?: boolean }) {
   const filled = confidence.level === "high" ? 3 : confidence.level === "medium" ? 2 : confidence.level === "low" ? 1 : 0;
   const label = CONFIDENCE_LABEL[confidence.level];
-  const title = `الثقة ${label}${confidence.level === "insufficient" ? "" : ` (${nf(confidence.score)}٪)`} · ${confidence.termsUsed ? countOf(confidence.termsUsed, AR.term) + " سابقة" : "بلا فصولٍ سابقة"}${confidence.caveat ? ` · ${confidence.caveat}` : ""}`;
+  const title = `الثقة ${label}${confidence.level === "insufficient" ? "" : ` (${nf(confidence.score)}٪)`} · ${confidence.termsUsed ? countOf(confidence.termsUsed, AR.term) + " سابقة" : "بلا فصولٍ سابقة"}${confidence.backtestError != null ? ` · خطأ الاختبار الرجعي ${nf(Math.round(confidence.backtestError * 100))}٪` : ""}${confidence.caveat ? ` · ${confidence.caveat}` : ""}`;
   return (
     <span className="pi-conf" data-level={confidence.level} title={title} role="img" aria-label={title}>
       <span className="pi-conf-bars" aria-hidden="true"><i data-on={filled >= 1} /><i data-on={filled >= 2} /><i data-on={filled >= 3} /></span>
@@ -51,7 +51,10 @@ const ICON_OF: Record<string, React.ComponentType<any>> = {
   "open-sections": Layers, "open-prereq": Link2, "review-timeslot": CalendarClock, "offer-in-season": GraduationCap, "review-surplus": TrendingDown,
 };
 
-export default function PredictiveInsightPanel({ canSchedule, onNavigate, onChanged }: { canSchedule: boolean; onNavigate?: (view: string) => void; onChanged: () => void }) {
+/** نطاقُ القراءة حين تُعرض اللوحة في مركز القراءات: يتبع مفتاحَ «الكلية / القسم» هناك. غائبٌ = كل ما يحقّ للقارئ (الرادار). */
+export interface PredictiveScope { mode: "college" | "department"; collegeId: number; sectionId: number }
+
+export default function PredictiveInsightPanel({ canSchedule, onNavigate, onChanged, scope }: { canSchedule: boolean; onNavigate?: (view: string) => void; onChanged: () => void; scope?: PredictiveScope }) {
   const [reading, setReading] = useState<PredictiveClientReading | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "none" | "error">("loading");
   const [error, setError] = useState("");
@@ -60,11 +63,12 @@ export default function PredictiveInsightPanel({ canSchedule, onNavigate, onChan
   useEffect(() => {
     let live = true;
     setState("loading");
-    request("/api/simulation/predictive")
+    const query = scope?.collegeId ? `?analysisScope=${scope.mode}&collegeId=${scope.collegeId}${scope.mode === "department" ? `&sectionId=${scope.sectionId}` : ""}` : "";
+    request(`/api/simulation/predictive${query}`)
       .then(body => { if (!live) return; if (body.ready) { setReading(body.reading); setState("ready"); } else setState("none"); })
       .catch((e: any) => { if (live) { setError(e.message || "تعذّر حساب التنبّؤات."); setState("error"); } });
     return () => { live = false; };
-  }, []);
+  }, [scope?.mode, scope?.collegeId, scope?.sectionId]);
 
   const byDemand = useMemo(() => new Map((reading?.demand || []).map(row => [row.courseId, row] as const)), [reading]);
   const byPrereq = useMemo(() => new Map((reading?.prereq || []).map(row => [row.courseId, row] as const)), [reading]);

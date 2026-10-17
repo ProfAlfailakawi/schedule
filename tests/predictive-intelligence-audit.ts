@@ -55,7 +55,7 @@ check(isActionable(rich) && !isActionable(thin), "الإجراء بضغطةٍ ل
 check(CONFIDENCE_LABEL.insufficient === "لا يكفي التاريخ", "وللعبارة العربية صيغتها");
 
 /* ═════ ٢) الطلب ═════ */
-const courses = [course(1, "أصول التربية"), course(2, "إدارة صفية"), course(3, "اساسيات القياس"), course(4, "بحث تربوي"), course(5, "مقرر وحيد"), course(6, "مقرر بلا تاريخ")];
+const courses = [course(1, "أصول التربية"), course(2, "إدارة صفية"), course(3, "اساسيات القياس"), course(4, "بحث تربوي"), course(5, "مقرر وحيد"), course(6, "مقرر بلا تاريخ"), course(7, "مقرر مستقر")];
 const history: any[] = [
   /* مقرر ١: شعبتان في كل «ثاني» (فصلا ٢ و٤)، وثلاث في «الأول». */
   ...sections(1, 1, 3), ...sections(2, 1, 2), ...sections(3, 1, 3), ...sections(4, 1, 2), ...sections(5, 1, 3),
@@ -65,6 +65,8 @@ const history: any[] = [
   ...sections(4, 5, 2),
   /* ٣ و٤ موجودان ليُرتَّبا. */
   ...sections(2, 3, 1), ...sections(4, 3, 1), ...sections(2, 4, 1), ...sections(4, 4, 1),
+  /* مقرر ٧: شعبتان ثابتتان في كل فصل — تاريخٌ كافٍ يصمد أمام الاختبار الرجعي. */
+  ...[1, 2, 3, 4, 5].flatMap(t => sections(t, 7, 2)),
 ];
 const planned = [...sections(6, 1, 1), ...sections(6, 2, 4), ...sections(6, 3, 1), ...sections(6, 4, 1)];
 const base: PredictiveInput = {
@@ -83,7 +85,8 @@ check(byId(5).confidence.termsUsed === 1 && byId(5).confidence.level === "low", 
 check(byId(5).action === null || byId(5).action.oneClick === false, "ولا إجراءَ بضغطةٍ بتاريخٍ فصلٍ واحد");
 check(byId(6).confidence.level === "insufficient" && byId(6).expected === 3, "مقرر بلا تاريخٍ برغباتٍ حيّةٍ فقط: ٩٠÷٣٠ = ٣ لكن «لا يكفي التاريخ»");
 check(byId(6).action !== null && byId(6).action.oneClick === false && Boolean(byId(6).action.disabledReason), "وإجراؤه معطَّلٌ بسببٍ مكتوب — لا يُقدَّم تخمينٌ كأنه حقيقة");
-check(byId(1).action?.oneClick === true && byId(1).action.kind === "open-sections", "ومقررٌ بتاريخٍ كافٍ يُعطى إجراءً بضغطة");
+check(byId(7).action?.oneClick === true && byId(7).action.kind === "open-sections", "ومقررٌ بتاريخٍ كافٍ ومستقرٍّ رجعياً يُعطى إجراءً بضغطة");
+check(byId(1).confidence.backtestError! > 0 && byId(1).action?.oneClick !== true, "ومقررٌ يخطئ فيه الاختبارُ الرجعي (٣،٢،٣،٢) لا إجراءَ بضغطةٍ له");
 
 const names = demand.map(item => item.name);
 const sorted = [...names].sort(compareArabic);
