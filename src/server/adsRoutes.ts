@@ -408,7 +408,9 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const campaign = (await campaigns()).find(c => c.id === String(req.params.id));
     if (!campaign) { fail(res, 404, "الحملة غير موجودة."); return; }
     if (campaign.creativeIds.length >= MAX_ROTATE_CREATIVES) { fail(res, 409, `الحد الأقصى ${MAX_ROTATE_CREATIVES} صورتين للمقارنة.`); return; }
-    const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    /* جسمُ الطلب قد يكون أي نوعٍ يرسله العميل؛ لا يُقبل إلا بايتات حقيقية، وتُنسخ قبل أن تُقرأ. */
+    const raw: unknown = req.body;
+    const buf = raw instanceof Uint8Array ? Buffer.from(raw) : Buffer.alloc(0);
     const problem = creativeProblem(campaign.slot, buf.length, readImageInfo(buf));
     if (problem) { fail(res, 400, problem); return; }
     const info = readImageInfo(buf)!;
