@@ -16,7 +16,7 @@ import { randomBytes, randomUUID } from "crypto";
 import express from "express";
 import type { Express, NextFunction, Request, Response } from "express";
 import { Repository } from "../db/repository";
-import type { AdCampaign, AdCreative, AdStatsDay, AudienceDay, StudentNeed } from "../types";
+import type { AdCampaign, AdCreative, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
 import { PUBLIC_LINK_PAGE_PREFIXES, isDemoLinkToken } from "../utils/demoLinkToken";
 import {
   AD_CATEGORIES, AD_MAX_BYTES, AD_RULES, AD_SLOTS, MAX_ROTATE_CREATIVES, campaignProblems, cleanCoupon, cleanLink,
@@ -59,13 +59,24 @@ export async function flushAdsCounters(): Promise<void> {
     for (const [day, delta] of entries) {
       try { await Repository.addAudienceDay(day, delta); }
       catch (error) {
+        /* نبضاتٌ جديدة قد وصلت لليوم نفسه أثناء الكتابة: تُدمج الدفعة الفاشلة فيها ولا تُسقَط. */
         const back = pendingAudience.get(day);
-        if (!back) pendingAudience.set(day, delta);
+        pendingAudience.set(day, back ? mergeAudience(back, delta) : delta);
         console.error("[ads] audience flush failed:", error);
       }
     }
   }
 }
+
+const addMaps = (a: Record<string, number>, b: Record<string, number>): Record<string, number> => {
+  const out = { ...a };
+  for (const [key, value] of Object.entries(b)) out[key] = (out[key] || 0) + value;
+  return out;
+};
+export const mergeAudience = (a: Omit<AudienceDay, "id" | "day">, b: Omit<AudienceDay, "id" | "day">): Omit<AudienceDay, "id" | "day"> => ({
+  visits: addMaps(a.visits, b.visits), hours: addMaps(a.hours, b.hours),
+  returning: a.returning + b.returning, fresh: a.fresh + b.fresh, mobile: a.mobile + b.mobile, desktop: a.desktop + b.desktop, installed: a.installed + b.installed,
+});
 
 const PULSE_KINDS = new Set(["me", "schedule", "status", "survey", "staff", "app", "install"]);
 
@@ -121,12 +132,14 @@ function underLimit(key: string, max: number, windowMs = 60_000): boolean {
   return cur.n <= max;
 }
 const lastClick = new Map<string, number>();
+/* نافذةٌ قصيرة ومفتاحٌ من العنوان ووكيل المتصفح معاً: شبكةُ الجامعة عنوانٌ واحد لآلاف الطلبة، فلا يُعدّ ثانيَ طالبٍ نقر بعد ثوانٍ مكرِّراً. */
+const CLICK_REPEAT_MS = 4_000;
 const clickWasRepeat = (key: string): boolean => {
   const now = Date.now();
   if (lastClick.size > 8000) for (const [k, t] of lastClick) if (now - t > 60_000) lastClick.delete(k);
   const prev = lastClick.get(key);
   lastClick.set(key, now);
-  return prev !== undefined && now - prev < 10_000;
+  return prev !== undefined && now - prev < CLICK_REPEAT_MS;
 };
 
 /* ─────────────────────────── حقنُ السكربت في الصفحات العامة ─────────────────────────── */
@@ -203,20 +216,40 @@ async function campaignView(c: AdCampaign, stats: AdStatsDay[], heads: Array<Omi
   };
 }
 
-async function audienceInputs(requestedTermId: number) {
-  const [terms, profiles, days, camps, adStats] = await Promise.all([
-    Repository.getTerms(), Repository.listStudentProfiles(), Repository.listAudienceDays(120), campaigns(), Repository.listAdStats(),
-  ]);
-  const recent = [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).slice(0, 12);
+/* قراءاتُ اللوحة الثقيلة (ملفات الطلبة، وإجابات كل الفصول، وطلبات الأساتذة، وعدّادات الإعلانات) تُخزَّن مؤقتاً:
+   اللوحة تتحدث كل دقيقة، وهذه الأرقام لا تتغير في دقيقة بما يستحق آلاف قراءات Firestore. الزيارات والحملات تُقرأ طازجةً. */
+const HEAVY_TTL_MS = 5 * 60_000;
+type Heavy = { at: number; terms: AdTerm[]; profiles: StudentProfile[]; needsByTerm: Map<number, StudentNeed[]>; requests: Map<number, { at: number; rows: InstructorRequest[] }> };
+let heavy: Heavy | null = null;
+let adStatsCache: { at: number; rows: AdStatsDay[] } | null = null;
+
+async function heavyInputs(): Promise<Heavy> {
+  if (heavy && Date.now() - heavy.at < HEAVY_TTL_MS) return heavy;
+  const [terms, profiles] = await Promise.all([Repository.getTerms(), Repository.listStudentProfiles()]);
   const needsByTerm = new Map<number, StudentNeed[]>();
-  await Promise.all(recent.map(async term => { needsByTerm.set(Number(term.AdTermId), await Repository.getStudentNeedsForTerm(Number(term.AdTermId))); }));
-  const withAnswers = recent.find(term => (needsByTerm.get(Number(term.AdTermId)) || []).length > 0);
+  /* كل الفصول، لا الأحدث فقط: إجمالي «عبر الفصول» يجب أن يشمل كل ما أجابه الطلبة. */
+  await Promise.all(terms.map(async term => { needsByTerm.set(Number(term.AdTermId), await Repository.getStudentNeedsForTerm(Number(term.AdTermId))); }));
+  heavy = { at: Date.now(), terms, profiles, needsByTerm, requests: new Map() };
+  return heavy;
+}
+
+async function audienceInputs(requestedTermId: number) {
+  const h = await heavyInputs();
+  const [days, camps] = await Promise.all([Repository.listAudienceDays(120), campaigns()]);
+  if (!adStatsCache || Date.now() - adStatsCache.at > 60_000) adStatsCache = { at: Date.now(), rows: await Repository.listAdStats() };
+  const recent = [...h.terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).slice(0, 12);
+  const withAnswers = recent.find(term => (h.needsByTerm.get(Number(term.AdTermId)) || []).length > 0);
   const current = recent.find(term => Number(term.AdTermId) === requestedTermId) || withAnswers || recent[0];
   const currentTermId = current ? Number(current.AdTermId) : 0;
-  const instructorRequests = currentTermId ? await Repository.getInstructorRequests(0, 0, currentTermId) : [];
+  let requests: InstructorRequest[] = [];
+  if (currentTermId) {
+    const hit = h.requests.get(currentTermId);
+    if (hit && Date.now() - hit.at < HEAVY_TTL_MS) requests = hit.rows;
+    else { requests = await Repository.getInstructorRequests(0, 0, currentTermId); h.requests.set(currentTermId, { at: Date.now(), rows: requests }); }
+  }
   return {
     termChoices: recent.map(term => ({ id: Number(term.AdTermId), name: term.AdTermName })),
-    input: { now: new Date(), terms: recent, currentTermId, needsByTerm, instructorRequests, profiles, days, campaigns: camps, adStats },
+    input: { now: new Date(), terms: h.terms, currentTermId, needsByTerm: h.needsByTerm, instructorRequests: requests, profiles: h.profiles, days, campaigns: camps, adStats: adStatsCache.rows },
   };
 }
 
@@ -278,7 +311,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const creativeId = String(req.params.crid);
     if (!campaign || !isLive(campaign, today) || !campaign.creativeIds.includes(creativeId)) { res.redirect(302, "/"); return; }
     const ip = String(req.ip || "?");
-    const filtered = looksAutomated(req.headers["user-agent"]) || clickWasRepeat(`${ip}|${campaign.id}`) || !underLimit(`click|${ip}`, 120);
+    const filtered = looksAutomated(req.headers["user-agent"]) || clickWasRepeat(`${ip}|${String(req.headers["user-agent"] || "").slice(0, 160)}|${campaign.id}`) || !underLimit(`click|${ip}`, 120);
     bumpStat(campaign.id, creativeId, filtered ? { filteredClicks: 1 } : { clicks: 1 });
     res.redirect(302, campaign.linkUrl);
   });
@@ -387,11 +420,9 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
       row = { ...existing, ...body, linkUrl: link.url, updatedAt: now };
       /* تغييرُ ما يمسّ الموقع أو الفئة أو التواريخ في حملةٍ معتمدة يعيدها مسودةً لتُعتمد من جديد. */
       const moved = existing.slot !== row.slot || existing.category !== row.category || existing.startDay !== row.startDay || existing.endDay !== row.endDay;
-      if (existing.status === "approved" && moved) {
-        const all = (await campaigns()).filter(c => c.id !== existing.id);
-        const clash = placementProblems({ id: existing.id, ...body }, all);
-        if (clash.length) { fail(res, 409, clash[0], { problems: clash }); return; }
-      }
+      /* تغييرُ الموقع أو الفئة أو التواريخ يعيدها مسودةً: لا تعمل بالمواصفات الجديدة إلا بعد اعتمادٍ جديد
+         (يُفحص فيه التعارض وتُقرّ الشروط من جديد). */
+      if (existing.status === "approved" && moved) row.status = "draft";
       if (existing.slot !== row.slot && row.creativeIds.length) {
         fail(res, 409, "لا يمكن تغيير الموقع بعد رفع صور؛ مقاس الصور مرتبطٌ بالموقع. أنشئ حملةً جديدة.");
         return;

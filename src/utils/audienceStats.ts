@@ -158,7 +158,8 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
     survey: {
       allTimeAnswers,
       allTimeStudents: everyone.size,
-      terms,
+      /* الرسم لآخر ١٢ فصلاً؛ والإجماليان أعلاه عبر كل الفصول. */
+      terms: terms.slice(-12),
       current: {
         answers: currentRows.length,
         students: currentPeople.size,

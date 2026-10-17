@@ -156,6 +156,22 @@ async function main() {
   check(run("/me", 200, "application/json", "script-src 'nonce-ABC'", html) === html, "A5 غير HTML لا يُحقن");
   check(run("/me", 200, "text/html", "default-src 'none'", html) === html, "A5 بلا نونس لا حقن");
 
+  /* فشلُ كتابة النبض لا يُسقط الدفعة: تُدمج في ما وصل بعدها. */
+  const merged = R.mergeAudience(
+    { visits: { me: 2 }, returning: 1, fresh: 1, mobile: 2, desktop: 0, installed: 0, hours: { "9": 2 } },
+    { visits: { me: 3, status: 1 }, returning: 2, fresh: 2, mobile: 1, desktop: 3, installed: 1, hours: { "9": 1, "10": 3 } });
+  check(merged.visits.me === 5 && merged.visits.status === 1 && merged.hours["9"] === 3 && merged.hours["10"] === 3 && merged.installed === 1 && merged.returning === 3, "A5 دمج دفعة النبض الفاشلة في الجديدة بلا فقد");
+
+  /* إجمالي «كل الفصول» يشمل أكثر من ١٢ فصلاً، والرسم لآخر ١٢ فقط. */
+  const { buildAudienceStats } = await import("../src/utils/audienceStats");
+  const manyTerms = Array.from({ length: 15 }, (_, i) => ({ AdTermId: i + 1, AdTermName: `ف${i + 1}` })) as any[];
+  const needs = new Map<number, any[]>(manyTerms.map(t => [t.AdTermId, [{ fingerprint: `fp-${t.AdTermId}`, AdCollegeId: 1, requestType: "new-course", createdAt: "2026-01-01T00:00:00Z" }]]));
+  const all = buildAudienceStats({ now: new Date("2026-02-01T00:00:00Z"), terms: manyTerms, currentTermId: 15, needsByTerm: needs, instructorRequests: [], profiles: [] });
+  check(all.survey.allTimeStudents === 15 && all.survey.allTimeAnswers === 15 && all.survey.terms.length === 12, "A7 الإجمالي عبر ١٥ فصلاً والرسم لآخر ١٢");
+
+  const sw = fs.readFileSync(path.join(process.cwd(), "public", "sw.js"), "utf8");
+  check(sw.includes('"/_ads/"') && sw.includes('"/_pulse"') && sw.includes('"/ad-report/"') && sw.includes('"/partners/"'), "A5 الـ service worker يتجاوز الإعلانات والنبض وصفحتي الشركاء");
+
   /* ── A6: المسارات الحقيقية على خادمٍ مصغَّر ── */
   const express = (await import("express")).default;
   const { Repository } = await import("../src/db/repository");
@@ -223,13 +239,15 @@ async function main() {
     check(r.status === 302 && r.headers.get("location") === "https://oasis.example.com/offer", "A6 النقر يحوّل إلى رابط الشركة", r.headers.get("location"));
     r = await call("GET", item.href);
     r = await call("GET", item.href, undefined, { "User-Agent": "curl/8.0" });
+    // مستخدمٌ آخر خلف العنوان نفسه (وكيل متصفحٍ مختلف) ينقر فوراً: نقرةٌ صحيحة لا مكرَّرة (شبكة الجامعة عنوانٌ واحد).
+    r = await call("GET", item.href, undefined, { "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36" });
     check((await call("GET", "/_ads/c/ghost/x")).headers.get("location") === "/", "A6 نقرٌ على حملةٍ مجهولة يعود إلى الرئيسية");
 
     await R.flushAdsCounters();
     const list = await call("GET", "/api/admin/ads");
     const mine = list.json.campaigns.find((x: any) => x.id === id);
     check(mine.totals.impressions === 2 && mine.totals.uniques === 1, "A6 الظهور: ٢ والفريد ١ (والمزيَّف والروبوت لم يُحتسبا)", mine.totals);
-    check(mine.totals.clicks === 1 && mine.totals.filteredClicks === 2, "A6 النقر: ١ صحيح و٢ مُرشَّحان (تكرار وروبوت)", mine.totals);
+    check(mine.totals.clicks === 2 && mine.totals.filteredClicks === 2, "A6 النقر: ٢ صحيحان (مستخدمان خلف عنوانٍ واحد) و٢ مُرشَّحان (تكرار وروبوت)", mine.totals);
     check(mine.phase === "live" && mine.sharePct === 100 && mine.daysLeft === 10, "A6 المرحلة والحصة وأيام المتبقي");
     check(list.json.slots.find((s: any) => s.id === "me").live === 1, "A6 عدد الحملات الحية في الموقع");
 
@@ -257,10 +275,21 @@ async function main() {
     for (let i = 0; i < 60; i++) leaders.add((await call("GET", "/_ads/serve?slot=me")).json.items[0].c);
     check(leaders.size >= 4, "A6 أول موضعٍ يدور بين الشركات", leaders.size);
 
+    // تعديلُ موقعٍ أو فئةٍ أو تواريخَ حملةٍ معتمدة يعيدها مسودةً فلا تُعرض حتى تُعتمد من جديد.
+    const editId = (await call("GET", "/_ads/serve?slot=me")).json.items.find((x: any) => x.c !== id)?.c as string;
+    const before = list.json.campaigns.find((x: any) => x.id === editId) || (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === editId);
+    r = await call("POST", "/api/admin/ads/campaigns", { id: editId, company: before.company, category: before.category, slot: before.slot, startDay: before.startDay, endDay: E.addDays(before.endDay, 3), linkUrl: before.linkUrl });
+    check(r.status === 200, "A6 تعديل تاريخ نهاية حملة معتمدة", r.json);
+    serve = await call("GET", "/_ads/serve?slot=me");
+    check(!serve.json.items.some((x: any) => x.c === editId), "A6 الحملة المعدَّلة عادت مسودةً ولم تعد تُعرض");
+    check((await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === editId).status === "draft", "A6 حالتها مسودة");
+    r = await call("POST", `/api/admin/ads/campaigns/${editId}/status`, { action: "approve", rulesAccepted: true });
+    check(r.status === 200, "A6 تُعتمد من جديد بعد المراجعة", r.json);
+
     // الإيقاف الفوري والانتهاء
     r = await call("POST", `/api/admin/ads/campaigns/${id}/status`, { action: "pause" });
     serve = await call("GET", "/_ads/serve?slot=me");
-    check(serve.json.items.length === 4 && !serve.json.items.some((x: any) => x.c === id), "A6 الإيقاف يسحب الحملة فوراً");
+    check(serve.json.items.length === 4 && !serve.json.items.some((x: any) => x.c === id), "A6 الإيقاف يسحب الحملة فوراً", serve.json.items.length);
     check((await call("GET", item.href)).headers.get("location") === "/", "A6 النقر على حملةٍ موقوفة لا يحوّل");
     check((await call("DELETE", `/api/admin/ads/campaigns/${id}`)).status === 200, "A6 حذف الحملة الموقوفة");
 
