@@ -22,7 +22,7 @@
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:'Cairo','Tajawal',system-ui,sans-serif;padding:env(safe-area-inset-top,0) 0 0}
 svg text{font-family:'Cairo','Tajawal',system-ui,sans-serif}
-.scroll{overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 160px}
+.scroll{overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 160px;touch-action:pan-x pan-y}
 #plan{display:block;width:100%;min-width:1180px;max-width:1754px;height:auto;margin:0 auto}
 html.fit #plan{min-width:0}
 #fitbtn{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom,0));left:14px;z-index:8;display:flex;align-items:center;gap:6px;border:0;background:#0B2545;color:#fff;font:inherit;font-size:14px;font-weight:700;padding:8px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(11,37,69,.28);cursor:pointer}
@@ -108,18 +108,20 @@ function render(){
  <div><div class="l"><i>→</i>يفتح بعده</div>${nx.map(chip).join('')||'<div class="none">لا يفتح مقررات أخرى</div>'}</div></div>`;
  sh.classList.add('open');
 }
-// On phones, choosing a course zooms out to the whole plan so the chain is visible above the sheet; closing restores the previous view.
-const small=matchMedia('(max-width:1199px)');
+// On phones the plan does its own pinch-zoom (Safari won't let a page zoom itself back out),
+// so choosing a course can fit the whole plan above the sheet; closing restores the previous view.
+const small=matchMedia('(max-width:1199px)'),box=document.querySelector('.scroll');
 let autoFit=null;
+const view=()=>({fit:document.documentElement.classList.contains('fit'),w:plan.style.width,sl:box.scrollLeft,sy:scrollY});
+function setW(w){plan.style.width=w||'';plan.style.minWidth=w?'0':'';plan.style.maxWidth=w?'none':''}
 function zoomToPlan(){
- const m=document.querySelector('meta[name=viewport]'),o=m.content;
- if(vv&&vv.scale>1.01){m.content=o+', maximum-scale=1';setTimeout(()=>{m.content=o},400)}
- if(autoFit==null){autoFit=document.documentElement.classList.contains('fit');setFit(true,false)}
+ if(autoFit==null)autoFit=view();
+ setFit(true,false);
  window.scrollTo({top:0,behavior:'smooth'});
 }
 function pick(c){
  sel=(c==null||c==sel)?null:c;hov=null;
- if(small.matches){if(sel!=null)zoomToPlan();else if(autoFit!=null){setFit(autoFit,false);autoFit=null}}
+ if(small.matches){if(sel!=null)zoomToPlan();else if(autoFit!=null){const v=autoFit;autoFit=null;setFit(v.fit,false);setW(v.w);box.scrollLeft=v.sl;window.scrollTo(0,v.sy)}}
  render();placeSheet()}
 // Pinch-zoom scales fixed elements too; keep the sheet at its natural size inside the visible area.
 const vv=window.visualViewport;
@@ -142,10 +144,30 @@ sh.addEventListener('click',e=>{if(e.target.closest('.x2'))return pick(null);con
 const fitbtn=document.getElementById('fitbtn');
 const ICON_OUT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
 const ICON_IN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5M11 8v6M8 11h6"/></svg>';
-function setFit(on,save=true){document.documentElement.classList.toggle('fit',on);fitbtn.innerHTML=on?ICON_IN+'تكبير':ICON_OUT+'عرض كامل';if(save)try{localStorage.setItem('planFit',on?'1':'0')}catch(e){}}
+function setFit(on,save=true){setW('');document.documentElement.classList.toggle('fit',on);fitbtn.innerHTML=on?ICON_IN+'تكبير':ICON_OUT+'عرض كامل';if(save)try{localStorage.setItem('planFit',on?'1':'0')}catch(e){}}
 let fitPref=null;try{fitPref=localStorage.getItem('planFit')}catch(e){}
 setFit(fitPref==='1');
 fitbtn.addEventListener('click',()=>{autoFit=null;setFit(!document.documentElement.classList.contains('fit'))});
+let pz=null;
+const span=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
+box.addEventListener('touchstart',e=>{
+ if(e.touches.length!==2)return;
+ const t=e.touches,r=plan.getBoundingClientRect();
+ pz={d:span(t),w:r.width,mx:(t[0].clientX+t[1].clientX)/2,my:(t[0].clientY+t[1].clientY)/2,sl:box.scrollLeft,sy:scrollY,top:r.top+scrollY,right:box.getBoundingClientRect().right,min:box.clientWidth};
+},{passive:true});
+box.addEventListener('touchmove',e=>{
+ if(!pz||e.touches.length!==2)return;
+ e.preventDefault();
+ const k=Math.min(Math.max(pz.w*span(e.touches)/pz.d,pz.min),3600)/pz.w;
+ if(document.documentElement.classList.contains('fit')){document.documentElement.classList.remove('fit');fitbtn.innerHTML=ICON_OUT+'عرض كامل'}
+ setW(pz.w*k+'px');
+ // Keep the point between the fingers still. RTL: scrollLeft is 0 at the right edge and negative leftwards.
+ const fx=pz.right-pz.mx;
+ box.scrollLeft=-((fx-pz.sl)*k-fx);
+ window.scrollTo(0,pz.top+(pz.sy+pz.my-pz.top)*k-pz.my);
+},{passive:false});
+box.addEventListener('touchend',e=>{if(pz&&e.touches.length<2){pz=null;autoFit=null}});
+document.addEventListener('gesturestart',e=>{if(e.target.closest&&e.target.closest('.scroll'))e.preventDefault()});
 setTimeout(()=>hint.classList.add('gone'),7000);
 window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
 </script>
