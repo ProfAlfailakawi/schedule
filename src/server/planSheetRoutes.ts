@@ -175,7 +175,8 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
   /* ── من داخل البرنامج: ما يمكن نشره وما نُشر ─────────────────────────────── */
   app.get("/api/plan-sheets", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    const [sections, published] = await Promise.all([Repository.getSections(), Repository.listPublishedSheets()]);
+    const [sections, published, colleges] = await Promise.all([Repository.getSections(), Repository.listPublishedSheets(), Repository.getColleges()]);
+    const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
     const publishedById = new Map(published.map(sheet => [sheet.id, sheet]));
     const rows: any[] = [];
     /* القسمُ المختار في مركز الذكاء يُعاد ولو بلا صحيفةٍ معتمدة، ليشرح الواجهةُ أنّ الاعتماد مطلوب لا أن تُخفي لوحتَه. */
@@ -191,7 +192,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
         const pub = publishedById.get(plan.id);
         sheets.push({ planId: plan.id, name: plan.name, ruleVersion: live.version, published: Boolean(pub), publishedAt: pub?.publishedAt || "", stale: Boolean(pub && pub.ruleVersion !== live.version), url: pub ? sheetUrl(sectionId, plan.id) : "" });
       }
-      if (sheets.length || sectionId === focusId) rows.push({ sectionId, sectionName: String(section.AdSectionName || ""), sheets, deptUrl: `${OFFICIAL_ORIGIN}/plans/s${sectionId}/`, indexUrl: `${OFFICIAL_ORIGIN}/plans/` });
+      if (sheets.length || sectionId === focusId) rows.push({ sectionId, sectionName: String(section.AdSectionName || ""), collegeName: collegeName.get(collegeId) || "", sheets, deptUrl: `${OFFICIAL_ORIGIN}/plans/s${sectionId}/`, indexUrl: `${OFFICIAL_ORIGIN}/plans/` });
     }
     res.json({ sections: rows, canPublish: rows.length > 0 || deps.isPowerUser(req) });
   });
@@ -262,7 +263,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
       noStore(res);
       const list = (await Repository.listPublishedSheets()).filter(sheet => sheet.AdSectionId === sectionId).sort((a, b) => a.planName.localeCompare(b.planName, "ar"));
       if (!list.length) return res.status(404).type("text/html; charset=utf-8").send(shell("غير منشورة", `<div class="e"><h1>لا خطة منشورة</h1><p>لم يُنشر لهذا القسم شيء بعد.</p><p><a href="/plans/">الخطط الدراسية</a></p></div>`));
-      if (list.length === 1) return res.redirect(302, `/plans/s${sectionId}/${encodeURIComponent(list[0].planId)}/`);
+      if (list.length === 1) return res.redirect(302, `/plans/s${sectionId}/${encodeURIComponent(list[0].planId)}/${req.query.pdf === "1" ? "?pdf=1" : ""}`);
       const cards = list.map(sheet => `<a class="c" href="/plans/s${sectionId}/${encodeURIComponent(sheet.planId)}/"><b>${esc(sheet.planName || "الخطة الدراسية")}</b><span>${countOf(sheet.model.courses.length + sheet.model.groups.reduce((n, g) => n + g.courses.length, 0), AR.course)}</span><i>افتح الخطة</i></a>`);
       res.type("text/html; charset=utf-8").send(shell(`خطط ${deptTitle(list[0].sectionName)}`, `<h1>${esc(deptTitle(list[0].sectionName))}</h1><p class="s">اختر الصحيفة.</p>${cards.length > 6 ? '<input id="q" class="q" type="search" placeholder="ابحث عن صحيفة" aria-label="ابحث عن صحيفة">' : ""}<div class="g">${cards.join("")}</div>`, FILTER_SCRIPT));
     } catch (error) { next(error); }

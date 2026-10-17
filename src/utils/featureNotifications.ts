@@ -32,18 +32,28 @@ export function buildFeatureNotifications(input: FeatureNotificationInput): Cent
   const items: CenterNotification[] = [];
   const decides = role === "committeeChair" || role === "admin";
 
-  /* ── صحائف قيد المراجعة ── */
-  for (const review of input.planReviews.slice(0, 4)) {
+  /* ── صحائف قيد المراجعة ── إشعارٌ واحد لكل قسمٍ (كليةٍ وقسم)، لا لكل صحيفة: قسمٌ فيه صحيفتان يُزعج مرتين بلا فائدة. */
+  const bySection = new Map<string, PlanReviewNotice[]>();
+  for (const review of input.planReviews) {
+    const key = `${review.collegeId}:${review.sectionId}`;
+    bySection.set(key, [...(bySection.get(key) || []), review]);
+  }
+  const groups = [...bySection.values()];
+  for (const group of groups.slice(0, 4)) {
+    const first = group[0], latest = group.reduce((at, r) => (r.updatedAt > at ? r.updatedAt : at), "");
+    const one = group.length === 1;
     items.push({
-      id: `plan-review:${review.planId}:${review.updatedAt}`, tone: decides ? "action" : "waiting",
-      title: decides ? `صحيفة «${review.planName}» تنتظر مراجعتك واعتمادك` : `صحيفة «${review.planName}» قيد المراجعة`,
-      detail: review.sectionName, view: "planReview", at: review.updatedAt, collegeId: review.collegeId, sectionId: review.sectionId,
+      id: `plan-review:${first.collegeId}:${first.sectionId}:${group.map(r => r.planId).sort().join(",")}:${latest}`, tone: decides ? "action" : "waiting",
+      title: one
+        ? (decides ? `صحيفة «${first.planName}» تنتظر مراجعتك واعتمادك` : `صحيفة «${first.planName}» قيد المراجعة`)
+        : (decides ? `بانتظار مراجعتك واعتمادك: ${countOf(group.length, AR.sheet)}` : `قيد المراجعة: ${countOf(group.length, AR.sheet)}`),
+      detail: first.sectionName, view: "planReview", at: latest, collegeId: first.collegeId, sectionId: first.sectionId,
     });
   }
-  if (input.planReviews.length > 4) {
-    const more = input.planReviews.length - 4;
+  if (groups.length > 4) {
+    const more = groups.length - 4;
     items.push({
-      id: `plan-review:more:${input.planReviews.length}`, tone: "waiting", title: `و${countOf(more, AR.draft)} أخرى قيد المراجعة`,
+      id: `plan-review:more:${groups.length}`, tone: "waiting", title: `بانتظارك أيضاً: ${countOf(more, AR.department)} فيها صحائف قيد المراجعة`,
       detail: "مراجعة الصحيفة", view: "planReview",
     });
   }

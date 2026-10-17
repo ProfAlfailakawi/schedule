@@ -47,6 +47,10 @@ const model: SheetModel = {
   check(html.includes("{{") === false && html.includes("const D=") && html.includes('"LV"'), "S1 القالبُ مملوءٌ بلا علاماتٍ متروكة، وبيانات التفاعل مضمّنة");
   check(html.includes('id="stbtn"') && html.includes("planPassed:") && html.includes("المتاح لك الآن") && html.includes("@media print") && /#stbtn,#stbar/.test(html), "S1 وضعُ الطالب: يعلّم ما اجتازه على جهازه ويضيء المتاح، ولا يُطبع");
   check(html.includes("تحميل PDF") && html.includes("window.print()") && html.includes("@page{size:420mm 297mm"), "S1 زرُّ PDF (طباعة A3) موجود");
+  const arabicLabel = buildPlanSheet({ ...model, planLabel: "الصحيفة السابقة" }, { template });
+  const labelTag = arabicLabel.match(/<text[^>]*>الصحيفة السابقة<\/text>/)?.[0] || "";
+  check(labelTag.includes('direction="rtl"') && !labelTag.includes("letter-spacing"), "S1 عنوانُ الصحيفة العربي: اتجاهٌ يمينيّ وبلا تباعد حروف (يقطّع الاتصال)", labelTag);
+  check(/direction="ltr"[^>]*letter-spacing="1"[^>]*>|letter-spacing="1"[^>]*>2026\/2027/.test(html.match(/<text[^>]*>2026\/2027<\/text>/)?.[0] || ""), "S1 الرقمي (2026/2027) يبقى يساريّاً بتباعده");
   check(buildPlanSheet({ ...model, title: "قسم <x>&" }, { template }).includes("قسم &lt;x&gt;&amp;") && !buildPlanSheet({ ...model, title: "</script><b>" }, { template }).includes("</script><b>"), "S1 النصوصُ تُهرَّب في الصفحة والبيانات");
   const wide = buildPlanSheet({ ...model, edges: [], groups: [], notes: [], layout: "wide", courses: model.courses.map(c => ({ ...c, category: c.level < 300 ? "ثقافة عامة" : "مهنية" })) }, { template });
   check(wide.includes("ثقافة عامة") && wide.includes("مهنية") && !wide.includes("السهم يبدأ من المتطلب"), "S1 القسمُ المساند بلا أسهم: أشرطةٌ بالعرض بحسب التصنيف، بلا مفتاح الأسهم");

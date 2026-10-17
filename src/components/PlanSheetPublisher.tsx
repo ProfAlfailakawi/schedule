@@ -11,7 +11,7 @@ import { AR, countOf } from "../utils/arabicCount";
  * رمز QR يُرسم في المتصفح بالمولّد الموجود، فلا خدمةَ خارجية.
  */
 interface SheetRow { planId: string; name: string; ruleVersion: number; published: boolean; publishedAt: string; stale: boolean; url: string }
-interface SectionRow { sectionId: number; sectionName: string; sheets: SheetRow[]; deptUrl: string; indexUrl: string }
+interface SectionRow { sectionId: number; sectionName: string; collegeName?: string; sheets: SheetRow[]; deptUrl: string; indexUrl: string }
 interface State { sections: SectionRow[]; canPublish: boolean }
 type QrFactory = (t: number, e: "L" | "M" | "Q" | "H") => { addData(s: string): void; make(): void; createSvgTag(o?: { cellSize?: number; margin?: number; scalable?: boolean }): string };
 
@@ -39,8 +39,14 @@ export default function PlanSheetPublisher({ onChanged, focusSectionId = 0 }: { 
   useEffect(() => { void load(); }, [load]);
 
   /* قسمُ نطاق القرار المختار: رمزُ QR لصفحته يظهر في أعلى اللوحة بلا بحثٍ ولا ضغط. */
+  /* القسمُ نفسُه قد يكون في أكثر من كلية (بنات/بنين): الاسمُ وحده يبدو تكراراً، فتُضاف الكلية متى تكرّر. */
+  const nameCount = new Map<string, number>();
+  for (const row of state?.sections || []) nameCount.set(row.sectionName, (nameCount.get(row.sectionName) || 0) + 1);
+  const labelOf = (row: SectionRow) => (nameCount.get(row.sectionName) || 0) > 1 && row.collegeName ? `${row.sectionName} — ${row.collegeName}` : row.sectionName;
   const focus = state?.sections.find(s => s.sectionId === focusSectionId);
   const focusPublished = Boolean(focus?.sheets.some(x => x.published));
+  /* قسمٌ بالاسم نفسه في كليةٍ أخرى له صحائف معتمدة: سببُ «لا صحيفة» الشائع حين يُعتمد في كلية ويُختار نطاقُ كليةٍ أخرى. */
+  const sibling = focus && !focus.sheets.length ? state?.sections.find(row => row.sectionId !== focus.sectionId && row.sectionName === focus.sectionName && row.sheets.length > 0) : undefined;
   const [focusQr, setFocusQr] = useState("");
   useEffect(() => {
     let live = true;
@@ -127,22 +133,25 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
       </header>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
       {focus ? (
-        <section className={`psh-focus${focusPublished ? "" : " off"}`} aria-label={`صحيفة ${focus.sectionName}`}>
+        <section className={`psh-focus${focusPublished ? "" : " off"}`} aria-label={`صحيفة ${labelOf(focus)}`}>
           {focusPublished
             ? <div className="psh-focus-qr" role="img" aria-label="رمز QR لصفحة القسم" dangerouslySetInnerHTML={{ __html: focusQr }} />
             : <div className="psh-focus-qr empty" aria-hidden="true"><QrCode /></div>}
           <div className="psh-focus-body">
-            <strong>{focus.sectionName}</strong>
+            <strong>{labelOf(focus)}</strong>
             {focusPublished ? <>
               <small>امسح الرمز لتفتح صحيفة القسم التفاعلية وملف PDF</small>
               <code dir="ltr">{focus.deptUrl}</code>
               <span className="psh-focus-actions">
                 <SecondaryButton onClick={() => copy(focus.deptUrl)} data-guide-ignore="نسخ رابط صفحة القسم">{copied === focus.deptUrl ? <Check /> : <Copy />} انسخ الرابط</SecondaryButton>
+                <a className="psh-open" href={`${focus.deptUrl}?pdf=1`} target="_blank" rel="noopener noreferrer" data-guide-ignore="تحميل PDF لصحائف القسم: تفتح الصفحة العامة وتبدأ الطباعة A3"><Download /> PDF</a>
                 <a className="psh-open" href={focus.deptUrl} target="_blank" rel="noopener noreferrer" data-guide-ignore="فتح صفحة القسم العامة في تبويبٍ جديد"><ExternalLink /> افتح</a>
                 <SecondaryButton disabled={!focusQr} onClick={() => printPoster({ title: focus.sectionName, url: focus.deptUrl, svg: focusQr })} data-guide-ignore="طباعة ملصق A4 برمز QR لصفحة القسم"><Printer /> اطبع ملصقاً</SecondaryButton>
               </span>
             </> : <>
-              <small>{focus.sheets.length ? "لم تُنشر صحيفة هذا القسم بعد. انشرها فيظهر رمز QR ورابطها هنا." : "لا صحيفة معتمدة لهذا القسم بعد. يعتمد رئيس لجنة الجدول قواعدها في «مراجعة الصحيفة» ثم تُنشر هنا."}</small>
+              <small>{focus.sheets.length ? "لم تُنشر صحيفة هذا القسم بعد. انشرها فيظهر رمز QR ورابطها هنا." : sibling
+              ? `القسم المختار هنا ${focus.collegeName ? `(${focus.collegeName}) ` : ""}لم تُعتمد قواعد صحيفته بعد. أما صحيفة «${sibling.sectionName}»${sibling.collegeName ? ` في ${sibling.collegeName}` : ""} فمعتمدة — اختر ذلك القسم في نطاق القرار، أو اعتمد صحيفة هذا القسم في «مراجعة الصحيفة».`
+              : "لا صحيفة معتمدة لهذا القسم بعد. يعتمد رئيس لجنة الجدول قواعدها في «مراجعة الصحيفة» ثم تُنشر هنا."}</small>
               {focus.sheets.length ? <span className="psh-focus-actions">
                 <PrimaryButton disabled={Boolean(busy)} onClick={() => publish({ sectionId: focus.sectionId }, `s${focus.sectionId}`)} data-guide-ignore="نشر صحيفة القسم المختار">{busy === `s${focus.sectionId}` ? "جارٍ النشر…" : "انشر صحيفة القسم"}</PrimaryButton>
               </span> : null}
@@ -152,12 +161,12 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
       ) : null}
       {note ? <Notice type="success" onDismiss={() => setNote("")}>{note}</Notice> : null}
 
-      {[...state.sections].sort((x, y) => Number(y.sectionId === focusSectionId) - Number(x.sectionId === focusSectionId)).map(section => {
+      {[...state.sections].filter(row => row.sheets.length > 0 || row.sectionId !== focusSectionId).sort((x, y) => Number(y.sectionId === focusSectionId) - Number(x.sectionId === focusSectionId)).map(section => {
         const todo = section.sheets.filter(x => !x.published || x.stale).length;
         return (
           <section className="psh-dept" key={section.sectionId}>
             <div className="psh-dept-head">
-              <b>{section.sectionName}</b>
+              <b>{labelOf(section)}</b>
               <small>{countOf(section.sheets.length, AR.sheet)}</small>
               <span className="psh-dept-actions">
                 {section.sheets.some(x => x.published) ? <>
@@ -176,6 +185,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
                     {sheet.published ? <>
                       <button type="button" className="psh-ico" aria-label="رمز QR" title="رمز QR" data-guide-ignore="رمز QR لهذه الصحيفة المنشورة" onClick={() => showQr(`${section.sectionName} — ${sheet.name}`, sheet.url)}><QrCode /></button>
                       <button type="button" className="psh-ico" aria-label="نسخ الرابط" title="نسخ الرابط" data-guide-ignore="نسخ رابط هذه الصحيفة المنشورة" onClick={() => copy(sheet.url)}>{copied === sheet.url ? <Check /> : <Copy />}</button>
+                      <a className="psh-ico" aria-label="تحميل PDF" title="تحميل PDF" data-guide-ignore="تحميل هذه الصحيفة PDF: تفتح الصفحة العامة وتبدأ الطباعة A3" href={`${sheet.url}?pdf=1`} target="_blank" rel="noopener noreferrer"><Download /></a>
                       <a className="psh-ico" aria-label="فتح الصحيفة" title="فتح الصحيفة" data-guide-ignore="فتح الصفحة العامة للصحيفة في تبويبٍ جديد" href={sheet.url} target="_blank" rel="noopener noreferrer"><ExternalLink /></a>
                     </> : null}
                     {!sheet.published || sheet.stale

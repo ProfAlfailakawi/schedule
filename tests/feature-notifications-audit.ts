@@ -62,7 +62,9 @@ const ids = (input: StudentNoticeInput) => buildStudentNotices(input).map(n => n
   const head = buildFeatureNotifications({ role: "departmentHead", planReviews: [review(1)], radar: null, outcome: null });
   check(head[0].tone === "waiting" && /قيد المراجعة/.test(head[0].title), "N2 رئيسُ القسم: يُعلم ولا يُطلب منه اعتماد");
   const many = buildFeatureNotifications({ role: "committeeChair", planReviews: [1, 2, 3, 4, 5, 6].map(review), radar: null, outcome: null });
-  check(many.length === 5 && /مسوّدتان أخريان|مسوّدتان/.test(many[4].title), "N2 أكثر من أربع: أربعٌ وبندٌ يجمع الباقي", many.map(m => m.title));
+  check(many.length === 5 && /قسمان/.test(many[4].title), "N2 أكثر من أربع: أربعٌ وبندٌ يجمع الباقي", many.map(m => m.title));
+  const twoPlans = buildFeatureNotifications({ role: "committeeChair", planReviews: [{ ...review(1), planId: "a" }, { ...review(1), planId: "b", planName: "السابقة" }, review(2)], radar: null, outcome: null });
+  check(twoPlans.length === 2 && /صحيفتان/.test(twoPlans.find(x => x.sectionId === 1)!.title), "N2 صحيفتان في قسمٍ واحد: إشعارٌ واحد لا اثنان", twoPlans.map(m => m.title));
   const r1 = buildFeatureNotifications({ role: "committeeChair", planReviews: [], radar: { ranAt: "2026-10-15T10:00:00Z", needsDecision: 3, scoped: true }, outcome: null });
   check(r1[0].view === "simulation" && r1[0].tone === "action" && /3 مقررات تحتاج قراراً|ثلاثة مقررات/.test(r1[0].title) && /قسمك/.test(r1[0].detail), "N2 الرادار: مقرراتٌ تحتاج قراراً في قسمك", r1);
   check(buildFeatureNotifications({ role: "committeeChair", planReviews: [], radar: { ranAt: "x", needsDecision: 0, scoped: true }, outcome: null }).length === 0, "N2 لا مقرراتٍ تحتاج قراراً: لا إشعار (لا ضجيج)");
