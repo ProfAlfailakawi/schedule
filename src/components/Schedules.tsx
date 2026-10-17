@@ -12625,6 +12625,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     : { tone: "good", kind: "clear", label: "بلا تعارض" },
                   ...(!context.conflicts?.length && context.selected.AdInstructorId ? [{ tone: "good", kind: "instructor", label: "الأستاذ متفرغ" } as const] : []),
                   ...(!context.conflicts?.length && roomDisplay(context.selected) ? [{ tone: "good", kind: "room", label: "القاعة خالية" } as const] : []),
+                  ...(Array.isArray(context.reasons) ? context.reasons : []),
                 ]} />
               </div>
             </div>

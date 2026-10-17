@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Brain, CheckCircle2, AlertTriangle, DoorOpen, UserCheck, ClipboardList, Layers, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
+import { Brain, CheckCircle2, AlertTriangle, DoorOpen, UserCheck, ClipboardList, Armchair, Footprints, Gauge, Repeat, ArrowLeftRight, Building2, Layers, Radar, UserRound, History, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ScheduleOrigin } from "../types";
 
 /**
@@ -19,8 +19,10 @@ const stamp = (iso: string) => { const d = new Date(iso); return Number.isFinite
 const iconOf = (action: string) => /إضافة/.test(action) ? <Plus aria-hidden="true" /> : /حذف/.test(action) ? <Trash2 aria-hidden="true" /> : <Pencil aria-hidden="true" />;
 
 /** حقائقُ محسوبة من سياق الموعد نفسه (لا تخزين جديد): تُعرض رقائقَ موجزة بدل جملةٍ طويلة. */
-export interface RowFact { tone: "good" | "warn"; kind: "room" | "instructor" | "clear" | "conflict"; label: string }
-const FACT_ICON = { room: <DoorOpen aria-hidden="true" />, instructor: <UserCheck aria-hidden="true" />, clear: <CheckCircle2 aria-hidden="true" />, conflict: <AlertTriangle aria-hidden="true" /> };
+export interface RowFact { tone: "good" | "warn" | "info"; kind: "room" | "instructor" | "clear" | "conflict" | "hall" | "borrow" | "seats" | "walk" | "load" | "pattern" | "request"; label: string; /** سطرٌ واحد يظهر عند التمرير */ tip?: string }
+const FACT_ICON = { room: <DoorOpen aria-hidden="true" />, instructor: <UserCheck aria-hidden="true" />, clear: <CheckCircle2 aria-hidden="true" />, conflict: <AlertTriangle aria-hidden="true" />,
+  hall: <Building2 aria-hidden="true" />, borrow: <ArrowLeftRight aria-hidden="true" />, seats: <Armchair aria-hidden="true" />, walk: <Footprints aria-hidden="true" />,
+  load: <Gauge aria-hidden="true" />, pattern: <Repeat aria-hidden="true" />, request: <ClipboardList aria-hidden="true" /> };
 
 /** «لماذا؟» تظهر فقط إن وُجد ما يُقال: سجلّ تغييرات، أو مصدر، أو حقائق محسوبة. بلا بيانات = لا شيء على الشاشة. */
 export const hasRowExplanation = (eventCount: number, origin?: ScheduleOrigin | null, facts: RowFact[] = []) => eventCount > 0 || Boolean(origin && ORIGIN[origin.kind]) || facts.length > 0;
@@ -51,7 +53,7 @@ export default function RowHistory({ rowId, origin, facts = [] }: { key?: React.
           </button>
         ) : null}
       </div>
-      {facts.length ? <div className="rh-facts">{facts.map((f, i) => <span key={i} className={`rh-chip is-${f.tone}`}>{FACT_ICON[f.kind]}{f.label}</span>)}</div> : null}
+      {facts.length ? <div className="rh-facts">{facts.map((f, i) => <span key={i} className={`rh-chip is-${f.tone}`} title={f.tip || undefined}>{FACT_ICON[f.kind]}{f.label}</span>)}</div> : null}
       {origin?.note ? <small className="rh-note">{origin.note}</small> : null}
       {state === "open" && count ? (
         <ol className="rh-list">
