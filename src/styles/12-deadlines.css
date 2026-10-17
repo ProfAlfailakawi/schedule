@@ -707,3 +707,14 @@
 .pr-line.dim .pr-dot{display:none}
 .pr-line.up .pr-dot,.pr-line.down .pr-dot{r:4.2}
 @media(prefers-reduced-motion:reduce){.pr-line .pr-dot{display:none}}
+/* فلتر تصنيف الصحيفة: ثقافة عامة وتخصصية ومهنية وتدريب ميداني؛ وما خرج عن التصنيف المختار غير فعال */
+.pr-cats{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0}
+.pr-cat{display:grid;gap:2px;min-inline-size:136px;padding:9px 16px;text-align:start;border:1.5px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.pr-cat b{font-size:.9rem}.pr-cat small{font-size:.74rem;color:var(--muted)}
+.pr-cat:hover:not(:disabled){border-color:var(--accent)}
+.pr-cat.on{background:var(--accent-soft);border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-softer)}.pr-cat.on b{color:var(--accent-ink)}
+.pr-cat:disabled{opacity:.45;cursor:not-allowed}
+.pr-cat:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pr-card.off{opacity:.3;filter:grayscale(1);cursor:not-allowed;box-shadow:none}
+.pr-line.off path,.pr-line.off .pr-head{opacity:.05}.pr-line.off .pr-dot{display:none}
+@media(max-width:640px){.pr-cats{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;padding-block-end:4px}.pr-cat{flex:0 0 auto}}

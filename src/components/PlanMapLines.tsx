@@ -58,8 +58,8 @@ function assignLanes(items: Array<{ lo: number; hi: number }>): { lane: number[]
  * يُضيّق الممرُّ ويتّسع تلقائياً بقدر الحاجة (عبر column-gap وpadding-block-start على الحاوية).
  * الأعمدة تُقرأ من أقرب `section` لكل بطاقة بترتيب ظهورها، والاتجاه من اليمين لليسار.
  */
-export default function PlanMapLines({ mapRef, edges, focus, up, down, layoutKey }: {
-  mapRef: React.RefObject<HTMLDivElement | null>; edges: PlanEdge[]; focus: PlanId; up: ReadonlySet<PlanId>; down: ReadonlySet<PlanId>; layoutKey: string;
+export default function PlanMapLines({ mapRef, edges, focus, up, down, off, layoutKey }: {
+  mapRef: React.RefObject<HTMLDivElement | null>; edges: PlanEdge[]; focus: PlanId; up: ReadonlySet<PlanId>; down: ReadonlySet<PlanId>; /** مقررات غير فعالة بحسب الفلتر: تخفت أسهمها. */ off?: ReadonlySet<PlanId>; layoutKey: string;
 }) {
   const [geo, setGeo] = useState<{ w: number; h: number; paths: Path[] }>({ w: 0, h: 0, paths: [] });
   useEffect(() => {
@@ -183,7 +183,7 @@ export default function PlanMapLines({ mapRef, edges, focus, up, down, layoutKey
   return (
     <svg className="pr-lines" style={{ width: geo.w, height: geo.h, maxWidth: "none" }} width={geo.w} height={geo.h} viewBox={`0 0 ${geo.w} ${geo.h}`} aria-hidden="true" focusable="false">
       {geo.paths.map(p => {
-        const tone = !focus ? "" : up.has(p.from) && (up.has(p.to) || p.to === focus) ? "up" : (p.from === focus || down.has(p.from)) && down.has(p.to) ? "down" : "dim";
+        const tone = off && (off.has(p.from) || off.has(p.to)) ? "off" : !focus ? "" : up.has(p.from) && (up.has(p.to) || p.to === focus) ? "up" : (p.from === focus || down.has(p.from)) && down.has(p.to) ? "down" : "dim";
         return (
           <g key={p.key} className={`pr-line ${tone}${p.optional ? " opt" : ""}`} style={{ ["--arrow" as string]: `var(--series-${p.hue})` }}>
             <path d={p.d} />
