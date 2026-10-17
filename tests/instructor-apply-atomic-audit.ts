@@ -46,6 +46,7 @@ const check = (ok: boolean, label: string, extra?: unknown) => {
   check(/Number\(live\.AdInstructorId\) !== Number\(stored\.AdInstructorId\) \|\| Number\(live\.AdTermId\) !== termId/.test(route), "L7 الصف الحيّ يجب أن يكون للأستاذ نفسه في الفصل نفسه");
   check(/hypotheticalWeek: originalWeek/.test(route), "L8 التراجع يُفحص على الأسبوع الأصلي فلا يتعثر بتبديلٍ داخل السلسلة");
   check(/acquireScheduleApplyLease\(applyLock/.test(route) && /releaseScheduleApplyLease\(applyLock/.test(route), "L9 قفل التثبيت في قاعدة البيانات (يراه كل خادم في كل منطقة)، ويُفكّ دائماً");
+  check(/renewScheduleApplyLease\(applyLock/.test(route) && /clearInterval\(leaseRenewal\)/.test(route), "L9 ويُمدّ أجلُه ما دام التثبيت جارياً");
   check(/termRows = await Repository\.getSchedulesByScope\(\{ termId \}\);\s*finalWeek = buildWeek\(termRows\)/.test(route), "L10 الأسبوع يُعاد بناؤه من الجدول الحيّ لحظة الكتابة");
   check(/decision-save-failed/.test(route) && /await rollback\(\)/.test(route), "L11 تعذّر حفظ القرار يردّ الجدول (لا صفّ بلا قرار)");
 }

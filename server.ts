@@ -19084,6 +19084,8 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
     res.status(409).json({ error: "يجري الآن تثبيتٌ آخر في هذا الفصل. انتظر لحظة ثم أعد المحاولة.", code: "apply-busy" });
     return;
   }
+  /* يُمدّ القفلُ كل ٤٠ ثانية ما دام التثبيتُ جارياً، فلا ينتهي أجلُه في منتصف سلسلةٍ طويلة. */
+  const leaseRenewal = setInterval(() => { void Repository.renewScheduleApplyLease(applyLock, applyHolder).catch(() => undefined); }, 40_000);
   try {
 
   const instructor = await Repository.getInstructorById(Number(stored.AdInstructorId));
@@ -19273,7 +19275,10 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
     `${step.action === "delete" ? "حذف" : step.action === "create" ? "إضافة" : "نقل"} ${step.days.map(dayLabelOf).join(" و")} ${formatScheduleTimeRange(step.start, step.end)}`).join(" · ");
   res.locals.auditRowIds = done.map(step => Number(step.op.kind === "delete" ? step.op.rowId : step.row?.id)).filter(Number.isFinite);
   res.json({ ...(await judgeRequestItems(saved, { forDepartment: true })), applied: plan, warnings });
-  } finally { await Repository.releaseScheduleApplyLease(applyLock, applyHolder).catch(() => undefined); }
+  } finally {
+    clearInterval(leaseRenewal);
+    await Repository.releaseScheduleApplyLease(applyLock, applyHolder).catch(() => undefined);
+  }
 });
 
 /* ── حوارُ البند: ردُّ القسم واقتراحُه ─────────────────────────────────────

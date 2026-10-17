@@ -5477,6 +5477,23 @@ export const Repository = {
     localApplyLeases.set(key, { until: now + ttlMs, holder });
     return true;
   },
+  /** يمدّ أجلَ القفل ما دام صاحبُه يعمل (تثبيتٌ طويل لا يفقد قفله في منتصفه). */
+  renewScheduleApplyLease: async (key: string, holder: string, ttlMs = 2 * 60_000): Promise<boolean> => {
+    const now = Date.now();
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleApplyLocks").doc(key.replace(/[^\w-]/g, "_"));
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        if (!snap.exists || (snap.data() as any).holder !== holder) return false;
+        transaction.set(ref, { until: now + ttlMs, holder });
+        return true;
+      });
+    }
+    const held = localApplyLeases.get(key);
+    if (!held || held.holder !== holder) return false;
+    localApplyLeases.set(key, { until: now + ttlMs, holder });
+    return true;
+  },
   releaseScheduleApplyLease: async (key: string, holder: string): Promise<void> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("scheduleApplyLocks").doc(key.replace(/[^\w-]/g, "_"));
