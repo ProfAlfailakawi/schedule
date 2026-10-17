@@ -104,6 +104,8 @@ import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/se
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
 import { seedDemoRadar } from "./src/server/demoRadarSeed";
+import { seedDemoPreviousTerm, seedDemoCurrentTermStories } from "./src/server/demoPreviousTermSeed";
+import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instructorRequestItems";
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
 import { registerInsightRoutes } from "./src/server/insightRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
@@ -183,7 +185,9 @@ const app = express();
  * gone). Trusting one hop restores the real client IP as the limiter key.
  */
 app.set("trust proxy", 1);
-const PORT = 3000;
+/* المنفذُ ثابتٌ (3000) في كل بيئة. والتجريبيُّ وحده (DATA_MODE=demo) يقبل PORT ليُشغَّل بجانب خادمٍ آخر في بيئات التطوير والاختبار؛
+   فلا يتغيّر المنفذُ في أي نشرٍ حقيقيّ (Cloud Run ينشر بـDATA_MODE=firestore). */
+const PORT = process.env.DATA_MODE === "demo" && Number(process.env.PORT) > 0 ? Number(process.env.PORT) : 3000;
 
 
 // User-facing reference lists follow one ordering contract everywhere: Arabic
@@ -2356,6 +2360,12 @@ async function seedDemoStories(): Promise<void> {
 
   // ── رادارُ التسجيل (f): صحائفُ وقواعد وطلبةٌ وتذاكرُ وأجوبة، بالأسماء الوهمية نفسها.
   await seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() }).catch(error => console.error("[demo] seeding radar failed:", error));
+
+  // ── بقيةُ الأقسام في الفصل الجاري، ثم الفصلُ السابق (g): كشفُ تسجيل ورغباتُ أساتذة ومقترحاتٌ
+  //    في كل قسم، ليُعرض كلُّ شيءٍ ممتلئاً — والسابقُ «للعرض فقط».
+  const storyDeps = { sealIdentity: sealStudentIdentity, fingerprintOf: surveyFingerprint, requestItemFromRow, dayLetters: DAY_LETTERS, judge: (request: InstructorRequest) => judgeRequestItems(request) };
+  await seedDemoCurrentTermStories(storyDeps, termId).catch(error => console.error("[demo] seeding current-term stories failed:", error));
+  await seedDemoPreviousTerm(storyDeps).catch(error => console.error("[demo] seeding previous term failed:", error));
 }
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
@@ -18167,53 +18177,6 @@ const requestWindowOpen = (request: InstructorRequest): boolean => {
   if (Number.isFinite(closes) && now > closes) return false;
   return request.status !== "settled";
 };
-
-const dayKeysOf = (row: any): RequestDayKey[] =>
-  (["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as RequestDayKey[]).filter(key => Boolean(row?.[key]));
-
-const DAY_LETTERS: Record<RequestDayKey, string> = {
-  fsunday: "الأحد", fmonday: "الاثنين", ftuesday: "الثلاثاء", fwednesday: "الأربعاء", fthursday: "الخميس",
-};
-
-/** لقطةُ صفٍّ كما تُقرأ. */
-function requestSnapshot(row: any, courseName: string, withRoom: boolean): InstructorRequestSnapshot {
-  return {
-    courseId: Number(row.AdCourseId || 0),
-    courseName,
-    sectionCode: String(row.SCode || ""),
-    days: dayKeysOf(row).map(key => DAY_LETTERS[key]).join(" · "),
-    time: `${row.fstarttime || ""} – ${row.fendtime || ""}`,
-    ...(withRoom ? { room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") } : {}),
-  };
-}
-
-/**
- * ── جدولُ الأستاذ كلُّه، بكل كلياته ─────────────────────────────────────────
- *
- * كان الطلبُ يُبنى من صفوف الأستاذ في الكلية والقسم اللذين أصدرا الرابط وحدهما.
- * فأستاذٌ يدرّس محاضرتين — إحداهما في كليةٍ أخرى — كانت «بطاقتي» تعرض له
- * الاثنتين والطلبُ واحدةً، فيسأل: أين محاضرتي الثانية؟ فصار الطلبُ يقرأ ما
- * تقرؤه البطاقة: كلَّ صفوفه في الفصل. وكلُّ بندٍ يحمل كليتَه وقسمَه، فيصل
- * منسّقَ تلك الكلية وحده (انظر `requestItemScope`).
- */
-function requestSnapshotAt(row: any, courseName: string, collegeNameById: Map<number, string>): InstructorRequestSnapshot {
-  const collegeId = Number(row.AdCollegeId || 0);
-  const sectionId = Number(row.AdSectionId || 0);
-  return {
-    ...requestSnapshot(row, courseName, true),
-    ...(collegeId ? { collegeId, collegeName: collegeNameById.get(collegeId) || undefined } : {}),
-    ...(sectionId ? { sectionId } : {}),
-  };
-}
-
-function requestItemFromRow(row: any, courseName: string, collegeNameById: Map<number, string>): InstructorRequestItem {
-  return {
-    rowId: Number(row.id),
-    action: "keep",
-    before: requestSnapshotAt(row, courseName, collegeNameById),
-    slots: dayKeysOf(row).map(day => ({ day, start: String(row.fstarttime || ""), end: String(row.fendtime || "") })),
-  };
-}
 
 /** موقعُ البند: الإضافةُ حيث اختار الأستاذ، والتعديلُ والحذفُ حيث يقع الصفُّ نفسُه.
  *  والطلباتُ القديمة التي لا تحمل موقعاً تعود إلى موقع الرابط، كما كانت. */
