@@ -849,6 +849,10 @@ async function main() {
     check(await Repo.markAdLeadContacted(lead.id, "2026-10-20T10:00:00Z") === true && await Repo.markAdLeadContacted("missing", "2026-10-20T10:00:00Z") === false, "طلب حملة: تسجيل التواصل ينجح، وطلبٌ غير موجود false");
     const after: any = (await Repo.listAdLeads()).find((l: any) => l.id === lead.id);
     check(after.status === "contacted" && !!after.contactedAt && after.phone === "99887766", "طلب حملة: تم التواصل يغيّر الحالة وحدها");
+    const { leadMail, leadNotifyTo } = await import("../src/server/adMailer");
+    const lm = leadMail({ company: "شركة النور", name: "سالم", phone: "99887766", email: "a@b.com", slotLabels: ["الجدول العام"], seasonLabel: "بدء الفصل", note: "نبي نبدأ" });
+    check(lm.subject.includes("شركة النور") && lm.text.includes("الجوّال: 99887766") && lm.text.includes("المواقع: الجدول العام") && lm.text.includes("إدارة الإعلانات"), "بريد المالك: الموضوع والمحتوى", lm);
+    check(leadNotifyTo({ AD_LEAD_NOTIFY_TO: " Me@Mail.com " } as any) === "me@mail.com" && leadNotifyTo({} as any) === "" && leadNotifyTo({ AD_LEAD_NOTIFY_TO: "bad" } as any) === "", "بريد المالك: المستلم من البيئة، وفارغٌ أو غير صالح = لا بريد");
     const leadForm = (await import("../src/server/adsPages")).partnerKitPage({ stats: stats as any, liveBySlot: {}, today: "2026-11-20", nonce: "N", token: "tok/1", leadResult: "ok" });
     check(leadForm.includes('action="/partners/tok%2F1/lead"') && leadForm.includes('name="website"') && leadForm.includes('href="#new"') && leadForm.includes("وصلنا طلبك"), "ملف الشراكة: زر «حملة جديدة» ونموذجٌ يُرسل إلى مسار الطلب مع حقل الفخ ورسالة النجاح");
     check(B.instructorOpens === 75_000 && B.instructors === 786 && B.students === 80_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");

@@ -30,7 +30,7 @@ import { reportCalendar } from "../utils/adCalendar";
 import { LEAD_ERRORS, cleanLead } from "../utils/adLeads";
 import { abVerdict, conversionOf } from "../utils/adInsights";
 import { partnerBadgeSvg } from "../utils/adBadge";
-import { cleanEmail, mailConfig, renewalMail, sendMail, weekKey, weeklyMail } from "./adMailer";
+import { cleanEmail, leadMail, leadNotifyTo, mailConfig, renewalMail, sendMail, weekKey, weeklyMail } from "./adMailer";
 import { SEASONS, activeSeasons, seasonCalendar, seasonsText } from "../utils/adSeasons";
 import { AR, countOf } from "../utils/arabicCount";
 import type { CenterNotification } from "../utils/notificationCenter";
@@ -590,6 +590,12 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const dup = existing.find(l => l.status === "new" && l.phone === lead.phone && l.company === lead.company && Date.now() - Date.parse(l.createdAt) < 86_400_000);
     if (!dup && existing.filter(l => l.status === "new").length < 200) {
       await Repository.createAdLead({ company: lead.company, name: lead.name, phone: lead.phone, ...(lead.email ? { email: lead.email } : {}), slots: lead.slots, ...(lead.season ? { season: lead.season } : {}), ...(lead.note ? { note: lead.note } : {}) });
+      /* بريدٌ للمالك إن ضُبطت إعداداته؛ لا ننتظره ولا يفشل الطلب بفشله. */
+      const cfg = mailConfig(), to = leadNotifyTo();
+      if (cfg && to) {
+        void sendMail(cfg, to, leadMail({ company: lead.company, name: lead.name, phone: lead.phone, email: lead.email, slotLabels: lead.slots.map(id => activeSlots().find(x => x.id === id)?.label || id), seasonLabel: SEASONS.find(x => x.id === lead.season)?.label, note: lead.note }))
+          .then(r => { if (!r.ok) console.warn("lead mail:", r.error); });
+      }
     }
     res.redirect(303, `${back}?lead=ok#new`);
   });
