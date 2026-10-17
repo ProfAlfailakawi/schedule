@@ -36,8 +36,7 @@ try {
       const response = await fetch(BASE + url, { method, headers: { cookie, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json().catch(() => null) as any };
     };
-    /* قاعات التجربة بلا سعة وأساتذتها بلا نصاب؛ بدونهما يقول المحرّك السبب ولا يخترع. */
-    for (const room of (await call("GET", "/api/location-registry")).body.rooms) await call("PUT", `/api/admin/location-registry/rooms/${room.id}`, { capacity: 60 });
+    /* سعة القاعة مخفيّة من البرنامج: القاعة بلا سعة مسجّلة تبقى صالحةً للبناء. أساتذة التجربة بلا نصاب؛ بدونه يقول المحرّك السبب ولا يخترع. */
     for (const person of (await call("GET", "/api/instructors")).body as any[]) await call("PUT", `/api/instructors/${person.AdInstructorId}`, { ...person, AdInstructorLoad: 40 });
 
     const scope = { collegeId: 1, sectionId: 1, termId: 1 };
@@ -70,6 +69,8 @@ try {
     /* ── فصلٌ فارغ: وقتٌ من الفصل المماثل وقاعةٌ بانتظار التثبيت، ومراجعةٌ في شاشة الاستيراد نفسها ── */
     check((await call("POST", "/api/section-build/review-rows", { collegeId: 1, sectionId: 2, termId: 1, targets: { "1": 1 } })).status === 409, "قسمٌ فيه مواعيد: المراجعة (التي تستبدل الجدول) مرفوضة");
     for (const row of before) await call("DELETE", `/api/schedules/${row.id}`);
+    /* «لا قاعة موثّقة»: القاعات موقوفة، فيُبنى الوقت من الفصل المماثل وتنتظر القاعة تثبيتها. */
+    for (const room of (await call("GET", "/api/location-registry")).body.rooms) await call("PUT", `/api/admin/location-registry/rooms/${room.id}`, { active: false });
     const empty = await call("POST", "/api/section-build/preview", base);
     const all = empty.body.rows.flatMap((r: any) => r.placements);
     const pendingOnly = all.filter((p: any) => p.pending);
