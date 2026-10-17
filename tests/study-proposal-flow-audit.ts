@@ -59,8 +59,8 @@ async function main() {
   const A = (method: string, path: string, body?: unknown) => http(method, path, body, cookie);
 
   const reqs = (await A("GET", `/api/instructor-requests?${SCOPE}`)).json.rows as any[];
-  const salem = reqs.find(r => r.instructorName === "د. سالم فهد")!;
-  const noura = reqs.find(r => r.instructorName === "د. نورة خالد")!;
+  const salem = reqs.find(r => r.instructorName === "عضو هيئة تدريس تجريبي 1")!;
+  const noura = reqs.find(r => r.instructorName === "عضو هيئة تدريس تجريبي 2")!;
   const instructors = (await A("GET", "/api/instructors")).json as any[];
   const civilOf = (name: string) => String(instructors.find(i => i.AdInstructorName === name).AdInstructorCivil);
   const placeholder = instructors.find(i => String(i.AdInstructorName).startsWith("هيئة"));
@@ -127,10 +127,10 @@ async function main() {
   check(wrong.status === 403 || wrong.status === 400, "رقمٌ مدني خاطئ لا يوقّع الردّ", wrong.json);
   const other = await http("GET", `/api/public/request/${noura.linkId}/proposals/${p1.proposal.id}`);
   check(other.status === 404, "رابط أستاذٍ آخر لا يرى مقترح غيره");
-  const ok1 = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], "د. سالم فهد");
+  const ok1 = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1");
   check(ok1.status === 200 && ok1.json.proposal.status === "approved", "ردّ الأستاذ الموقَّع بالرقم المدني يُسجَّل موافقة", ok1.json);
-  check(JSON.stringify((await getP(p1.proposal.id)).proposal).includes(civilOf("د. سالم فهد")) === false, "الرقم المدني لا يُخزَّن في المقترح");
-  check((await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], "د. سالم فهد")).json.duplicate === true, "تكرار الموافقة نفسها لا يسجَّل مرتين");
+  check(JSON.stringify((await getP(p1.proposal.id)).proposal).includes(civilOf("عضو هيئة تدريس تجريبي 1")) === false, "الرقم المدني لا يُخزَّن في المقترح");
+  check((await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1")).json.duplicate === true, "تكرار الموافقة نفسها لا يسجَّل مرتين");
   check((await rows()).find(r => r.id === fac1.id).AdInstructorId === placeholder.AdInstructorId, "موافقة الأستاذ وحدها لا تغيّر الجدول (بانتظار تثبيت القسم)");
   const cur1 = await getP(p1.proposal.id);
   const dry = await A("POST", `/api/study-proposals/${p1.proposal.id}/commit`, { rev: cur1.proposal.rev });
@@ -142,7 +142,7 @@ async function main() {
   check(after1.find(r => r.id === fac1.id).AdInstructorId === salemInstructorId, "الشعبة نفسها (بمعرّفها) صارت للأستاذ");
   const again = await A("POST", `/api/study-proposals/${p1.proposal.id}/commit`, { rev: cur1.proposal.rev, confirm: true });
   check(again.status === 200 && again.json.alreadyCommitted === true && (await rows()).length === termCount0, "تكرار التثبيت لا يكرّر الإسناد");
-  const closed = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "changes" }], "د. سالم فهد", { reason: "time" });
+  const closed = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "changes" }], "عضو هيئة تدريس تجريبي 1", { reason: "time" });
   check(closed.status === 409, "لا ردّ على مقترحٍ مثبّت", closed.json);
 
   /* ═══ ٢) الشعبة الجديدة: تُنشأ عند التثبيت فقط ═════════════════════════════ */
@@ -151,7 +151,7 @@ async function main() {
   check((await rows()).filter(r => r.SCode === "701").length === 0, "إضافة المادة إلى المسودة لا تُنشئها في الجدول الفعلي");
   await sendIt(p2);
   check((await rows()).filter(r => r.SCode === "701").length === 0, "إرسالها للأستاذ لا يُنشئها أيضاً");
-  await respond(salem, p2.proposal.id, 1, [{ opId: "c1", decision: "approve" }], "د. سالم فهد");
+  await respond(salem, p2.proposal.id, 1, [{ opId: "c1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1");
   const c2 = await getP(p2.proposal.id);
   const done2 = await A("POST", `/api/study-proposals/${p2.proposal.id}/commit`, { rev: c2.proposal.rev, confirm: true });
   const made = (await rows()).filter(r => r.SCode === "701");
@@ -201,7 +201,7 @@ async function main() {
   const lp = (await newProposal(salem, [replaceOp], "linked")).json;
   check(lp.proposal?.responseMode === "linked", "الترتيب المترابط يُحفظ بنوعه");
   await sendIt(lp);
-  const lr = await respond(salem, lp.proposal.id, 1, "changes", "د. سالم فهد", { reason: "time", note: "الخميس مزدحم" });
+  const lr = await respond(salem, lp.proposal.id, 1, "changes", "عضو هيئة تدريس تجريبي 1", { reason: "time", note: "الخميس مزدحم" });
   check(lr.status === 200 && lr.json.proposal.status === "changes", "ترتيبٌ مترابط: طلبُ التعديل يشمل المجموعة", lr.json);
   const lcur = await getP(lp.proposal.id);
   const lcommit = await A("POST", `/api/study-proposals/${lp.proposal.id}/commit`, { rev: lcur.proposal.rev, confirm: true });
@@ -209,13 +209,13 @@ async function main() {
   const edited = await A("PUT", `/api/study-proposals/${lp.proposal.id}`, { rev: lcur.proposal.rev, ops: [{ ...replaceOp, target: { ...replaceOp.target, fstarttime: "16:00", fendtime: "16:50" } }] });
   check(edited.status === 200 && edited.json.proposal.version === 2 && edited.json.proposal.status === "draft", "تعديل تفاصيل ما أُرسل ينشئ نسخةً جديدة (٢) مسودة", edited.json.error);
   check(edited.json.proposal.versions.length === 1 && edited.json.proposal.responses.length === 1, "تاريخ النسخ والردود السابقة محفوظ لا يُمحى");
-  const midResp = await respond(salem, lp.proposal.id, 1, "approve", "د. سالم فهد");
+  const midResp = await respond(salem, lp.proposal.id, 1, "approve", "عضو هيئة تدريس تجريبي 1");
   check(midResp.status === 409, "أثناء تجهيز نسخةٍ جديدة لا يُقبل الردّ على القديمة", midResp.json);
   const sent2 = await A("POST", `/api/study-proposals/${lp.proposal.id}/send`, { rev: edited.json.proposal.rev });
   check(sent2.status === 200 && sent2.json.proposal.sentVersion === 2, "إرسال النسخة المعدّلة", sent2.json.error);
-  const oldVer = await respond(salem, lp.proposal.id, 1, "approve", "د. سالم فهد");
+  const oldVer = await respond(salem, lp.proposal.id, 1, "approve", "عضو هيئة تدريس تجريبي 1");
   check(oldVer.status === 409 && oldVer.json.code === "stale-version", "موافقةٌ على نسخةٍ قديمة تُرفض ولا تنطبق على الأحدث", oldVer.json);
-  const newVer = await respond(salem, lp.proposal.id, 2, "approve", "د. سالم فهد");
+  const newVer = await respond(salem, lp.proposal.id, 2, "approve", "عضو هيئة تدريس تجريبي 1");
   check(newVer.status === 200 && newVer.json.proposal.status === "approved", "الموافقة على النسخة الحالية");
   const hist = (await getP(lp.proposal.id)).proposal;
   check(hist.responses.length === 2 && hist.responses[0].version === 1, "ردُّ النسخة القديمة محفوظٌ بجانب الجديد");
@@ -233,7 +233,7 @@ async function main() {
   const p6 = (await newProposal(noura, [opAssign("n1", f4), opAssign("n2", f5)])).json;
   const s6 = await sendIt(p6);
   check(s6.status === 200, "تجهيز مقترح المواد المستقلة وإرساله", s6.json.evaluation?.findings?.map((f: any) => `${f.kind}:${f.code}:${f.title}:${f.detail}`));
-  const pr = await respond(noura, p6.proposal.id, 1, [{ opId: "n1", decision: "approve" }, { opId: "n2", decision: "changes" }], "د. نورة خالد", { reason: "place", note: "أفضّل قاعةً أخرى" });
+  const pr = await respond(noura, p6.proposal.id, 1, [{ opId: "n1", decision: "approve" }, { opId: "n2", decision: "changes" }], "عضو هيئة تدريس تجريبي 2", { reason: "place", note: "أفضّل قاعةً أخرى" });
   check(pr.status === 200 && pr.json.proposal.status === "partial", "موافقةٌ على مادة وطلبُ تعديل أخرى = موافقةٌ جزئية", pr.json);
   const c6 = await getP(p6.proposal.id);
   check(c6.commitReadiness.ok === true && c6.commitReadiness.partial === true && c6.commitReadiness.opIds.join() === "n1", "الجاهز للتثبيت هو المادة الموافَق عليها وحدها");
@@ -246,7 +246,7 @@ async function main() {
   const p7 = (await newProposal(salem, [opAssign("s1", f6)])).json;
   const sent7 = await sendIt(p7);
   check(sent7.status === 200, "تجهيز مقترحٍ سيتغيّر جدوله", sent7.json.error);
-  await respond(salem, p7.proposal.id, 1, [{ opId: "s1", decision: "approve" }], "د. سالم فهد");
+  await respond(salem, p7.proposal.id, 1, [{ opId: "s1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1");
   const fresh = (await rows()).find(r => r.id === f6.id);
   const takenBy = base.find(r => r.AdInstructorId !== placeholder.AdInstructorId && r.AdInstructorId !== salemInstructorId)!.AdInstructorId;
   const put = await A("PUT", `/api/schedules/${f6.id}`, { ...fresh, AdInstructorId: takenBy, rev: fresh.rev });
