@@ -15065,6 +15065,8 @@ app.post("/api/section-build/review-rows", requirePermission(7), async (req: Aut
   const built = await readSectionBuild(collegeId, sectionId, termId, req.body?.targets);
   const rows = built.rows.flatMap(row => row.placements.map(p => ({
     "القاعة": p.roomHall || "", "المبنى": p.roomCode || "", "الوقت": `${p.start}-${p.end}`,
+    /* القارئ يقرأ نصّ «الوقت» بترتيب العرض العربي (النهاية أولاً)، فالبداية والنهاية تُرسلان صريحتين فلا تنقلبان. */
+    fstarttime: p.start, fendtime: p.end,
     "الأيام": ((p as any).days || [p.day]).map((day: string) => dayLabelOf(day)).join(" - "),
     "الرقم المدني": "", "أستاذ المقرر": p.instructorName || "", "الشعبة": p.sectionCode, "المقرر الدراسي": row.name, "رمز المقرر": row.code,
   })));
