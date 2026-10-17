@@ -81,4 +81,5 @@
 .rh-chip{display:inline-flex;align-items:center;gap:5px;min-block-size:24px;padding:0 9px;border-radius:var(--r-full);border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:.72rem}
 .rh-chip svg{inline-size:13px;block-size:13px}
 .rh-chip.is-good{color:var(--success,var(--accent));border-color:color-mix(in srgb,var(--success,var(--accent)) 35%,var(--line))}
+.rh-chip.is-info{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
 .rh-chip.is-warn{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}
