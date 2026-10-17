@@ -809,7 +809,7 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   if(sectionsTwice)alerts.push({severity:"warning",title:`الشعبة نفسها مرتين في الوقت نفسه · ${countOf(sectionsTwice, AR.section)}`,detail:"في قاعتين أو بأستاذين. تنبيهٌ لا يمنع الاعتماد؛ إن كانتا شعبتين فغيّر رقم إحداهما."});
   const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${countOf(longGap, AR.instructor)} ${nounFor(longGap, AR.hasPron)} فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
   if(lateRows)alerts.push({severity:"info",title:`${countOf(lateRows, AR.appointment)} ${nounFor(lateRows, AR.lateAdj)}`,detail:`بعد ${scheduleClockForDisplay("16:00")}.`});
-  if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`تفاوت ملحوظ بين أحمال الأيام · ${imbalance}%.`});
+  if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`تفاوت ملحوظ بين أحمال الأيام: \u2068${imbalance}%\u2069.`});
   if(invalidRows)alerts.push({severity:"critical",title:`${countOf(invalidRows, AR.record)} ببيانات ناقصة`,detail:"موعد ناقص أو غير صالح."});
   if(!alerts.length)alerts.push({severity:"info",title:"الوضع مستقر",detail:"لا توجد ملاحظات حرجة."});
 

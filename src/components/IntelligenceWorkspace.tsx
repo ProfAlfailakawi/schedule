@@ -363,7 +363,7 @@ const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
               <strong>{card.label}</strong>
               <small>{card.detail}</small>
             </span>
-            {card.metric ? (ringFromScoreText(card.metric) ? <b className="insight-preview-ring">{ringFromScoreText(card.metric)}</b> : <b data-long={card.metric.length > 7 || undefined}>{card.metric}</b>) : null}
+            {card.metric ? (ringFromScoreText(card.metric) ? <b className="insight-preview-ring">{ringFromScoreText(card.metric)}</b> : <b data-long={card.metric.length > 7 || undefined} data-word={/[\u0600-\u06FF]/.test(card.metric) || undefined}>{card.metric}</b>) : null}
           </button>
         ))}
       </div>
@@ -426,7 +426,7 @@ function metricBadge(metric: unknown) {
   const ring = ringFromScoreText(pct ? `${pct[1]}/100` : text);
   if (ring) return <b className="insight-preview-ring">{ring}</b>;
   /* قيمةٌ نصيةٌ طويلة («لا موانع»، «تاريخ غير كافٍ») تُصغَّر فلا تنكسر بخطّ الرقم الكبير. */
-  return text && !/^[0٠]$/.test(text) ? <b data-long={text.length > 7 || undefined}>{text}</b> : null;
+  return text && !/^[0٠]$/.test(text) ? <b data-long={text.length > 7 || undefined} data-word={/[\u0600-\u06FF]/.test(text) || undefined}>{text}</b> : null;
 }
 
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
@@ -2405,6 +2405,19 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   }, [insightScene, insightReason]);
 
   const activeInsight = insightScenes.find((item) => item.value === insightScene) || null;
+  /* One heading per reading: an eyebrow inside the open reading that merely
+     repeats the page heading's title is marked, and the stylesheet quiets it.
+     Attribute only; no text or structure changes. */
+  useEffect(() => {
+    const label = activeInsight?.label?.trim();
+    const root = document.querySelector(".insight-canvas.open");
+    if (!label || !root) return;
+    root.querySelectorAll<HTMLElement>(".insight-scene-panel:not([hidden]) .surface-kicker").forEach(el => {
+      const text = (el.textContent || "").trim();
+      if (text && (text === label || text.includes(label) || label.includes(text))) el.setAttribute("data-dup", "");
+      else el.removeAttribute("data-dup");
+    });
+  });
   const activeInsightKey = activeInsight?.value || "";
   const reasonCourseById = useMemo(() => new Map(courses.map(course => [Number(course.AdCourseId), course])), [courses]);
   const reasonInstructorById = useMemo(() => new Map(instructors.map(instructor => [Number(instructor.AdInstructorId), instructor])), [instructors]);
