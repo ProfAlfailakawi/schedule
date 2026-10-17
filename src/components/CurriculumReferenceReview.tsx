@@ -159,7 +159,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction, 
             const dim = focusedCode && !selectedCourse && !tone;
             return <article key={course.code} data-cid={key} className={`reference-course-card state-${course.state}${tone ? ` is-${tone}` : ""}${selectedCourse ? " is-selected" : ""}${dim ? " is-dim" : ""}`}>
               <button type="button" className="reference-course-main" aria-pressed={selectedCourse} onClick={() => setFocusedCode(selectedCourse ? "" : course.code)} data-guide-ignore="إظهار روابط المتطلبات للمقرر في الصحيفة">
-                <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi>{course.prerequisites.length ? <span className="reference-prereq-summary" title={`يسبقه ${course.prerequisites.length}`}><Link2 size={12} aria-hidden="true" />{course.prerequisites.length}</span> : null}<i className={`reference-dot status-${course.state}`} title={statusLabels[course.state] || ""} /></span>
+                <span className="reference-course-top"><bdi dir="ltr">{course.code}</bdi>{course.prerequisites.length ? <span className="reference-prereq-summary" title={`يسبقه ${course.prerequisites.length}`}><Link2 size={12} aria-hidden="true" />{course.prerequisites.length}</span> : null}<i className={`reference-dot status-${course.state}`} aria-hidden="true" /><span className="sr-only">{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
                 <strong>{course.name}</strong>
               </button>
               {selectedCourse ? <div className="reference-course-more">
