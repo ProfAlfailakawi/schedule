@@ -247,6 +247,7 @@ async function main() {
   check(!E.eligibleNow(tgt({ seasons: ["finals"] }), { today: "2026-11-10", seasons: ["start", "registration"] }), "A8 موسمٌ لم يحن: لا تُعرض");
   check(E.eligibleNow(tgt({}), { today: "2026-11-10", seasons: [] }), "A8 بلا استهداف: تُعرض دائماً");
   check(!E.eligibleNow(tgt({ colleges: [3] }), { today: "2026-11-10", seasons: [] }), "A8 مستهدفةٌ بكلية ولا سياق (مساري): لا تُعرض");
+  check(E.campaignProblems({ company: "أ", category: "ج", slot: "me", startDay: "2026-11-05", endDay: "2026-11-20", colleges: [3] }).length === 1 && E.campaignProblems({ company: "أ", category: "ج", slot: "schedule", startDay: "2026-11-05", endDay: "2026-11-20", colleges: [3] }).length === 0, "A8 «مساري» لكل الجامعة: لا استهداف بكلية فيه، ويصح في الجدول العام");
   check(E.eligibleNow(tgt({ colleges: [3] }), { today: "2026-11-10", seasons: [], collegeId: 3 }) && !E.eligibleNow(tgt({ colleges: [3] }), { today: "2026-11-10", seasons: [], collegeId: 4 }), "A8 الكلية تطابق أو لا");
   check(E.cleanSeasons(["start", "hack", "start", 5]).join() === "start" && E.cleanColleges(["3", 3, -1, 2.5, "x", 7]).join() === "3,7", "A8 تنظيف قوائم الاستهداف");
   /* السعة تُحسب على من يتقاطع جمهورُهم: ٥ حملات في «مساري» لكلٍّ موسمُها لا تملأ الموقع. */
