@@ -318,3 +318,8 @@
 .ad-attn .ic{display:inline-flex;flex:none}
 .ad-clear{margin:0;padding:10px 14px;border-radius:12px;background:var(--surface-2,#f1f4f2);color:var(--muted,#5f6b66);font-size:.9rem}
 .ad-attn{margin-block-end:14px}
+.ad-linkrow{display:flex;gap:8px;align-items:center}
+.ad-linkrow input{flex:1;min-inline-size:0}
+.ad-linktest{flex:none;display:inline-flex;align-items:center;min-block-size:44px;padding:0 14px;border-radius:12px;border:1px solid var(--accent);color:var(--accent);font-weight:700;font-size:13px;text-decoration:none;white-space:nowrap}
+.ad-linktest:hover{background:var(--accent-soft,transparent)}
+.ad-linktest.is-off{border-color:var(--line);color:var(--muted);opacity:.6;cursor:not-allowed}

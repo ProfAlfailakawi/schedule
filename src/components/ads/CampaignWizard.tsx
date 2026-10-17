@@ -61,15 +61,17 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
   const finals = data.calendar.find(i => i.season === "finals" && i.to >= data.today)?.to;
   const seasonText = form.seasons.length ? form.seasons.map(id => data.seasons.find(s => s.id === id)?.label || id).join("، ") : "كل المواسم";
 
+  const linkOk = /^https:\/\/[^\s/]+\.[^\s/]+/.test(form.linkUrl.trim());
+
   const stepOneProblems = useMemo(() => {
     const p: string[] = [];
     if (!form.company.trim()) p.push("اسم الشركة مطلوب.");
     if (!form.slot) p.push("اختر موقعاً.");
     if (!form.startDay || !form.endDay) p.push("حدّد تاريخي البداية والنهاية.");
     else if (form.endDay < form.startDay) p.push("تاريخ النهاية قبل البداية.");
-    if (!/^https:\/\/.+\..+/.test(form.linkUrl.trim())) p.push("رابط الوجهة يجب أن يبدأ بـ https://");
+    if (!linkOk) p.push("رابط الوجهة يجب أن يبدأ بـ https://");
     return p;
-  }, [form]);
+  }, [form, linkOk]);
 
   const save = async (): Promise<boolean> => {
     setSaving(true); setErr([]);
@@ -171,7 +173,14 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
             ) : null}
           </div>
 
-          <label className="ad-field">رابط الوجهة (https)<input dir="ltr" value={form.linkUrl} onChange={e => set("linkUrl", e.target.value)} /></label>
+          <label className="ad-field">رابط الوجهة (https)
+            <span className="ad-linkrow">
+              <input dir="ltr" value={form.linkUrl} onChange={e => set("linkUrl", e.target.value)} />
+              {linkOk
+                ? <a className="ad-linktest" href={form.linkUrl.trim()} target="_blank" rel="noopener noreferrer" title="افتح الرابط في تبويب جديد للتأكد" aria-label="جرّب الرابط في تبويب جديد">↗ جرّب</a>
+                : <span className="ad-linktest is-off" aria-hidden="true" title="اكتب رابطاً يبدأ بـ https:// لتفعيل التجربة">↗ جرّب</span>}
+            </span>
+          </label>
           <details className="ad-more"><summary>خياراتٌ إضافية: كود خصم وملاحظة</summary>
             <div className="ad-grid2">
               <label className="ad-field">كود الخصم <small>(يظهر تحت الإعلان ويقيس التحويل)</small><input dir="ltr" maxLength={24} value={form.coupon} onChange={e => set("coupon", e.target.value)} /></label>
