@@ -183,6 +183,112 @@
   .visual-minimal.intelligence-page .scene-subnav button{flex:1 1 0;padding:0 var(--s3);font-size:var(--ix-secondary)}
 }
 
+/* ── Readable floor inside readings (13px; 12px stays only for chart ticks) ── */
+.intelligence-page :is(label,em,u,summary,.btn,.badge,.insight-method,.gap-warn,.heat-time,
+  .demand-door-url,.demand-cohort,.student-case-plan,.sc-type,.student-case-state,
+  .student-case-more-toggle,.student-case-reason,.demand-rank,.eq-note){
+  font-size:var(--ix-caption);line-height:1.6;
+}
+.intelligence-page :is(.btn,.badge){font-size:var(--ix-secondary)}
+.intelligence-page .insight-canvas :is(summary,.insight-disclosure>summary){font-size:var(--ix-secondary);font-weight:600;min-height:var(--ix-tap);display:flex;align-items:center}
+/* No monospace anywhere in the centre except literal code/URLs: Plex Arabic
+   with tabular figures keeps columns aligned without clashing with the body. */
+.intelligence-page :not(code,kbd,pre,samp,.demand-door-url){font-family:var(--font-ui)}
+/* Heat cells: Plex Arabic with tabular figures. */
+.intelligence-page :is(.heat-cell,.heat-time,.density-grid,.density-table) :is(b,strong,span,td,th){
+  font-family:var(--font-ui);font-variant-numeric:tabular-nums;
+}
+.intelligence-page :is(b,strong,span,em,td,th)[class*="mono"]{font-family:var(--font-ui)}
+
+/* Stragglers found by measuring every reading at 1280/390: anything still under
+   13px is lifted here (specificity doubled instead of !important). */
+.intelligence-page.intelligence-page :is(
+  .field>label,.approval-metric-card>span,.schedule-heatmap>strong,.spatial-metrics article>span,
+  .guarded strong,.intel-rank-list button strong,.insight-method,.insight-method>b,
+  .professor-load-list button strong,.professor-load-list button span,
+  .health-tiles article>span,.health-advanced-row article>span,.slow-endpoints span>b,
+  .stat-card>div>span,.student-case-filters button span,.student-case-filters button b,
+  .student-case-state,.student-case-more-toggle,.demand-chart header strong,
+  .demand-course-label b,.demand-course-label small,.demand-bars li strong,
+  .genome-score>span,.genome-days article strong,.genome-rooms span,.genome-rooms b,
+  .unwritten-rules-list article b,.unwritten-rules-list article span strong,
+  .genome-foot span,.pi-history b,.pi-conf b,.copilot-head p,.prompt-chips button,
+  .copilot-empty span,.priority-high span strong,.priority-high span small,
+  .priority-medium span strong,.priority-medium span small,.mini-command-list button span,
+  section.surface>p,.segmented>button
+){font-size:var(--ix-caption);line-height:1.6}
+.intelligence-page.intelligence-page :is(.segmented>button,.prompt-chips button,.mini-command-list button span){
+  font-size:var(--ix-secondary);font-weight:600;
+}
+.intelligence-page.intelligence-page :is(.segmented>button,.prompt-chips button){min-height:40px}
+.intelligence-page.intelligence-page .heat-cell>b{font-size:12px}
+.intelligence-page.intelligence-page .demand-course-label small{font-family:var(--font-ui)}
+.intelligence-page.intelligence-page .field>label{color:var(--ix-label);font-weight:600}
+
 @media (prefers-reduced-motion:reduce){
   .intelligence-page *{scroll-behavior:auto}
+}
+
+/* Scope bar fields (الكلية / القسم / الفصل): label above, comfortable select. */
+.intelligence-page.intelligence-page :is(.intel-context-fields,.ask-scope-bar,.query-primary-filters) .field>label{
+  font-size:var(--ix-secondary);font-weight:600;color:var(--ix-label);letter-spacing:0;
+}
+.intelligence-page.intelligence-page :is(.intel-context-fields,.ask-scope-bar) .field :is(select,input){
+  min-height:var(--ix-tap);font-size:var(--ix-body);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   رادار يوم التسجيل + «بعد التسجيل: ماذا حدث؟» — same scale
+   Two metric levels only: --ix-metric (KPI tiles) and --ix-metric-sm (facts in
+   a card). Captions >=13px, single colour for labels (--ink-2 / --muted).
+   ══════════════════════════════════════════════════════════════════════════ */
+.sm-page{--ix-label:var(--ink-2);gap:var(--s4);font-size:var(--ix-body);line-height:1.65}
+.sm-page :is(b,strong,small,span,em,u){font-variant-numeric:tabular-nums}
+
+.sm-page.sm-page :is(.sm-phase small,.rd-facts small,.rd-ring small,.rd-note,.rd-why header small,
+  .sm-kpi small,.sm-kpi em,.os-legend-head small,.os-legend li small,.os-key,.os-name span,
+  .os-count small,.os-reasons li small,.os-reasons em,.os-dots small,.os-pcts small,
+  .sm-capacity-bands span,.sm-bars u,.sm-graduation-note,.sm-base,.sm-auto,.sm-gauge small,.sm-provenance){
+  font-size:var(--ix-caption);line-height:1.6;
+}
+.sm-page.sm-page :is(.sm-phase small,.rd-facts small,.rd-ring small,.sm-kpi small,.sm-kpi em,
+  .os-legend li small,.os-name span,.os-count small,.os-reasons li small,.os-dots small,
+  .os-pcts small,.sm-capacity-bands span,.sm-gauge small,.rd-note,.os-key,.os-legend-head small,.rd-why header small){
+  color:var(--muted);
+}
+.sm-page.sm-page :is(.rd-why li,.rd-why li b){font-size:var(--ix-secondary)}
+
+.sm-page.sm-page :is(.rd-why header b,.os-legend-head b,.sm-phase b,.sm-list h3,.sm-list>header h3){
+  font-size:var(--ix-card);font-weight:700;line-height:1.45;color:var(--ink);
+}
+.sm-page.sm-page .os-name b{font-size:var(--ix-card);font-weight:700;line-height:1.45}
+.sm-page.sm-page :is(.os-reasons li b,.os-legend li b){font-size:var(--ix-body);font-weight:600;line-height:1.5}
+.sm-page.sm-page :is(.sm-links button,.sm-actions .btn,.rd-go,.sm-toggle){
+  min-height:var(--ix-tap);font-size:var(--ix-secondary);font-weight:600;
+}
+.sm-page.sm-page .field>label{font-size:var(--ix-secondary);font-weight:600;color:var(--ix-label)}
+.sm-page.sm-page .field select{min-height:var(--ix-tap);font-size:var(--ix-body)}
+.sm-page.sm-page .sm-scenario-tabs button{min-height:var(--ix-tap);font-size:var(--ix-secondary);color:var(--ix-label)}
+.sm-page.sm-page details.sm-info>summary{font-size:var(--ix-secondary);font-weight:600;min-height:var(--ix-tap);display:flex;align-items:center}
+.sm-page.sm-page .sm-info>p{font-size:var(--ix-secondary);line-height:1.75}
+
+.sm-page.sm-page :is(.sm-kpi>b,.sm-views button>b){
+  font-size:var(--ix-metric);font-weight:700;line-height:1.1;letter-spacing:0;color:var(--ink);
+}
+.sm-page.sm-page .rd-ring b{font-size:var(--ix-metric);font-weight:700;line-height:1.1}
+.sm-page.sm-page :is(.rd-facts b,.os-count b,.os-pcts b,.sm-capacity-bands b){
+  font-size:var(--ix-metric-sm);font-weight:700;line-height:1.15;letter-spacing:0;
+}
+.sm-page.sm-page .sm-views button>small{font-size:var(--ix-caption);color:var(--ink-2);line-height:1.5}
+.sm-page.sm-page .sm-views button{min-height:var(--ix-tap)}
+.sm-page.sm-page .sm-kpis{gap:var(--s3)}
+.sm-page.sm-page .sm-kpi{padding:var(--s4)}
+.sm-page.sm-page .os-card{padding:var(--s4);gap:var(--s3)}
+.sm-page.sm-page .os-reasons li{padding:var(--s3);gap:2px var(--s3)}
+.sm-page.sm-page .rd-facts{gap:var(--s2)}
+.sm-page.sm-page .rd-facts article{padding:var(--s3)}
+
+@media (max-width:640px){
+  .sm-page{--ix-metric:28px;--ix-metric-sm:20px}
+  .sm-page.sm-page .rd-ring b{font-size:30px}
 }

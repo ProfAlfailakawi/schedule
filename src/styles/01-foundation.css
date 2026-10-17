@@ -157,6 +157,7 @@
   --ix-caption:13px;                 /* caption, eyebrow */
   --ix-metric:30px;                  /* tile numeral */
   --ix-metric-word:20px;             /* tile word value */
+  --ix-metric-sm:22px;               /* numeral inside a card (facts, counts) */
   --ix-tap:44px;                     /* comfortable touch height */
 
   /* Layout */
