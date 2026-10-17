@@ -91,7 +91,8 @@ ok('39 operational buildings require an actually usable room', 'eligibleBuilding
 ok('40 import blocker guides user to preview', 'أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.' in intel and 'scrollIntoView({ behavior: "smooth", block: "center" })' in intel and 'أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.' in server)
 admin=(ROOT/'src/components/LocationRegistryAdmin.tsx').read_text()
 ok('41 shared room is derived, never manually checked', 'shared=sectionIds.length>1' in server and 'checked={Boolean(editEntity.shared)}' not in admin and 'checked={newRoom.shared}' not in admin and 'تُصنّف تلقائيًا كمشتركة' in admin)
-ok('42 suggestions obey the same department room scope', 'room.shared||room.sectionIds.length===0||room.sectionIds.includes(sectionId)' not in server and 'borrowedRoomIds.has(room.id)' in server)
+registry_src=(ROOT/'src/utils/locationRegistry.ts').read_text(encoding='utf-8')
+ok('42 suggestions obey the same department room scope', 'room.shared||room.sectionIds.length===0||room.sectionIds.includes(sectionId)' not in server and 'eligibleHallsForSection(registry,sectionId,borrowedRoomIds)' in server and 'borrowedRoomIds.has(room.id)' in registry_src and '(room.sectionIds || []).includes(sectionId)' in registry_src)
 ok('43 admin workspace collapses secondary controls', '<details className="location-admin-guide">' in admin and 'showBuildingCreate' in admin and 'showRoomCreate' in admin)
 
 
