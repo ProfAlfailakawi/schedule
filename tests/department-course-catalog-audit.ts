@@ -23,8 +23,9 @@ check(/app\.(?:post|put)\("\/api\/courses(?:\/:id)?", requirePermission\(6\)/.te
 check(/sectionIdsByCollegeCode\.get\(`\$\{Number\(target\.AdCollegeId\)\}:\$\{course\.code\.slice\(2, 4\)\}`\)/.test(reviewRoutes)
   && /inferred\.length === 1 \? inferred\[0\] : 0/.test(reviewRoutes),
   "تحديد مالك المقرر الناقص يستخدم رمز القسم داخل الكلية ويطلب حسم الالتباس عند التكرار");
-check(/course\.ownerSectionId === selectedSectionId/.test(referenceView),
-  "مقررات المقارنة تقتصر على القسم المالك المختار وحده");
+check(/course\.ownerSectionId === selectedSectionId/.test(referenceView)
+  && /course\.current!\.id/.test(referenceView),
+  "تصحيح السجل وبدء الإضافة يظهران للقسم المالك المختار وحده");
 check(!/!course\.ownerSectionId \|\|/.test(referenceView) && !referenceView.includes("كل الأقسام")
   && /group\.courses\.filter\(course => course\.ownerSectionId === selectedSectionId\)/.test(referenceView),
   "صحيفة التخرج تحذف ما ليس للقسم المفتوح (لا «كل الأقسام»)، والعدّادات من مقررات القسم وحدها");

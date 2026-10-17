@@ -344,6 +344,7 @@ const ctx = (plan: number[]) => ({
   check(ui.includes("schedule:plan-review-updated") && ui.includes("createPortal(editor, document.body)") && ui.includes('aria-modal="true"'), "R6 اعتماد الصحيفة يحدّث الأيقونة فوراً ومحرّر المقرر نافذة حوار");
   check(ui.includes('localeCompare(b.code, "en", { numeric: true') && ui.includes("const electives = [...view.courses].sort"), "R6 قوائم اختيار المقررات مرتبة رقمياً");
   check(ui.includes("onSaveCourse") && ui.includes("/api/plan-review/course-details") && ui.includes("حفظ بيانات المقرر"), "R6 محرر المقرر في الخريطة يحفظ وحداته وساعاته وسعته");
+  check(refs.includes("تعديل الوحدات والساعات والسعة") && refs.includes('kind: "edit"') && refs.includes("reference-followups") && refs.includes('state !== "matched"'), "R6 صحيفة التخرج تبقي قائمة المتابعة (غير المطابق فقط) بتفاصيلها وأزرار التصحيح والإضافة، دون خريطة مكرّرة");
   check(styles.includes(".schedule-status .schedule-status-head .dna-hsub") && styles.includes("overflow-wrap:anywhere"), "R6 نص حالة الجدول يلتف داخل الإطار المرن");
 }
 

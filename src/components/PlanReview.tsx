@@ -189,6 +189,11 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     finally { setBusy(false); }
   };
 
+  const openCatalogCorrection = (action: { kind: "edit" | "create"; sectionId: number; collegeId: number; courseId?: number; code: string; name: string; credit: number; hours: number }) => {
+    sessionStorage.setItem("schedule-reference-course-action", JSON.stringify(action));
+    onNavigate?.("courses");
+  };
+
   const names = useMemo(() => {
     const map = new Map<number, CourseRow | { id: number; code: string; name: string }>();
     view?.courses.forEach(c => map.set(c.id, c));
@@ -261,7 +266,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
           <CurriculumReferenceReview sectionId={sectionId} canApply={Boolean(status?.canImport)}
             onPick={(id, _ref, plan) => { setSectionId(id); const own = status.sections.find(x => x.sectionId === id); setPlanId(plan || own?.plans[0]?.id || ""); setSelected(0); }}
             others={status.sections.filter(x => !isTechnologyEducation(x.sectionName)).map(x => ({ sectionId: x.sectionId, label: x.sectionName }))}
-            onPickOther={id => { const own = status.sections.find(x => x.sectionId === id); setSectionId(id); setPlanId(own?.plans[0]?.id || ""); setSelected(0); }} />
+            onPickOther={id => { const own = status.sections.find(x => x.sectionId === id); setSectionId(id); setPlanId(own?.plans[0]?.id || ""); setSelected(0); }} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
           {!planId ? <EmptyState title="لم تُجهّز صحيفة تشغيلية بعد" detail="المرجع المرفق متاح للمطابقة. إنشاء الصحيفة وربط مقرراتها يسبق اعتماد قواعدها." /> : !view ? <MicroLoader /> : (
             <>
               <div className={`pr-state ${view.state.status}`}>

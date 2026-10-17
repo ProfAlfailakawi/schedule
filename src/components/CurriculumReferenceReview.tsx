@@ -10,10 +10,14 @@ type Reference = Omit<CurriculumReference, "groups"> & { planId: string | null; 
 type SectionResult = { sectionId: number; collegeId: number; collegeName: string; sectionName: string; references: Reference[] };
 type RefCourse = Reference["groups"][number]["courses"][number];
 type CourseEntry = { course: RefCourse };
+type CatalogAction = { kind: "edit" | "create"; sectionId: number; collegeId: number; courseId?: number; code: string; name: string; credit: number; hours: number };
+
+const statusLabels: Record<string, string> = { matched: "مطابق", different: "يحتاج تصحيحًا", missing: "غير مضاف", ambiguous: "هوية غير محسومة" };
+const statusIcon = (state: string) => state === "matched" ? <Check size={14} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />;
 
 
-export default function CurriculumReferenceReview({ sectionId, canApply, onPick, others, onPickOther }: {
-  sectionId: number; canApply?: boolean;
+export default function CurriculumReferenceReview({ sectionId, onCatalogAction, canApply, onPick, others, onPickOther }: {
+  sectionId: number; onCatalogAction?: (action: CatalogAction) => void; canApply?: boolean;
   /** اختيارُ موقعٍ أو نسخةٍ هنا يقود الصفحةَ كلَّها: لا منتقيَ ثانياً فوقها. */
   onPick?: (sectionId: number, referenceId: string, planId: string | null) => void;
   /** أقسامٌ ليس لها مرجع (للانتقال إليها من القائمة نفسها). */
@@ -52,6 +56,7 @@ export default function CurriculumReferenceReview({ sectionId, canApply, onPick,
   const missing = entries.filter(row => row.course.state === "missing").length;
   const review = entries.filter(row => row.course.state === "different" || row.course.state === "ambiguous").length;
   const matches = entries.filter(row => row.course.state === "matched").length;
+  const followUps = entries.filter(row => row.course.state !== "matched");
 
   return <section className="curriculum-reference" aria-label="مراجعة صحيفة التخرج ومطابقة المقررات">
     <header className="curriculum-reference-head">
@@ -86,6 +91,24 @@ export default function CurriculumReferenceReview({ sectionId, canApply, onPick,
     {undecided ? <Notice type="info" inline>{countOf(undecided, AR.course)} بلا قسمٍ مالك محسوم، ولا تُحتسب هنا حتى تُحسم ملكيتها.</Notice> : null}
 
     {canApply ? <ReferenceApplyPanel key={`${selectedSectionId}:${reference.id}`} referenceId={reference.id} referenceName={reference.name} onApplied={() => setReload(n => n + 1)} /> : null}
+
+    {followUps.length ? <section className="reference-followups" aria-label="مقررات تحتاج متابعة">
+      <h3>تحتاج متابعة <small>{countOf(followUps.length, AR.course)}</small></h3>
+      <ul>{followUps.map(({ course }) => <li key={course.code} className={`state-${course.state}`}>
+        <span className="reference-followup-head"><bdi dir="ltr">{course.code}</bdi><strong>{course.name}</strong><span className={`reference-status status-${course.state}`}>{statusIcon(course.state)}{statusLabels[course.state] || "حالة غير معروفة"}</span></span>
+        <span className="reference-course-meta">{countOf(course.credit, AR.unit)} <i /> {countOf(course.hours, AR.hour)}</span>
+        {course.state === "different" && course.current ? <small className="reference-course-diff">المطلوب: {course.differences.map(field => ({ name: "الاسم", credit: "الوحدات", hours: "الساعات", membership: "عضوية الصحيفة" }[field] || field)).join("، ")}.</small> : null}
+        {course.state === "different" && course.current && course.ownerSectionId !== selectedSectionId && course.ownerSectionName ? <small className="reference-course-owner">السجل مملوك لقسم {course.ownerSectionName}؛ يتولى القسم المالك تصحيحه.</small> : null}
+        {course.state === "missing" ? <small className="reference-course-owner">{course.ownerSectionName ? `غير موجود في كتالوج قسم ${course.ownerSectionName}.` : "لم تُحسم ملكية المقرر بعد."}</small> : null}
+        {course.state === "ambiguous" ? <small className="reference-course-owner">الرمز يطابق أكثر من سجل؛ يلزم حسم الهوية قبل التعديل.</small> : null}
+        {course.current && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
+          <button type="button" className="reference-fix" data-guide-ignore="فتح بيانات المقرر المملوك للقسم لتعديل الوحدات والساعات والسعة" onClick={() => onCatalogAction({ kind: "edit", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, courseId: course.current!.id, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>تعديل الوحدات والساعات والسعة</button>
+        ) : null}
+        {course.state === "missing" && course.ownerSectionId === selectedSectionId && onCatalogAction ? (
+          <button type="button" className="reference-fix" data-guide-ignore="بدء إضافة المقرر الناقص إلى سجل القسم" onClick={() => onCatalogAction({ kind: "create", sectionId: selectedSectionId, collegeId: course.ownerCollegeId, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>أضف المقرر إلى القسم</button>
+        ) : null}
+      </li>)}</ul>
+    </section> : null}
 
     {!reference.planId ? <Notice type="info" inline>لا توجد صحيفة تشغيلية مرتبطة بهذه النسخة؛ هذه المقارنة للمرجع فقط.</Notice> : null}
   </section>;
