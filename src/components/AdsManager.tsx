@@ -8,11 +8,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, ExternalLink, Megaphone, Plus, Send, ShieldCheck, TrendingUp } from "lucide-react";
 import { MicroLoader, Notice, PageTitle } from "./ui";
-import { AR, countOf } from "../utils/arabicCount";
 import CampaignList from "./ads/CampaignList";
 import CampaignDrawer, { type DrawerActions } from "./ads/CampaignDrawer";
 import CampaignWizard, { blankForm, formOf, type WizardForm } from "./ads/CampaignWizard";
 import { PlacementMap, SeasonTimeline } from "./ads/PlacementMap";
+import AttentionList, { attentionItems } from "./ads/AttentionList";
 import { api, fmt, pct1, type Payload } from "./ads/shared";
 
 type Tab = "campaigns" | "placements" | "kit";
@@ -116,7 +116,7 @@ export default function AdsManager() {
 
       {tab === "campaigns" ? (
         <section id="ad-panel-campaigns" role="tabpanel" aria-labelledby="ad-tab-campaigns">
-          {stats.drafts ? <p className="ad-note ad-note-flag">لديك {countOf(stats.drafts, AR.draft)} لم تُعتمد بعد.</p> : null}
+          <AttentionList items={attentionItems(data)} onCampaign={setOpenId} onTab={setTab} />
           <CampaignList data={data} onOpen={c => setOpenId(c.id)} onNew={newCampaign} />
         </section>
       ) : null}

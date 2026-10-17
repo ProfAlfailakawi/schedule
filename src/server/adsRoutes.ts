@@ -26,6 +26,8 @@ import {
 } from "../utils/adsEngine";
 import { buildAudienceStats } from "../utils/audienceStats";
 import { reportCalendar } from "../utils/adCalendar";
+import { abVerdict } from "../utils/adInsights";
+import { cleanEmail, mailConfig, renewalMail, sendMail, weekKey, weeklyMail } from "./adMailer";
 import { SEASONS, activeSeasons, seasonCalendar, seasonsText } from "../utils/adSeasons";
 import { AR, countOf } from "../utils/arabicCount";
 import type { CenterNotification } from "../utils/notificationCenter";
@@ -276,11 +278,47 @@ async function campaignView(c: AdCampaign, stats: AdStatsDay[], heads: Array<Omi
     creatives,
     totals: totalsOf(mine),
     breakdown: creativeBreakdown(mine),
+    ab: abVerdict(c.creativeIds.map(id => creativeBreakdown(mine).find(b => b.creativeId === id) ?? { creativeId: id, impressions: 0, clicks: 0 })),
     series: dailySeries(mine, c.startDay, c.endDay, today).slice(-30),
     weekly: weeklyCompare(mine, today),
     sharePct: Math.round(expectedShare(c.slot, Math.max(1, live)) * 100),
     reportUrl: `/ad-report/${c.reportToken}`,
   };
+}
+
+/** يرسل تقرير الأسبوع أو تذكير التجديد لبريد الحملة ويسجّل ما أُرسل لئلا يتكرر. */
+async function mailCampaign(c: AdCampaign, kind: "weekly" | "renewal", origin: string, cfg: NonNullable<ReturnType<typeof mailConfig>>, today = kuwaitDay(), manual = false): Promise<{ ok: boolean; error?: string }> {
+  if (!c.contactEmail) return { ok: false, error: "لا بريد." };
+  const url = `${origin}/ad-report/${c.reportToken}`;
+  const msg = kind === "weekly"
+    ? weeklyMail(c, weeklyCompare((await Repository.listAdStats(c.id)), today), url)
+    : renewalMail(c, daysLeft(c, today), url);
+  /* يُحجز الإرسال ذرّياً قبل خروج الرسالة (معاملة تكتب mailLog وحده): نسختان على قاعدةٍ واحدة لا ترسلان الرسالة مرتين،
+     وخطأٌ عابر لا يُغرق الشركة بالتكرار. الإرسال اليدوي (manual) صريحٌ فلا يُمنع بحجزٍ سابق. */
+  const key = kind === "weekly" ? weekKey(today) : c.endDay;
+  const claimed = await Repository.claimAdMail(c.id, kind, key, { weekly: weekKey(today), ...(kind === "renewal" ? { renewal: c.endDay } : {}) }, manual);
+  dropCampaignCache();
+  if (!claimed) return { ok: false, error: "سبق إرسال هذه الرسالة." };
+  return sendMail(cfg, c.contactEmail, msg);
+}
+
+/** الإرسال التلقائي: تقريرٌ أسبوعي صباح الأحد، وتذكيرُ تجديدٍ مرةً واحدة قبل النهاية بأسبوع. لا يعمل بلا إعدادات البريد. */
+export async function autoMailTick(origin: string, now = new Date()): Promise<number> {
+  const cfg = mailConfig();
+  if (!cfg) return 0;
+  const today = kuwaitDay(now);
+  const kuwaitHour = (now.getUTCHours() + 3) % 24;
+  let sent = 0;
+  for (const c of await campaigns()) {
+    if (!c.contactEmail || c.status !== "approved" || !isLive(c, today)) continue;
+    const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+    if (!(dow === 0 && kuwaitHour >= 9) || c.mailLog?.weekly === weekKey(today)) continue;
+    /* رسالةٌ واحدة في الأسبوع: تذكيرُ التجديد (في آخر أسبوع) يغني عن التقرير الأسبوعي ذاك الأحد. */
+    const left = daysLeft(c, today);
+    const kind = left <= 7 && left >= 0 && c.mailLog?.renewal !== c.endDay ? "renewal" : "weekly";
+    if ((await mailCampaign(c, kind, origin, cfg, today)).ok) sent++;
+  }
+  return sent;
 }
 
 /* قراءاتُ اللوحة الثقيلة (ملفات الطلبة، وإجابات كل الفصول، وطلبات الأساتذة، وعدّادات الإعلانات) تُخزَّن مؤقتاً:
@@ -325,6 +363,9 @@ async function audienceInputs(requestedTermId: number) {
 export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
   const timer = setInterval(() => { sweepLimiters(); void flushAdsCounters(); }, 30_000);
   timer.unref?.();
+  /* الإرسال التلقائي بالبريد: فحصٌ كل ساعة، ولا يفعل شيئاً ما لم يُفعَّل البريد بإعدادات البيئة. */
+  const mailTimer = setInterval(() => { void autoMailTick(String(process.env.AD_PUBLIC_ORIGIN || "https://schedule.dr-alfailakawi.com")).catch(() => undefined); }, 3_600_000);
+  mailTimer.unref?.();
   /* تسجيل مستمعٍ لـSIGTERM/SIGINT يُلغي إنهاء Node الافتراضي: كان المستمع يفرّغ العدّادات ولا ينهي العملية، فيبقى الخادم حيّاً
      بعد إيقافه (Ctrl-C، وإيقاف المنصة، وخوادم الاختبارات اليتيمة على المنفذ 3000). نفرّغ ثم ننهي، بمهلة تحمي من تعليق الكتابة. */
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => {
@@ -512,7 +553,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
       nextFree: nextFreeDay(slot.id, all, today),
     }));
     res.json({
-      today, slots, categories: AD_CATEGORIES, rules: AD_RULES, maxBytes: AD_MAX_BYTES, maxCreatives: MAX_ROTATE_CREATIVES, campaigns: rows, partnerKit: kit ? `/partners/${kit}` : "",
+      today, mailEnabled: Boolean(mailConfig()), slots, categories: AD_CATEGORIES, rules: AD_RULES, maxBytes: AD_MAX_BYTES, maxCreatives: MAX_ROTATE_CREATIVES, campaigns: rows, partnerKit: kit ? `/partners/${kit}` : "",
       seasons: SEASONS, activeSeasons: activeSeasons(terms), calendar: seasonCalendar(terms),
       /* أسماء الكليات للأدمن وحده هنا (يختار منها استهداف الحملة)؛ لا تصل إلى أي صفحةٍ عامة. */
       colleges: colleges.map(c => ({ id: Number(c.AdCollegeId), name: c.AdCollegeName })),
@@ -520,6 +561,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
   });
 
   const readBody = (b: any) => ({
+    ...(b && "contactEmail" in b ? { contactEmail: cleanEmail(b.contactEmail) ?? "\u0000bad" } : {}),
     company: str(b?.company, 80), category: str(b?.category, 40), slot: str(b?.slot, 20),
     startDay: str(b?.startDay, 10), endDay: str(b?.endDay, 10), coupon: cleanCoupon(b?.coupon),
     note: str(b?.note, 300), trial: Boolean(b?.trial),
@@ -533,6 +575,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const existing = id ? (await campaigns()).find(c => c.id === id) : undefined;
     if (id && !existing) { fail(res, 404, "الحملة غير موجودة."); return; }
     const trialRegistry = Object.fromEntries((await Repository.getTrialCompanies()).map(item => [item.name, item.campaignId]));
+    if ((body as any).contactEmail === "\u0000bad") { fail(res, 400, "بريد الشركة غير صالح."); return; }
     const problems = [...campaignProblems({ id, ...body }), ...trialProblems({ id, ...body }, await campaigns(), trialRegistry), ...(link.problem ? [link.problem] : [])];
     if (problems.length) { fail(res, 400, problems[0], { problems }); return; }
     const now = new Date().toISOString();
@@ -561,6 +604,20 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
       ? `تعديل حملة «${row.company}»${existing.status === "approved" && row.status === "draft" ? " — عادت مسودةً لتغيّر موقعها أو فئتها أو تواريخها" : ""} · ${row.startDay} ← ${row.endDay}`
       : `إنشاء حملة «${row.company}» · موقع ${slotById(row.slot)?.label || row.slot} · ${row.startDay} ← ${row.endDay}${row.trial ? " · تجريبية" : ""} · ${seasonsText(row.seasons)}${row.colleges?.length ? ` · ${countOf(row.colleges.length, AR.college)} مستهدفة` : ""}`);
     res.json({ ok: true, id: row.id });
+  });
+
+  /* إرسالٌ يدوي لتقرير الشركة أو تذكير تجديدها بالبريد (يعمل فقط إن فُعّل البريد وكان للحملة بريد). */
+  app.post("/api/admin/ads/campaigns/:id/send-report", ...admin, async (req: Request, res: Response) => {
+    const campaign = (await campaigns()).find(c => c.id === String(req.params.id));
+    if (!campaign) { fail(res, 404, "الحملة غير موجودة."); return; }
+    const cfg = mailConfig();
+    if (!cfg) { fail(res, 503, "الإرسال بالبريد غير مفعّل بعد؛ يُفعَّل بإعدادات البيئة (AD_MAIL_API_KEY وAD_MAIL_FROM)."); return; }
+    if (!campaign.contactEmail) { fail(res, 400, "لا بريد محفوظ لهذه الحملة؛ أضفه من «تعديل»."); return; }
+    const kind = req.body?.kind === "renewal" ? "renewal" : "weekly";
+    const out = await mailCampaign(campaign, kind, `${req.protocol}://${req.get("host")}`, cfg, kuwaitDay(), true);
+    if (!out.ok) { fail(res, 502, out.error || "تعذّر الإرسال."); return; }
+    audit(res, campaign.id, `إرسال ${kind === "renewal" ? "تذكير تجديد" : "التقرير الأسبوعي"} بالبريد لحملة «${campaign.company}»`);
+    res.json({ ok: true });
   });
 
   app.post("/api/admin/ads/campaigns/:id/creatives", ...admin, express.raw({ type: () => true, limit: `${Math.ceil(AD_MAX_BYTES * 1.1)}b` }), async (req: Request, res: Response) => {

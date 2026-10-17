@@ -57,6 +57,63 @@ function webpX(width: number, height: number): Buffer {
 async function main() {
   const E = await import("../src/utils/adsEngine");
   const CAL = await import("../src/utils/adCalendar");
+  /* ── A14: التحليلات (خلاصة الحملة وA/B وذروة الاستخدام) والبريد الاختياري ── */
+  {
+    const INS = await import("../src/utils/adInsights");
+    const MAIL = await import("../src/server/adMailer");
+    const row = (day: string, creativeId: string, impressions: number, clicks: number): any => ({ id: day + creativeId, campaignId: "c", creativeId, day, impressions, uniques: impressions / 2, clicks, filteredClicks: 0 });
+    const rows = [row("2026-11-01", "a", 300, 12), row("2026-11-02", "a", 900, 40), row("2026-11-03", "b", 300, 3), row("2026-11-08", "a", 400, 20)];
+    const w = INS.wrapUp(rows);
+    check(w.days === 4 && w.totals.impressions === 1900 && w.avgPerDay === 475, "A14 خلاصة الحملة: أيامٌ وإجماليٌّ ومتوسط", w);
+    check(w.bestDay?.day === "2026-11-02" && w.bestDay.impressions === 900, "A14 خلاصة الحملة: أقوى يوم", w.bestDay);
+    check(w.bestWeekday?.name === "الإثنين" && w.bestWeekday.share === 47, "A14 خلاصة الحملة: أقوى يومٍ في الأسبوع (الإثنين ٩٠٠ من ١٩٠٠)", w.bestWeekday);
+    check(w.bestCreative?.creativeId === "a", "A14 خلاصة الحملة: الأقوى صورةً بشرط ظهورٍ كافٍ لكلٍّ منهما", w.bestCreative);
+    check(INS.wrapUp([row("2026-11-01", "a", 900, 40)]).bestCreative === null, "A14 صورةٌ واحدة: لا «أقوى صورة»");
+    check(INS.abVerdict([{ creativeId: "a", impressions: 900, clicks: 40 }]).state === "single", "A14 A/B: صورةٌ واحدة");
+    const coll = INS.abVerdict([{ creativeId: "a", impressions: 900, clicks: 40 }, { creativeId: "b", impressions: 100, clicks: 9 }]);
+    check(coll.state === "collecting" && (coll as any).need === 400, "A14 A/B: ظهورٌ غير كافٍ يُعلَن ويُقال كم ينقص", coll);
+    check(INS.abVerdict([{ creativeId: "a", impressions: 1000, clicks: 30 }, { creativeId: "b", impressions: 1000, clicks: 27 }]).state === "tie", "A14 A/B: فرقٌ صغير = لا فرق معنوي");
+    const win = INS.abVerdict([{ creativeId: "a", impressions: 2000, clicks: 40 }, { creativeId: "b", impressions: 2000, clicks: 100 }]);
+    check(win.state === "winner" && (win as any).winner === "b" && (win as any).loser === "a" && (win as any).winnerCtr === 5, "A14 A/B: فرقٌ معنوي يسمّي الفائز", win);
+    const onlyB = INS.wrapUp([row("2026-11-01", "a", 900, 40), row("2026-11-02", "b", 900, 10), row("2026-11-03", "c", 900, 80)], ["a", "b"]);
+    check(onlyB.bestCreative?.creativeId === "a", "A14 خلاصة الحملة: تُقارن الصور الحالية وحدها (المحذوفة لا تُرشَّح)", onlyB.bestCreative);
+    const endedMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, -12, "https://x.test/r");
+    const todayMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, 0, "https://x.test/r");
+    const soonMail = MAIL.renewalMail({ company: "ش", endDay: "2026-10-01" }, 3, "https://x.test/r");
+    check(endedMail.text.includes("انتهت حملة «ش» قبل") && !endedMail.text.includes("اليوم") && todayMail.text.includes("اليوم") && soonMail.text.includes("بعد"), "A14 تذكير التجديد: صياغةٌ صادقة للمنتهية واليوم والقادمة", endedMail.text);
+    const heat = Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => (d === 0 || d === 1 ? 10 : 2) * (h >= 10 && h <= 12 ? 5 : 1)));
+    const pk = INS.peakSummary(heat)!;
+    check(pk.topDays[0].name === "الأحد" && pk.window?.from === 10 && pk.window.to === 13 && pk.hourTotals.length === 24, "A14 الذروة: أيامٌ ونافذةٌ ١٠–١٣", pk);
+    check(INS.peakSummary(heat.map(r => r.map(() => 0))) === null && INS.peakSummary([[1]]) === null, "A14 الذروة: عيّنةٌ ضئيلة أو شكلٌ فاسد: لا ادّعاء");
+    check(INS.hourAr(0) === "12 ص" && INS.hourAr(12) === "12 م" && INS.hourAr(15) === "3 م", "A14 الساعة بنظام ١٢");
+    check(MAIL.cleanEmail("a@b.co") === "a@b.co" && MAIL.cleanEmail(" A@B.CO ") === "a@b.co" && MAIL.cleanEmail("") === "" && MAIL.cleanEmail("x@y") === null && MAIL.cleanEmail("a b@c.com") === null, "A14 صحة البريد");
+    check(MAIL.mailConfig({}) === null && MAIL.mailConfig({ AD_MAIL_API_KEY: "k" } as any) === null && MAIL.mailConfig({ AD_MAIL_API_KEY: "k", AD_MAIL_FROM: "f@x.co" } as any)?.url.startsWith("https://"), "A14 البريد معطَّل ما لم تُضبط الإعدادات");
+    check(MAIL.weekKey("2026-11-08") === "2026-11-08" && MAIL.weekKey("2026-11-11") === "2026-11-08", "A14 مفتاح الأسبوع: الأحد أوله");
+    const wm = MAIL.weeklyMail({ company: "ش", endDay: "2026-12-01" }, { thisWeek: { impressions: 1000, uniques: 0, clicks: 30, ctr: 3 }, lastWeek: { impressions: 800, uniques: 0, clicks: 0, ctr: 0 }, impressionsChange: 25, clicksChange: null, hasLastWeek: true }, "https://x.test/r");
+    check(wm.text.split("\n").pop() === "تقريركم الحي: https://x.test/r" && wm.text.includes("ارتفاع") && !wm.text.includes("@"), "A14 رسالة الأسبوع: رابطٌ وتغيّر ولا بريد", wm.text);
+    // إرسالٌ حقيقي إلى خادمٍ وهمي: الترويسة والجسم والخطأ
+    const seen: any[] = [];
+    const stub = http.createServer((req, res) => { let b = ""; req.on("data", d => (b += d)); req.on("end", () => { seen.push({ auth: req.headers.authorization, body: JSON.parse(b || "{}"), url: req.url }); res.statusCode = (req.url || "").includes("fail") ? 500 : 200; res.end("{}"); }); });
+    await new Promise<void>(r => stub.listen(0, "127.0.0.1", () => r()));
+    const stubUrl = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`;
+    const okSend = await MAIL.sendMail({ key: "K1", from: "no@x.co", url: stubUrl + "/ok" }, "c@x.co", { subject: "s", text: "t" });
+    const badSend = await MAIL.sendMail({ key: "K1", from: "no@x.co", url: stubUrl + "/fail" }, "c@x.co", { subject: "s", text: "t" });
+    check(okSend.ok && seen[0].auth === "Bearer K1" && seen[0].body.to[0] === "c@x.co" && seen[0].body.from === "no@x.co", "A14 الإرسال: ترويسة Bearer والمستلم", seen[0]);
+    check(!badSend.ok && String(badSend.error).includes("500") && !String(badSend.error).includes("K1"), "A14 الإرسال: خطأ المزوّد يُعاد بلا كشف المفتاح", badSend);
+    (globalThis as any).__adStub = { stub, stubUrl, seen };
+    // صفحات الشركاء: خلاصة الحملة المنتهية وذروة الاستخدام
+    const P = await import("../src/server/adsPages");
+    const camp: any = { id: "c1", company: "مطعم الخلاصة", category: "مطاعم وكافيهات", slot: "me", creativeIds: ["a", "b"], linkUrl: "https://x.example.com", startDay: "2026-11-01", endDay: "2026-11-08", status: "approved", reportToken: "t".repeat(24), createdAt: "", updatedAt: "" };
+    const heads: any[] = [{ id: "a", campaignId: "c1", label: "الصورة أ", width: 640, height: 200, bytes: 1, mime: "image/png", createdAt: "" }, { id: "b", campaignId: "c1", label: "الصورة ب", width: 640, height: 200, bytes: 1, mime: "image/png", createdAt: "" }];
+    const endedPage = P.campaignReportPage({ campaign: camp, creatives: heads, stats: rows, liveInSlot: 1, today: "2026-11-20", nonce: "N", benchmarkCtr: 2 });
+    check(endedPage.includes("خلاصة حملتكم") && endedPage.includes("أقوى يومٍ") && endedPage.includes("تثبيت مكان مطعم الخلاصة"), "A14 تقرير حملةٍ منتهية: خلاصةٌ ودعوة تجديد");
+    check(!P.campaignReportPage({ campaign: camp, creatives: heads, stats: rows, liveInSlot: 1, today: "2026-11-05", nonce: "N" }).includes("خلاصة حملتكم"), "A14 حملةٌ جارية: لا خلاصة نهائية");
+    const kitStats: any = { generatedAt: "", term: null, students: { profiles: 0, active7: 0, active30: 0, byCollege: [] }, survey: { allTimeAnswers: 0, allTimeStudents: 0, terms: [], current: { answers: 0, students: 0, byType: {}, byCollege: [], byDay: [] } }, instructors: { invited: 0, opened: 0, submitted: 0, openRate: 0, submitRate: 0, byCollege: [] }, visits: { since: "2026-10-01", days: 10, series: [], today: 0, last7: 0, last30: 0, total: 9000, bySource: [], returningRate: 0, mobileRate: 0, installs: 0, heat, peakDay: "الأحد" }, ads: {}, demand: { top: [], hidden: 0, minStudents: 10 }, reach: { studentsMin: 0, instructors: 0 } };
+    const kit = P.partnerKitPage({ stats: kitStats, liveBySlot: {}, today: "2026-11-20", nonce: "N" });
+    check(kit.includes("متى يفتح الطلبة البرنامج") && kit.includes("10 ص") && kit.includes("1 م"), "A14 ملف الشراكة: ذروة الاستخدام");
+    kitStats.visits.heat = heat.map(r => r.map(() => 0));
+    check(!P.partnerKitPage({ stats: kitStats, liveBySlot: {}, today: "2026-11-20", nonce: "N" }).includes("متى يفتح الطلبة البرنامج"), "A14 ملف الشراكة: بلا عيّنةٍ كافية لا قسم ذروة");
+  }
   {
     const ics = CAL.reportCalendar({ id: "c9", company: "شركة, الأمل; للتقنية", startDay: "2026-11-01", endDay: "2026-12-01" }, "https://x.test/ad-report/abc", "2026-11-10", new Date("2026-11-10T00:00:00Z"));
     const lines = ics.split("\r\n");
@@ -493,6 +550,47 @@ async function main() {
     check((await meIds("&c=3")).includes(meCollege3.id), "A9 الاستراحة لطالبٍ كليتُه ٣: تُعرض");
     check(!(await meIds("&c=4")).includes(meCollege3.id), "A9 الاستراحة لطالبٍ كليتُه ٤: لا تُعرض");
     check(!(await meIds("&c=abc")).includes(meCollege3.id) && !(await meIds("&c=-3")).includes(meCollege3.id), "A9 قيمة كلية فاسدة تُتجاهل");
+    /* A14: بريد الشركة (إداريٌّ فقط) والإرسال */
+    const bad = await call("POST", "/api/admin/ads/campaigns", { company: "بريدٌ فاسد", category: "ترفيه", slot: "dashboard", startDay: today, endDay: dayPlus(5), linkUrl: "https://bad-mail.example.com", contactEmail: "not-an-email" });
+    check(bad.status === 400 && String(bad.json?.error).includes("بريد"), "A14 بريدٌ غير صالح يُرفض ٤٠٠", bad.json);
+    const mailed = await mkTargeted("شركة البريد", "ترفيه", { contactEmail: "Owner@Company.co" }, "dashboard", 480, 160);
+    check(mailed.ap.status === 200, "A14 اعتماد حملةٍ لها بريد", mailed.ap.json);
+    const adminNow2 = (await call("GET", "/api/admin/ads")).json;
+    const mc = adminNow2.campaigns.find((x: any) => x.id === mailed.id);
+    check(mc.contactEmail === "owner@company.co" && adminNow2.mailEnabled === false && mc.ab?.state === "single", "A14 الإدارة ترى البريد (مطبَّعاً) والبريد معطَّل والمقارنة single", { e: mc.contactEmail, m: adminNow2.mailEnabled });
+    const pubReport = await call("GET", mc.reportUrl);
+    const pubServe = await call("GET", "/_ads/serve?slot=dashboard");
+    check(!pubReport.text.includes("owner@company.co") && !JSON.stringify(pubServe.json).includes("owner@company.co"), "A14 البريد لا يظهر في صفحةٍ عامة ولا في الخدمة");
+    const keep = await call("POST", "/api/admin/ads/campaigns", { id: mailed.id, company: mc.company, category: mc.category, slot: mc.slot, startDay: mc.startDay, endDay: mc.endDay, linkUrl: mc.linkUrl });
+    check(keep.status === 200 && (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === mailed.id).contactEmail === "owner@company.co", "A14 تعديلٌ لا يرسل حقل البريد لا يمسحه");
+    const c1 = await Repository.claimAdMail(mailed.id, "weekly", "K-1", { weekly: "K-1" });
+    const c2 = await Repository.claimAdMail(mailed.id, "weekly", "K-1", { weekly: "K-1" });
+    const c3 = await Repository.claimAdMail(mailed.id, "weekly", "K-1", { weekly: "K-1" }, true);
+    const afterClaim = (await Repository.listAdCampaigns()).find(x => x.id === mailed.id)!;
+    check(c1 === true && c2 === false && c3 === true && afterClaim.mailLog?.weekly === "K-1" && afterClaim.contactEmail === "owner@company.co" && afterClaim.company === mc.company, "A14 حجز الإرسال: الأول يفوز والثاني يُمنع واليدوي يتجاوز ولا يمسّ بقية الحقول", afterClaim.mailLog);
+    check(await Repository.claimAdMail("no-such", "weekly", "K", {}) === false, "A14 حجز حملةٍ غير موجودة: false");
+    const off = await call("POST", `/api/admin/ads/campaigns/${mailed.id}/send-report`, { kind: "weekly" });
+    check(off.status === 503 && String(off.json?.error).includes("غير مفعّل"), "A14 الإرسال بلا إعدادات: ٥٠٣ واضح", off.json);
+    const stubState = (globalThis as any).__adStub;
+    process.env.AD_MAIL_API_KEY = "TESTKEY"; process.env.AD_MAIL_FROM = "no-reply@x.co"; process.env.AD_MAIL_API_URL = stubState.stubUrl + "/send";
+    try {
+      check((await call("GET", "/api/admin/ads")).json.mailEnabled === true, "A14 البريد يُعدّ مفعّلاً بإعداداتٍ كاملة");
+      const before = stubState.seen.length;
+      const sent = await call("POST", `/api/admin/ads/campaigns/${mailed.id}/send-report`, { kind: "weekly" });
+      const got = stubState.seen[stubState.seen.length - 1];
+      check(sent.status === 200 && stubState.seen.length === before + 1 && got.body.to[0] === "owner@company.co" && got.body.text.includes(`/ad-report/${mc.reportUrl.split("/").pop()}`), "A14 الإرسال اليدوي يصل برابط التقرير", sent.json);
+      /* التلقائي: أحد صباحاً مرةً واحدة في الأسبوع، وتذكير تجديد لا يتكرر */
+      let sunday = today; while (new Date(`${sunday}T00:00:00Z`).getUTCDay() !== 0) sunday = E.addDays(sunday, 1);
+      const sundayMorning = new Date(`${sunday}T07:00:00Z`);
+      const prior = stubState.seen.length;
+      await R.autoMailTick("https://x.test", sundayMorning);
+      const afterFirst = stubState.seen.length;
+      await R.autoMailTick("https://x.test", sundayMorning);
+      check(afterFirst === prior + 1 && stubState.seen.length === afterFirst, "A14 الإرسال التلقائي: رسالةٌ واحدة صباح الأحد ولا تتكرر في الأسبوع نفسه", { prior, afterFirst, now: stubState.seen.length, sunday });
+      const mlog = (await call("GET", "/api/admin/ads")).json.campaigns.find((x: any) => x.id === mailed.id).mailLog;
+      check(mlog?.weekly === sunday, "A14 سجلّ ما أُرسل محفوظ: أحدُ هذا الأسبوع", mlog);
+    } finally { delete process.env.AD_MAIL_API_KEY; delete process.env.AD_MAIL_FROM; delete process.env.AD_MAIL_API_URL; }
+    check(!(await call("GET", "/api/admin/ads")).json.mailEnabled, "A14 إزالة الإعدادات تُعطّل البريد");
     const link4 = await Repository.createShareLink({ AdCollegeId: 4, AdSectionId: 1, AdTermId: 1, label: "اختبار٤", expiresAt: new Date(Date.now() + 86400000).toISOString(), SystemUserId: 1, userName: "t", showInstructors: false });
     sched = (await call("GET", `/_ads/serve?slot=schedule&t=${encodeURIComponent(link4.id)}`)).json.items.map((x: any) => x.c);
     check(!sched.includes(college3.id), "A9 رابطُ كلية ٤ لا يعرض حملة الكلية ٣");

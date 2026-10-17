@@ -3,7 +3,7 @@
  * صار هنا مرتّباً في أقسامٍ قصيرة، والقائمة تبقى نظيفة.
  */
 import React, { useMemo, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, Pause, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Check, Copy, ExternalLink, Pause, Pencil, RefreshCw, Send, Trash2, Upload } from "lucide-react";
 import { CatalogFormDrawer } from "../ui";
 import { AR, countOf } from "../../utils/arabicCount";
 import { Avatar, StatusPill, arrowOf, dateShort, fmt, nf, pct1, type Campaign, type Payload } from "./shared";
@@ -16,6 +16,16 @@ export interface DrawerActions {
   upload: (campaignId: string, file: File) => Promise<void>;
   edit: (c: Campaign, step: number) => void;
   setMsg: (m: string) => void;
+}
+
+/** توصيةُ المقارنة: لا تُنفَّذ تلقائياً؛ تقول ما يكفيه الظهور وتترك القرار للإدارة. */
+function AbNote({ ab, labelOf }: { ab: NonNullable<Campaign["ab"]>; labelOf: (id: string) => string }) {
+  if (ab.state === "single") return null;
+  if (ab.state === "collecting") return <p className="ad-ab">المقارنة تجمع بياناتها: يلزم مزيدٌ من الظهور للصورة الأقل ظهوراً (ينقصها نحو {fmt(ab.need)}) قبل أن نقول أيهما أقوى.</p>;
+  if (ab.state === "tie") return <p className="ad-ab">لا فرق معنوياً بين الصورتين حتى الآن؛ اتركهما تعملان أو غيّر إحداهما بفكرةٍ جديدة.</p>;
+  return (
+    <p className="ad-ab win"><b>{labelOf(ab.winner)} أقوى بفرقٍ معنوي</b> (نقر {pct1(ab.winnerCtr)} مقابل {pct1(ab.loserCtr)}). نقترح إيقاف «{labelOf(ab.loser)}» ورفع صورةٍ جديدة تنافس الفائزة؛ القرار لك.</p>
+  );
 }
 
 /** رسالةُ تذكير التجديد: تُرسل للشركة قبل انتهاء حملتها أو بعده، برابط تقريرها الحي. */
@@ -129,6 +139,7 @@ export default function CampaignDrawer({ campaign: c, data, onClose, actions }: 
             </button>
           ) : null}
         </div>
+        {c.ab && c.creatives.length > 1 ? <AbNote ab={c.ab} labelOf={id => c.creatives.find(x => x.id === id)?.label || "صورة"} /> : null}
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void upload(c.id, f); if (fileRef.current) fileRef.current.value = ""; }} />
       </section>
 
@@ -163,6 +174,7 @@ export default function CampaignDrawer({ campaign: c, data, onClose, actions }: 
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={() => copy(c.reportUrl)}><Copy aria-hidden="true" size={15} /> نسخ رابط التقرير</button>
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={() => window.open(c.reportUrl, "_blank", "noopener")}><ExternalLink aria-hidden="true" size={15} /> فتح التقرير</button>
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={async () => { try { await navigator.clipboard.writeText(summaryText(c, slotLabel)); setMsg("نُسخ ملخص الأسبوع؛ الصقه في واتساب."); } catch { setMsg("تعذّر النسخ تلقائياً."); } }}><Copy aria-hidden="true" size={15} /> نسخ ملخص الأسبوع</button>
+          {c.contactEmail ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" disabled={!data.mailEnabled || busy === `mail-${c.id}`} title={data.mailEnabled ? "" : "البريد غير مفعّل بعد في إعدادات البيئة"} onClick={() => void act(`mail-${c.id}`, () => api(`/api/admin/ads/campaigns/${c.id}/send-report`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: c.endingSoon || c.phase === "ended" ? "renewal" : "weekly" }) }), "أُرسل البريد للشركة.")}><Send aria-hidden="true" size={15} /> {data.mailEnabled ? "إرسال بالبريد الآن" : "البريد غير مفعّل"}</button> : null}
           {c.endingSoon || c.phase === "ended" ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-secondary" onClick={async () => { try { await navigator.clipboard.writeText(renewText(c)); setMsg("نُسخت رسالة التجديد؛ الصقها في واتساب."); } catch { setMsg("تعذّر النسخ تلقائياً."); } }}><Copy aria-hidden="true" size={15} /> رسالة تجديد</button> : null}
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="btn btn-ghost" onClick={() => { if (window.confirm("تجديد الرابط يُبطل الرابط القديم عند الشركة. متابعة؟")) void act(`rot-${c.id}`, () => api(`/api/admin/ads/campaigns/${c.id}/rotate-report`, { method: "POST" }), "تجدّد رابط التقرير."); }}><RefreshCw aria-hidden="true" size={15} /> تجديد الرابط</button>
         </div>

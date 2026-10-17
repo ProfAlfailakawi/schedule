@@ -4179,6 +4179,26 @@ export const Repository = {
     db.adCampaigns = [...(db.adCampaigns || []).filter(item => item.id !== row.id), row];
     saveDatabase();
   },
+  /** حجزٌ ذرّي لإرسالٍ بريدي: يكتب حقل mailLog وحده (لا يمسح تعديلاً متزامناً)، ويعيد false إن سبق إرسالُ المفتاح نفسه. force يتجاوز التحقق (إرسالٌ يدوي صريح). */
+  claimAdMail: async (id: string, kind: "weekly" | "renewal", key: string, patch: { weekly?: string; renewal?: string }, force = false): Promise<boolean> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("adCampaigns").doc(id);
+      return firestoreDb.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        const log = ((snap.data() as AdCampaign).mailLog || {}) as { weekly?: string; renewal?: string };
+        if (!force && log[kind] === key) return false;
+        tx.update(ref, { mailLog: { ...log, ...patch } });
+        return true;
+      });
+    }
+    const row = (db.adCampaigns || []).find(item => item.id === id);
+    if (!row) return false;
+    if (!force && row.mailLog?.[kind] === key) return false;
+    row.mailLog = { ...(row.mailLog || {}), ...patch };
+    saveDatabase();
+    return true;
+  },
   deleteAdCampaign: async (id: string): Promise<void> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const creatives = await firestoreDb.collection("adCreatives").where("campaignId", "==", id).get();
