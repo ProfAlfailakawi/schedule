@@ -454,14 +454,19 @@ function kmSheetClick(e){var t=e.target,go=t.closest("[data-go]");if(go){kmOpen(
   else if(act==="anc"){var ids=String(d.getAttribute("data-ids")||"").split(",").map(Number);ids.forEach(function(i){KM.x.set(i,true);delete KM.cart[i]});kmAfterMark(id,ids.length)}}
 function kmMark(id,on){var X=KM.x,c=X.byId[id],before=X.passedList().length,lvDone=function(){var l=c.level,ids=X.plan.filter(function(i){return X.byId[i].level===l});return ids.length>0&&ids.every(function(i){return X.isPassed(i)})};
   var wasFull=lvDone();X.set(id,on);if(on)delete KM.cart[id];
+  /* نسخةُ الملف المحلية تتبع التعليمَ فوراً: تبديلُ التاب لا يُعيد الخريطة من إنجازٍ قديم قبل أن يصل الحفظ. */
+  if(S.state&&S.state.profile)S.state.profile.passedCourseIds=X.passedList();
   var anc=on?kmAncestors(id):[];
   kmAfterMark(id,0,anc);if(on&&!wasFull&&lvDone())kmConfetti(kmCol(c),c.level)}
 function kmAfterMark(id,n,anc){KM.dirty=true;kmRefresh(true);kmOpen(id,anc&&anc.length?anc:null);kmSaveSoon();if(n)toast("علّمتُ "+countOf(n,AR.course)+" مسبقاً")}
-function kmSaveSoon(){clearTimeout(KM.timer);KM.timer=setTimeout(kmSave,700)}
-function kmSave(){var p=S.state.profile;if(!p||!p.sectionId||KM.saving){if(KM.saving)kmSaveSoon();return}KM.saving=true;
+function kmSaveSoon(){clearTimeout(KM.timer);KM.pending=true;KM.timer=setTimeout(kmSave,700)}
+/* مغادرةُ الصفحة (رابط الخريطة الكاملة، إغلاق، تحديث): ما لم يُحفظ يُرسَل الآن ولو والصفحةُ تُغلق. */
+function kmFlush(){if(!KM.pending||!KM.x)return;var p=S.state&&S.state.profile;if(!p||!p.sectionId)return;clearTimeout(KM.timer);KM.pending=false;
+  try{fetch("/api/public/me/profile",{method:"PUT",keepalive:true,credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({sectionId:p.sectionId,curriculumPlanId:p.planId,passedCourseIds:KM.x.passedList()})})}catch(e){}}
+function kmSave(){var p=S.state.profile;if(!p||!p.sectionId||KM.saving){if(KM.saving)kmSaveSoon();return}KM.saving=true;KM.pending=false;
   api("PUT","/api/public/me/profile",{sectionId:p.sectionId,curriculumPlanId:p.planId,passedCourseIds:KM.x.passedList()}).then(function(r){KM.saving=false;
     if(!r.ok){toast(r.d.error||"تعذّر حفظ إنجازك",true);if(r.status===401){S.state.signedIn=false;setView("gate")}return}
-    S.state.profile=r.d;toast("حُفظ إنجازك")})}
+    if(!KM.pending)S.state.profile=r.d;toast("حُفظ إنجازك")})}
 function kmConfetti(col,l){if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion:reduce)").matches){toast("أكملتَ المستوى "+kmLvName(l)+" 🎉");return}
   var box=document.createElement("div");box.className="km-conf";box.setAttribute("aria-hidden","true");
   for(var i=0;i<26;i++){var s=document.createElement("i");s.style.setProperty("--x",(Math.random()*100).toFixed(1)+"%");s.style.setProperty("--d",(Math.random()*.5).toFixed(2)+"s");s.style.setProperty("--r",Math.round(Math.random()*360)+"deg");s.style.background=i%3?col:KMGOLD;box.appendChild(s)}
@@ -492,5 +497,5 @@ function kmMount(host){
     var c=t.closest("[data-c].cat");if(c){var v=c.getAttribute("data-c");KM.cat=KM.cat===v?"":v;kmRefresh(false);return}
     var a=t.closest("[data-act]");if(a)kmAct(a)});
   host.addEventListener("keydown",function(e){if(e.key!=="Enter"&&e.key!==" ")return;var el=e.target.closest(".kc[data-id]");if(el&&e.target===el){e.preventDefault();kmOpen(Number(el.getAttribute("data-id")))}});
-  if(!KM.bound){KM.bound=true;document.addEventListener("keydown",function(e){if(e.key==="Escape"&&KM.focus)kmClose()})}}
+  if(!KM.bound){KM.bound=true;window.addEventListener("pagehide",kmFlush);document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")kmFlush()});document.addEventListener("keydown",function(e){if(e.key==="Escape"&&KM.focus)kmClose()})}}
 `;
