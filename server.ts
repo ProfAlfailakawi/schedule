@@ -14960,7 +14960,8 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
      يُبنى على الأسبوع بعد ما وُضع كاملاً، وتعارض الدفعة محسوبٌ؛ القاعة والأستاذ يُثبَّتان في شاشة المراجعة. */
   const pendingBy = new Map<number, ReturnType<typeof placePending>>();
   const needsPending = ordered.filter(row => row.remaining > (byCourse.get(row.courseId)?.placements.length || 0));
-  if (needsPending.length && history.length && !week.length) {
+  /* في أي فصلٍ لا في الفارغ وحده: المبنيّ مباشرةً لا يُكتب إلا ما له قاعةٌ وأستاذ، وما سواه يُفتح في المراجعة (التي تحمل مواعيد القسم الحالية) ليثبّته القسم. */
+  if (needsPending.length && history.length) {
     const terms = await Repository.getTerms().catch(() => []);
     const target = (terms as any[]).find(row => Number(row.AdTermId) === termId);
     const rank = termChronologyServer(target);

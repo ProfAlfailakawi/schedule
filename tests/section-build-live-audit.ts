@@ -72,6 +72,14 @@ try {
     check(occupiedReview.status === 200 && occupiedReview.body.existing === before.length && occupiedReview.body.added === preview.body.totals.placeable && occupiedReview.body.count === before.length + preview.body.totals.placeable, "قسمٌ فيه مواعيد: المراجعة تحمل مواعيده الحالية والمبنيّة معاً", { status: occupiedReview.status, existing: occupiedReview.body?.existing, added: occupiedReview.body?.added, before: before.length });
     const occupiedImp = await call("POST", "/api/intelligence/import-preview", { ...scope, rows: occupiedReview.body.rows });
     check(occupiedImp.status === 200 && occupiedImp.body.count === occupiedReview.body.count, "وشاشة الاستيراد تقرأها كلها", { status: occupiedImp.status, error: occupiedImp.body?.error, count: occupiedImp.body?.count, expected: occupiedReview.body?.count });
+    /* فصلٌ فيه مواعيد ومقررٌ لا أستاذ سابق له (CS490): يُعرض معلّقاً (قاعة وأستاذ بانتظار التثبيت) في المراجعة ولا يُهمَل. */
+    const wide = { ...scope, targets: { "27": 3 } };
+    const widePreview = await call("POST", "/api/section-build/preview", wide);
+    const wideReview = await call("POST", "/api/section-build/review-rows", wide);
+    check(widePreview.body.totals.pending === 3 && widePreview.body.totals.placeable === 3 && wideReview.status === 200 && wideReview.body.existing === before.length && wideReview.body.count === before.length + 3 && wideReview.body.pending === 3, "فصلٌ فيه مواعيد: ما لا أستاذ سابق له يُعرض معلّقاً في المراجعة ولا يُهمَل", { totals: widePreview.body.totals, count: wideReview.body?.count, pending: wideReview.body?.pending, before: before.length });
+    const widePick = widePreview.body.rows.flatMap((r: any) => r.placements.map((p: any) => `${r.courseId}:${p.sectionCode}`));
+    const wideApply = await call("POST", "/api/section-build/apply", { ...wide, fingerprint: widePreview.body.fingerprint, pick: widePick });
+    check(wideApply.status === 409 && wideApply.body?.code === "needs-review" && ((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).length === before.length, "والمعلّق لا يُكتب مباشرةً ولو في فصلٍ فيه مواعيد", wideApply.body);
     const onlyPicked = await call("POST", "/api/section-build/review-rows", { ...base, pick: [pick[0]] });
     check(onlyPicked.status === 200 && onlyPicked.body.added === 1, "المحدَّد في المعاينة وحده يُضاف", onlyPicked.body?.added);
     for (const row of before) await call("DELETE", `/api/schedules/${row.id}`);
