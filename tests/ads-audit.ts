@@ -620,7 +620,8 @@ async function main() {
     /* A14: بريد الشركة (إداريٌّ فقط) والإرسال */
     const bad = await call("POST", "/api/admin/ads/campaigns", { company: "بريدٌ فاسد", category: "ترفيه", slot: "dashboard", startDay: today, endDay: dayPlus(5), linkUrl: "https://bad-mail.example.com", contactEmail: "not-an-email" });
     check(bad.status === 400 && String(bad.json?.error).includes("بريد"), "A14 بريدٌ غير صالح يُرفض ٤٠٠", bad.json);
-    const mailed = await mkTargeted("شركة البريد", "ترفيه", { contactEmail: "Owner@Company.co" }, "dashboard", 480, 160);
+    /* نهايتها بعيدة: الأحد التالي لا يقع في «آخر أسبوع» فيُرسل تذكير تجديد بدل التقرير الأسبوعي، أياً كان يوم التشغيل. */
+    const mailed = await mkTargeted("شركة البريد", "ترفيه", { contactEmail: "Owner@Company.co", endDay: dayPlus(40) }, "dashboard", 480, 160);
     check(mailed.ap.status === 200, "A14 اعتماد حملةٍ لها بريد", mailed.ap.json);
     const adminNow2 = (await call("GET", "/api/admin/ads")).json;
     const mc = adminNow2.campaigns.find((x: any) => x.id === mailed.id);
@@ -647,7 +648,8 @@ async function main() {
       const got = stubState.seen[stubState.seen.length - 1];
       check(sent.status === 200 && stubState.seen.length === before + 1 && got.body.to[0] === "owner@company.co" && got.body.text.includes(`/ad-report/${mc.reportUrl.split("/").pop()}`), "A14 الإرسال اليدوي يصل برابط التقرير", sent.json);
       /* التلقائي: أحد صباحاً مرةً واحدة في الأسبوع، وتذكير تجديد لا يتكرر */
-      let sunday = today; while (new Date(`${sunday}T00:00:00Z`).getUTCDay() !== 0) sunday = E.addDays(sunday, 1);
+      /* الأحد التالي لليوم لا اليوم نفسه: الإرسال اليدوي أعلاه سجّل «أسبوع اليوم»، فلو كان اليوم أحداً لتُخطّي التلقائي. */
+      let sunday = E.addDays(today, 1); while (new Date(`${sunday}T00:00:00Z`).getUTCDay() !== 0) sunday = E.addDays(sunday, 1);
       const sundayMorning = new Date(`${sunday}T07:00:00Z`);
       const prior = stubState.seen.length;
       await R.autoMailTick("https://x.test", sundayMorning);
