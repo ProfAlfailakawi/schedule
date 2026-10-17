@@ -35,9 +35,10 @@
 ```bash
 curl -s https://schedule.dr-alfailakawi.com/sw.js | grep BUILD
 curl -s https://schedule-34704073784.europe-west1.run.app/sw.js | grep BUILD
+curl -s https://schedule-34704073784.europe-west2.run.app/sw.js | grep BUILD
 ```
 
-الرقمان يجب أن يتطابقا، ويطابقا `src/generated/buildStamp.ts` للإصدار المدموج.
+الأرقام الثلاثة يجب أن تتطابق (الدومين = west1 = west2)، وهذا ما يفحصه سير النشر نفسه. رقم البناء يُولَّد عند كل بناء في CI داخل الصورة (`scripts/stamp-build.mjs`)، فملف `src/generated/buildStamp.ts` المحفوظ في المستودع نسخةٌ قديمة لا يُقارَن بها.
 
 ## حراسة آلية
 
