@@ -144,7 +144,7 @@ export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: 
       <section className="pt-hero" aria-label="الجمهور في لمحة">
         <span className="pt-eyebrow">SCHEDULE · نظام القرار الأكاديمي</span>
         <h2>جمهورٌ حقيقي يفتح البرنامج بنفسه، فصلاً بعد فصل</h2>
-        <p>طلبةٌ يملؤون رغباتهم ويتابعون طلباتهم، وأساتذةٌ يفتحون بطاقاتهم ويرسلون جداولهم. كل رقمٍ هنا من سجلات التشغيل الفعلية لا من تقدير.</p>
+        <p>طلبةٌ يملؤون رغباتهم ويتابعون طلباتهم، وأساتذةٌ يفتحون بطاقاتهم ويرسلون جداولهم. أرقامٌ مجمّعة ومجهولة من واقع الاستخدام.</p>
         <div className="pt-live" style={{ marginTop: 14 }}><i aria-hidden="true" /> تحديثٌ تلقائي كل دقيقة{stamp ? ` · آخر تحديث ${stamp.toLocaleTimeString("ar-KW-u-nu-latn", { hour: "2-digit", minute: "2-digit" })}` : ""}</div>
       </section>
 

@@ -781,6 +781,9 @@ async function main() {
     check(B.students + stats.reach.newSinceBaseline === B.students + 2, "الرصيد: الطلبة = الرصيد + الجدد");
     check(stats.visits.afterBaseline === 55, "الرصيد: الزيارات بعد التاريخ فقط (يوم الرصيد نفسه لا يُعاد)", stats.visits.afterBaseline);
     check(stats.instructors.openedAfterBaseline === 1, "الرصيد: بطاقة واحدة فُتحت بعد التاريخ", stats.instructors.openedAfterBaseline);
+    const crossTerm = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 9, AdTermName: "ف" }] as any[], currentTermId: 9, needsByTerm: new Map(), profiles: [], instructorRequests: [],
+      openRequests: [{ AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z", linkOpenedAt: "2026-10-19T00:00:00Z" }, { AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z", linkOpenedAt: "2026-11-02T00:00:00Z" }] as any[] });
+    check(crossTerm.instructors.openedAfterBaseline === 2, "الرصيد: مرّات الفتح تُعدّ من كل فصلٍ بعد التاريخ لا من الفصل المعروض وحده", crossTerm.instructors.openedAfterBaseline);
     check(B.instructorOpens === 75_000 && B.students === 60_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
   }
 

@@ -67,6 +67,8 @@ export interface AudienceInput {
   currentTermId: number;
   needsByTerm: ReadonlyMap<number, readonly StudentNeed[]>;
   instructorRequests: readonly InstructorRequest[];
+  /** كل بطاقات الفصول التي قد تُفتح فيها بطاقةٌ بعد الرصيد؛ تُستعمل لعدّاد «مرّات الفتح» وحده (الافتراضي: بطاقات الفصل الجاري). */
+  openRequests?: readonly InstructorRequest[];
   profiles: readonly StudentProfile[];
   days?: readonly AudienceDay[];
   campaigns?: readonly AdCampaign[];
@@ -213,7 +215,7 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
     instructors: {
       invited: requests.length,
       opened,
-      openedAfterBaseline: requests.filter(r => dayKey(r.linkOpenedAt || "") > AUDIENCE_BASELINE.asOf).length,
+      openedAfterBaseline: (input.openRequests || requests).filter(r => dayKey(r.linkOpenedAt || "") > AUDIENCE_BASELINE.asOf).length,
       submitted,
       openRate: ratio(opened, requests.length),
       submitRate: ratio(submitted, requests.length),
