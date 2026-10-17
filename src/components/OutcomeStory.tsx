@@ -43,10 +43,24 @@ export function OutcomeCourse({ row }: { key?: React.Key; row: StoryRow }) {
         <div className="os-name"><b>{row.name}</b><span>{row.code}</span></div>
         <div className="os-count" aria-label={`تعثّر ${row.stuck} من ${total}`}><b>{row.stuck.toLocaleString("ar-KW-u-nu-latn")}</b><small>من {total.toLocaleString("ar-KW-u-nu-latn")} لم يسجّلوه</small></div>
       </header>
-      <div className="os-dots" role="img" aria-label={`${row.registered} سجّلوا و${row.stuck} تعثّروا`}>
-        {dots.map((kind, i) => <i key={i} className={`dot d-${kind}`}>{kind === "ok" ? <Check aria-hidden="true" /> : null}</i>)}
-        {perDot > 1 ? <small>كل نقطةٍ ≈ {countOf(perDot, AR.student)}</small> : null}
-      </div>
+      {perDot === 1 ? (
+        <div className="os-dots" role="img" aria-label={`${row.registered} سجّلوا و${row.stuck} تعثّروا`}>
+          {dots.map((kind, i) => <i key={i} className={`dot d-${kind}`}>{kind === "ok" ? <Check aria-hidden="true" /> : null}</i>)}
+        </div>
+      ) : (
+        <div className="os-bar" role="img" aria-label={`${row.registered} سجّلوا و${row.stuck} تعثّروا`}>
+          <div className="os-stack">
+            {(["ok", ...reasons] as const).map(kind => {
+              const n = kind === "ok" ? row.registered : row[kind];
+              return <i key={kind} className={`d-${kind}`} style={{ inlineSize: `${(n / total) * 100}%` }} title={`${n}`} />;
+            })}
+          </div>
+          <div className="os-pcts">
+            <span className="d-ok"><b>{row.registered.toLocaleString("ar-KW-u-nu-latn")}</b><i className="dot d-ok"><Check aria-hidden="true" /></i><small>سجّلوا · {Math.round((row.registered / total) * 100)}%</small></span>
+            {reasons.map(reason => <span key={reason} className={`d-${reason}`}><b>{row[reason].toLocaleString("ar-KW-u-nu-latn")}</b><i className={`dot d-${reason}`} /><small>{REASON_INFO[reason].title} · {Math.round((row[reason] / total) * 100)}%</small></span>)}
+          </div>
+        </div>
+      )}
       <ul className="os-reasons">
         {reasons.map(reason => (
           <li key={reason} className={`d-${reason}`}>
