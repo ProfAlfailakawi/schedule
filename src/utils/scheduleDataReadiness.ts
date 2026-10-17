@@ -53,9 +53,6 @@ export function computeScheduleDataReadiness({ rows, courses, instructorIds, roo
       if (!room) missing.set(`room:${roomId}`, { kind: "room", id: roomId, label: `قاعة ${row.AdRoomHall || roomId}`, fields: ["تأكيد ربط القاعة في سجل المواقع"] });
     }
   }
-  const rooms = [...new Set(scheduleRows.map(row => String(row.roomId || "")).filter(Boolean))]
-    .map(id => roomById.get(id)).filter(Boolean)
-    .map(room => ({ id: String(room.id), label: `مبنى ${room.buildingCode} · قاعة ${room.canonicalCode}`, capacity: Number(room.capacity) || null }));
   const items = [...missing.values()];
-  return { ready: items.length === 0, count: items.length, items, rooms };
+  return { ready: items.length === 0, count: items.length, items };
 }

@@ -62,7 +62,7 @@ interface Payload {
   escalatedNotes?: number;
   /** أيُعرض «طلب تمديد» الآن: قرب الموعد أو بعده، ولا طلبَ قائم. */
   canRequestExtension?: boolean;
-  dataReadiness?: { ready: boolean; count: number; items: Array<{ kind: string; id: string; label: string; fields: string[] }>; rooms?: Array<{ id: string; label: string; capacity: number | null }> };
+  dataReadiness?: { ready: boolean; count: number; items: Array<{ kind: string; id: string; label: string; fields: string[] }> };
 }
 
 interface Props {
@@ -123,8 +123,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [reason, setReason] = useState("");
   const [days, setDays] = useState(7);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [roomCapacityDrafts, setRoomCapacityDrafts] = useState<Record<string, string>>({});
-  const [savingRoomId, setSavingRoomId] = useState<string | null>(null);
   /* إصلاح المقرر والقاعة في مكانه: مسوّداتٌ بمفتاح المقرر:الحقل، وقفلٌ لا خطأ عند رفض الصلاحية. */
   const [courseDrafts, setCourseDrafts] = useState<Record<string, string>>({});
   const [roomPicks, setRoomPicks] = useState<Record<string, { buildingId: string; buildingCode: string; roomId?: string; hall: string; locationStatus?: string }>>({});
@@ -184,19 +182,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       if (guardRef.current.accepts(token)) setState(next);
     } catch { if (guardRef.current.accepts(token)) setState(null); }
   }, [collegeId, sectionId, termId, scopeKey]);
-
-  const saveRoomCapacity = async (roomId: string) => {
-    const raw = roomCapacityDrafts[roomId];
-    const capacity = Number(raw);
-    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 2000) { setError("أدخل سعة فعلية صحيحة للقاعة بين 1 و2000."); return; }
-    setSavingRoomId(roomId); setError(null);
-    try {
-      await request(`/api/section/location-rooms/${encodeURIComponent(roomId)}/capacity`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sectionId, capacity }) });
-      setRoomCapacityDrafts(current => { const next = { ...current }; delete next[roomId]; return next; });
-      await load(); onChanged?.();
-    } catch (reason: any) { setError(reason?.message || "تعذر حفظ سعة القاعة"); }
-    finally { setSavingRoomId(null); }
-  };
 
   const saveCourseFix = async (itemKey: string, courseId: string) => {
     const item = state?.dataReadiness?.items.find(row => `${row.kind}:${row.id}` === itemKey);
@@ -562,11 +547,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
                 const mode = readinessFixMode(item);
                 const itemKey = `${item.kind}:${item.id}`;
                 const canJump = item.kind !== "course" || Boolean(onOpenCourses);
-                /* بندُ سعة القاعة يحمل إصلاحه فيه: خانةٌ وحفظ، لا بطاقةٌ ثانية أسفل القائمة. */
-                const capacityRoom = mode === "room-capacity"
-                  ? state.dataReadiness?.rooms?.find(room => room.id === item.id) : undefined;
-                const saved = capacityRoom ? String(capacityRoom.capacity ?? "") : "";
-                const draft = capacityRoom ? (roomCapacityDrafts[capacityRoom.id] ?? saved) : "";
                 const courseFields = mode === "course-fields" ? courseFixFieldsOf(item) : [];
                 const courseDirty = courseFields.some(field => (courseDrafts[`${item.id}:${field.key}`] ?? "") !== "");
                 const courseLocked = !canEditCourses || Boolean(coursesLocked);
@@ -577,12 +557,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
                   <li key={itemKey} data-kind={item.kind} data-fix={mode}>
                     <span className="apb-dr-ic" aria-hidden="true"><ItemIcon /></span>
                     <span className="apb-dr-txt"><b>{item.label}</b>{item.fields.length ? <small>{item.fields.join("، ")}</small> : null}{fixErrors[itemKey] ? <small className="apb-dr-err" role="alert">{fixErrors[itemKey]}</small> : null}</span>
-                    {capacityRoom ? (
-                      <span className="apb-dr-fix">
-                        <label className="apb-dr-cap"><Users aria-hidden="true" /><span className="sr-only">السعة</span><input data-room-input={capacityRoom.id} inputMode="numeric" placeholder="السعة" aria-label={`سعة ${capacityRoom.label}`} value={draft} onChange={event => setRoomCapacityDrafts(current => ({ ...current, [capacityRoom.id]: event.target.value.replace(/[^0-9]/g, "") }))} onKeyDown={event => { if (event.key === "Enter" && draft && draft !== saved) void saveRoomCapacity(capacityRoom.id); }} /></label>
-                        <button type="button" className="apb-room-save" disabled={savingRoomId === capacityRoom.id || !draft || draft === saved} aria-label={`حفظ سعة ${capacityRoom.label}`} onClick={() => void saveRoomCapacity(capacityRoom.id)} data-guide-ignore="حفظ سعة القاعة الفعلية ضمن نطاق القسم">{savingRoomId === capacityRoom.id ? <Hourglass aria-hidden="true" /> : <Check aria-hidden="true" />}</button>
-                      </span>
-                    ) : mode === "course-fields" ? (
+                    {mode === "course-fields" ? (
                       <span className="apb-dr-fix" data-locked={courseLocked ? "true" : undefined} title={courseLocked ? lockedTip : undefined}>
                         {courseFields.map(field => {
                           const FieldIcon = FIELD_ICON[field.key] || Pencil;

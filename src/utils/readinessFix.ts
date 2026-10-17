@@ -13,7 +13,7 @@ export const COURSE_FIX_FIELDS: Record<string, CourseFixField> = {
   "سعة الشعبة": { key: "MaxStudent", label: "السعة", type: "int", max: 2000 },
 };
 
-export type ReadinessFixMode = "course-fields" | "room-capacity" | "room-link" | "open-row" | "jump";
+export type ReadinessFixMode = "course-fields" | "room-link" | "open-row" | "jump";
 export interface ReadinessItemLike { kind: string; id: string; fields: string[] }
 
 export function readinessFixMode(item: ReadinessItemLike): ReadinessFixMode {
