@@ -191,11 +191,13 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): st
     idxs.forEach((i, k) => laneX.set(segs[i].key, hi - (lane[k] + 1) * pitch));
   }
 
+  /* «أحدها يكفي»: أسهمُ البدائل متقطعة، فلا تُقرأ «كلّها مطلوبة». */
+  const optional = new Set((model.anyOf || []).flatMap(([t, alts]) => alts.map(s => `${s}>${t}`)));
   const edgeSvg: string[] = [];
   const drawn = new Map<string, string>();
   for (const r of routes) {
     const hue = hues.get(r.s) || GRAY, d = rounded(r.pts(r.keys.map(k => laneX.get(k) ?? 0)));
-    const group = `<g class="edge" data-s="${esc(idOf(r.s))}" data-t="${esc(idOf(r.t))}"><path d="${d}" fill="none" stroke="#fff" stroke-width="5.5" stroke-opacity=".9" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${hue}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#m${esc(idOf(r.s))})"/></g>`;
+    const group = `<g class="edge" data-s="${esc(idOf(r.s))}" data-t="${esc(idOf(r.t))}"><path d="${d}" fill="none" stroke="#fff" stroke-width="5.5" stroke-opacity=".9" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${hue}" stroke-width="2.2"${optional.has(`${r.s}>${r.t}`) ? ' stroke-dasharray="6 4"' : ""} stroke-linecap="round" stroke-linejoin="round" marker-end="url(#m${esc(idOf(r.s))})"/></g>`;
     drawn.set(`${r.s}>${r.t}`, group); edgeSvg.push(group);
   }
 
@@ -213,12 +215,12 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): st
 
   /* ── الترويسة: الاسم، رمز QR، الشرائح ────────────────────────────────── */
   const units = (c: { credit: number }) => Number(c.credit) || 0;
-  const electiveUnits = model.groups.reduce((sum, g) => sum + g.pick * (g.courses.length ? Math.max(...g.courses.map(units)) : 0), 0);
+  const electiveUnits = model.groups.reduce((sum, g) => sum + Math.max(Number(g.minUnits) || 0, g.pick * (g.courses.length ? Math.max(...g.courses.map(units)) : 0)), 0);
   const ownUnits = model.courses.reduce((sum, c) => sum + units(c), 0);
   const byCategory = new Map<string, number>();
   for (const c of model.courses) if (c.category) byCategory.set(c.category, (byCategory.get(c.category) || 0) + units(c));
   const pills = model.pills || [
-    { n: ownUnits + electiveUnits, label: "وحدة" },
+    { n: ownUnits + electiveUnits + (Number(model.otherUnits) || 0), label: "وحدة" },
     ...(byCategory.size ? [...byCategory].slice(0, 3).map(([label, total]) => ({ n: total, label })) : [{ n: ownUnits, label: "إجباري" }]),
     ...(electiveUnits ? [{ n: electiveUnits, label: "اختياري" }] : []),
   ].slice(0, 4);
@@ -291,16 +293,16 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): st
     const hasArrows = group.courses.some(c => prereqOf(c.code).length);
     const rowH = hasArrows ? 170 : 80, h = 58 + (rows - 1) * rowH + (hasArrows ? 148 : 90);
     bandSvg.push(`<rect x="42" y="${y}" width="${W - 84}" height="${h}" rx="28" fill="#FEF3C7" fill-opacity=".6" stroke="#D97706" stroke-opacity=".5" stroke-width="1.5"/>`);
-    bandSvg.push(`<text x="${cx}" y="${y + 41}" text-anchor="middle" font-size="24" font-weight="900" fill="#92400E">${esc(group.title)}${group.pick ? ` - اختر ${AR_PICK[group.pick] || countOf(group.pick, AR.course)}` : ""}</text>`);
+    bandSvg.push(`<text x="${cx}" y="${y + 41}" text-anchor="middle" font-size="24" font-weight="900" fill="#92400E">${esc(group.title)}${group.pick ? ` - اختر ${AR_PICK[group.pick] || countOf(group.pick, AR.course)}` : ""}${group.minUnits ? ` (${countOf(group.minUnits, AR.unit)} على الأقل)` : ""}</text>`);
     group.courses.forEach((c, i) => {
       const r = Math.floor(i / perRow), k = i % perRow, inRow = Math.min(perRow, group.courses.length - r * perRow);
       const rowW = inRow * 350 + (inRow - 1) * 60, cxx = cx + rowW / 2 - 350 - k * 410, top = y + 58 + r * rowH;
       const pre = prereqOf(c.code);
       pre.forEach((s, j) => {
         const ax = cxx + 175 + (pre.length === 1 ? 0 : (j === 0 ? 45 : -45)), hue = hues.get(s) || GRAY;
-        bandSvg.push(`<g class="edge" data-s="${esc(idOf(s))}" data-t="${esc(idOf(c.code))}"><path d="M${ax} ${top + 112} L${ax} ${top + 72}" stroke="${hue}" stroke-width="2.4" stroke-linecap="round" marker-end="url(#m${esc(idOf(s))})"/><text x="${ax}" y="${top + 138}" text-anchor="middle" font-size="22" font-weight="900" fill="${hue}">${esc(idOf(s))}</text></g>`);
+        bandSvg.push(`<g class="edge" data-s="${esc(idOf(s))}" data-t="${esc(idOf(c.code))}"><path d="M${ax} ${top + 112} L${ax} ${top + 72}" stroke="${hue}" stroke-width="2.4"${optional.has(`${s}>${c.code}`) ? ' stroke-dasharray="6 4"' : ""} stroke-linecap="round" marker-end="url(#m${esc(idOf(s))})"/><text x="${ax}" y="${top + 138}" text-anchor="middle" font-size="22" font-weight="900" fill="${hue}">${esc(idOf(s))}</text></g>`);
       });
-      if (pre.length === 2) bandSvg.push(`<text x="${cxx + 175}" y="${top + 138}" text-anchor="middle" font-size="22" font-weight="900" fill="#475569">+</text>`);
+      if (pre.length === 2) bandSvg.push(`<text x="${cxx + 175}" y="${top + 138}" text-anchor="middle" font-size="${pre.some(s => optional.has(`${s}>${c.code}`)) ? 17 : 22}" font-weight="900" fill="#475569">${pre.some(s => optional.has(`${s}>${c.code}`)) ? "أو" : "+"}</text>`);
       bandSvg.push(cardSvg(c.code, c.name, c.credit, cxx, top, 350, "#D97706", "#fff", GRAY));
     });
     y += h + 24;
@@ -327,7 +329,10 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): st
   for (const [code, hue] of hues) H_[idOf(code)] = hue;
   const LV: Record<string, [string, string, string]> = {};
   levels.forEach((level, i) => { LV[String(i + 1)] = [LEVEL_PALETTE[Math.min(i, LEVEL_PALETTE.length - 1)][0], LEVEL_PALETTE[Math.min(i, LEVEL_PALETTE.length - 1)][1], levelLabel(level)]; });
-  const data = { C, EL, E: edges.map(([s, t]) => [idOf(s), idOf(t)]), H: H_, LV, EL_LABEL: "اختياري" };
+  const OR = (model.anyOf || []).map(([t, alts]) => [idOf(t), alts.map(idOf)]);
+  const U: Record<string, number> = {};
+  for (const [code, n] of Object.entries(model.minUnits || {})) U[idOf(code)] = n;
+  const data = { C, EL, E: edges.map(([s, t]) => [idOf(s), idOf(t)]), H: H_, LV, OR, U, EL_LABEL: "اختياري" };
   const json = JSON.stringify(data).replace(/</g, "\\u003c").replace(/[\u2028\u2029]/g, ch => (ch === "\u2028" ? "\\u2028" : "\\u2029"));
 
   return parts.template

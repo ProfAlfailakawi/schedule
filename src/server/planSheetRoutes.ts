@@ -34,7 +34,8 @@ export interface PlanSheetDeps {
   template: string;
 }
 
-const OFFICIAL_ORIGIN = String(process.env.PUBLIC_ORIGIN || "https://schedule.dr-alfailakawi.com").replace(/\/+$/, "");
+/* الدومين الرسمي الثابت (AGENTS.md)؛ لا متغيّرَ بيئةٍ يغيّره، فلا يحمل QR مطبوعٌ عنواناً آخر. */
+const OFFICIAL_ORIGIN = "https://schedule-kw.com";
 const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const tail = (code: string) => (/^\d{7}$/.test(code) ? code.slice(-3) : code);
 const deptTitle = (name: string) => (/^قسم\s/.test(name.trim()) ? name.trim() : `قسم ${name.trim()}`);
@@ -76,8 +77,12 @@ export async function buildSheetModel(plan: { id: string; AdCollegeId: number; A
   for (const [level, ids] of levels) for (const id of ids) levelOf.set(id, level);
 
   const visible = new Set<number>([...mapIds, ...grouped]);
+  /* مقرراتُ الصحيفة التي لا تُرسم (أقسامٌ أخرى ومتطلباتٌ عامة) تبقى في مجموع وحدات التخرج. */
+  const otherUnits = [...new Set([...memberIds.filter(id => !isOwn(id)), ...(live.externals || []).map(Number)])].filter(id => id > 0 && !isOwn(id)).reduce((sum, id) => sum + creditOf(id), 0);
   const edgeKeys = new Set<string>(), edges: Array<[string, string]> = [];
   const notes: string[] = [];
+  const anyOf: Array<[string, string[]]> = [];
+  const minUnits: Record<string, number> = {};
   const label = (id: number) => `${tail(codeOf(id))} «${nameOf(id)}»${ownSet.has(id) ? "" : (ownerName.get(Number(catalog.get(id)?.AdSectionId)) ? ` من ${ownerName.get(Number(catalog.get(id)?.AdSectionId))}` : "")}`;
   for (const rule of live.rules) {
     if (!visible.has(rule.courseId)) continue;
@@ -87,8 +92,12 @@ export async function buildSheetModel(plan: { id: string; AdCollegeId: number; A
     for (const group of rule.prereq?.anyOf || []) {
       const inside = group.filter(id => visible.has(id)), outside = group.filter(id => !visible.has(id));
       for (const id of inside) link(id);
-      if (outside.length) notes.push(`المقرر ${mine} يتطلب أيضاً أحد المقررات: ${outside.map(label).join(" أو ")}.`);
+      /* «أحدها يكفي» يبقى أحدها: بدائلُ الخريطة مجموعةٌ واحدة، وما خرج منها يُذكر معها في الملاحظة نفسها. */
+      if (inside.length && (inside.length > 1 || outside.length)) anyOf.push([codeOf(rule.courseId), inside.map(codeOf)]);
+      if (outside.length) notes.push(`المقرر ${mine} يتطلب أحد المقررات: ${group.map(label).join(" أو ")}.`);
     }
+    const units = Number(rule.prereq?.minUnits) || 0;
+    if (units > 0) { minUnits[codeOf(rule.courseId)] = units; notes.push(`المقرر ${mine} يتطلب اجتياز ${countOf(units, AR.unit)} على الأقل.`); }
     for (const id of new Set(rule.coreq || [])) if (!visible.has(id)) notes.push(`المقرر ${mine} يُسجَّل معه المقرر ${label(id)} في الفصل نفسه (أو سبق اجتيازه).`);
   }
 
@@ -96,8 +105,11 @@ export async function buildSheetModel(plan: { id: string; AdCollegeId: number; A
     title: deptTitle(sectionName || "القسم"),
     planLabel: String(plan.name || "").replace(/^خطة\s+/, "").trim() || "الخطة الدراسية",
     courses: mapIds.map(id => ({ code: codeOf(id), name: nameOf(id), credit: creditOf(id), level: levelOf.get(id) || 0, category: categoryOf(id) || undefined })),
-    groups: groups.map(({ group, ids }) => ({ title: group.name, pick: Math.max(0, Number(group.minCourses) || 0), courses: ids.map(id => ({ code: codeOf(id), name: nameOf(id), credit: creditOf(id) })) })),
+    groups: groups.map(({ group, ids }) => ({ title: group.name, pick: Math.max(0, Number(group.minCourses) || 0), minUnits: Math.max(0, Number(group.minUnits) || 0), courses: ids.map(id => ({ code: codeOf(id), name: nameOf(id), credit: creditOf(id) })) })),
     edges,
+    anyOf,
+    minUnits,
+    otherUnits,
     notes,
     url: sheetUrl(sectionId, plan.id),
     layout: edges.length === 0 ? "wide" : "levels",

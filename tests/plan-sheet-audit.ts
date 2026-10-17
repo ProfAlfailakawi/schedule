@@ -23,7 +23,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
 const template = read("public/plans/_template/sheet.html");
 
 /* ── S1: المولّد ──────────────────────────────────────────────────────────── */
-const OFFICIAL = "https://schedule.dr-alfailakawi.com/plans/s9/p1/";
+const OFFICIAL = "https://schedule-kw.com/plans/s9/p1/";
 const model: SheetModel = {
   title: "قسم تجريبي", planLabel: "2026/2027", url: OFFICIAL,
   courses: [
@@ -38,7 +38,7 @@ const model: SheetModel = {
 {
   const html = buildPlanSheet(model, { template });
   check(!/<image\b|logo/i.test(html), "S1 بلا شعارٍ في الصفحة (لا <image> ولا logo)");
-  check(html.includes('href="https://schedule.dr-alfailakawi.com/plans/s9/p1/"') && !html.includes("schedule-kw.com"), "S1 رمزُ QR يحمل الدومين الرسمي وحده");
+  check((html.match(/<a href="([^"]+)" aria-label="رمز QR/) || [])[1] === "https://schedule-kw.com/plans/s9/p1/" && !html.includes("dr-alfailakawi"), "S1 رمزُ QR يحمل الدومين الرسمي وحده");
   check(["المستوى 100", "المستوى 200", "المستوى 300", "المستوى 400"].every(label => html.includes(label)) && !html.includes("السنة الأولى") && !html.includes("فصل 1"), "S1 الأعمدةُ مستوياتٌ لا سنواتٌ ولا فصول");
   check((html.match(/class="card"/g) || []).length === 7, "S1 بطاقةٌ لكل مقررٍ (٥ في الخريطة + ٢ اختياري)");
   check((html.match(/class="edge"/g) || []).length === 6, "S1 سهمٌ لكل مسبق (٥ في الخريطة وواحدٌ للاختياري)");
@@ -51,6 +51,9 @@ const model: SheetModel = {
   check(wide.includes("ثقافة عامة") && wide.includes("مهنية") && !wide.includes("السهم يبدأ من المتطلب"), "S1 القسمُ المساند بلا أسهم: أشرطةٌ بالعرض بحسب التصنيف، بلا مفتاح الأسهم");
   const many = buildPlanSheet({ ...model, courses: Array.from({ length: 30 }, (_, i) => ({ code: `01090${String(i + 100).padStart(2, "0")}`, name: `مقرر ${i}`, credit: 3, level: 100 + (i % 5) * 0 })), groups: [], edges: [], notes: [], layout: "levels" }, { template });
   check(many.includes('viewBox="0 0 1754'), "S1 ثلاثون مقرراً في مستوىً واحدٍ لا تكسر الرسم");
+  const alt = buildPlanSheet({ ...model, anyOf: [["0109343", ["0109220", "0109105"]]], minUnits: { "0109455": 60 }, otherUnits: 9, groups: [{ ...model.groups[0], minUnits: 9 }] }, { template });
+  check((alt.match(/stroke-dasharray="6 4" stroke-linecap/g) || []).length === 2 && alt.includes('"OR":[["343",["220","105"]]]') && alt.includes('"U":{"455":60}'), "S1 «أحدها يكفي» أسهمٌ متقطعة ومجموعةٌ في البيانات، والحدُّ بالوحدات محفوظ");
+  check(alt.includes("(9 وحدات على الأقل)") && />34<\/text><text[^>]*>وحدة</.test(alt), "S1 حدُّ وحدات المجموعة الاختيارية يُكتب، ووحداتُ المقررات غير المرسومة في المجموع (16 + 9 للاختياري بحدّه + 9 = 34)");
 }
 
 /* ── S2/S3: النشر والصفحات على مستودعٍ حقيقي ──────────────────────────────── */
@@ -118,7 +121,7 @@ const model: SheetModel = {
     check((await call("chair11", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 })).status === 409, "S2 لا تُنشر صحيفةٌ غير معتمدة");
 
     await approve("p11", 11, [
-      { courseId: 101, level: 100 }, { courseId: 102, level: 200, prereq: { all: [101, 900], anyOf: [] } }, { courseId: 103, level: 300, prereq: { all: [102], anyOf: [] } },
+      { courseId: 101, level: 100 }, { courseId: 102, level: 200, prereq: { all: [101, 900], anyOf: [] } }, { courseId: 103, level: 300, prereq: { all: [], anyOf: [[102, 900]], minUnits: 30 } },
     ]);
     const listed = (await call("chair11", "GET", "/api/plan-sheets")).json;
     check(listed.sections.length === 1 && listed.sections[0].sectionId === 11 && listed.sections[0].sheets[0].published === false, "S2 رئيس اللجنة يرى صحيفته المعتمدة وحدها، وغير منشورة");
@@ -126,16 +129,18 @@ const model: SheetModel = {
     check((await call("chair12", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 })).status === 403, "S2 رئيس لجنةٍ في قسمٍ آخر لا ينشر");
     check((await call("head11", "GET", "/api/plan-sheets")).json.sections.length === 0, "S2 رئيس القسم لا يرى شاشة النشر");
     const done = await call("chair11", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 });
-    check(done.status === 200 && done.json.published[0].url === "https://schedule.dr-alfailakawi.com/plans/s11/p11/", "S2 النشر يعطي الرابط الرسمي", done.json);
+    check(done.status === 200 && done.json.published[0].url === "https://schedule-kw.com/plans/s11/p11/", "S2 النشر يعطي الرابط الرسمي", done.json);
 
     const stored = await Repository.getPublishedSheet("p11");
-    check(stored?.model.courses.length === 3 && stored.model.edges.length === 2 && stored.model.notes.length === 1 && stored.model.notes[0].includes("0112150".slice(-3)) && stored.model.notes[0].includes("مقرر قسم آخر") && stored.model.notes[0].includes("من قسم اللغة"),
+    check(stored?.model.courses.length === 3 && stored.model.edges.length === 2 && stored.model.notes.length === 3 && stored.model.notes[0].includes("0112150".slice(-3)) && stored.model.notes[0].includes("مقرر قسم آخر") && stored.model.notes[0].includes("من قسم اللغة"),
       "S2 المقرر الخارجي ملاحظةٌ باسمه وقسمه، لا بطاقةٌ ولا سهم", stored?.model);
     check(!stored?.model.courses.some(c => c.code === "0112150"), "S2 اللقطة بمقررات القسم وحدها");
+    check(JSON.stringify(stored?.model.anyOf) === '[["0111301",["0111201"]]]' && stored?.model.notes[1].includes("يتطلب أحد المقررات") && stored?.model.notes[1].includes("201") && stored?.model.notes[1].includes("150"), "S2 «أحدها» ببديلٍ داخلي وآخر خارجي: يبقى «أحدها» لا سهماً إلزامياً", stored?.model);
+    check(stored?.model.minUnits?.["0111301"] === 30 && stored?.model.notes[2].includes("30 وحدة") && stored?.model.otherUnits === 3, "S2 المسبقُ بالوحدات محفوظ، ووحداتُ المقرر الخارجي في مجموع التخرج", stored?.model);
 
     const page = await call("", "GET", "/plans/s11/p11/");
     check(page.status === 200 && page.text.includes("قسم الشريعة") && page.text.includes("المستوى 300") && !/<image\b/.test(page.text), "S3 الصحيفةُ تُفتح بلا حسابٍ، بمستوياتها وبلا شعار");
-    check(page.text.includes('href="https://schedule.dr-alfailakawi.com/plans/s11/p11/"'), "S3 رمزُ الصفحة يحمل رابطها الرسمي");
+    check(page.text.includes('href="https://schedule-kw.com/plans/s11/p11/"'), "S3 رمزُ الصفحة يحمل رابطها الرسمي");
     const dept = await call("", "GET", "/plans/s11/");
     check(dept.status === 302 && dept.location === "/plans/s11/p11/", "S3 قسمٌ بصحيفةٍ واحدة: رابطُه يفتحها مباشرة");
     const index = await call("", "GET", "/plans/");

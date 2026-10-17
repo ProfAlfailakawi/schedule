@@ -811,7 +811,7 @@ export interface CurriculumRuleSet {
  */
 export interface SheetCourse { code: string; name: string; credit: number; level: number; category?: string }
 export interface SheetElective { code: string; name: string; credit: number }
-export interface SheetGroup { title: string; pick: number; courses: SheetElective[] }
+export interface SheetGroup { title: string; pick: number; /** «بحدٍّ أدنى ٩ وحدات» كما اعتُمدت. */ minUnits?: number; courses: SheetElective[] }
 export interface SheetModel {
   /** «قسم تكنولوجيا التعليم». */
   title: string;
@@ -821,6 +821,12 @@ export interface SheetModel {
   groups: SheetGroup[];
   /** [مقرر سابق، المقرر الذي يفتحه] برمزَي المقررين الكاملين. */
   edges: Array<[string, string]>;
+  /** «أحدها يكفي»: [المقرر، بدائله داخل الخريطة]؛ أسهمُها متقطعة ولا تُقرأ «كلّها مطلوبة». */
+  anyOf?: Array<[string, string[]]>;
+  /** مسبقٌ بعدد الوحدات المجتازة: رمزُ المقرر ← الحدّ. */
+  minUnits?: Record<string, number>;
+  /** وحداتُ مقرراتٍ لا تُرسم (أقسامٌ أخرى ومتطلباتٌ عامة) وتبقى في مجموع التخرج. */
+  otherUnits?: number;
   /** متطلباتٌ من أقسامٍ أخرى: سطرٌ لكل ملاحظة، تُعرض أسفل الخريطة لا بطاقةً ولا سهماً. */
   notes: string[];
   /** الرابط الرسمي الذي يحمله رمز QR. */

@@ -123,6 +123,7 @@ function render(){
  if(sel==null){sh.classList.remove('open');return}
  hint.classList.add('gone');
  const pre=E.filter(e=>e[1]==sel).map(e=>e[0]),nx=E.filter(e=>e[0]==sel).map(e=>e[1]);
+ const ors=(D.OR||[]).filter(g=>g[0]==sel).map(g=>g[1]),inOr=new Set(ors.flat().map(String)),req=pre.filter(c=>!inOr.has(String(c))),minU=(D.U||{})[sel];
  const far=[...up(sel)].filter(c=>!pre.includes(c)).sort((a,b)=>b-a);
  const chip=c=>`<button class="chip" style="--k:${hc(c)}" data-go="${c}"><b>${c}</b>${name(c)}</button>`;
  const col=hc(sel)==='#64748B'&&C[sel]?D.LV[C[sel][0]][0]:hc(sel);
@@ -131,7 +132,7 @@ function render(){
  tag.style.setProperty('--k',col);tag.innerHTML=`<b>${sel}</b>${name(sel)}`;
  sh.innerHTML=`<button class="x2" aria-label="إغلاق">✕</button>
  <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}</div></div></div>
- <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${pre.map(chip).join('')}${far.length?'<div class="l far">وقبلها في السلسلة</div><div class="pills">'+far.map(c=>chip(c).replace('class="chip"','class="chip sm"')).join('')+'</div>':''}${pre.length?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
+ <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${req.map(chip).join('')}${ors.map(g=>'<div class="l far">أحد المقررات</div>'+g.map(chip).join('')).join('')}${minU?`<div class="none">واجتياز وحدات لا تقل عن ${minU}</div>`:''}${far.length?'<div class="l far">وقبلها في السلسلة</div><div class="pills">'+far.map(c=>chip(c).replace('class="chip"','class="chip sm"')).join('')+'</div>':''}${pre.length||minU?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
  <div><div class="l"><i>→</i>يفتح بعده</div>${nx.map(chip).join('')||'<div class="none">لا يفتح مقررات أخرى</div>'}</div></div>`;
  sh.classList.add('open');
 }
