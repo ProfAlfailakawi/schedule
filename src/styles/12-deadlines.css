@@ -675,12 +675,12 @@
 .pr-card.dim{opacity:.38}
 .pr-card.sel{border-color:var(--accent)}
 .pr-lines{position:absolute;inset-block-start:0;left:0;z-index:1;pointer-events:none;overflow:visible}
-.pr-line path{fill:none;stroke:var(--line-strong);stroke-width:1.5;opacity:.7;transition:opacity .18s,stroke .18s,stroke-width .18s}
-.pr-line circle{fill:var(--line-strong);opacity:.8}
+.pr-line path{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.34;transition:opacity .18s,stroke .18s,stroke-width .18s}
+.pr-line .pr-head{fill:var(--accent);stroke:none;opacity:.55}
 .pr-line.opt path{stroke-dasharray:5 4}
-.pr-line.dim path,.pr-line.dim circle{opacity:.12}
-.pr-line.up path{stroke:var(--brass);stroke-width:2.6;opacity:1}.pr-line.up circle{fill:var(--brass);opacity:1}
-.pr-line.down path{stroke:var(--accent);stroke-width:2.6;opacity:1}.pr-line.down circle{fill:var(--accent);opacity:1}
+.pr-line.dim path{opacity:.12}
+.pr-line.up path{stroke:var(--brass);stroke-width:2.4;opacity:1}.pr-line.up .pr-head{fill:var(--brass);opacity:1}
+.pr-line.down path{stroke:var(--accent);stroke-width:2.4;opacity:1}.pr-line.down .pr-head{fill:var(--accent);opacity:1}
 .pr-focus{display:grid;gap:6px;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--accent-softer)}
 .pr-focus-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .pr-focus-head>div:first-child{display:grid;gap:2px;min-width:0}.pr-focus-head small{color:var(--muted);font-size:.78rem}
@@ -688,3 +688,18 @@
 .pr-focus-x{display:grid;place-items:center;inline-size:30px;block-size:30px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--muted);cursor:pointer}
 .pr-focus p{margin:0;font-size:.86rem;line-height:1.7}.pr-focus p em{font-style:normal;font-weight:650;color:var(--accent-ink);margin-inline-end:6px}
 @media(max-width:640px){.pr-lines{display:none}}
+/* مراجعة المرجع: المستويات مفتوحة وبطاقات خفيفة وخيوط المسبقات ظاهرة */
+.reference-level-map{position:relative;column-gap:38px}
+.reference-level-toggle{cursor:default}
+.reference-level-courses{display:grid;gap:9px;padding:10px}
+.reference-course-card{position:relative;z-index:2;padding:0 10px}
+.reference-course-card.is-dim{opacity:.4}
+.reference-course-main{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;padding:8px 0}
+.reference-course-top{display:flex;align-items:center;gap:6px}
+.reference-course-top>bdi{margin-inline-end:auto}
+.reference-prereq-summary{display:inline-flex;align-items:center;gap:2px;font-size:.66rem}
+.reference-dot{inline-size:8px;block-size:8px;border-radius:50%;background:var(--success)}
+.reference-dot.status-different{background:var(--brass)}.reference-dot.status-missing{background:var(--warning)}.reference-dot.status-ambiguous{background:var(--danger)}
+.reference-course-more{display:grid;gap:4px;padding:7px 0 9px;border-block-start:1px dashed var(--line)}
+.reference-course-more .reference-status{justify-self:start}
+@media(max-width:760px){.reference-level-map>.pr-lines{display:none}}
