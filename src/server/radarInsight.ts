@@ -19,18 +19,19 @@ const MAX_QUALITY_ITEMS = 5000;
 const memo = new Map<string, { at: number; value: Promise<RadarInsight> }>();
 const TTL_MS = 10 * 60_000;
 
-export function radarInsightFor(term: AdTerm, rounds: number): Promise<RadarInsight> {
-  const key = String(term.AdTermId);
+/** `scope`: مفتاحُ عالَم البيانات (انظر dataContextCache.ts) والفصل؛ يمنع أن يقرأ صندوقٌ تجريبيّ أو فصلٌ ذاكرةَ آخر. */
+export function radarInsightFor(term: AdTerm, rounds: number, options: { wishesTermId?: number; scope?: string } = {}): Promise<RadarInsight> {
+  const key = `${options.scope ?? ""}|${term.AdTermId}|${options.wishesTermId || ""}`;
   const hit = memo.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
-  const value = compute(term, rounds).catch(error => { memo.delete(key); throw error; });
+  const value = compute(term, rounds, options.wishesTermId).catch(error => { memo.delete(key); throw error; });
   memo.set(key, { at: Date.now(), value });
   return value;
 }
 export const resetRadarInsight = (): void => memo.clear();
 
-async function compute(term: AdTerm, rounds: number): Promise<RadarInsight> {
-  const { input, fingerprint, schedules } = await loadSimulationInput(term, rounds);
+async function compute(term: AdTerm, rounds: number, wishesTermId?: number): Promise<RadarInsight> {
+  const { input, fingerprint, schedules } = await loadSimulationInput(term, rounds, { wishesTermId });
   const report = explainShortfalls(input);
   const studentOf = new Map(input.students.map(student => [student.fp, student] as const));
   const scopes = new Map<string, InsightScope>();

@@ -103,7 +103,7 @@ import { adInjection, adNotifications, registerAdsRoutes } from "./src/server/ad
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
-import { seedDemoRadar } from "./src/server/demoRadarSeed";
+import { seedDemoRadar, seedDemoPreviousTermRadar } from "./src/server/demoRadarSeed";
 import { seedDemoPreviousTerm, seedDemoCurrentTermStories } from "./src/server/demoPreviousTermSeed";
 import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instructorRequestItems";
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
@@ -2367,6 +2367,7 @@ async function seedDemoStories(): Promise<void> {
   const storyDeps = { sealIdentity: sealStudentIdentity, fingerprintOf: surveyFingerprint, requestItemFromRow, dayLetters: DAY_LETTERS, judge: (request: InstructorRequest) => judgeRequestItems(request) };
   await seedDemoCurrentTermStories(storyDeps, termId).catch(error => console.error("[demo] seeding current-term stories failed:", error));
   await seedDemoPreviousTerm(storyDeps).catch(error => console.error("[demo] seeding previous term failed:", error));
+  await seedDemoPreviousTermRadar().catch(error => console.error("[demo] seeding previous-term radar failed:", error));
 }
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {

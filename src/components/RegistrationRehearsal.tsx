@@ -8,8 +8,10 @@
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, Info, Layers, Sparkles, Ticket, TrendingUp, Users } from "lucide-react";
-import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
+import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, History, Info, Layers, Sparkles, Ticket, TrendingUp, Users } from "lucide-react";
+import { EmptyState, Field, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
+import TermFrozenRibbon, { TermFrozenContext } from "./TermFrozenRibbon";
+import { termIsFrozen } from "../utils/termSequence";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
 import ApplyProposal, { postScheduleProposal, postWhatIf } from "./ApplyProposal";
@@ -29,6 +31,8 @@ interface Outcome { term: { id: number; name: string } | null; answered: number 
 interface Summary {
   term: { id: number; name: string } | null;
   canRun: boolean;
+  /** فصلٌ سابق: يُعرض للاطّلاع فقط (الخادم يقرّر، ويردّ 409 على أي كتابة). */
+  frozen?: boolean;
   auto?: { enabled: boolean; everyHours: number };
   phase?: { mode: string; label: string; line: string; namesVisible: boolean };
   run: { ranAt: string; ranBy: string; students: number; population: number; withoutRules: number; defaulted: number; rounds: number; windows: number[]; scoped: boolean; stale?: boolean;
@@ -68,11 +72,27 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const [insight, setInsight] = useState<Insight | null>(null);
   const [insightFailed, setInsightFailed] = useState(false);
   const autoRunInFlight = useRef(false);
+  /* الفصلُ المعروض: 0 = فصلُ الباب (الأصل). الخادمُ يتحقق منه ولا يقبل غير فصل الباب أو فصلٍ سابقٍ مجمَّد. */
+  const [termPick, setTermPick] = useState(0);
+  const [terms, setTerms] = useState<Array<{ AdTermId: number; AdTermName: string }> | null>(null);
+  const [doorId, setDoorId] = useState(0);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/terms", { cache: "no-store" }).then(r => r.ok ? r.json() : []).then(list => { if (live) setTerms(Array.isArray(list) ? list : (list.terms || [])); }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+  const termQuery = termPick ? `?termId=${termPick}` : "";
 
   const load = useCallback(async () => {
-    try { setData(await request("/api/simulation/summary")); setError(""); } catch (e: any) { setError(e.message); }
-    try { setOutcome(await request("/api/simulation/outcome")); } catch { /* الجزءُ الثاني اختياري: لا يُسقط الشاشة */ }
-  }, []);
+    try { const next = await request(`/api/simulation/summary${termQuery}`); setData(next); if (!termPick && next?.term?.id) setDoorId(Number(next.term.id)); setError(""); } catch (e: any) { setError(e.message); }
+    try { setOutcome(await request(`/api/simulation/outcome${termQuery}`)); } catch { /* الجزءُ الثاني اختياري: لا يُسقط الشاشة */ }
+  }, [termQuery, termPick]);
+  /* تبديلُ الفصل يبدأ صفحةً نظيفة: لا يبقى رقمُ فصلٍ تحت اسم آخر. */
+  const pickTerm = (id: number) => {
+    if (id === termPick || (!id && !termPick)) return;
+    setData(null); setOutcome(null); setInsight(null); setInsightFailed(false); setView(null); setScenario("actual"); setAll(false); setQ(""); setError("");
+    setTermPick(id && id !== doorId ? id : 0);
+  };
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 30_000);
@@ -84,18 +104,18 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   useEffect(() => {
     if (!ranAt) return;
     let live = true;
-    fetch("/api/simulation/insight", { cache: "no-store" }).then(async response => {
+    fetch(`/api/simulation/insight${termQuery}`, { cache: "no-store" }).then(async response => {
       if (!response.ok) throw new Error("insight");
       const body = await response.json();
       if (live) { setInsight(body.ready ? body : null); setInsightFailed(false); }
     }).catch(() => { if (live) setInsightFailed(true); });
     return () => { live = false; };
-  }, [ranAt]);
+  }, [ranAt, termQuery]);
 
   /* Source writes mark the saved run stale. The admin view repairs it on its
      own; polling also catches changes made in another session or process. */
   useEffect(() => {
-    if (!data?.canRun || data.auto?.enabled === false || !data.term || (data.run && !data.run.stale) || autoRunInFlight.current) return;
+    if (data?.frozen || !data?.canRun || data.auto?.enabled === false || !data.term || (data.run && !data.run.stale) || autoRunInFlight.current) return;
     autoRunInFlight.current = true; setBusy(true);
     void request("/api/simulation/run", { method: "POST" })
       .then(() => load())
@@ -125,7 +145,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const calm = rows.filter(c => !needsDecision(c));
   const shown = (all ? rows : decide).filter(c => !q.trim() || `${c.code} ${c.name}`.includes(q.trim()));
 
-  if (!data && !error) return <MicroLoader />;
+  if (!data && !error && !termPick) return <MicroLoader />;
   const r = data?.run;
   const wantedTotal = rows.reduce((s, c) => s + c.wanted, 0), seatedTotal = rows.reduce((s, c) => s + c.seated, 0);
   const coverage = wantedTotal ? Math.round((seatedTotal / wantedTotal) * 100) : 0;
@@ -135,9 +155,13 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const qualityPct = quality?.total ? Math.round(quality.ready / quality.total * 100) : 0;
   const maxWindow = Math.max(1, ...(r?.windows || [1]));
   /* يفتح الرادار على ما يحتاج فعلاً: بعد بدء التسجيل أجوبةُ الطلبة، وقبله ما يحتاج قراراً. */
+  const frozen = Boolean(data?.frozen);
+  /* لا يُعرض في المحدِّد إلا ما يقبله الخادم: فصلُ الباب والفصولُ السابقة المجمَّدة. */
+  const termOptions = (terms || []).filter(t => Number(t.AdTermId) === (doorId || data?.term?.id) || termIsFrozen(Number(t.AdTermId), terms as any));
   const shownView = view || (data?.phase?.namesVisible && outcome && outcome.answers > 0 ? "outcome" : decide.length ? "decide" : "capacity");
 
   return (
+    <TermFrozenContext.Provider value={frozen}>
     <div className="sm-page" dir="rtl">
       <PageTitle eyebrow="رادار التسجيل" subtitle="لو سجّل الطلبةُ بحسب ما كتبوه: أين الزحام، وما المطلوب ولا يُطرح؟"
         action={(
@@ -146,8 +170,18 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
             <MasariQrButton data-guide-ignore="زرُّ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation" />
           </div>
         )}>رادار يوم التسجيل</PageTitle>
+      {termOptions.length > 1 ? (
+        <div className="sm-termbar no-print">
+          <Field label={<><History aria-hidden="true" /> الفصل</>}>
+            <select value={termPick || doorId || data?.term?.id || ""} onChange={event => pickTerm(Number(event.target.value) || 0)} aria-label="الفصل المعروض في الرادار">
+              {termOptions.map(t => <option key={t.AdTermId} value={t.AdTermId}>{t.AdTermName}</option>)}
+            </select>
+          </Field>
+        </div>
+      ) : null}
+      {frozen && data?.term ? <TermFrozenRibbon termId={data.term.id} terms={terms} onGoCurrent={() => pickTerm(0)} /> : null}
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
-      {data?.phase ? (
+      {data?.phase && !frozen ? (
         <div className={`sm-phase ${data.phase.namesVisible ? "after" : "before"}`}>
           <span className="sm-ic">{data.phase.namesVisible ? <Users /> : <Ticket />}</span>
           <div><b>{data.phase.label}</b><small>{data.phase.line}</small>
@@ -155,7 +189,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
           {onNavigate && data.phase.namesVisible ? <div className="sm-links"><button type="button" onClick={() => onNavigate("studentRegistration")} data-guide-ignore="انتقالٌ إلى كشف التسجيل من شاشةٍ مسجّلة في المرشد باسم page.simulation">كشف التسجيل</button></div> : null}
         </div>
       ) : null}
-      {!data?.term ? <EmptyState title="لا فصلَ للرادار" detail="تظهر حين يكون للفصل القادم تواريخُ طلبة." /> : !r ? (
+      {!data && !error ? <MicroLoader /> : !data?.term ? <EmptyState title="لا فصلَ للرادار" detail="تظهر حين يكون للفصل القادم تواريخُ طلبة." /> : !r ? (
         <EmptyState title="جارٍ إعداد الرادار تلقائياً" detail={data.canRun ? "سيظهر التحليل هنا بعد اكتمال الاحتساب؛ لا حاجة إلى تشغيله يدوياً." : "تُحدّثه إدارةُ النظام آلياً، ثم يظهر التحليل هنا."} />
       ) : (
         <>
@@ -164,7 +198,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
           <div className="sm-views" role="tablist" aria-label="أقسام الرادار">
             <button type="button" role="tab" aria-selected={shownView === "decide"} onClick={() => setView("decide")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className={`sm-ic${decide.length ? " hot" : ""}`}><CircleAlert /></span><b>{decide.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>تحتاج قراراً</small></button>
             <button type="button" role="tab" aria-selected={shownView === "capacity"} onClick={() => setView("capacity")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><GraduationCap /></span><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>أقل من 12 وحدة</small></button>
-            <button type="button" role="tab" aria-selected={shownView === "predict"} onClick={() => setView("predict")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><Sparkles /></span><b>تنبّؤ</b><small>الفصل القادم</small></button>
+            {frozen ? null : <button type="button" role="tab" aria-selected={shownView === "predict"} onClick={() => setView("predict")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><Sparkles /></span><b>تنبّؤ</b><small>الفصل القادم</small></button>}
             {outcome && outcome.answers > 0 ? <button type="button" role="tab" aria-selected={shownView === "outcome"} onClick={() => setView("outcome")} data-guide-ignore="تبديل قسم الرادار — عرضٌ فقط"><span className="sm-ic"><Ticket /></span><b>{(outcome.answered ?? outcome.answers).toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا بعد التسجيل</small></button> : null}
           </div>
           {shownView !== "outcome" && shownView !== "predict" ? <div className="sm-scenario-tabs" role="tablist" aria-label="مصدر تحليل التسجيل">
@@ -225,7 +259,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
                   </div>
                   <div className="sm-why">{unmet.map(x => <span key={x.key} className={`sm-chip ${x.tone}`}><b>{countOf(x.n, AR.student)}</b> — {x.label}</span>)}</div>
                   <CourseImpact courseId={c.courseId} />
-                  {canSchedule && data.term && needsDecision(c) ? <RadarSchedule course={c as CourseRow & { collegeId?: number; sectionId?: number }} termId={data.term.id} onChanged={() => void load()} /> : null}
+                  {canSchedule && !frozen && data.term && needsDecision(c) ? <RadarSchedule course={c as CourseRow & { collegeId?: number; sectionId?: number }} termId={data.term.id} onChanged={() => void load()} /> : null}
                 </article>
               );
             })}
@@ -233,6 +267,7 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
         </>
       )}
     </div>
+    </TermFrozenContext.Provider>
   );
 }
 
