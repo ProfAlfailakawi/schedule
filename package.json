@@ -111,7 +111,7 @@
     "test:publish-requests": "tsx tests/publish-requests-audit.ts",
     "test:term-freeze": "tsx tests/term-freeze-audit.ts",
     "test:term-freeze-readonly": "tsx tests/term-freeze-readonly-audit.ts",
-    "test:predictive": "tsx tests/predictive-intelligence-audit.ts",
+    "test:predictive": "tsx tests/predictive-intelligence-audit.ts && tsx tests/predictive-backtest-audit.ts",
     "test:term-calendar": "tsx tests/term-calendar-audit.ts",
     "test:section-planning": "tsx tests/section-planning-audit.ts",
     "test:section-planning-import": "tsx tests/section-planning-import-audit.ts",
