@@ -7,7 +7,7 @@
 
 | البند | القيمة الثابتة |
 |---|---|
-| الدومين الرسمي | `schedule.dr-alfailakawi.com` |
+| الدومين الرسمي | `schedule-kw.com` |
 | الخدمة التي يحملها | Cloud Run `schedule` في المشروع `gen-lang-client-0379571946`، المنطقة `europe-west1` |
 | الخدمة التوأم | لا توجد. حُذفت خدمة `europe-west2` بقرار المالك في 17 أكتوبر 2026 (حركتها شبه معدومة)؛ لا تُعِد إنشاءها ولا تنشر عليها |
 | قاعدة البيانات | Firestore في `gen-lang-client-0379571946`، قاعدة `ai-studio-schedule-337bbbf5-1098-44cb-aabf-95536daf9106` |
@@ -33,7 +33,7 @@
 **لا تقل «نُشر» قبل أن تتحقق من الدومين نفسه:**
 
 ```bash
-curl -s https://schedule.dr-alfailakawi.com/sw.js | grep BUILD
+curl -s https://schedule-kw.com/sw.js | grep BUILD
 curl -s https://schedule-34704073784.europe-west1.run.app/sw.js | grep BUILD
 ```
 
