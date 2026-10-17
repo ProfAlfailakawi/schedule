@@ -94,10 +94,14 @@ html.student #plan .card.can>rect:first-of-type{fill:#FEF9C3;stroke:#CA8A04;stro
 html.student #plan .card.no{opacity:.42}
 html.student #plan .edge{opacity:.25}
 @media (min-width:1200px){#stbtn{bottom:calc(126px + env(safe-area-inset-bottom,0))}}
+#backlink{position:fixed;top:12px;right:12px;z-index:9;display:flex;align-items:center;gap:6px;background:#0B2545;color:#fff;text-decoration:none;font-weight:800;font-size:14.5px;padding:8px 16px 8px 12px;border-radius:999px;box-shadow:0 8px 22px rgba(11,37,69,.3)}
+#backlink svg{width:16px;height:16px}
+html.me #stbtn{display:none}
+html.me #stbar small,html.me #stbar #streset{display:none}
 @page{size:420mm 297mm;margin:0}
 @media print{
  html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
- #sheet,#hint,#fitbtn,#pdfbtn,#stbtn,#stbar,#tag{display:none!important}
+ #sheet,#hint,#fitbtn,#pdfbtn,#stbtn,#stbar,#backlink,#tag{display:none!important}
  .scroll{overflow:visible;padding:0}
  #plan [filter]{filter:none}
  .card,.edge{opacity:1!important}
@@ -146,7 +150,7 @@ function render(){
  const pc=plan.querySelector(`.card[data-c="${sel}"]`);if(pc){pc.style.setProperty('--glow',col+'cc');pc.style.setProperty('--ring',col)}
  tag.style.setProperty('--k',col);tag.innerHTML=`<b>${sel}</b>${name(sel)}`;
  sh.innerHTML=`<button class="x2" aria-label="إغلاق">✕</button>
- <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}</div></div></div>
+ <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}${window.__st&&D.ME?' · <b>'+window.__st(sel)+'</b>':''}</div></div></div>
  <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${req.map(chip).join('')}${ors.map(g=>'<div class="l far">أحد المقررات</div>'+g.map(chip).join('')).join('')}${minU?`<div class="none">واجتياز وحدات لا تقل عن ${minU}</div>`:''}${far.length?'<div class="l far">وقبلها في السلسلة</div><div class="pills">'+far.map(c=>chip(c).replace('class="chip"','class="chip sm"')).join('')+'</div>':''}${pre.length||minU?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
  <div><div class="l"><i>→</i>يفتح بعده</div>${nx.map(chip).join('')||'<div class="none">لا يفتح مقررات أخرى</div>'}</div></div>`;
  sh.classList.add('open');
@@ -279,9 +283,12 @@ setTimeout(()=>hint.classList.add('gone'),7000);
 window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
 // Student mode: tap the courses you passed; what is open to you now lights up. Kept on this device only.
 (function(){
- const KEY='planPassed:'+location.pathname,btn=document.getElementById('stbtn'),bar=document.getElementById('stbar');
- let passed=new Set();try{(JSON.parse(localStorage.getItem(KEY)||'[]')||[]).forEach(c=>passed.add(String(c)))}catch(e){}
- const save=()=>{try{localStorage.setItem(KEY,JSON.stringify([...passed]))}catch(e){}};
+ const ME=D.ME||null,KEY='planPassed:'+location.pathname,btn=document.getElementById('stbtn'),bar=document.getElementById('stbar');
+ let passed=new Set();
+ if(ME){ME.passed.forEach(c=>passed.add(String(c)));document.documentElement.classList.add('student','me')}
+ else try{(JSON.parse(localStorage.getItem(KEY)||'[]')||[]).forEach(c=>passed.add(String(c)))}catch(e){}
+ const save=()=>{if(ME)return;try{localStorage.setItem(KEY,JSON.stringify([...passed]))}catch(e){}};
+ window.__st=c=>{c=String(c);return passed.has(c)?'اجتزته':open(c)?'متاح لك الآن':'ينتظر مسبقاً'};
  const credit=c=>C[c]?C[c][2]:EL[c]?EL[c][1]:0;
  const open=c=>{
   const ors=(D.OR||[]).filter(g=>g[0]==c).map(g=>g[1].map(String)),inOr=new Set(ors.flat());
@@ -302,10 +309,10 @@ window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
  btn.addEventListener('click',()=>{document.documentElement.classList.toggle('student');pick(null);hov=null;paint(null);hint.classList.add('gone');draw()});
  bar.addEventListener('click',e=>{if(e.target.id==='streset'){passed.clear();save();draw()}});
  /* في وضع الطالب لا تُضاء السلاسل بالمرور، فلا يطغى التعتيم على ما اجتازه الطالب. */
- ['mouseover','mouseleave','keydown'].forEach(t=>plan.addEventListener(t,e=>{if(document.documentElement.classList.contains('student')&&!(t==='keydown'&&(e.key==='Enter'||e.key===' ')))e.stopImmediatePropagation()},true));
- plan.addEventListener('keydown',e=>{if(document.documentElement.classList.contains('student')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.stopImmediatePropagation();const g=e.target.closest('.card');if(g){const c=String(g.dataset.c);passed.has(c)?passed.delete(c):passed.add(c);save();draw()}}},true);
+ ['mouseover','mouseleave','keydown'].forEach(t=>plan.addEventListener(t,e=>{if(!ME&&document.documentElement.classList.contains('student')&&!(t==='keydown'&&(e.key==='Enter'||e.key===' ')))e.stopImmediatePropagation()},true));
+ plan.addEventListener('keydown',e=>{if(!ME&&document.documentElement.classList.contains('student')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.stopImmediatePropagation();const g=e.target.closest('.card');if(g){const c=String(g.dataset.c);passed.has(c)?passed.delete(c):passed.add(c);save();draw()}}},true);
  plan.addEventListener('click',e=>{
-  if(!document.documentElement.classList.contains('student'))return;
+  if(ME||!document.documentElement.classList.contains('student'))return;
   e.stopImmediatePropagation();
   const g=e.target.closest('.card');if(!g)return;
   const c=String(g.dataset.c);passed.has(c)?passed.delete(c):passed.add(c);save();draw();

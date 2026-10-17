@@ -86,7 +86,14 @@ function nameLines(name: string, avail: number): { lines: string[]; size: number
 
 interface Placed { c: SheetCourse; id: string; col: number; row: number; x: number; y: number; }
 
-export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): string {
+export interface SheetEmbedOptions {
+  /** مقرراتُ الطالب المجتازة برمزها الكامل: تُلوَّن بها الخريطة ويُحسب المتاح. */
+  passed: string[];
+  /** رابطُ الرجوع إلى «خريطتي». */
+  back: string;
+}
+
+export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts, embed?: SheetEmbedOptions): string {
   const wide = model.layout === "wide";
   /* رمزُ العرض: آخرُ ثلاث خانات للرمز الجامعي، وبالرمز الكامل إن تصادم اثنان. */
   const shortOf = new Map<string, string>();
@@ -229,8 +236,11 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): st
   out.push(`<rect width="${W}" height="@H@" fill="url(#bg)"/>`);
   out.push(`<text x="${W - 42}" y="154" direction="ltr" text-anchor="end" font-size="${model.planLabel.length > 12 ? 24 : 30}" font-weight="300" fill="#0B2545" letter-spacing="1">${esc(model.planLabel)}</text>`);
   out.push(`<text x="${W - 42 - 168}" y="152" text-anchor="start" font-size="14" font-weight="500" fill="#64748B">الخطة الدراسية</text>`);
-  out.push(`<a href="${esc(model.url)}" aria-label="رمز QR للنسخة التفاعلية"><rect x="38" y="28" width="136" height="136" rx="16" fill="#fff" stroke="#CBD5E1" stroke-width="1"/><path d="${qrPath(model.url, 50, 40, 112)}" fill="#0B2545" shape-rendering="crispEdges"/></a>`);
-  out.push(`<text x="184" y="90" text-anchor="end" font-size="16" font-weight="700" fill="#0B2545">النسخة التفاعلية</text><text x="184" y="116" text-anchor="end" font-size="14" font-weight="500" fill="#64748B">امسح الرمز لتفتح الخطة</text>`);
+  /* خريطةُ الطالب الخاصة لا تحمل رمزاً: رابطُها شخصيّ، والرجوعُ إلى «خريطتي» بدلَه. */
+  if (!embed) {
+    out.push(`<a href="${esc(model.url)}" aria-label="رمز QR للنسخة التفاعلية"><rect x="38" y="28" width="136" height="136" rx="16" fill="#fff" stroke="#CBD5E1" stroke-width="1"/><path d="${qrPath(model.url, 50, 40, 112)}" fill="#0B2545" shape-rendering="crispEdges"/></a>`);
+    out.push(`<text x="184" y="90" text-anchor="end" font-size="16" font-weight="700" fill="#0B2545">النسخة التفاعلية</text><text x="184" y="116" text-anchor="end" font-size="14" font-weight="500" fill="#64748B">امسح الرمز لتفتح الخطة</text>`);
+  }
   out.push(`<text x="${cx}" y="68" text-anchor="middle" font-size="${title.length > 26 ? 38 : 46}" font-weight="900" fill="#0B2545">${esc(title)}</text>`);
   out.push(`<rect x="${cx - 60}" y="82" width="120" height="5" rx="2.5" fill="#2563EB"/><rect x="${cx - 60}" y="82" width="30" height="5" rx="2.5" fill="#EA580C"/>`);
   const pw = 196, pg = 10, ptotal = pills.length * pw + (pills.length - 1) * pg;
@@ -332,11 +342,14 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts): st
   const OR = (model.anyOf || []).map(([t, alts]) => [idOf(t), alts.map(idOf)]);
   const U: Record<string, number> = {};
   for (const [code, n] of Object.entries(model.minUnits || {})) U[idOf(code)] = n;
-  const data = { C, EL, E: edges.map(([s, t]) => [idOf(s), idOf(t)]), H: H_, LV, OR, U, EL_LABEL: "اختياري" };
+  const ME = embed ? { passed: embed.passed.filter(code => known.has(code)).map(idOf) } : undefined;
+  const data = { C, EL, E: edges.map(([s, t]) => [idOf(s), idOf(t)]), H: H_, LV, OR, U, EL_LABEL: "اختياري", ...(ME ? { ME } : {}) };
   const json = JSON.stringify(data).replace(/</g, "\\u003c").replace(/[\u2028\u2029]/g, ch => (ch === "\u2028" ? "\\u2028" : "\\u2029"));
 
+  const back = embed ? `<a id="backlink" href="${esc(embed.back)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>خريطتي</a>` : "";
   return parts.template
-    .replace("{{TITLE}}", () => esc(`خطة ${title}`))
+    .replace("<section id=\"dview\">", () => `${back}<section id="dview">`)
+    .replace("{{TITLE}}", () => esc(embed ? `خريطتي — ${title}` : `خطة ${title}`))
     .replace("{{DESC}}", () => esc(`الخطة الدراسية — ${title}: المقررات ومسبقاتها حسب الخطة المعتمدة.`))
     .replace("{{SVG}}", () => svg)
     .replace("{{DATA}}", () => json);

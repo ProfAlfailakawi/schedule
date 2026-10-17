@@ -33,6 +33,11 @@ import { auditSimOfferings } from "../utils/registrationSim";
 import { verifiedUnresolvableStudentConflicts } from "../utils/studentCaseConflict";
 import { remainingNeed, unmetPrereq } from "../utils/curriculumRules";
 import { adviseStudent } from "../utils/studentAdvice";
+import { buildStudentMap } from "../utils/studentMap";
+import { isTechnologyEducation } from "../utils/curriculumReference";
+import { REFERENCE_CATEGORIES, referenceCategoryResolver } from "./planReviewRoutes";
+import { buildSheetModel } from "./planSheetRoutes";
+import { buildPlanSheet } from "./planSheetPage";
 import { buildStudentNotices } from "../utils/studentNotices";
 import { studentNeedsCommitteeHelp } from "../utils/studentNeedRequest";
 import { caseRefFor, studentNeedKind } from "../db/repository";
@@ -54,6 +59,8 @@ export interface StudentDoorDeps {
   openIdentity?: (cipher: string) => Promise<string>;
   identityKey: () => Promise<Buffer>;
   isProduction: () => boolean;
+  /** قالبُ صفحة الصحيفة (public/plans/_template/sheet.html) لخريطة الطالب الكاملة بالأسهم. */
+  planSheetTemplate?: string;
   /** طلبُ الخريج: قواعدُ الاستبيان القديم وتحقّقُه من الصحيفة، تُحقن من الخادم فلا تُنسخ. */
   graduate?: {
     rule: (sectionId: number, planId: string | undefined, termName: string) => Promise<{ saved: boolean; summer: boolean; threshold?: number; minThreshold?: number; degreeUnits?: number }>;
@@ -86,20 +93,27 @@ interface SectionCatalog {
   byPlan: Map<string, number[]>;
   /** بلا صحائف: كتالوجُ القسم الفعّال. */
   catalog: number[];
-  courses: Map<number, { code: string; name: string; credit: number }>;
+  courses: Map<number, { code: string; name: string; credit: number; sectionId?: number }>;
 }
 
-const catalogMemo = createTtlMemo<SectionCatalog>({ ttlMs: 10 * 60_000 });
-const sectionsMemo = createTtlMemo<any>({ ttlMs: 10 * 60_000 });
-const offeringMemo = createTtlMemo<Map<number, { sections: number }>>({ ttlMs: 5 * 60_000 });
+/* صندوقُ التجربة (/me/demo) بياناتُه غيرُ الحقيقية وأرقامُه تتصادم مع أرقام الحقيقي: فلا يدخل ذاكرةً مشتركة ولا يقرأ منها. */
+const scoped = <T,>(memo: ReturnType<typeof createTtlMemo<T>>): ReturnType<typeof createTtlMemo<T>> => ({
+  ...memo, get: (key, load) => (Repository.isDemoRequest() ? load() : memo.get(key, load)),
+});
+const catalogMemo = scoped(createTtlMemo<SectionCatalog>({ ttlMs: 10 * 60_000 }));
+const sectionsMemo = scoped(createTtlMemo<any>({ ttlMs: 10 * 60_000 }));
+const offeringMemo = scoped(createTtlMemo<Map<number, { sections: number }>>({ ttlMs: 5 * 60_000 }));
 /** شعبٌ فُتحت من اقتراحٍ حديثاً: [مقرر → رمز الشعبة]. دقيقتان تكفيان: الإشعارُ لا يُلحّ. */
-const openedMemo = createTtlMemo<Map<number, string>>({ ttlMs: 2 * 60_000 });
+const openedMemo = scoped(createTtlMemo<Map<number, string>>({ ttlMs: 2 * 60_000 }));
 /** كم قسّمٌ أرسلوا رغباتهم: عددٌ واحد لكل (قسم، فصل)، لا قراءةَ كلّ الملفات لكل طالب. */
-const wishCountMemo = createTtlMemo<{ n: number; of: number }>({ ttlMs: 10 * 60_000 });
+const wishCountMemo = scoped(createTtlMemo<{ n: number; of: number }>({ ttlMs: 10 * 60_000 }));
 const OPENED_WINDOW_DAYS = 21;
 /** قواعدُ الصحيفة المعتمدة: تُقرأ في كل فتحةٍ لمساري، فتُحفظ دقائق. */
-const ruleSetMemo = createTtlMemo<Awaited<ReturnType<typeof Repository.getRuleSet>> | null>({ ttlMs: 5 * 60_000 });
+const ruleSetMemo = scoped(createTtlMemo<Awaited<ReturnType<typeof Repository.getRuleSet>> | null>({ ttlMs: 5 * 60_000 }));
 const ruleSetOf = (planId: string) => ruleSetMemo.get(planId, async () => (await Repository.getRuleSet(planId)) || null);
+/** قواعدُ كل الصحائف المعتمدة: لمسبقات المقررات الغريبة عن قسم الطالب (تُقرأ من قسمها المالك). */
+const allRuleSetsMemo = scoped(createTtlMemo<Awaited<ReturnType<typeof Repository.listRuleSets>>>({ ttlMs: 5 * 60_000 }));
+const allRuleSets = () => allRuleSetsMemo.get("all", () => Repository.listRuleSets());
 
 async function sectionCatalog(sectionId: number): Promise<SectionCatalog> {
   return catalogMemo.get(String(sectionId), async () => {
@@ -112,9 +126,9 @@ async function sectionCatalog(sectionId: number): Promise<SectionCatalog> {
     /* المتطلباتُ العامة (مقررات أقسامٍ أخرى) تُحتسب في تقدّم الطالب من القواعد المعتمدة، ولا تدخل كتالوجَ القسم. */
     const approvedSets = new Map((await Promise.all(live.map(async plan => [plan.id, await Repository.getRuleSet(plan.id)] as const))));
     for (const plan of live) byPlan.set(plan.id, [...new Set([...links.filter(link => link.planId === plan.id).map(link => Number(link.AdCourseId)), ...(approvedSets.get(plan.id)?.externals || []).map(Number)])]);
-    const known = new Map<number, { code: string; name: string; credit: number }>();
+    const known = new Map<number, { code: string; name: string; credit: number; sectionId?: number }>();
     for (const course of courses as AdCourse[]) {
-      known.set(Number(course.AdCourseId), { code: String(course.CourseCode || ""), name: String(course.CourseName || ""), credit: Number(course.CourseCredit) || 0 });
+      known.set(Number(course.AdCourseId), { code: String(course.CourseCode || ""), name: String(course.CourseName || ""), credit: Number(course.CourseCredit) || 0, sectionId: Number(course.AdSectionId) || 0 });
     }
     const catalog = (courses as AdCourse[]).filter(course => Number(course.AdSectionId) === sectionId && operational.has(Number(course.AdCourseId))).map(course => Number(course.AdCourseId));
     return { plans: live.map(plan => ({ id: plan.id, name: plan.name, status: plan.status })), byPlan, catalog, courses: known };
@@ -265,6 +279,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const reading = readStudentPhase(term?.AdTermStudentPhases, today);
     const door = await readDoor(req).catch(() => null);
     res.json({
+      demo: Repository.isDemoRequest(),
       term: term ? { id: Number(term.AdTermId), name: String(term.AdTermName || "") } : null,
       phase: {
         key: reading.key, mode: reading.mode, label: reading.label, line: reading.line,
@@ -427,6 +442,61 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       ? catalog.plans.map(plan => ({ ...plan, courses: (catalog.byPlan.get(plan.id) || []).map(toCourse).sort((a, b) => a.code.localeCompare(b.code, "en")) }))
       : [{ id: "", name: "مقررات القسم", status: "catalog", courses: catalog.catalog.map(toCourse).sort((a, b) => a.code.localeCompare(b.code, "en")) }];
     noStore(res); res.json({ source: catalog.plans.length ? "plan" : "catalog", plans: lists });
+  });
+
+  /* ── خريطتي: صحيفتي كلُّها (مقرراتُ قسمي والأقسام الأخرى والعامة) بقواعدها، بلا أيّ بيانٍ عني ──
+     الحالةُ (اجتزته/متاح/ينتظر) تُحسب في المتصفح من إنجازي، فتتجدّد لحظةَ أعلّم مقرراً. */
+  app.get("/api/public/me/map", requireDoor, async (_req: Request, res: Response) => {
+    const { profile } = doorOf(res);
+    noStore(res);
+    if (profile.AdSectionId <= 0) { res.json({ ready: false, reason: "no-setup" }); return; }
+    const [catalog, sections, terms] = await Promise.all([sectionCatalog(profile.AdSectionId), Repository.getSections(), Repository.getTerms()]);
+    const planIds = allowedFor(catalog, profile.curriculumPlanId);
+    if (!planIds.length) { res.json({ ready: false, reason: "no-plan" }); return; }
+    const term = pickDoorTerm(terms as any);
+    const [index, rules] = await Promise.all([term ? offeringIndex(Number(term.AdTermId)) : Promise.resolve(null), profile.curriculumPlanId ? ruleSetOf(profile.curriculumPlanId) : Promise.resolve(null)]);
+    const nameOfSection = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
+    const mine = nameOfSection.get(profile.AdSectionId) || "";
+    const resolver = isTechnologyEducation(mine) ? referenceCategoryResolver(sections as any[]) : null;
+    const known = new Map([...catalog.courses].map(([id, course]) => [id, { code: course.code, name: course.name, credit: course.credit, sectionId: Number(course.sectionId) || 0 }]));
+    /* مقررُ قسمٍ آخر في صحيفتي (الإنجليزية، التربية الخاصة…) لا قاعدةَ له في صحيفة قسمي: مسبقاتُه من صحيفة قسمه المالك،
+       ولا يُؤخذ منها نوعُه ولا مجموعتُه — فهو في صحيفتي إجباريٌّ ما لم تقل صحيفتي غير ذلك. */
+    const ownRules = rules?.rules || [];
+    const covered = new Set(ownRules.map(rule => rule.courseId));
+    const foreignIds = planIds.filter(id => !covered.has(id) && (known.get(id)?.sectionId || 0) > 0 && known.get(id)!.sectionId !== profile.AdSectionId);
+    const borrowed: typeof ownRules = [];
+    if (foreignIds.length) {
+      const sets = (await allRuleSets()).filter(set => set.planId !== profile.curriculumPlanId);
+      for (const id of foreignIds) {
+        const owner = known.get(id)!.sectionId;
+        const rule = sets.filter(set => Number(set.AdSectionId) === owner).map(set => set.rules.find(row => row.courseId === id)).find(row => row && (row.prereq || row.coreq?.length));
+        if (rule) borrowed.push({ courseId: id, ...(rule.prereq ? { prereq: rule.prereq } : {}), ...(rule.coreq?.length ? { coreq: rule.coreq } : {}) });
+      }
+    }
+    const model = buildStudentMap({
+      planCourseIds: planIds, courses: known, rules: [...ownRules, ...borrowed], groups: rules?.groups || [], studentSectionId: profile.AdSectionId,
+      sectionName: id => nameOfSection.get(id) || "", offered: index,
+      categoryOf: resolver ? id => resolver(known.get(id)?.code || "", known.get(id)?.sectionId || 0) : undefined,
+      categoryOrder: resolver ? REFERENCE_CATEGORIES.order : undefined,
+      planName: catalog.plans.find(plan => plan.id === profile.curriculumPlanId)?.name || "", studentSectionName: mine, termName: term ? String(term.AdTermName || "") : "",
+    });
+    res.json({ ready: true, hasRules: Boolean(rules?.rules.length), model });
+  });
+
+  /* خريطةُ قسمي كاملةً بالأسهم (التصميمُ المعتمد)، ملوّنةً بإنجازي: صفحةٌ خاصة بلا رمز QR، ترجع إلى «خريطتي». */
+  app.get("/api/public/me/map-page", requireDoor, async (_req: Request, res: Response) => {
+    const { profile } = doorOf(res);
+    res.setHeader("Cache-Control", "no-store"); res.setHeader("X-Robots-Tag", "noindex");
+    const message = (status: number, text: string) => res.status(status).type("text/html; charset=utf-8").send(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>خريطتي</title><body style="font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100dvh;margin:0;background:#F2F3EF;color:#131817;text-align:center;padding:24px"><div><p style="font-size:18px;font-weight:700">${text}</p><p><a href="/me#plan" style="color:#1F6B5C;font-weight:700">‹ خريطتي</a></p></div></body></html>`);
+    if (!deps.planSheetTemplate) { message(503, "الصفحة غير متاحة الآن."); return; }
+    const planId = profile.curriculumPlanId || "";
+    if (profile.AdSectionId <= 0 || !planId) { message(404, "لا صحيفةَ مرتبطة بملفّك بعد."); return; }
+    const [plans, live, catalog] = await Promise.all([Repository.getCurriculumPlans(profile.AdSectionId), ruleSetOf(planId), sectionCatalog(profile.AdSectionId)]);
+    const plan = plans.find(row => row.id === planId && !row.virtual);
+    if (!plan || !live) { message(404, "لم تُعتمد قواعد صحيفتك بعد."); return; }
+    const { model } = await buildSheetModel(plan, live);
+    const passedCodes = profile.passedCourseIds.map(id => catalog.courses.get(id)?.code || "").filter(Boolean);
+    res.type("text/html; charset=utf-8").send(buildPlanSheet(model, { template: deps.planSheetTemplate }, { passed: passedCodes, back: "/me#plan" }));
   });
 
   /* ── ملفي: القراءة والحفظ ────────────────────────────────────────────────── */

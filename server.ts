@@ -102,6 +102,7 @@ import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
 import { adInjection, adNotifications, registerAdsRoutes } from "./src/server/adsRoutes";
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
+import { registerStudentShowcase } from "./src/server/studentShowcase";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { registerPlanSheetRoutes } from "./src/server/planSheetRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
@@ -20812,12 +20813,12 @@ registerPlanReviewRoutes(app, {
 });
 
 /* ── الصحائف العامة: رئيس لجنة الجدول ينشر صحيفةً معتمدة فتصير رابطاً وQR وPDF بلا حساب ── */
+/* القالبُ يُقرأ مرةً عند الإقلاع (كما صفحةُ الهبوط)، فلا قراءةَ ملفاتٍ داخل الطلب؛ ويستعمله مسارُ الصحائف العامة وخريطةُ الطالب. */
+let planSheetTemplate = "";
+for (const candidate of [path.join(process.cwd(), "public", "plans", "_template", "sheet.html"), path.join(process.cwd(), "dist", "plans", "_template", "sheet.html")]) {
+  try { if (fs.existsSync(candidate)) { planSheetTemplate = fs.readFileSync(candidate, "utf8"); break; } } catch { /* التالي */ }
+}
 {
-  /* القالبُ يُقرأ مرةً عند الإقلاع (كما صفحةُ الهبوط)، فلا قراءةَ ملفاتٍ داخل الطلب. */
-  let planSheetTemplate = "";
-  for (const candidate of [path.join(process.cwd(), "public", "plans", "_template", "sheet.html"), path.join(process.cwd(), "dist", "plans", "_template", "sheet.html")]) {
-    try { if (fs.existsSync(candidate)) { planSheetTemplate = fs.readFileSync(candidate, "utf8"); break; } } catch { /* التالي */ }
-  }
   registerPlanSheetRoutes(app, {
     requireAuth,
     isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
@@ -20848,12 +20849,15 @@ registerInsightRoutes(app, {
  *
  * لا يحمل قسماً ولا فصلاً ولا رمزاً: الطالبُ هو المفتاح، والفصلُ يُقرأ من
  * التواريخ (utils/termStudentPhases). فملصقٌ يُطبع مرةً يبقى صالحاً سنين. */
+/* «جرّب كطالبة»: صندوقٌ خاصّ لكل زائر يُنفَّذ فيه مساري ببياناتٍ افتراضية (src/server/studentShowcase.ts). */
+registerStudentShowcase(app, { identityKey: studentIdentityKey, sealIdentity: sealStudentIdentity, isProduction: () => process.env.NODE_ENV === "production" });
 registerStudentDoorRoutes(app, {
   surveyFingerprint,
   sealIdentity: sealStudentIdentity,
   openIdentity: value => openStudentIdentity(value),
   identityKey: studentIdentityKey,
   isProduction: () => process.env.NODE_ENV === "production",
+  planSheetTemplate,
   /* طلبُ الخريج في «مساري»: القواعدُ نفسُها التي يقرؤها الاستبيان القديم (واحدةٌ في الخادم). */
   graduate: {
     rule: async (sectionId: number, planId: string | undefined, termName: string) => {
