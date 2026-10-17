@@ -28,3 +28,11 @@ export function arabicMatchKey(value: unknown): string {
     .replace(/[\u06F0-\u06F9]/g, digit => String(digit.charCodeAt(0) - 0x06F0))
     .toLowerCase();
 }
+
+/**
+ * ترتيبٌ أبجديٌّ عربيّ: يُقارَن مفتاحُ المطابقة (همزاتٌ وألفاتٌ وتاءٌ مربوطةٌ موحَّدة، بلا تشكيل)
+ * بـ localeCompare('ar')؛ فـ«أصول» و«اصول» و«إدارة» تقع حيث يتوقّعها القارئ لا حيث ترميها قيمةُ الحرف.
+ */
+export function compareArabic(a: unknown, b: unknown): number {
+  return arabicMatchKey(a).localeCompare(arabicMatchKey(b), "ar", { numeric: true, sensitivity: "base" });
+}

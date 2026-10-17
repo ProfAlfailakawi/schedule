@@ -1,3 +1,4 @@
+import { compareArabic } from "./arabicText";
 /**
  * ── رادارُ يوم التسجيل ──────────────────────────────────────────────────────
  *
@@ -456,4 +457,17 @@ export function simulateRegistration(input: SimInput): SimResult {
     confirmedOfferings: input.offerings.length,
     offeringIssues: audited.issues,
   };
+}
+
+
+/**
+ * ترتيبُ مقرّرات الرادار للعرض. «التوقعات» قائمةٌ تُتصفَّح لا طابورُ قرار، فتُرتَّب أبجدياً
+ * (اسمُ المقرر ثم رمزُه)؛ أما «الرغبات الفعلية» فتبقى بأثقلها أولاً لأنها طابورُ قرارات.
+ */
+export function orderRadarCourses<T extends { name: string; code: string; wanted: number }>(
+  rows: readonly T[], scenario: "actual" | "projected", weight: (row: T) => number,
+): T[] {
+  const out = [...rows];
+  if (scenario === "projected") return out.sort((a, b) => compareArabic(a.name, b.name) || a.code.localeCompare(b.code, "en", { numeric: true }));
+  return out.sort((a, b) => weight(b) - weight(a) || b.wanted - a.wanted || a.code.localeCompare(b.code, "en"));
 }

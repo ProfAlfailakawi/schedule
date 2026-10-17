@@ -15,6 +15,7 @@ import { pickDoorTerm, readStudentPhase } from "../utils/termStudentPhases";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { evaluateScheduleChange, loadSimulationInput, runRegistrationSimulation } from "./simulationData";
 import { radarInsightFor } from "./radarInsight";
+import { predictiveReadingFor } from "./predictiveInsight";
 import { emptyCauseTotals } from "../utils/registrationCauses";
 
 export interface SimulationDeps {
@@ -163,6 +164,28 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     } catch (error) {
       console.error("[simulation] insight:", error instanceof Error ? error.message : error);
       fail(res, 500, "تعذّر حساب أسباب النقص الآن. أعد المحاولة بعد قليل.");
+    }
+  });
+
+  /* ── الذكاء التنبّؤي: ماذا يحتاج الفصلُ القادم؟ ── قراءةٌ فقط، بحدود نطاق القارئ، وكلُّ رقمٍ يحمل ثقتَه وعددَ فصوله. */
+  const predictiveMemo = createTtlMemo<Awaited<ReturnType<typeof predictiveReadingFor>>>({ ttlMs: 5 * 60_000 });
+  app.get("/api/simulation/predictive", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const term = pickDoorTerm((await Repository.getTerms()) as any);
+    if (!term) { res.json({ ready: false }); return; }
+    const termId = Number(term.AdTermId);
+    try {
+      const run = await Repository.getRegistrationRun(termId);
+      const power = deps.isPowerUser(req);
+      const allowed = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
+      const loaded = await inputMemo.get(`${termId}:${run?.staleAt || ""}:${run?.ranAt || ""}`, () => loadSimulationInput(term, Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2)));
+      /* مفتاحُ الذاكرة يشمل صاحبَ الطلب: نطاقُه لا يُستنتج من شعب الفصل وحدها، فلا يشارك قارئٌ ذاكرةَ آخر. */
+      const scopeKey = power ? "all" : `u${Number((req as any).user?.SystemUserId || 0)}`;
+      const reading = await predictiveMemo.get(`${termId}:${run?.ranAt || ""}:${run?.staleAt || ""}:${scopeKey}`, () => predictiveReadingFor({ term, run, loaded, allowed }));
+      res.json({ ready: true, scoped: !power, reading });
+    } catch (error) {
+      console.error("[simulation] predictive:", error instanceof Error ? error.message : error);
+      fail(res, 500, "تعذّر حساب التنبّؤات الآن. أعد المحاولة بعد قليل.");
     }
   });
 

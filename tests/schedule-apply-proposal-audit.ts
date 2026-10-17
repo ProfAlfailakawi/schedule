@@ -21,7 +21,7 @@ const up = async () => { try { return (await fetch(BASE + "/api/public/me/state"
 /* ── الربط في الواجهات الأربع (مصدرٌ: يقول إن السلك موصول، والسلوكُ الحيّ أدناه) ── */
 {
   const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
-  const intel = read("src/components/IntelligenceWorkspace.tsx"), reg = read("src/components/StudentRegistration.tsx"), radar = read("src/components/RegistrationRehearsal.tsx");
+  const intel = read("src/components/IntelligenceWorkspace.tsx"), reg = read("src/components/StudentRegistration.tsx"), radar = read("src/components/RegistrationRehearsal.tsx") + read("src/components/RadarSchedule.tsx"); /* RadarSchedule انتقل إلى ملفه ليشاركه الرادار ولوحة التنبّؤ */
   const inbox = read("src/components/InstructorInbox.tsx"), app = read("src/App.tsx"), srv = read("server.ts"), apply = read("src/components/ApplyProposal.tsx");
   check(intel.includes('kind: "opening"') && intel.includes('kind: fix.swapWith ? "swap" : "move"') && intel.includes("<ApplyProposal"), "L1 مركز الذكاء: فتحُ الشعب والنقلُ والتبديل لها زرُّ «اعتمد في الجدول»");
   check(reg.includes("openSection: slot") && reg.includes("موافقة + فتح شعبة") && reg.includes("committeeActs && !course.settled"), "L2 كشف التسجيل: موافقةُ اللجنة تحمل فتحَ الشعبة، وللجنة وحدها");

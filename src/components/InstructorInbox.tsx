@@ -42,6 +42,7 @@ import { effectiveStatus } from "../utils/studyProposal";
 import { ProposalLauncherBar, ProposalStrip, type OpenWorkspace } from "./proposal/ProposalInboxParts";
 import { proposalApi, type StaffProposalView } from "./proposal/proposalApi";
 const StudyProposalWorkspace = React.lazy(() => import("./proposal/StudyProposalWorkspace"));
+import TermFrozenRibbon, { TermFrozenContext, useFrozenScreen, useTermFrozen } from "./TermFrozenRibbon";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import {
   Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface,
@@ -277,7 +278,7 @@ const READINESS: Record<Readiness, string> = {
  * ما قاله القسمُ والأستاذ في البند بترتيبه، وحالتُه من القاعدة الواحدة
  * (`negotiationState`)، وسطرُ ردٍّ يحمل أوقاتاً مقترحة من أقرب المتاح. ليس
  * قراراً: لا يكتب في الجدول. التثبيتُ والرفضُ يبقيان زرّيهما. */
-function RequestThread({ item, busy, onReply, onClose, onProposal }: {
+function RequestThread({ item, busy: busyProp, onReply, onClose, onProposal }: {
   item: InstructorRequestItem;
   busy: boolean;
   onReply: (text: string, slots: any[]) => void;
@@ -285,6 +286,9 @@ function RequestThread({ item, busy, onReply, onClose, onProposal }: {
   /** يفتح مساحة «إعداد مقترح دراسي» مرتبطةً بهذا البند. */
   onProposal?: () => void;
 }) {
+  const frozenScreen = useFrozenScreen();
+  /* فصلٌ سابق: كلُّ ما يُقرِّر معطَّل كما لو كان مشغولاً. */
+  const busy = busyProp || frozenScreen;
   const slotKey = (slot: { day: string; days?: string[]; start: string; end: string }) =>
     `${(slot.days?.length ? slot.days : [slot.day]).join(",")}|${slot.start}|${slot.end}`;
   const [text, setText] = useState("");
@@ -384,6 +388,7 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
   proposals: StaffProposalView[];
   onOpenProposal: (open: OpenWorkspace) => void;
 }) {
+  const frozenScreen = useFrozenScreen();
   const [rejecting, setRejecting] = useState<number | null>(null);
 
   const items = useMemo(() => (row.items || [])
@@ -421,7 +426,7 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
         {row.status === "settled" ? <Badge tone="success">انتهى</Badge> : null}
         {/* مقترحٌ فعّال يظهر سطره بزرّه («فتح»/«متابعة»)، فلا يتكرر زرٌّ يفتح المساحة نفسها. */}
         {proposals.some(view => !["withdrawn", "expired"].includes(effectiveStatus(view.proposal))) ? null : (
-          <button type="button" className="request-propose" onClick={() => onOpenProposal({ requestId: row.id })} data-guide-target="proposal-start">
+          <button type="button" className="request-propose" disabled={frozenScreen} onClick={() => onOpenProposal({ requestId: row.id })} data-guide-target="proposal-start">
             <ClipboardPen aria-hidden="true" /> إعداد مقترح دراسي
           </button>
         )}
@@ -502,7 +507,7 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
 /* ── صفُّ بند ─────────────────────────────────────────────────────────────
  * الحكمُ المحفوظ مع الطلب والفحصُ الحيّ يُقرآن معاً: ما منعه أحدُهما مُنع،
  * وما نبّه إليه أحدُهما قيل. ولا يُكرَّر السببُ نفسُه مرّتين. */
-function RequestRow({ row, item, index, current, busy, rejecting, error, onReject, onCloseReject, onDecide, onReply, onProposal }: {
+function RequestRow({ row, item, index, current, busy: busyProp, rejecting, error, onReject, onCloseReject, onDecide, onReply, onProposal }: {
   key?: React.Key;
   row: InboxRequest; item: InstructorRequestItem; index: number; current?: FSchedule;
   busy: boolean; rejecting: boolean; error?: string;
@@ -511,6 +516,9 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
   onReply: (index: number, text: string, slots: any[]) => void;
   onProposal?: (index: number) => void;
 }) {
+  const frozenScreen = useFrozenScreen();
+  /* فصلٌ سابق: كلُّ ما يُقرِّر معطَّل كما لو كان مشغولاً. */
+  const busy = busyProp || frozenScreen;
   const decided = item.decision?.state;
   const negotiation = negotiationState(item);
   const [talking, setTalking] = useState(false);
@@ -642,7 +650,7 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
               >
                 {busy ? "يحفظ…" : item.action === "add" ? "أضِفه الآن" : "ثبّت"}
               </PrimaryButton>
-              <SecondaryButton type="button" data-guide-target="requests.action.reject" onClick={onReject}>
+              <SecondaryButton type="button" data-guide-target="requests.action.reject" onClick={onReject} disabled={frozenScreen}>
                 ارفض
               </SecondaryButton>
             </div>
@@ -742,6 +750,8 @@ const INBOX_DAY_NAMES: Record<string, string> = {
 export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
+  /* فصلٌ سابق: رغباتُه تُقرأ ولا يُقرَّر فيها (والخادم يرفض أيضاً). الأزرار تبقى معطَّلة لا محذوفة. */
+  const frozen = useTermFrozen(termId, terms);
   /* الكلية والقسم من النطاق المشترك (src/utils/sharedScope.ts)، معروضين على
      نطاق القارئ؛ وافتراض الشاشة أدناه («أوّل كلية») لا يُكتب فيه. */
   const [collegeId, setCollegeId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).collegeId);
@@ -990,6 +1000,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
    * قرارٍ لم يُسجَّل، لأنه يقول للأستاذ «ثُبّت» ولم يُثبَّت شيء.
    */
   const decide = async (row: InboxRequest, index: number, state: "fixed" | "rejected", extra: any = {}): Promise<boolean> => {
+    if (frozen) return false;
     const key = `${row.id}:${index}`;
     /* ما يعتمد عليه هذا البند يُثبَّت قبله، بالمسار نفسه. فإن رُفض الشقيقُ وقف
        هذا عنده، وقيل السببُ على صفّ الشقيق. */
@@ -1097,6 +1108,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   /* ── ردُّ القسم في حوار البند ─────────────────────────────────────────────
      رسالةٌ وأوقاتٌ مقترحة تصل الأستاذَ في صفحته. لا حفظَ في الجدول هنا. */
   const reply = async (row: InboxRequest, index: number, text: string, slots: any[]) => {
+    if (frozen) return;
     const key = `${row.id}:${index}`;
     setBusyKey(key);
     setRowErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
@@ -1115,7 +1127,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
      الحفظُ عبر `/api/schedules` نفسه — فيرث كلَّ تحقّقه — ثم يُسجَّل القرار
      بمعرّف الصفّ الناتج. وإن رُفض الحفظ قيل السببُ على البطاقة نفسها. */
   const saveQuick = async (draft: QuickDraft) => {
-    if (!quick) return;
+    if (!quick || frozen) return;
     const { row, index } = quick;
     const item = row.items[index];
     const slots = item.slots || [];
@@ -1201,7 +1213,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   if (!terms) return <MicroLoader label="يقرأ الفصول…" />;
 
   return (
-    <div className="content-stack changes-screen visual-minimal">
+    <TermFrozenContext.Provider value={frozen}>
+    <div className="content-stack changes-screen visual-minimal" data-term-frozen-scope={frozen || undefined}>
       <PageTitle
         action={rows && rows.length ? <ProposalLauncherBar rows={rows} proposals={proposals} onOpen={setWorkspace} /> : undefined}
         eyebrow={<><Inbox aria-hidden="true" /> رغبات الأساتذة</>}
@@ -1209,6 +1222,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       >
         وارد الأساتذة
       </PageTitle>
+      <TermFrozenRibbon termId={termId} terms={terms} onGoCurrent={id => { sharedScope.pick({ termId: id }); setTermId(id); }} />
 
       {(() => {
         const label = (key: string) => {
@@ -1487,5 +1501,6 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         </React.Suspense>
       ) : null}
     </div>
+    </TermFrozenContext.Provider>
   );
 }

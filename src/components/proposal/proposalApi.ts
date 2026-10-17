@@ -66,7 +66,7 @@ export interface ProposalContext {
     items: Array<{ index: number; action: string; courseName: string; sectionCode: string; decision: string }>;
   };
   instructor: { id: number; name: string; mobile?: string; loadCap: number | null; retired: boolean };
-  term: { id: number; name: string; closed: boolean };
+  term: { id: number; name: string; closed: boolean; /** فصلٌ سابق: للعرض فقط */ frozen?: boolean };
   scope: { collegeId: number; collegeName: string; sectionId: number; sectionName: string };
   courses: ContextCourse[];
   usedCodes: Record<string, number[]>;
