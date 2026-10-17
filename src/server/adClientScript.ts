@@ -134,7 +134,7 @@ var PV={};
 function mount(box,slot,opt){
 if(!box||!slot)return;
 box.classList.add("adx");
-fetch("/_ads/serve?slot="+encodeURIComponent(slot)+(tok?"&t="+encodeURIComponent(tok):""),{credentials:"omit",cache:"no-store"})
+fetch("/_ads/serve?slot="+encodeURIComponent(slot)+(tok?"&t="+encodeURIComponent(tok):"")+(!tok&&opt&&opt.college>0?"&c="+encodeURIComponent(opt.college):""),{credentials:"omit",cache:"no-store"})
 .then(function(r){return r.ok?r.json():null})
 .then(function(d){
  if(!d)return;

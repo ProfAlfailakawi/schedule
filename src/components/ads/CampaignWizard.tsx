@@ -72,7 +72,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
   const save = async (): Promise<boolean> => {
     setSaving(true); setErr([]);
     try {
-      const out = await api<{ id: string }>("/api/admin/ads/campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, colleges: slot?.wholeUniversity ? [] : form.colleges, id: savedId || form.id || undefined }) });
+      const out = await api<{ id: string }>("/api/admin/ads/campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, id: savedId || form.id || undefined }) });
       setSavedId(out.id);
       await onSaved(out.id);
       return true;
@@ -180,18 +180,19 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
               })}
             </div>
           </div>
-          {slot?.wholeUniversity ? (
-            <div className="ad-reach"><Globe2 aria-hidden="true" size={18} /><div><b>يصل كل طلبة الجامعة</b><span>{slot.label} يعرض إعلانك لكل طالبٍ يدخل، من كل الكليات، بلا حاجةٍ لأي تخصيص.</span></div></div>
-          ) : <div className="ad-field">
+          {slot?.wholeUniversity && !form.colleges.length ? (
+            <div className="ad-reach"><Globe2 aria-hidden="true" size={18} /><div><b>يصل كل طلبة الجامعة</b><span>{slot.label} يعرض إعلانك لكل طالبٍ يدخل، من كل الكليات. ويمكنك حصره بكليات محددة أدناه.</span></div></div>
+          ) : null}
+          <div className="ad-field">
             <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-link" onClick={() => setShowColleges(v => !v)}>{showColleges ? "إخفاء تخصيص الكليات" : "تخصيص الكليات (اختياري)"}</button>
             {showColleges ? (
               <>
                 <div className="ad-chips ad-chips-wrap" role="group" aria-label="الكليات">{data.colleges.map(co => <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={co.id} type="button" className={`ad-chip${form.colleges.includes(co.id) ? " on" : ""}`} aria-pressed={form.colleges.includes(co.id)} onClick={() => set("colleges", toggle(form.colleges, co.id))}>{co.name}</button>)}</div>
-                <p className="ad-note">يعمل الاستهداف بالكلية في صفحتي الجدول العام وجدول الطلبة (تعرفان كلية الطالب)؛ لا تظهر الحملة المستهدَفة بكلية داخل «مساري».</p>
+                <p className="ad-note">{slot?.wholeUniversity ? "داخل «مساري» تظهر الحملة المحصورة بكلية لمن أكمل ملفه الشخصي فقط (لأن كليته تُعرف منه)." : "يعمل الاستهداف بالكلية في الصفحات التي تعرف كلية الطالب."}</p>
               </>
             ) : null}
-          </div>}
-          <div className="ad-sumline"><b>ستظهر في:</b> {slot?.label || form.slot} · {seasonText} · {slot?.wholeUniversity ? "كل الجامعة" : form.colleges.length ? countOf(form.colleges.length, AR.college) : "كل الكليات"}</div>
+          </div>
+          <div className="ad-sumline"><b>ستظهر في:</b> {slot?.label || form.slot} · {seasonText} · {form.colleges.length ? countOf(form.colleges.length, AR.college) : slot?.wholeUniversity ? "كل الجامعة" : "كل الكليات"}</div>
         </div>
       ) : null}
 
@@ -225,7 +226,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
             <div><dt>الشركة</dt><dd>{form.company}{form.trial ? " · تجريبية" : ""}</dd></div>
             <div><dt>الموقع</dt><dd>{slot?.label} <bdi dir="ltr">({slot?.width}×{slot?.height})</bdi></dd></div>
             <div><dt>المدة</dt><dd>من <bdi>{dateShort(form.startDay)}</bdi> إلى <bdi>{dateShort(form.endDay)}</bdi> · {countOf(Math.max(1, span), AR.day)}</dd></div>
-            <div><dt>الجمهور</dt><dd>{seasonText} · {slot?.wholeUniversity ? "كل الجامعة" : form.colleges.length ? countOf(form.colleges.length, AR.college) : "كل الكليات"}</dd></div>
+            <div><dt>الجمهور</dt><dd>{seasonText} · {form.colleges.length ? countOf(form.colleges.length, AR.college) : slot?.wholeUniversity ? "كل الجامعة" : "كل الكليات"}</dd></div>
             <div><dt>الصور</dt><dd>{saved?.creatives.length ? "مرفوعة" : "لم تُرفع بعد"}</dd></div>
             <div><dt>الوجهة</dt><dd><bdi dir="ltr" className="ad-url">{form.linkUrl}</bdi></dd></div>
           </dl>
