@@ -36,6 +36,13 @@ const base = { courses: [course], instructorIds: new Set([7, 8]) };
   const verdict = canSign(emptyApproval(1, 5, 20), "committee", { blockingConflicts: blockers.conflicts, blockingDuplicates: blockers.duplicates, rowCount: rows.length });
   check(verdict.ok === true, "نواقصُ البيانات وحدها لا تمنع التوقيع");
 }
+/* 1ب) «بانتظار تثبيت القاعة» (مبنى بلا قاعة مثبّتة) حالةٌ مقصودة لا بندٌ ناقص؛ وبلا مبنى تبقى ناقصة. */
+{
+  const pending = computeScheduleDataReadiness({ ...base, rows: [row(1, { roomId: "", buildingId: "b8", locationStatus: "PENDING_ROOM" })], rooms: [] });
+  check(!pending.items.some(i => i.kind === "location" || i.kind === "room"), "مبنى محدد + قاعة بانتظار التثبيت: لا ملاحظة");
+  const noBuilding = computeScheduleDataReadiness({ ...base, rows: [row(1, { roomId: "", buildingId: "", locationStatus: "PENDING_ROOM" })], rooms: [] });
+  check(noBuilding.items.some(i => i.kind === "location"), "بلا مبنى ولا قاعة: تبقى ملاحظة");
+}
 /* 2) تعارضٌ حقيقي: لا يُوقَّع. */
 {
   const rows = [row(1), row(2, { AdInstructorId: 8 })];
