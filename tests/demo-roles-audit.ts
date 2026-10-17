@@ -110,7 +110,8 @@ function liveValue(row: any, field: string): string {
   if (field === "time") return `${String(row.fstarttime || "")}-${String(row.fendtime || "")}`;
   return "";
 }
-const registrarNotes = state.scheduleComments.filter(c => c.origin === "registrar" && !c.rebuttal);
+/* الملاحظاتُ «المفتوحة» وحدها: ملاحظاتُ الفصل السابق محلولةٌ بالتصميم وقيمتُها هي ما كان قبل العلاج. */
+const registrarNotes = state.scheduleComments.filter(c => c.origin === "registrar" && !c.rebuttal && !c.resolved);
 check(registrarNotes.length > 0, "ثمّة ملاحظاتُ تسجيلٍ مبذورة");
 for (const note of registrarNotes) {
   const row = scheduleById.get(Number(note.scheduleId));

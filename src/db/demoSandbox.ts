@@ -575,6 +575,18 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
       AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
       label: "نسخة الجولة الأولى — كما رآها التسجيل", source: "manual", rows: baseline,
     });
+    /* لقطةٌ التُقطت قبل أول تعديلٍ للّجنة بعد الإرجاع (قاعةٌ ووقتٌ كما رآهما التسجيل): بها يقرأ «ما تحرّك»
+       «تعديلان» لا «لم يتغيّر شيء» — وهي ما يوافق سجلَّ العمليات أدناه (PUT على موعدين). */
+    {
+      const preEdit = structuredClone(cs);
+      Object.assign(preEdit[0], { buildingId: baseline[0].buildingId, roomId: baseline[0].roomId, AdRoomCode: baseline[0].AdRoomCode, AdRoomHall: baseline[0].AdRoomHall });
+      preEdit[1].fstarttime = baseline[1].fstarttime; preEdit[1].fendtime = baseline[1].fendtime;
+      versions.push({
+        id: "demo-ver-cs-before-edit", scopeKey: "1:1:1", createdAt: iso(2), rowCount: preEdit.length, SystemUserId: 16,
+        userName: "د. رئيس لجنة جدول الحاسب", AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+        label: "لقطة قبل أول تعديل بعد الإرجاع", source: "manual", rows: preEdit,
+      });
+    }
     comments.push(
       {
         id: "demo-note-cs-1", createdAt: iso(3), SystemUserId: 13, userName: "أ. رئيس التسجيل",
@@ -732,6 +744,81 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
   return { approvals, versions, comments, audit };
 }
 
+/*
+ * ── دورةُ اعتمادٍ كاملةٌ للفصل السابق ───────────────────────────────────────
+ *
+ * فصلٌ سابق بلا سجلّ اعتماد يُفتح فيه «تغييرات الجدول» على «لا وارد»، ويُحجب كشفُ
+ * التسجيل عن موظّفي التسجيل («لم يُوقَّع جدولُ هذا القسم»). فلكل قسمٍ له جدولٌ في
+ * التاريخ دورةٌ مضت: جولتان، أُرجعت الأولى بملاحظتين عولجتا، وقُبلت الثانية —
+ * بنسخةٍ حفظت ما رآه التسجيل ليُقرأ «ما تحرّك»، وتوقيعين، وسجلّ عمليات.
+ */
+function seedPreviousTermUniverse(history: FSchedule[]): {
+  approvals: ScheduleApproval[]; versions: ScheduleVersion[]; comments: ScheduleComment[]; audit: AuditLogEntry[];
+} {
+  const termId = DEMO_PREVIOUS_TERM_ID;
+  /* قبل بدء الفصل السابق بأسابيع: كلُّ الأرقام «أيام مضت» من اليوم. */
+  const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+  const nextId = (() => { let top = Math.max(0, ...history.map(r => Number(r.id))); return () => ++top; })();
+  const versions: ScheduleVersion[] = [], comments: ScheduleComment[] = [], approvals: ScheduleApproval[] = [], audit: AuditLogEntry[] = [];
+  const scopes: Array<{ collegeId: number; sectionId: number; label: string }> = [
+    { collegeId: 1, sectionId: 1, label: "علوم الحاسب" }, { collegeId: 1, sectionId: 2, label: "علم البيانات" },
+    { collegeId: 2, sectionId: 3, label: "الإدارة" }, { collegeId: 2, sectionId: 4, label: "ريادة الأعمال" },
+    { collegeId: 3, sectionId: 5, label: "تقنيات التعليم" }, { collegeId: 1, sectionId: DEMO_MATH.section.AdSectionId, label: "الرياضيات" },
+    { collegeId: 1, sectionId: 6, label: "الدراسات الإسلامية" }, { collegeId: 2, sectionId: 7, label: "الدراسات الإسلامية" },
+    { collegeId: 3, sectionId: 8, label: "الدراسات الإسلامية" },
+  ];
+  scopes.forEach(({ collegeId, sectionId, label }, index) => {
+    const rows = history.filter(r => Number(r.AdCollegeId) === collegeId && Number(r.AdSectionId) === sectionId && Number(r.AdTermId) === termId);
+    if (rows.length < 2) return;
+    const key = `${collegeId}:${sectionId}:${termId}`, tag = `prev-${sectionId}`;
+    const shift = index * 2; // الأقسامُ لا تُسلِّم في اليوم نفسه
+    /* ما رآه التسجيل في الجولة الأولى: قاعةٌ ووقتٌ تغيّرا، وصفٌّ أُضيف، وصفٌّ حُذف. */
+    const baseline = structuredClone(rows);
+    const otherHall = hallsForSection(sectionId).find(h => h.roomId !== baseline[0].roomId);
+    if (otherHall) Object.assign(baseline[0], hallFields(otherHall));
+    if (baseline[1]) { baseline[1].fstarttime = "07:00"; baseline[1].fendtime = "08:15"; }
+    if (baseline.length >= 4) baseline.pop();
+    baseline.push({ ...structuredClone(rows[0]), id: nextId(), AdCourseName: "مادةٌ أُلغيت بعد المراجعة", SCode: "09", fstarttime: "16:00", fendtime: "17:15" });
+    const firstVersion = `demo-ver-${tag}-round1`, finalVersion = `demo-ver-${tag}-final`;
+    versions.push(
+      { id: firstVersion, scopeKey: key, createdAt: iso(204 - shift), rowCount: baseline.length, SystemUserId: 16, userName: `لجنة ${label}`,
+        AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, label: "نسخة الجولة الأولى — كما رآها التسجيل", source: "manual", rows: baseline },
+      { id: finalVersion, scopeKey: key, createdAt: iso(192 - shift), rowCount: rows.length, SystemUserId: 16, userName: `لجنة ${label}`,
+        AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, label: "النسخة المقبولة — الجولة الثانية", source: "manual", rows: structuredClone(rows) },
+    );
+    comments.push(
+      { id: `demo-note-${tag}-1`, createdAt: iso(199 - shift), SystemUserId: 13, userName: "أ. رئيس التسجيل", scheduleId: Number(rows[0].id),
+        AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, text: "سعة القاعة أقل من عدد المسجّلين المتوقّع.",
+        resolved: true, field: "room", valueAtNote: noteValue(baseline[0], "room"), round: 1, origin: "registrar", resolution: "closed-by-acceptance" },
+      { id: `demo-note-${tag}-2`, createdAt: iso(199 - shift), SystemUserId: 13, userName: "أ. رئيس التسجيل", scheduleId: Number(rows[Math.min(1, rows.length - 1)].id),
+        AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, text: "يُفضّل تقديم الموعد نصف ساعة.",
+        resolved: true, field: "time", valueAtNote: noteValue(baseline[Math.min(1, baseline.length - 1)], "time"), round: 1, origin: "registrar",
+        rebuttal: { text: "الموعد مثبّت بطلب القسم لتوافقه مع مختبرٍ مشترك.", at: iso(197 - shift), SystemUserId: 16, userName: `لجنة ${label}` },
+        rebuttalVerdict: "accepted", resolution: "rebuttal-accepted" },
+    );
+    approvals.push({
+      id: key, scopeKey: key, AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, status: "accepted", currentRound: 2,
+      signatures: [
+        { stage: "committee", SystemUserId: 16, userName: `لجنة ${label}`, roleLabel: "رئيس لجنة الجدول", at: iso(192 - shift), versionId: finalVersion, rowCount: rows.length, verifyCode: `CMT-${7100 + sectionId}` },
+        { stage: "head", SystemUserId: 15, userName: `رئيس قسم ${label}`, roleLabel: "رئيس القسم العلمي", at: iso(192 - shift), versionId: finalVersion, rowCount: rows.length, verifyCode: `HEAD-${7200 + sectionId}` },
+      ],
+      rounds: [
+        { number: 1, submittedAt: iso(204 - shift), submittedBy: `لجنة ${label}`, returnedAt: iso(199 - shift), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, changedRowCount: 3, reviewedVersionId: firstVersion },
+        { number: 2, submittedAt: iso(192 - shift), submittedBy: `لجنة ${label}`, acceptedAt: iso(188 - shift), acceptedBy: "أ. رئيس التسجيل", acceptedVersionId: finalVersion },
+      ],
+      pendingAdditions: [], updatedAt: iso(188 - shift),
+    });
+    const logged = (daysAgo: number, who: [number, string], path: string, changes: string) => audit.push({
+      id: `demo-audit-${tag}-${audit.length + 1}`, timestamp: iso(daysAgo), SystemUserId: who[0], userName: who[1], method: "POST", path, action: "إضافة",
+      entity: "approvals", entityId: path.split("/").pop(), changes, status: 200,
+    });
+    logged(204 - shift, [16, `لجنة ${label}`], "/api/approvals/submit", `إرسال ${label} — الجولة 1 (الفصل السابق)`);
+    logged(199 - shift, [13, "أ. رئيس التسجيل"], "/api/approvals/return", `إرجاع ${label} بملاحظتين — الجولة 1 (الفصل السابق)`);
+    logged(188 - shift, [13, "أ. رئيس التسجيل"], "/api/approvals/accept", `اعتماد جدول ${label} — الجولة 2 (الفصل السابق)`);
+  });
+  return { approvals, versions, comments, audit };
+}
+
 /** أستاذٌ من علم البيانات (نطاق 1–4 لكلية العلوم) يدرّس شعبةً واحدة في علوم الحاسب. */
 export const DEMO_CS_VISITING_INSTRUCTOR_ID = 4;
 function demoVisiting(): Array<{ sectionId: number; instructorIds: readonly number[] }> {
@@ -789,13 +876,14 @@ export function createDemoSandboxState(): DemoSandboxState {
   const registry = demoLocationRegistry(schedules);
 
   const seeded = seedApprovalUniverse(schedules);
+  const archived = seedPreviousTermUniverse(history);
 
   return {
     users, formNames, formSecurity, collegeUserAssign,
     terms: demoTerms(new Date()),
     colleges: structuredClone(colleges), sections: structuredClone(sections), instructors, courses,
     schedules: [...schedules, ...history], rooms,
-    auditLogs: seeded.audit, scheduleVersions: seeded.versions, scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: seeded.comments,
+    auditLogs: [...seeded.audit, ...archived.audit].sort((a, b) => b.timestamp.localeCompare(a.timestamp)), scheduleVersions: [...seeded.versions, ...archived.versions], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [...seeded.comments, ...archived.comments],
     studentNeeds: [], schedulePublications: [], scheduleConstraints: [],
     /* المنتدبون: منتدبةُ الرياضيات (DEMO_MATH)، وأستاذُ علم البيانات الذي يدرّس
        شعبةً في علوم الحاسب (DEMO_CS_VISITING) — في دليل كل قسم، وفي سجلّ منتدبيه
@@ -808,7 +896,7 @@ export function createDemoSandboxState(): DemoSandboxState {
       id: `1:${sectionId}`, scopeKey: `1:${sectionId}`, collegeId: 1, sectionId, instructorIds: [...instructorIds], updatedAt: new Date().toISOString(),
     })),
     departmentRooms: [], scheduleDecisionMemories: [],
-    campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: seeded.approvals,
+    campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: [...seeded.approvals, ...archived.approvals],
     locationBuildings: registry.buildings, locationRooms: registry.rooms,
   };
 }

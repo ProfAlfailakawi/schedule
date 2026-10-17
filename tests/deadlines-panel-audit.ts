@@ -237,7 +237,7 @@ const approval = (over: Partial<ScheduleApproval> = {}): ScheduleApproval => ({ 
   check(withException.length === 1 && withException[0].extensionUntil! > deadline && Boolean(withException[0].extensionReason) && Boolean(withException[0].extensionBy),
     "D10 استثناءٌ واحد بعد موعد الفصل، بسببه ومن منحه");
   check(withRequest.length === 1 && withRequest[0].extensionRequest!.days > 0 && withRequest[0].extensionRequest!.reason.length > 3, "D10 وطلبٌ واحد ينتظر، بأيامه وسببه");
-  check(!approvals.some(row => row.AdSectionId === 4), "D10 وقسمُ الاستعراض بلا سجلّ (B15)");
+  check(!approvals.some(row => row.AdSectionId === 4 && Number(row.AdTermId) === 1), "D10 وقسمُ الاستعراض بلا سجلّ في الفصل الجاري (B15؛ وللفصل السابق تاريخٌ معتمد)");
   const grant = decideException(withRequest[0], { action: "grant", termDeadline: deadline, amount: { days: withRequest[0].extensionRequest!.days }, reason: withRequest[0].extensionRequest!.reason, by: "أ. رئيس التسجيل" });
   check(grant.next?.extensionUntil === addKuwaitDays(deadline, withRequest[0].extensionRequest!.days) && !grant.next?.extensionRequest, "D10 ومنحُ الطلب التجريبي يعمل بالقاعدة نفسها");
 }
