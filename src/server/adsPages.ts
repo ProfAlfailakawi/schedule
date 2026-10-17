@@ -295,7 +295,15 @@ const ICONS: Record<string, string> = {
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 19V5"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+  plus: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  send: '<path d="m22 2-11 11"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  building: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4"/>',
+  phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
 };
+/** نصٌّ واحد لزرّ «حملة جديدة» وعنوان نموذجها. */
+const NEW_CAMPAIGN = "حملة جديدة";
 const icon = (name: string): string => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
 
 const KIT_CSS = `
@@ -351,6 +359,31 @@ const KIT_CSS = `
 .k-rules li{display:flex;gap:8px;align-items:flex-start}
 .k-rules .ic{width:18px;height:18px;flex:none;color:var(--accent);margin-top:4px}
 @media (max-width:560px){.k-stat{padding:14px}.k-stat .badge{width:38px;height:38px}.k-stat b{font-size:24px}.k-hero{padding:26px 20px}.k-hero .btn{position:static;margin-top:14px}.k-stats{margin-top:14px;padding:0}.k-peak{grid-template-columns:1fr}}
+.k-cta{display:inline-flex;gap:8px;align-items:center;margin-top:16px;background:#fff;color:#0b4f3a;font-weight:800;padding:12px 22px;border-radius:14px;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.k-cta .ic{width:20px;height:20px}
+.k-new{margin-top:34px;scroll-margin-top:16px}
+.k-form{display:grid;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:24px;padding:22px;box-shadow:var(--shadow)}
+.k-fields{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.k-f{display:grid;gap:6px;font-size:13px;color:var(--muted);font-weight:600}
+.k-f>span{display:flex;gap:6px;align-items:center}.k-f .ic{width:16px;height:16px;color:var(--accent)}
+.k-f input,.k-f select{min-height:46px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px 14px;font:inherit;font-weight:400}
+.k-f input:focus,.k-f select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.k-f small{font-weight:400}
+.k-pick{display:flex;flex-wrap:wrap;gap:8px}
+.k-pick label{cursor:pointer}
+.k-pick input{position:absolute;opacity:0;pointer-events:none}
+.k-pick span{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);font-size:13.5px}
+.k-pick input:checked+span{background:var(--soft);border-color:var(--accent);color:var(--accent);font-weight:800}
+.k-pick input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.k-send{display:inline-flex;gap:8px;align-items:center;justify-content:center;min-height:50px;border:0;border-radius:16px;background:var(--accent);color:#fff;font:inherit;font-weight:800;font-size:16px;cursor:pointer;padding:0 26px;justify-self:start}
+.k-send .ic{width:20px;height:20px}
+.k-ok,.k-bad{display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:16px;font-weight:700;margin-bottom:12px}
+.k-ok{background:var(--soft);color:var(--accent)}.k-bad{background:#fff3df;color:#8a5a12}
+.k-ok .ic,.k-bad .ic{width:22px;height:22px;flex:none}
+.k-hp{position:absolute;inset-inline-start:-9999px;width:1px;height:1px;overflow:hidden}
+.k-fab{display:none}
+@media (max-width:560px){.k-fab{display:inline-flex;position:fixed;inset-inline:16px;bottom:14px;z-index:5;justify-content:center;gap:8px;align-items:center;min-height:52px;border-radius:18px;background:var(--accent);color:#fff;font-weight:800;text-decoration:none;box-shadow:0 10px 30px rgba(0,0,0,.28)}.k-fab .ic{width:20px;height:20px}.wrap{padding-bottom:90px}.k-send{justify-self:stretch}}
+@media print{.k-fab,.k-new,.k-cta{display:none!important}}
 @media print{.k-hero,.k-screen .ad,.k-bars em i{-webkit-print-color-adjust:exact;print-color-adjust:exact}.k-stat,.k-slot,.k-tools div{box-shadow:none}.k-cal{flex-wrap:wrap;overflow:visible}}
 `;
 
@@ -380,6 +413,11 @@ export interface PartnerKitInput {
   liveBySlot: Record<string, number>;
   today?: string;
   nonce: string;
+  /** رمز الرابط ليكون هدفَ النموذج. */
+  token?: string;
+  /** نتيجة آخر إرسال لنموذج «حملة جديدة». */
+  leadResult?: "ok" | "bad" | "rate";
+  leadError?: string;
 }
 
 export function partnerKitPage(input: PartnerKitInput): string {
@@ -407,11 +445,33 @@ export function partnerKitPage(input: PartnerKitInput): string {
 <div class="k-tags"><span><bdi dir="ltr">${slot.width}×${slot.height}</bdi></span>${slot.wholeUniversity ? `<span class="wide">كل الجامعة</span>` : ""}${slot.exclusive ? `<span>حصري</span>` : ""}<span class="${free ? "ok" : "full"}">${free ? "متاح" : "محجوز"}</span></div></div>`;
   }).join("");
 
+  const banner = input.leadResult === "ok" ? `<div class="k-ok" role="status">${icon("check")}<span>وصلنا طلبك. نتواصل معك قريباً.</span></div>`
+    : input.leadResult === "rate" ? `<div class="k-bad" role="alert">${icon("clock")}<span>أعد المحاولة بعد قليل.</span></div>`
+    : input.leadResult === "bad" ? `<div class="k-bad" role="alert">${icon("shield")}<span>${esc(input.leadError || "راجع الحقول وأعد الإرسال.")}</span></div>` : "";
+  const lead = `<section class="k-new" id="new">
+<h2 class="k-h2">${icon("plus")}${NEW_CAMPAIGN}</h2>
+${banner}
+<form class="k-form" method="post" action="/partners/${encodeURIComponent(input.token || "")}/lead" autocomplete="on">
+  <div class="k-fields">
+    <label class="k-f"><span>${icon("building")}الشركة</span><input name="company" required minlength="2" maxlength="80" autocomplete="organization"></label>
+    <label class="k-f"><span>${icon("user")}الاسم</span><input name="name" required minlength="2" maxlength="60" autocomplete="name"></label>
+    <label class="k-f"><span>${icon("phone")}الجوال</span><input name="phone" required type="tel" inputmode="tel" dir="ltr" maxlength="20" autocomplete="tel"></label>
+    <label class="k-f"><span>${icon("mail")}البريد <small>(اختياري)</small></span><input name="email" type="email" dir="ltr" maxlength="120" autocomplete="email"></label>
+  </div>
+  <div class="k-f"><span>${icon("globe")}أين تريد ظهور إعلانك؟</span>
+    <div class="k-pick" role="group" aria-label="المواقع">${activeSlots().map(slot => `<label><input type="checkbox" name="slots" value="${esc(slot.id)}"><span>${esc(slot.label)}</span></label>`).join("")}</div></div>
+  <label class="k-f"><span>${icon("calendar")}متى؟</span><select name="season"><option value="">في أي وقت</option>${SEASONS.map(se => `<option value="${esc(se.id)}">${esc(se.label)}</option>`).join("")}</select></label>
+  <label class="k-f"><span>${icon("send")}كلمة لنا <small>(اختياري)</small></span><input name="note" maxlength="300"></label>
+  <div class="k-hp" aria-hidden="true"><label>لا تملأ هذا الحقل<input name="website" tabindex="-1" autocomplete="off"></label></div>
+  <button class="k-send" type="submit">${icon("send")}أرسل الطلب</button>
+  <small class="note" style="margin:0">نتواصل معك قريباً. بياناتك لا يراها غيرنا.</small>
+</form></section>`;
   return page("ملف الشراكة · SCHEDULE", nonce, `
 <section class="k-hero">
   <p class="brand">SCHEDULE · ملف الشراكة</p>
   <h1>جمهورك في لحظة الجدول</h1>
   <p>طلبةٌ وأساتذة يفتحون جداولهم بأنفسهم، كل فصل.</p>
+  <a class="k-cta noprint" href="#new">${icon("plus")}${NEW_CAMPAIGN}</a>
   <button class="btn noprint" id="print" type="button">طباعة / PDF</button>
 </section>
 <div class="k-stats">
@@ -426,10 +486,12 @@ ${demand}
 ${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
 <h2 class="k-h2">${icon("globe")}أين يظهر إعلانك</h2>
 <div class="k-slots">${slots}</div>
+${lead}
 <h2 class="k-h2">${icon("chart")}تتابع نتائجك حيّة</h2>
 <div class="k-tools"><div>${icon("chart")}<span>تقرير حيّ</span></div><div>${icon("ab")}<span>اختبار A/B</span></div><div>${icon("ticket")}<span>كود خصم</span></div><div>${icon("flask")}<span>تجربة قبل الالتزام</span></div></div>
 <h2 class="k-h2">${icon("shield")}شروطنا</h2>
 <ul class="k-rules">${AD_RULES.map(r => `<li>${icon("check")}<span>${esc(r)}</span></li>`).join("")}</ul>
+<a class="k-fab noprint" href="#new">${icon("plus")}${NEW_CAMPAIGN}</a>
 <footer>SCHEDULE · ${esc(dateAr(today))} · الأرقام مُقرَّبة ومجمّعة ولا تحمل أي هوية. الإجماليات منذ ${AUDIENCE_BASELINE.since} بحسب إدارة النظام حتى ${esc(dateAr(AUDIENCE_BASELINE.asOf))}، ثم يُضاف إليها ما يُقاس بعدها.</footer>`, KIT_CSS);
 }
 

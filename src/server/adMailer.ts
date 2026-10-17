@@ -65,6 +65,28 @@ export function renewalMail(c: Pick<AdCampaign, "company" | "endDay">, daysLeft:
   };
 }
 
+/** المستلم: بريد المالك في AD_LEAD_NOTIFY_TO (سرّ بيئة)؛ فارغٌ أو غير صالح = لا بريد. */
+export function leadNotifyTo(env: NodeJS.ProcessEnv = process.env): string {
+  const v = cleanEmail(env.AD_LEAD_NOTIFY_TO);
+  return v || "";
+}
+
+/** رسالةُ المالك عند وصول طلب حملة جديد. نصٌّ بسيط، لا يخرج إلا إلى بريد المالك. */
+export function leadMail(l: { company: string; name: string; phone: string; email?: string; slotLabels: string[]; seasonLabel?: string; note?: string }): { subject: string; text: string } {
+  return {
+    subject: `طلب حملة جديدة: ${l.company}`,
+    text: [
+      "طلبٌ جديد من ملف الشراكة:", "",
+      `الشركة: ${l.company}`, `الاسم: ${l.name}`, `الجوّال: ${l.phone}`,
+      ...(l.email ? [`البريد: ${l.email}`] : []),
+      ...(l.slotLabels.length ? [`المواقع: ${l.slotLabels.join("، ")}`] : []),
+      ...(l.seasonLabel ? [`الموسم: ${l.seasonLabel}`] : []),
+      ...(l.note ? [`ملاحظة: ${l.note}`] : []),
+      "", "تجده في إدارة الإعلانات ← الطلبات.",
+    ].join("\n"),
+  };
+}
+
 export async function sendMail(cfg: MailConfig, to: string, msg: { subject: string; text: string }): Promise<{ ok: boolean; error?: string }> {
   try {
     const ctl = new AbortController();

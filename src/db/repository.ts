@@ -38,6 +38,7 @@ import {
   AdRoom,
   AuditLogEntry,
   AdCampaign,
+  AdLead,
   AdCreative,
   AdStatsDay,
   AudienceDay,
@@ -232,6 +233,7 @@ interface DBState {
   scheduleOpenDecisions?: ScheduleOpenDecision[];
   clientTelemetry?: ClientTelemetryEntry[];
   adCampaigns?: AdCampaign[];
+  adLeads?: AdLead[];
   adCreatives?: AdCreative[];
   adStats?: AdStatsDay[];
   audienceDaily?: AudienceDay[];
@@ -4177,6 +4179,35 @@ export const Repository = {
       return snap.docs.map(doc => doc.data() as AdCampaign);
     }
     return [...(db.adCampaigns || [])];
+  },
+  /** طلباتُ الحملات من ملف الشراكة (بيانات تواصلٍ للإدارة وحدها). الأحدث أولاً. */
+  listAdLeads: async (): Promise<AdLead[]> => {
+    const rows = firestoreDb && !demoSandboxContext.getStore()
+      ? (await firestoreDb.collection("adLeads").orderBy("createdAt", "desc").limit(300).get()).docs.map(doc => doc.data() as AdLead)
+      : [...(db.adLeads || [])];
+    return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  },
+  createAdLead: async (entry: Omit<AdLead, "id" | "createdAt" | "status">): Promise<AdLead> => {
+    const row: AdLead = { ...entry, id: randomUUID(), createdAt: new Date().toISOString(), status: "new" };
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("adLeads").doc(row.id).set(row); return row; }
+    db.adLeads = [row, ...(db.adLeads || [])];
+    saveDatabase();
+    return row;
+  },
+  /** يضع الطلب «تم التواصل» بتحديث حقلين وحدهما. false إن لم يوجد. */
+  markAdLeadContacted: async (id: string, at: string): Promise<boolean> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("adLeads").doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) return false;
+      await ref.update({ status: "contacted", contactedAt: at });
+      return true;
+    }
+    const row = (db.adLeads || []).find(item => item.id === id);
+    if (!row) return false;
+    row.status = "contacted"; row.contactedAt = at;
+    saveDatabase();
+    return true;
   },
   saveAdCampaign: async (row: AdCampaign): Promise<void> => {
     if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("adCampaigns").doc(row.id).set(row); return; }

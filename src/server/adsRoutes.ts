@@ -27,9 +27,10 @@ import {
 } from "../utils/adsEngine";
 import { buildAudienceStats, pickDashboardTerm } from "../utils/audienceStats";
 import { reportCalendar } from "../utils/adCalendar";
+import { LEAD_ERRORS, cleanLead } from "../utils/adLeads";
 import { abVerdict, conversionOf } from "../utils/adInsights";
 import { partnerBadgeSvg } from "../utils/adBadge";
-import { cleanEmail, mailConfig, renewalMail, sendMail, weekKey, weeklyMail } from "./adMailer";
+import { cleanEmail, leadMail, leadNotifyTo, mailConfig, renewalMail, sendMail, weekKey, weeklyMail } from "./adMailer";
 import { SEASONS, activeSeasons, seasonCalendar, seasonsText } from "../utils/adSeasons";
 import { AR, countOf } from "../utils/arabicCount";
 import type { CenterNotification } from "../utils/notificationCenter";
@@ -55,6 +56,13 @@ export async function adNotifications(today = kuwaitDay()): Promise<CenterNotifi
         detail: "جدّدها أو أرشِفها؛ أرقامها وتقريرها باقيان", view: "ads", at: `${c.endDay}T00:00:00Z`,
       });
     }
+  }
+  /* طلباتُ حملاتٍ جديدة من ملف الشراكة: تُنبَّه الإدارةُ لتتواصل، وتزول بوضعها «تم التواصل». */
+  for (const lead of (await Repository.listAdLeads()).filter(l => l.status === "new").slice(0, 20)) {
+    items.push({
+      id: `ad-lead:${lead.id}`, tone: "action", title: `طلب حملة جديدة من «${lead.company}»`,
+      detail: `تواصل مع ${lead.name} · ${lead.phone}`, view: "ads", at: lead.createdAt,
+    });
   }
   return items;
 }
@@ -564,6 +572,34 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     }));
   });
 
+  /* «حملة جديدة» من ملف الشراكة: نموذجٌ عادي بلا سكربت، الرمزُ هو الهوية. يُخزَّن للإدارة وحدها وتُنبَّه به. */
+  app.post("/partners/:token/lead", express.urlencoded({ extended: false, limit: "4kb" }), async (req, res) => {
+    const token = String(req.params.token || "");
+    const expected = await Repository.getPartnerKitToken();
+    if (!expected || token.length < 20 || token !== expected) { missing(res); return; }
+    noindex(res);
+    const back = `/partners/${encodeURIComponent(token)}`;
+    /* حقلٌ مخفي يملؤه الروبوت وحده: نُظهر له النجاح ولا نخزّن شيئاً. */
+    if (String(req.body?.website || "").trim()) { res.redirect(303, `${back}?lead=ok#new`); return; }
+    if (!underLimit(`lead|${String(req.ip || "?")}`, 5, 3_600_000)) { res.redirect(303, `${back}?lead=rate#new`); return; }
+    const parsed = cleanLead(req.body);
+    if (parsed.error) { res.redirect(303, `${back}?lead=bad&why=${encodeURIComponent(parsed.error)}#new`); return; }
+    const lead = parsed.lead!;
+    const existing = await Repository.listAdLeads();
+    /* الضغط المكرّر (الشركة والجوّال نفسهما خلال يوم) لا يُنشئ طلباً ثانياً ولا إشعاراً ثانياً. */
+    const dup = existing.find(l => l.status === "new" && l.phone === lead.phone && l.company === lead.company && Date.now() - Date.parse(l.createdAt) < 86_400_000);
+    if (!dup && existing.filter(l => l.status === "new").length < 200) {
+      await Repository.createAdLead({ company: lead.company, name: lead.name, phone: lead.phone, ...(lead.email ? { email: lead.email } : {}), slots: lead.slots, ...(lead.season ? { season: lead.season } : {}), ...(lead.note ? { note: lead.note } : {}) });
+      /* بريدٌ للمالك إن ضُبطت إعداداته؛ لا ننتظره ولا يفشل الطلب بفشله. */
+      const cfg = mailConfig(), to = leadNotifyTo();
+      if (cfg && to) {
+        void sendMail(cfg, to, leadMail({ company: lead.company, name: lead.name, phone: lead.phone, email: lead.email, slotLabels: lead.slots.map(id => activeSlots().find(x => x.id === id)?.label || id), seasonLabel: SEASONS.find(x => x.id === lead.season)?.label, note: lead.note }))
+          .then(r => { if (!r.ok) console.warn("lead mail:", r.error); });
+      }
+    }
+    res.redirect(303, `${back}?lead=ok#new`);
+  });
+
   app.get("/partners/:token", async (req, res) => {
     const token = String(req.params.token || "");
     const expected = await Repository.getPartnerKitToken();
@@ -575,7 +611,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     for (const c of input.campaigns) if (isLive(c, today)) liveBySlot[c.slot] = (liveBySlot[c.slot] || 0) + 1;
     noindex(res);
     const nonce = deps.publicPageNonce(res);
-    res.send(partnerKitPage({ stats: buildAudienceStats(input), liveBySlot, nonce, today, calendar: seasonCalendar(input.terms as any), activeSeasons: activeSeasons(input.terms as any) }));
+    res.send(partnerKitPage({ stats: buildAudienceStats(input), liveBySlot, nonce, today, leadResult: ({ ok: "ok", bad: "bad", rate: "rate" } as Record<string, "ok" | "bad" | "rate">)[String(req.query.lead || "")], leadError: req.query.lead === "bad" ? (LEAD_ERRORS as readonly string[]).find(e => e === String(req.query.why || "")) || "" : "", token, calendar: seasonCalendar(input.terms as any), activeSeasons: activeSeasons(input.terms as any) }));
   });
 
   /* ── الإدارة ── */
@@ -603,11 +639,18 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
       nextFree: nextFreeDay(slot.id, all, today),
     }));
     res.json({
-      today, mailEnabled: Boolean(mailConfig()), slots, categories: AD_CATEGORIES, rules: AD_RULES, maxBytes: AD_MAX_BYTES, maxCreatives: MAX_ROTATE_CREATIVES, campaigns: rows, partnerKit: kit ? `/partners/${kit}` : "",
+      today, mailEnabled: Boolean(mailConfig()), slots, categories: AD_CATEGORIES, rules: AD_RULES, maxBytes: AD_MAX_BYTES, maxCreatives: MAX_ROTATE_CREATIVES, campaigns: rows, leads: await Repository.listAdLeads(), partnerKit: kit ? `/partners/${kit}` : "",
       seasons: SEASONS, activeSeasons: activeSeasons(terms), calendar: seasonCalendar(terms),
       /* أسماء الكليات للأدمن وحده هنا (يختار منها استهداف الحملة)؛ لا تصل إلى أي صفحةٍ عامة. */
       colleges: colleges.map(c => ({ id: Number(c.AdCollegeId), name: c.AdCollegeName })),
     });
+  });
+
+  app.post("/api/admin/ads/leads/:id/contacted", ...admin, async (req: Request, res: Response) => {
+    const ok = await Repository.markAdLeadContacted(String(req.params.id || ""), new Date().toISOString());
+    if (!ok) { fail(res, 404, "الطلب غير موجود."); return; }
+    audit(res, String(req.params.id), "طلب حملة: تم التواصل");
+    res.json({ ok: true });
   });
 
   const readBody = (b: any) => ({

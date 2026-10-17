@@ -13,9 +13,10 @@ import CampaignDrawer, { type DrawerActions } from "./ads/CampaignDrawer";
 import CampaignWizard, { blankForm, formOf, type WizardForm } from "./ads/CampaignWizard";
 import { PlacementMap, SeasonTimeline } from "./ads/PlacementMap";
 import AttentionList, { attentionItems } from "./ads/AttentionList";
+import LeadsPanel from "./ads/LeadsPanel";
 import { api, fmt, pct1, type Payload } from "./ads/shared";
 
-type Tab = "campaigns" | "placements" | "kit";
+type Tab = "campaigns" | "leads" | "placements" | "kit";
 
 export default function AdsManager() {
   const [data, setData] = useState<Payload | null>(null);
@@ -107,7 +108,7 @@ export default function AdsManager() {
       </section>
 
       <div className="ad-tabs" role="tablist" aria-label="أقسام الإعلانات">
-        {([["campaigns", "الحملات", data.campaigns.length], ["placements", "المواقع والمواسم", 0], ["kit", "ملف الشراكة", 0]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
+        {([["campaigns", "الحملات", data.campaigns.length], ["leads", "الطلبات", data.leads.filter(l => l.status === "new").length], ["placements", "المواقع والمواسم", 0], ["kit", "ملف الشراكة", 0]] as Array<[Tab, string, number]>).map(([id, label, n]) => (
           <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={id} type="button" role="tab" id={`ad-tab-${id}`} aria-selected={tab === id} aria-controls={`ad-panel-${id}`} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
             {label}{n ? <em>{fmt(n)}</em> : null}
           </button>
@@ -118,6 +119,13 @@ export default function AdsManager() {
         <section id="ad-panel-campaigns" role="tabpanel" aria-labelledby="ad-tab-campaigns">
           <AttentionList items={attentionItems(data)} onCampaign={setOpenId} onTab={setTab} />
           <CampaignList data={data} onOpen={c => setOpenId(c.id)} onNew={newCampaign} />
+        </section>
+      ) : null}
+
+      {tab === "leads" ? (
+        <section id="ad-panel-leads" role="tabpanel" aria-labelledby="ad-tab-leads" className="ad-sec">
+          <div className="ad-sech"><h3>طلبات الحملات</h3><p>شركاتٌ ضغطت «حملة جديدة» في رابطها. تواصل معها ثم اضغط «تم التواصل».</p></div>
+          <LeadsPanel data={data} busy={busy} onContacted={id => void act(`lead-${id}`, () => api(`/api/admin/ads/leads/${id}/contacted`, { method: "POST" }), "سُجّل التواصل.")} />
         </section>
       ) : null}
 
