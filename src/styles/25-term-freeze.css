@@ -16,7 +16,7 @@
 
 /* ── رجوعٌ من مساحة المقترح إلى قائمة الرغبات ── */
 .sp-head .sp-back{
-  display:inline-flex;align-items:center;gap:var(--s2);align-self:flex-start;margin-block-end:var(--s2);
+  display:inline-flex;align-items:center;gap:var(--s2);justify-self:start;margin-block-end:var(--s2);
   padding:6px 14px 6px 12px;border-radius:999px;border:1px solid var(--line-strong);
   background:var(--surface);color:var(--accent-ink);font:inherit;font-size:var(--t-sm);font-weight:700;cursor:pointer;
   transition:background .15s,border-color .15s;
