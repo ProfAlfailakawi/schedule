@@ -23,8 +23,7 @@ const sel = row(1, { buildingId: "b1", roomId: "r1", AdRoomCode: "B1", AdRoomHal
 const room: any = { id: "r1", active: true, sectionIds: [5], capacity: 40 };
 check(kinds({ row: sel, room }).includes("hall") && !kinds({ row: sel, room }).includes("seats"), "قاعة القسم المسجلة، وسعة الشعبة مجهولة = لا رقاقة سعة");
 check(kinds({ row: sel, room: { ...room, sectionIds: [9] } }).length === 0, "قاعة ليست للقسم ولا مستعارة: لا شيء");
-check(buildRowReasons({ row: sel, room, maxStudent: 35 }).find(r => r.kind === "seats")?.tone === "good", "سعة كافية");
-check(buildRowReasons({ row: sel, room, maxStudent: 55 }).find(r => r.kind === "seats")?.tone === "warn", "سعة ضيقة");
+check(!buildRowReasons({ row: sel, room, maxStudent: 55 }).some(r => r.kind === "seats"), "سعة القاعة مخفيةٌ من البرنامج: لا رقاقة سعة مهما كان العدد");
 const bar: any = { status: "approved", requesterSectionId: 5, AdTermId: 10, day: "fsunday", startTime: "09:00", endTime: "12:00", roomId: "r1" };
 const b1 = kinds({ row: sel, room: { ...room, sectionIds: [9] }, barter: [bar] });
 check(b1.includes("borrow") && !b1.includes("hall"), "قاعة مستعارة معتمدة");

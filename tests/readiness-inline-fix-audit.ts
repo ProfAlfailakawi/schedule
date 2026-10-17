@@ -26,7 +26,7 @@ const gaps = computeScheduleDataReadiness({
 });
 const modeOf = (kind: string) => gaps.items.filter(i => i.kind === kind).map(readinessFixMode);
 check(modeOf("course").every(m => m === "course-fields") && modeOf("course").length === 1, "المقرر الناقص: خاناتٌ في مكانها");
-check(modeOf("room").every(m => m === "room-capacity") && modeOf("room").length === 1, "سعة القاعة: خانةٌ في مكانها");
+check(modeOf("room").length === 0, "سعة القاعة لم تعد بنداً ناقصاً (مخفيةٌ من البرنامج)");
 check(modeOf("location").every(m => m === "room-link"), "موعدٌ بلا قاعة: اختيارُ مبنى وقاعة في مكانه");
 check(modeOf("schedule").every(m => m === "open-row"), "نواقص الموعد (شعبة/أستاذ/أيام/وقت): «افتح الموعد»");
 check(readinessFixMode({ kind: "course", id: "0", fields: ["ربط المقرر برمز صحيح في المكتبة"] }) === "jump", "مقرر غير مربوط يبقى قفزاً");

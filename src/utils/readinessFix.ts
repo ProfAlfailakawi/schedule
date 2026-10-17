@@ -18,7 +18,6 @@ export interface ReadinessItemLike { kind: string; id: string; fields: string[] 
 
 export function readinessFixMode(item: ReadinessItemLike): ReadinessFixMode {
   if (item.kind === "course") return item.fields.some(f => COURSE_FIX_FIELDS[f]) ? "course-fields" : "jump";
-  if (item.kind === "room") return item.fields.includes("سعة القاعة") ? "room-capacity" : "jump";
   if (item.kind === "location") return "room-link";
   if (item.kind === "schedule") return "open-row";
   return "jump";

@@ -51,7 +51,6 @@ export function computeScheduleDataReadiness({ rows, courses, instructorIds, roo
     } else {
       const room = roomById.get(roomId);
       if (!room) missing.set(`room:${roomId}`, { kind: "room", id: roomId, label: `قاعة ${row.AdRoomHall || roomId}`, fields: ["تأكيد ربط القاعة في سجل المواقع"] });
-      else if (!(Number(room.capacity) > 0)) missing.set(`room:${roomId}`, { kind: "room", id: roomId, label: `مبنى ${room.buildingCode} · قاعة ${room.canonicalCode}`, fields: ["سعة القاعة"] });
     }
   }
   const rooms = [...new Set(scheduleRows.map(row => String(row.roomId || "")).filter(Boolean))]
