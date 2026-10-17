@@ -219,6 +219,9 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
   }
 
   const termClosedOf = (world: LoadedWorld) => world.term?.AdTermClosed === true;
+  /* بابُ الأستاذ العام يُغلق بالإغلاق الصريح وبالتجميد (فصلٌ أقدم من الحالي أو أرشيف) معاً، كمسارات الموظفين. */
+  const termShutOf = async (world: LoadedWorld, termId: number) =>
+    termClosedOf(world) || termIsFrozen(termId, (await Repository.getTerms()) as any);
 
   /** انتهاءُ الصلاحية يُسجَّل مرّةً واحدة عند أول قراءةٍ بعده. */
   async function settleExpiry(proposal: StudyProposal): Promise<StudyProposal> {
@@ -717,7 +720,7 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
   async function publicView(proposal: StudyProposal, world: LoadedWorld, full: boolean) {
     const sent = proposal.versions.find(v => v.version === proposal.sentVersion);
     const status = effectiveStatus(proposal);
-    const termClosed = termClosedOf(world);
+    const termClosed = await termShutOf(world, Number(proposal.AdTermId));
     const decision = decisionStateOf(proposal);
     const base = {
       id: proposal.id, title: sent?.title || proposal.title, status, statusLabel: STATUS_LABEL[status],
@@ -829,7 +832,7 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const proposal = await Repository.getStudyProposal(first.id);
       if (!proposal) { res.status(404).json({ error: "لا يوجد مقترحٌ بهذا المعرّف." }); return; }
-      const gate = responseGate(proposal, Date.now(), termClosedOf(world));
+      const gate = responseGate(proposal, Date.now(), await termShutOf(world, Number(resolved.request.AdTermId)));
       /* الردُّ على نسخةٍ قديمة لا يُقبل ولا يُنسب إلى الأحدث. */
       if (Number(req.body?.version) !== proposal.sentVersion) {
         res.status(409).json({ error: "وصلتك نسخةٌ أحدث من هذا المقترح. أعد فتحه لتراجع الجديد.", code: "stale-version", currentVersion: proposal.sentVersion }); return;
