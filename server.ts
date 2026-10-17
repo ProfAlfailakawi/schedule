@@ -19334,12 +19334,14 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
   /* أولُ فتحٍ يُسجَّل مرّةً واحدة. وهو لا يقول «وصلت الرسالة» — يقول «فُتح
      الرابط»، وهذا كلُّ ما يعرفه النظام بصدق. */
   let request = await refreshUnsubmittedInstructorRequest(resolved.request);
-  if (!request.linkOpenedAt) {
-    const at = new Date().toISOString();
-    request = await Repository.saveInstructorRequest({
-      ...request, linkOpenedAt: at,
-      timeline: [...(request.timeline || []), { kind: "link-opened", at }],
-    });
+  const openedAt = new Date().toISOString();
+  const opened = await Repository.recordInstructorRequestOpen(request.id, openedAt);
+  if (opened) {
+    /* نُحدّث نسخة العرض المحلية فقط؛ المخزَّن حُدّثت حقول العدّ فيه وحدها. */
+    request = {
+      ...request, ...opened.fields,
+      ...(opened.first ? { timeline: [...(request.timeline || []), { kind: "link-opened" as const, at: openedAt }] } : {}),
+    };
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
 

@@ -784,6 +784,42 @@ async function main() {
     const crossTerm = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 9, AdTermName: "ف" }] as any[], currentTermId: 9, needsByTerm: new Map(), profiles: [], instructorRequests: [],
       openRequests: [{ AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z", linkOpenedAt: "2026-10-19T00:00:00Z" }, { AdCollegeId: 1, status: "sent", createdAt: "2026-10-01T00:00:00Z", linkOpenedAt: "2026-11-02T00:00:00Z" }] as any[] });
     check(crossTerm.instructors.openedAfterBaseline === 2, "الرصيد: مرّات الفتح تُعدّ من كل فصلٍ بعد التاريخ لا من الفصل المعروض وحده", crossTerm.instructors.openedAfterBaseline);
+    /* مرّات الفتح من سجلّ الأيام: يومٌ قبل التاريخ لا يُعدّ، وبعده يُعدّ بعدد مرّاته. */
+    const withMap = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 9, AdTermName: "ف" }] as any[], currentTermId: 9, needsByTerm: new Map(), profiles: [], instructorRequests: [],
+      openRequests: [{ AdCollegeId: 1, status: "sent", createdAt: "2026-09-01T00:00:00Z", linkOpenedAt: "2026-09-02T00:00:00Z", linkOpenDays: { "2026-09-02": 4, [B.asOf]: 9, "2026-10-18": 3, "2026-11-01": 2 } }] as any[] });
+    check(withMap.instructors.openedAfterBaseline === 5, "الرصيد: مرّات الفتح من سجلّ الأيام بعد التاريخ فقط", withMap.instructors.openedAfterBaseline);
+    const { headlineTotals } = await import("../src/utils/audienceStats");
+    const head = headlineTotals(stats);
+    check(head.students === B.students + 2 && head.visits === B.visits + 55 && head.instructorOpens === B.instructorOpens + 1 && head.instructorOpenRate === 90, "الرصيد: headlineTotals = الرصيد + ما بعده، والنسبة حدٌّ أدنى 90", head);
+    const kitPage = (await import("../src/server/adsPages")).partnerKitPage({ stats: stats as any, liveBySlot: {}, today: "2026-11-20", nonce: "N" });
+    check(kitPage.includes("60,000+") && kitPage.includes("5,300,000+") && kitPage.includes("90%+"), "الرصيد: ملف الشراكة يعرض الأرقام نفسها (60,000+ و5,300,000+ و90%+)");
+    check(kitPage.includes("رصيداً افتتاحياً"), "الرصيد: ملف الشراكة يذكر الرصيد الافتتاحي في ذيله");
+    const fp = (n: number, pre: string) => Array.from({ length: n }, (_, i) => nd(`${pre}${i}`, "2026-05-01"));
+    const t1 = [...fp(10, "a"), ...fp(10, "b")], t2 = [...fp(10, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
+    const cont = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }] as any[], currentTermId: 2, profiles: [], instructorRequests: [],
+      needsByTerm: new Map([[1, t1 as any[]], [2, t2 as any[]]]) });
+    check(cont.continuity.length === 1 && cont.continuity[0].before === 20 && cont.continuity[0].stayed === 10 && cont.continuity[0].rate === 50, "الاستمرارية: 10 من 20 = 50% بين فصلين", cont.continuity);
+    const adSlotStats = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [], currentTermId: 0, needsByTerm: new Map(), profiles: [], instructorRequests: [],
+      campaigns: [{ id: "c1", slot: "me", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }, { id: "c2", slot: "schedule", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }] as any[],
+      adStats: [{ id: "1", campaignId: "c1", creativeId: "x", day: "2026-10-05", impressions: 1000, uniques: 500, clicks: 30, filteredClicks: 0 }, { id: "2", campaignId: "c2", creativeId: "x", day: "2026-10-05", impressions: 400, uniques: 300, clicks: 4, filteredClicks: 0 }, { id: "3", campaignId: "gone", creativeId: "x", day: "2026-10-05", impressions: 99, uniques: 9, clicks: 9, filteredClicks: 0 }] as any[] });
+    check(adSlotStats.adsBySlot.length === 2 && adSlotStats.adsBySlot[0].slot === "me" && adSlotStats.adsBySlot[0].ctr === 3 && adSlotStats.adsBySlot[1].ctr === 1, "أداء المواقع: نسبة النقر لكل موقع، وحملةٌ محذوفة لا تُنسب لأحد", adSlotStats.adsBySlot);
+    const { recordLinkOpen } = await import("../src/utils/linkOpens");
+    const o1 = recordLinkOpen({}, "2026-10-20T21:30:00Z");
+    check(!!o1 && o1.linkOpenedAt === "2026-10-20T21:30:00Z" && o1.linkOpenDays?.["2026-10-21"] === 1, "عدّ الفتح: الفتح الأول يضع linkOpenedAt ويحسب اليوم بتوقيت الكويت (21:30 UTC = اليوم التالي)", o1);
+    check(recordLinkOpen({ ...o1! }, "2026-10-20T21:50:00Z") === null, "عدّ الفتح: إعادة التحميل خلال نصف ساعة لا تُعدّ");
+    const o2 = recordLinkOpen({ ...o1! }, "2026-10-20T22:05:00Z");
+    check(o2?.linkOpenDays?.["2026-10-21"] === 2 && o2?.linkOpenedAt === "2026-10-20T21:30:00Z", "عدّ الفتح: العودة بعد نصف ساعة تُعدّ، والفتح الأول يبقى", o2);
+    const legacy = recordLinkOpen({ linkOpenedAt: "2026-09-01T00:00:00Z" }, "2026-10-20T10:00:00Z");
+    check(legacy?.linkOpenedAt === "2026-09-01T00:00:00Z" && legacy?.linkOpenDays?.["2026-10-20"] === 1, "عدّ الفتح: بطاقةٌ قديمة بلا سجلّ تبدأ سجلّها دون المساس بفتحها الأول", legacy);
+    const { Repository: Repo } = await import("../src/db/repository");
+    const req: any = await Repo.createInstructorRequest({ AdCollegeId: 1, AdSectionId: 1, AdTermId: 9, AdInstructorId: 1, linkId: "l1", window: { opensAt: "2026-10-01T00:00:00Z", closesAt: "2026-12-01T00:00:00Z" }, source: "draft", status: "sent", items: [], timeline: [] } as any);
+    const r1 = await Repo.recordInstructorRequestOpen(req.id, "2026-10-20T10:00:00Z");
+    const r2 = await Repo.recordInstructorRequestOpen(req.id, "2026-10-20T10:10:00Z");
+    const r3 = await Repo.recordInstructorRequestOpen(req.id, "2026-10-20T11:00:00Z");
+    const saved: any = await Repo.getInstructorRequest(req.id);
+    check(!!r1?.first && r2 === null && !!r3 && !r3.first, "عدّ الفتح في المخزن: الأول first، وإعادة التحميل null، والعودة بعد نصف ساعة تُعدّ", { r1, r2, r3 });
+    check(saved.linkOpenDays["2026-10-20"] === 2 && saved.timeline.filter((e: any) => e.kind === "link-opened").length === 1 && saved.status === "sent", "عدّ الفتح في المخزن: عدّان في اليوم، وحدثٌ واحد في الخط الزمني، وحالة الطلب لم تُمسّ", saved);
+    check(await Repo.recordInstructorRequestOpen("missing", "2026-10-20T11:00:00Z") === null, "عدّ الفتح في المخزن: طلبٌ غير موجود لا يُنشأ");
     check(B.instructorOpens === 75_000 && B.students === 60_000 && B.visits === 5_300_000 && B.instructorOpenRate === 90, "الرصيد: الأرقام المُقرَّة كما أُعطيت");
   }
 
