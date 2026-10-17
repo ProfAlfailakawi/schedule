@@ -123,6 +123,8 @@ const ctx = (plan: number[]) => ({
     "R6 تصنيف كل مقرر (ثقافة عامة/تخصصية/مهنية/تدريب ميداني) يأتي من الصحيفة المرجعية ولقسم تكنولوجيا التعليم وحده");
   check(planUi.includes("pr-cats") && planUi.includes("pickCat") && planUi.includes("view.categories") && planUi.includes("disabled={cat ? !isActive(c) : false}") && planUi.includes("off={offIds}") && css.includes(".pr-card.off{") && css.includes(".pr-line.off path"),
     "R6 فلتر التصنيف فوق الخريطة: مقررات القسم في التصنيف المختار فعّالة والباقي غير فعال وأسهمه تخفت");
+  check(planUi.includes("pr-group-cards") && planUi.includes("pr-pre-item") && planUi.includes("ArrowUp") && planUi.includes("grouped.has") && css.includes(".pr-pre-item{") && css.includes(".pr-groups .pr-group{"),
+    "R6 الاختياري بجمال الصحيفة: شريطٌ ذهبي ببطاقات المجموعة، وتحت كل بطاقة أسهمُ متطلباتها بلون كل مسبق، ولا تتكرر بطاقاتها في أعمدة المستويات");
   check(lines.includes("animateMotion") && css.includes("prefers-reduced-motion:reduce){.pr-line .pr-dot{display:none}"),
     "R6 نقاط متحركة على الأسهم وتُخفى عند تفضيل تقليل الحركة");
   check(source.includes("course.ownerSectionId === selectedSectionId"),
