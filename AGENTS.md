@@ -9,7 +9,7 @@
 |---|---|
 | الدومين الرسمي | `schedule.dr-alfailakawi.com` |
 | الخدمة التي يحملها | Cloud Run `schedule` في المشروع `gen-lang-client-0379571946`، المنطقة `europe-west1` |
-| الخدمة التوأم | `schedule` في المشروع نفسه، المنطقة `europe-west2` |
+| الخدمة التوأم | لا توجد. حُذفت خدمة `europe-west2` بقرار المالك في 17 أكتوبر 2026 (حركتها شبه معدومة)؛ لا تُعِد إنشاءها ولا تنشر عليها |
 | قاعدة البيانات | Firestore في `gen-lang-client-0379571946`، قاعدة `ai-studio-schedule-337bbbf5-1098-44cb-aabf-95536daf9106` |
 | سجل الصور | `europe-west1-docker.pkg.dev/schedule-863eb/schedule/schedule` (للبناء فقط) |
 
@@ -28,17 +28,16 @@
 ## كيف يصل التعديل إلى الموقع
 
 دمج إلى `main` ← «Comprehensive CI» ← «Deploy SCHEDULE» يبني صورة واحدة وينشرها على
-الخدمة الرسمية في المنطقتين، ثم يتحقق أن الدومين يقدّم البناء نفسه.
+الخدمة الرسمية (europe-west1)، ثم يتحقق أن الدومين يقدّم البناء نفسه.
 
 **لا تقل «نُشر» قبل أن تتحقق من الدومين نفسه:**
 
 ```bash
 curl -s https://schedule.dr-alfailakawi.com/sw.js | grep BUILD
 curl -s https://schedule-34704073784.europe-west1.run.app/sw.js | grep BUILD
-curl -s https://schedule-34704073784.europe-west2.run.app/sw.js | grep BUILD
 ```
 
-الأرقام الثلاثة يجب أن تتطابق (الدومين = west1 = west2)، وهذا ما يفحصه سير النشر نفسه. رقم البناء يُولَّد عند كل بناء في CI داخل الصورة (`scripts/stamp-build.mjs`)، فملف `src/generated/buildStamp.ts` المحفوظ في المستودع نسخةٌ قديمة لا يُقارَن بها.
+الرقمان يجب أن يتطابقا (الدومين = west1)، وهذا ما يفحصه سير النشر نفسه. رقم البناء يُولَّد عند كل بناء في CI داخل الصورة (`scripts/stamp-build.mjs`)، فملف `src/generated/buildStamp.ts` المحفوظ في المستودع نسخةٌ قديمة لا يُقارَن بها.
 
 ## قواعد الصحائف الأكاديمية (ثابتة لكل الأقسام)
 

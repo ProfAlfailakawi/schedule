@@ -53,17 +53,19 @@ jobs:
       # land here or the official domain never sees it (2026-10-16: it did not,
       # for a whole day). Only the image changes; the service keeps its own
       # runtime identity, env and secrets exactly as they are.
-      - name: Deploy the same release to the official service (Belgium + London)
+      # One region only (2026-10-17, owner's decision): the London twin
+      # (europe-west2) carried almost no traffic and was deleted. A second region
+      # served the same Firestore with its own in-memory state; one region keeps
+      # every request on the same rules.
+      - name: Deploy the release to the official service (Belgium)
         env:
           IMAGE: europe-west1-docker.pkg.dev/schedule-863eb/schedule/schedule:${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          for region in europe-west1 europe-west2; do
-            gcloud run deploy schedule \
-              --project=gen-lang-client-0379571946 \
-              --region="$region" \
-              --image="$IMAGE" \
-              --quiet
-          done
+          gcloud run deploy schedule \
+            --project=gen-lang-client-0379571946 \
+            --region=europe-west1 \
+            --image="$IMAGE" \
+            --quiet
 
       # «Deploy: success» is not proof the site changed (2026-10-16). The release
       # counts only when schedule.dr-alfailakawi.com serves the same build as the

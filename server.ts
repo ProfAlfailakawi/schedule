@@ -6,7 +6,7 @@ import path from "path";
 import fs from "fs";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { BUILD_STAMP } from "./src/generated/buildStamp";
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
 import { activeDataMode, ApprovalRevisionConflict, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
 import { DEMO_SWITCH_ACCOUNTS, DEMO_MULTI_SITE, demoActiveRoleKey } from "./src/db/demoSandbox";
@@ -19055,7 +19055,6 @@ const rowBodyOf = (row: any) => ({
   sourceBuildingText: row.sourceBuildingText, sourceRoomText: row.sourceRoomText,
 });
 
-const APPLYING_REQUESTS = new Set<string>();
 app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
   if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
@@ -19078,12 +19077,13 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
   /* تثبيتان متزامنان للطلب نفسه (منسّقان، أو نقرةٌ مزدوجة) كانا يُنشئان صفّين: واحدٌ في كل مرة. */
   /* والقفلُ على الفصل كلِّه: تثبيتان متزامنان في الفصل نفسه قد يحجزان القاعةَ أو الأستاذَ
      نفسَه في اللحظة نفسها، وكلٌّ منهما يفحص أسبوعاً لا يرى الآخر. */
-  const applyLock = `term:${termId}`;
-  if (APPLYING_REQUESTS.has(applyLock)) {
+  /* القفلُ في قاعدة البيانات لا في الذاكرة: يراه كلُّ خادمٍ في كل منطقة. */
+  const applyLock = `term-${termId}`;
+  const applyHolder = randomUUID();
+  if (!(await Repository.acquireScheduleApplyLease(applyLock, applyHolder))) {
     res.status(409).json({ error: "يجري الآن تثبيتٌ آخر في هذا الفصل. انتظر لحظة ثم أعد المحاولة.", code: "apply-busy" });
     return;
   }
-  APPLYING_REQUESTS.add(applyLock);
   try {
 
   const instructor = await Repository.getInstructorById(Number(stored.AdInstructorId));
@@ -19273,7 +19273,7 @@ app.post("/api/instructor-requests/:id/apply", requirePermission(7), async (req:
     `${step.action === "delete" ? "حذف" : step.action === "create" ? "إضافة" : "نقل"} ${step.days.map(dayLabelOf).join(" و")} ${formatScheduleTimeRange(step.start, step.end)}`).join(" · ");
   res.locals.auditRowIds = done.map(step => Number(step.op.kind === "delete" ? step.op.rowId : step.row?.id)).filter(Number.isFinite);
   res.json({ ...(await judgeRequestItems(saved, { forDepartment: true })), applied: plan, warnings });
-  } finally { APPLYING_REQUESTS.delete(applyLock); }
+  } finally { await Repository.releaseScheduleApplyLease(applyLock, applyHolder).catch(() => undefined); }
 });
 
 /* ── حوارُ البند: ردُّ القسم واقتراحُه ─────────────────────────────────────
