@@ -54,6 +54,24 @@ try {
     /* تغيّر قصدُ العرض: كلُّ قسمٍ بقواعدَ معتمدة وخطةٍ كاملة (كان «بعضها بقواعد وبعضها لا»). */
     check(summary.run.withoutRules === 0 && summary.run.capacity.unknown === 0 && summary.run.dataQuality.excluded === 0, "T1 كلُّ الصحائف بقواعد معتمدة: لا «بلا قواعد» ولا «غير معلوم» ولا ملفاتٍ مستبعدة", { w: summary.run.withoutRules, c: summary.run.capacity, q: summary.run.dataQuality });
     check(summary.run.capacity.canReach12To14 + summary.run.capacity.canReach15 > 0 && summary.run.capacity.below12 > 0, "T1 للرادار أطيافٌ: من يبلغ 12 وحدة ومن لا يبلغها", summary.run.capacity);
+    check(summary.run.capacity.canReach15 > 0 && summary.run.capacity.canReach12To14 > 0, "T1 نطاقُ «15 وحدة» غيرُ صفر (مقرّراتٌ مطروحةٌ بوحداتٍ تُبلغ سقف 15) وبجانبه نطاقُ 12–14", summary.run.capacity);
+    /* الرادارُ على الفصل السابق: مجمَّدٌ للعرض، وأرقامُه كاملة، والخادمُ يردّ على كل كتابة. */
+    const termsList: any[] = await get("/api/terms");
+    const prevTerm = termsList.find(t => Number(t.AdTermId) !== Number(summary.term.id));
+    const prevSummary = await get(`/api/simulation/summary?termId=${prevTerm.AdTermId}`);
+    check(prevSummary.frozen === true && prevSummary.canRun === false && prevSummary.term.id === prevTerm.AdTermId && prevSummary.run?.students > 0 && prevSummary.run.stale === false && prevSummary.courses.length >= 20
+      && prevSummary.run.capacity.canReach15 > 0 && prevSummary.run.capacity.below12 > 0, "T1b رادارُ الفصل السابق: مجمَّدٌ للعرض، ورقمٌ كاملٌ بكل نطاقاته", prevSummary.run?.capacity);
+    const prevOutcome = await get(`/api/simulation/outcome?termId=${prevTerm.AdTermId}`);
+    check(prevOutcome.term.id === prevTerm.AdTermId && prevOutcome.answered > 0 && prevOutcome.courses.some((c: any) => c.stuck > 0 && c.registered > 0), "T1b أجوبةُ «هل سجلت؟» للفصل السابق غيرُ فارغة", [prevOutcome.answered, prevOutcome.courses?.length]);
+    const prevInsight = await get(`/api/simulation/insight?termId=${prevTerm.AdTermId}`);
+    check(prevInsight.ready === true && prevInsight.students > 0 && prevInsight.stale === false, "T1b أسبابُ النقص للفصل السابق محسوبةٌ لا فارغة", prevInsight);
+    check((await call("/api/simulation/summary?termId=999")).status === 400 && (await call("/api/simulation/summary?termId=abc")).status === 400, "T1b فصلٌ مجهول يُردّ ولا يُؤخذ على الثقة");
+    const frozenRun = await call("/api/simulation/run", { method: "POST", body: JSON.stringify({ termId: prevTerm.AdTermId }) });
+    check(frozenRun.status === 409 && frozenRun.json?.code === "term-frozen", "T1b تشغيلُ الرادار باسم فصلٍ سابق يُردّ 409 term-frozen", frozenRun);
+    const frozenWhatIf = await call("/api/schedules/what-if", { method: "POST", body: JSON.stringify({ termId: prevTerm.AdTermId, kind: "move", moves: [] }) });
+    check(frozenWhatIf.status === 409 && frozenWhatIf.json?.code === "term-frozen", "T1b «ماذا لو؟» على فصلٍ سابق يُردّ 409 term-frozen", frozenWhatIf);
+    const currentAfter = await get("/api/simulation/summary");
+    check(currentAfter.frozen === false && currentAfter.run.capacity.canReach15 === summary.run.capacity.canReach15, "T1b قراءةُ السابق لا تمسّ رادارَ الجاري");
     const full = summary.courses.filter((c: any) => c.unmet?.full > 0), notOffered = summary.courses.filter((c: any) => c.unmet?.["not-offered"] > 0);
     check(full.length >= 3 && notOffered.length >= 5, `T1 عدّادا «مقرراتٌ تمتلئ» و«مطلوبةٌ ولا تُطرح» غير صفرين (${full.length} و${notOffered.length})`);
     const sectionsWithDemand = new Set(summary.courses.filter((c: any) => c.wanted > 0).map((c: any) => `${c.collegeId}:${c.sectionId}`));

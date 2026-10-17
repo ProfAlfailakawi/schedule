@@ -55,8 +55,11 @@ export function buildSimulationOfferings(termId: number, schedules: import("../t
 /** معرّفُ «صحيفةٍ افتراضية» لقسمٍ بلا صحائف: كتالوجُه الفعّال. */
 export const sectionPlanId = (sectionId: number) => `sec:${sectionId}`;
 
-export async function loadSimulationInput(term: AdTerm, rounds: number): Promise<{ input: SimInput; courses: Map<number, AdCourse>; population: number; fingerprint: string; schedules: import("../types").FSchedule[]; duplicateRows: number }> {
+/** `wishesTermId`: الفصلُ الذي تُقرأ رغباتُ الملفات له (الأصلُ فصلُ الرادار نفسه). يحمله الرادارُ المحفوظ (`RegistrationRun.wishesTermId`) فيُعاد قياسُه كما حُسب. */
+export interface SimulationLoadOptions { wishesTermId?: number }
+export async function loadSimulationInput(term: AdTerm, rounds: number, options: SimulationLoadOptions = {}): Promise<{ input: SimInput; courses: Map<number, AdCourse>; population: number; fingerprint: string; schedules: import("../types").FSchedule[]; duplicateRows: number }> {
   const termId = Number(term.AdTermId);
+  const wishesTermId = Number(options.wishesTermId) || termId;
   const [profiles, schedules, courses, sections, ruleSets] = await Promise.all([
     Repository.listStudentProfiles(), Repository.getSchedulesByScope({ termId }),
     Repository.getCourses(), Repository.getSections(), Repository.listRuleSets(),
@@ -102,7 +105,7 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
         return Boolean(plan?.hasApprovedRules && plan.courseIds.length > 0 && plan.courseIds.every(id => courseById.has(Number(id)) && Number.isFinite(credit.get(Number(id))) && Number(credit.get(Number(id))) >= 0)
           && Array.isArray(profile.passedCourseIds) && profile.passedCourseIds.every(id => courseById.has(Number(id)) && Number.isFinite(credit.get(Number(id))) && Number(credit.get(Number(id))) >= 0));
       })(),
-      wishes: profile.wishes && Number(profile.wishes.termId) === termId
+      wishes: profile.wishes && Number(profile.wishes.termId) === wishesTermId
         ? { targetUnits: profile.wishes.targetUnits, courseIds: profile.wishes.courseIds, constraints: profile.wishes.constraints || {} } : undefined,
       remainingUnits: undefined,
     }));
@@ -325,9 +328,9 @@ export function evaluateScheduleChange(
 }
 
 /** تشغيلٌ كامل: يحسب ويحفظ، ويُرجع الملخّص. */
-export async function runRegistrationSimulation(term: AdTerm, by: string): Promise<RegistrationRun> {
+export async function runRegistrationSimulation(term: AdTerm, by: string, options: SimulationLoadOptions = {}): Promise<RegistrationRun> {
   const rounds = Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2);
-  const { input, courses, population, fingerprint, duplicateRows } = await loadSimulationInput(term, rounds);
+  const { input, courses, population, fingerprint, duplicateRows } = await loadSimulationInput(term, rounds, options);
   const participants = input.students.filter(student => student.wishes);
   const nonParticipants = input.students.filter(student => !student.wishes).map(student => ({ ...student, wishes: { targetUnits: 15, courseIds: [], constraints: {} } }));
   const result = simulateRegistration({ ...input, students: participants, assessCapacity: true });
@@ -388,6 +391,7 @@ export async function runRegistrationSimulation(term: AdTerm, by: string): Promi
     projected: { students: nonParticipants.length, capacity: projection.capacity, courses: makeCourseRows(projection) },
     dataQuality: { total: input.offerings.length, ready: allAudit.confirmed.length, excluded: Math.max(0, input.offerings.length - allAudit.confirmed.length), issues: { ...issueCounts, ...(duplicateRows ? { duplicateRows } : {}) } },
     scopes, sourceFingerprint: fingerprint, stale: false,
+    ...(options.wishesTermId && Number(options.wishesTermId) !== termId ? { wishesTermId: Number(options.wishesTermId) } : {}),
   };
   /* Only an actual current-term response can generate a private ticket. */
   const tickets: RegistrationTicket[] = result.tickets.map(ticket => ({ ...ticket, id: `${termId}_${ticket.fp}`, termId, runId }));

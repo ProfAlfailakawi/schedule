@@ -20,6 +20,7 @@ import { Repository, caseRefFor } from "../db/repository";
 import type { AdCourse, CurriculumCourseRule, ElectiveGroup, FSchedule, StudentProfile } from "../types";
 import { pickDoorTerm } from "../utils/termStudentPhases";
 import { runRegistrationSimulation } from "./simulationData";
+import { DEMO_PREVIOUS_TERM_ID } from "../db/demoSandbox";
 
 /** أسماءٌ محايدة حتميّة (لا أسماء عائلات ولا أسماء واقعية): الوضع التجريبي حسّاس. */
 export const demoStudentName = (index: number): string => `${index % 2 === 0 ? "طالب تجريبي" : "طالبة تجريبية"} ${index + 1}`;
@@ -58,6 +59,8 @@ const ISL_EXTRA_COURSES: ReadonlyArray<readonly [string, string]> = [["ISL102", 
 export const DEMO_TIGHT_SEATS = [6, 9] as const;
 /** وحداتُ المقرّرات المطروحة في صحائف العرض. */
 export const DEMO_COURSE_CREDIT = 4;
+/** وحداتُ المقرّرَين الإضافيَّين: 4+4+4+3 = 15 تُبلغ سقفَ الرادار. */
+export const DEMO_EXTRA_CREDIT = 3;
 
 const addDaysISO = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
@@ -65,6 +68,38 @@ const addDaysISO = (day: string, days: number) => new Date(Date.parse(`${day}T00
 function rng(seed: number) {
   let a = seed >>> 0;
   return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/** مقرّراتٌ تخصّصيةٌ إضافيةٌ تُطرح في كل قسم (بعد الموجود في الترتيب الهجائي، فلا تزاحم المقرّرَين الضيّقَين ولا مشروعَ التخرج). */
+export const DEMO_EXTRA_OFFERED: ReadonlyArray<readonly [string, string]> = [["410", "مقرر تخصصي (١)"], ["420", "مقرر تخصصي (٢)"]];
+const EXTRA_SLOTS: ReadonlyArray<{ days: ReadonlyArray<"fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday">; start: string; end: string }> = [
+  ...["09:30", "11:00", "14:00", "15:30", "17:00"].map((start, at) => ({ days: ["fmonday", "fwednesday"] as const, start, end: ["10:45", "12:15", "15:15", "16:45", "18:15"][at] })),
+  ...["11:00", "15:30", "17:00"].map((start, at) => ({ days: ["fsunday", "ftuesday"] as const, start, end: ["12:15", "16:45", "18:15"][at] })),
+];
+const toMinutes = (clock: string) => { const [h, m] = String(clock || "0:0").split(":").map(Number); return h * 60 + (m || 0); };
+const DAY_FLAGS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const;
+
+/** يُنشئ مقرّرَي `DEMO_EXTRA_OFFERED` في القسم ويطرحهما بشعبةٍ واحدة في أول موعدٍ لا يتعارض فيه أستاذٌ ولا قاعة. */
+async function offerExtraCourses(collegeId: number, sectionId: number, termId: number, sectionCode: string): Promise<void> {
+  const rows = (await Repository.getSchedulesByScope({ termId })) as FSchedule[];
+  const mine = rows.filter(row => Number(row.AdSectionId) === sectionId);
+  const template = mine[0];
+  if (!template) return;
+  const instructors = [...new Set(mine.map(row => Number(row.AdInstructorId)).filter(Boolean))];
+  const busy = (candidate: { days: readonly string[]; start: string; end: string }, instructorId: number) => rows.some(row =>
+    candidate.days.some(day => (row as any)[day]) && toMinutes(row.fstarttime) < toMinutes(candidate.end) && toMinutes(candidate.start) < toMinutes(row.fendtime)
+    && (Number(row.AdInstructorId) === instructorId || (row.AdRoomCode === template.AdRoomCode && row.AdRoomHall === template.AdRoomHall)));
+  for (const [suffix, name] of DEMO_EXTRA_OFFERED) {
+    const course = await Repository.createCourse(collegeId, sectionId, `${sectionCode}${suffix}`, name, DEMO_EXTRA_CREDIT, 3, 30, false);
+    const slot = EXTRA_SLOTS.flatMap(candidate => instructors.map(instructorId => ({ candidate, instructorId }))).find(({ candidate, instructorId }) => !busy(candidate, instructorId));
+    if (!slot) continue;
+    const created = await Repository.createSchedule({
+      ...template, AdCourseId: Number(course.AdCourseId), AdCourseName: course.CourseName, SCode: "01", AdInstructorId: slot.instructorId,
+      ...Object.fromEntries(DAY_FLAGS.map(day => [day, slot.candidate.days.includes(day)])),
+      fstarttime: slot.candidate.start, fendtime: slot.candidate.end, fdetail: "", rev: 0,
+    } as any);
+    rows.push(created);
+  }
 }
 
 export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Promise<string>; today: string }): Promise<void> {
@@ -112,6 +147,10 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
         } as any);
       }
     }
+    /* مقرّران تخصّصيّان إضافيان (٣ وحدات) مطروحان في كل قسم. المحرّكُ يملأ حتى سقف 15 وحدةً ولا يتجاوزه، فمقرّراتٌ
+       من أربع وحداتٍ وحدَها تقف عند 12 (ثلاثة مقرّرات) لأن الرابع يتجاوز السقف: لا يبلغ أحدٌ 15 أبداً ويبقى نطاقُ «15 وحدة»
+       صفراً. بأربعٍ + ثلاثٍ (4+4+4+3) يبلغها من تتّسع له المقاعد ولا تتعارض أوقاتُه، ومن فاته مقرّرٌ يقف عند 12–14. */
+    await offerExtraCourses(collegeId, sectionId, termId, String(section.AdSectionCode));
     let courses = ((await Repository.getCoursesBySection(sectionId)) as AdCourse[]).sort((a, b) => String(a.CourseCode).localeCompare(String(b.CourseCode), "en"));
     if (courses.length < 3) continue;
     /* وحداتُ المقرّرات المطروحة أربع (فيبلغ طالبٌ 12 وحدة بثلاثة مقرّرات و15 بأربعة)، وأول مقرّرين ضيّقا
@@ -119,7 +158,8 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
     for (const [at, course] of courses.entries()) {
       const offerings = Math.max(1, new Set(termRows.filter(row => Number(row.AdCourseId) === Number(course.AdCourseId)).map(row => String(row.SCode))).size);
       const capacity = at === 0 ? Math.ceil(DEMO_TIGHT_SEATS[0] / offerings) : at === 1 ? Math.ceil(DEMO_TIGHT_SEATS[1] / offerings) : Number(course.MaxStudent) || 30;
-      await Repository.updateCourse(Number(course.AdCourseId), collegeId, sectionId, course.CourseCode, course.CourseName, DEMO_COURSE_CREDIT, Number(course.CourseHours) || 3, capacity);
+      await Repository.updateCourse(Number(course.AdCourseId), collegeId, sectionId, course.CourseCode, course.CourseName,
+        DEMO_EXTRA_OFFERED.some(([suffix]) => String(course.CourseCode) === `${String(section.AdSectionCode)}${suffix}`) ? DEMO_EXTRA_CREDIT : DEMO_COURSE_CREDIT, Number(course.CourseHours) || 3, capacity);
     }
     /* مقرّرٌ مطلوبٌ في الصحيفة ولا يُطرح هذا الفصل: لا صفوفَ له في الجدول (فيظهر «مطلوبةٌ ولا تُطرح»). */
     const capstone = await Repository.createCourse(collegeId, sectionId, `${String(section.AdSectionCode)}490`, "مشروع التخرج", 3, 3, 30, false);
@@ -253,5 +293,54 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
         void caseRefFor;
       }
     }
+  }
+}
+
+/**
+ * ── رادارُ الفصل السابق (للعرض فقط) ──────────────────────────────────────────
+ * يُفتح الرادارُ على الفصل السابق فيجد أرقاماً كاملة لا شاشةً فارغة: الشعبُ نفسُها المطروحة في الجاري،
+ * ورادارٌ محسوبٌ بالمحرّك نفسه من رغبات الطلبة، وأجوبةُ «هل سجلت؟» لنحو نصفهم. ملفُّ الطالب يحمل رغباتِ فصلٍ واحد،
+ * فيُحسب الرادارُ على رغبات الفصل الجاري ويُسجَّل ذلك في `RegistrationRun.wishesTermId` — تجربةٌ لا تاريخٌ حقيقي.
+ * يُستدعى بعد بذر الفصلين (آخرَ الترتيب)، فلا تُوسَم نتيجتُه «قديمة» بكتابةٍ لاحقة.
+ */
+export async function seedDemoPreviousTermRadar(): Promise<void> {
+  if (!Repository.isDemoRequest()) return;
+  const terms = (await Repository.getTerms()) as any[];
+  const previous = terms.find(row => Number(row.AdTermId) === DEMO_PREVIOUS_TERM_ID);
+  const door = pickDoorTerm(terms as any);
+  if (!previous || !door || Number(door.AdTermId) === DEMO_PREVIOUS_TERM_ID) return;
+  const previousId = Number(previous.AdTermId), doorId = Number(door.AdTermId);
+  if (await Repository.getRegistrationRun(previousId)) return; // مبذورٌ من قبل
+
+  /* المقرّراتُ المطروحة في الجاري ولا صفَّ لها في السابق (الإضافيةُ والإسلامية): تُطرح فيه بشعبها نفسِها. */
+  const [current, old] = await Promise.all([Repository.getSchedulesByScope({ termId: doorId }), Repository.getSchedulesByScope({ termId: previousId })]) as [FSchedule[], FSchedule[]];
+  const had = new Set(old.map(row => Number(row.AdCourseId)));
+  for (const row of current) {
+    if (had.has(Number(row.AdCourseId)) || String(row.fdetail || "").includes("حالة تجريبية مقصودة")) continue;
+    const { id: _id, ...rest } = row as any;
+    await Repository.createSchedule({ ...rest, AdTermId: previousId, rev: 0 });
+  }
+
+  await runRegistrationSimulation(previous, "عرض تجريبي", { wishesTermId: doorId });
+
+  const random = rng(20260301);
+  const pick = <T,>(list: readonly T[]): T => list[Math.floor(random() * list.length)];
+  const REASONS = ["full", "full", "full", "conflict", "conflict", "prereq", "other"] as const;
+  for (const profile of await Repository.listStudentProfiles()) {
+    if (!profile.wishes || Number(profile.wishes.termId) !== doorId || random() > 0.55) continue;
+    const ticket = await Repository.getRegistrationTicket(previousId, profile.id);
+    const items = ticket?.plans.find(plan => plan.label === "A")?.items || [];
+    if (!items.length) continue;
+    const answers = items.map((item, at) => random() < (at === 0 ? 0.7 : 0.82)
+      ? { courseId: item.courseId, state: "registered" as const }
+      : { courseId: item.courseId, state: "stuck" as const, reason: pick(REASONS) });
+    /* الملفُّ يحمل جوابَ فصلٍ واحد (الجاري): يُكتب جوابُ السابق للعدّادات ثم يُعاد جوابُ الجاري كما كان. */
+    const original = profile.registration;
+    await Repository.recordRegistrationAnswers(profile.id, previousId, current => current ? { ...current, registration: { termId: previousId, at: new Date().toISOString(), answers } } : undefined);
+    await Repository.updateStudentProfile(profile.id, current => {
+      if (!current) return current;
+      const { registration: _registration, ...rest } = current;
+      return (original ? { ...rest, registration: original } : rest) as StudentProfile;
+    });
   }
 }
