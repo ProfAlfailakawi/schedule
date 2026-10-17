@@ -128,7 +128,7 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
                 <div className="sb-gap" aria-label={`مطلوب ${row.target}، موجود ${row.existing}، باقٍ ${row.remaining}`}>
                   <span><b>{row.target}</b><small>مطلوبة</small></span>
                   <span><b>{row.existing}</b><small>في الجدول</small></span>
-                  <span className={row.remaining ? "is-gap" : "is-ok"}>{row.state === "done" ? <CheckCircle2 aria-hidden="true" /> : <b>{row.remaining}</b>}<small>{row.state === "done" ? "مكتمل" : row.state === "over" ? "زائدة" : "باقية"}</small></span>
+                  <span className={row.remaining ? "is-gap" : "is-ok"}>{row.state === "done" ? <CheckCircle2 aria-hidden="true" /> : <b>{row.state === "over" ? row.existing - (row.target ?? 0) : row.remaining}</b>}<small>{row.state === "done" ? "مكتمل" : row.state === "over" ? "زائدة" : "باقية"}</small></span>
                   <Dots row={row} picked={picked} />
                 </div>
                 {row.placements.map(p => {
