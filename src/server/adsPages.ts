@@ -83,12 +83,12 @@ footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
 @media print{body{background:#fff;color:#000}.btn,.noprint{display:none!important}.hero,.card,.kpi{box-shadow:none}.wrap{padding:0}}
 `;
 
-const page = (title: string, nonce: string, body: string): string => `<!doctype html>
+const page = (title: string, nonce: string, body: string, extraCss = ""): string => `<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="light dark">
 <title>${esc(title)}</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
-<style>${BASE_CSS}</style></head><body><div class="wrap">${body}</div>
+<style>${BASE_CSS}${extraCss}</style></head><body><div class="wrap">${body}</div>
 <script nonce="${nonce}">(function(){var b=document.getElementById("print");if(b)b.addEventListener("click",function(){window.print()})})();</script>
 </body></html>`;
 
@@ -276,15 +276,101 @@ ${badgeCard}
 <footer>SCHEDULE · تقريرٌ سرّي بين الإدارة والشركة · ${esc(dateAr(today))}</footer>`);
 }
 
-/** تقويمُ المواسم: متى يكون الطالب في موسم التسجيل أو بدء الفصل أو نهايته، لتختار الشركةُ موسمَ منتجها. */
+/* ── ملف الشراكة: إنفوجرافيك، أيقونات، كلامٌ قليل ─────────────────────────────── */
+
+/** أيقوناتٌ خطّية مضمّنة (SVG خالص، بلا مكتبات ولا طلبات خارجية — سياسة المحتوى لا تسمح بها). */
+const ICONS: Record<string, string> = {
+  students: '<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
+  visits: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  staff: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M15 8h3M15 12h3M6 16h12"/>',
+  tap: '<path d="M9 11V5a2 2 0 0 1 4 0v6"/><path d="M13 10a2 2 0 0 1 4 0v1a2 2 0 0 1 4 0v4a6 6 0 0 1-6 6h-2a6 6 0 0 1-5-3l-3-5a2 2 0 0 1 3-2l2 2"/>',
+  repeat: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="m9 15 2 2 4-4"/>',
+  shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  chart: '<path d="M4 20V11M10 20V5M16 20v-7M2 20h20"/>',
+  ab: '<rect x="3" y="4" width="8" height="16" rx="2"/><rect x="13" y="4" width="8" height="16" rx="2"/>',
+  ticket: '<path d="M3 7h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4Z"/><path d="M14 7v10"/>',
+  flask: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>',
+  check: '<path d="m5 12 4 4 10-10"/>',
+  book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 19V5"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+};
+const icon = (name: string): string => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+
+const KIT_CSS = `
+.k-hero{position:relative;overflow:hidden;border-radius:28px;padding:34px 28px;color:#fff;background:radial-gradient(90% 120% at 0% 0%,#1f8f6a 0%,transparent 60%),linear-gradient(135deg,#0b4f3a,#0f6b4f 55%,#13805e);box-shadow:var(--shadow)}
+.k-hero:after{content:"";position:absolute;inset-inline-start:-60px;bottom:-80px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.07)}
+.k-hero .brand{color:rgba(255,255,255,.72)}
+.k-hero h1{margin:6px 0 8px;color:#fff}
+.k-hero p{margin:0;color:rgba(255,255,255,.86);font-size:16px}
+.k-hero .btn{position:absolute;inset-inline-end:22px;top:22px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3)}
+.ic{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.k-stats{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:-26px;position:relative;z-index:1;padding:0 12px}
+.k-stat{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow);display:grid;gap:6px;justify-items:start}
+.k-stat .badge{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--soft);color:var(--accent)}
+.k-stat b{font-size:clamp(26px,4vw,34px);line-height:1.15;font-variant-numeric:tabular-nums}
+.k-stat span{color:var(--muted);font-size:14px}
+.k-why{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-top:22px}
+.k-why div{display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:18px;background:var(--soft);color:var(--accent);font-weight:700}
+.k-why .ic{width:28px;height:28px;flex:none}
+.k-h2{display:flex;align-items:center;gap:10px;font-size:19px;margin:34px 0 12px}
+.k-h2 .ic{color:var(--accent)}
+.k-peak{display:grid;gap:14px;grid-template-columns:auto 1fr;align-items:center}
+.k-peak .big{font-size:24px;font-weight:800;color:var(--accent)}
+.k-days{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.k-days span{padding:3px 12px;border-radius:999px;background:var(--soft);color:var(--accent);font-size:13px;font-weight:700}
+.k-hours{display:flex;align-items:flex-end;gap:3px;height:56px;direction:ltr;margin-top:10px}
+.k-hours i{flex:1;border-radius:3px 3px 0 0;background:var(--line);min-height:2px}
+.k-hours i.on{background:var(--accent)}
+.k-bars{display:grid;gap:10px}
+.k-bars div{display:grid;grid-template-columns:minmax(0,1.3fr) 2fr auto;gap:10px;align-items:center;font-size:14px}
+.k-bars em{height:10px;border-radius:99px;background:var(--line);overflow:hidden}
+.k-bars em i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.k-cal{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+.k-cal div{flex:0 0 auto;min-width:150px;scroll-snap-align:start;border-radius:16px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-top:5px solid var(--c);display:grid;gap:2px}
+.k-cal div.now{background:var(--soft);box-shadow:0 0 0 2px var(--accent) inset}
+.k-cal b{font-size:15px}.k-cal small{color:var(--muted);font-size:12px}
+.k-cal .live{color:var(--accent);font-weight:800;font-size:12px}
+.k-slots{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.k-slot{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px;box-shadow:var(--shadow);display:grid;gap:10px}
+.k-screen{border:1.5px solid var(--line);border-radius:14px;padding:10px;display:grid;gap:6px;background:var(--bg);aspect-ratio:16/10;align-content:start}
+.k-screen i{display:block;height:8px;border-radius:4px;background:var(--line)}
+.k-screen i.s{width:60%}
+.k-screen .ad{border-radius:6px;background:linear-gradient(135deg,var(--accent),#1f8f6a);box-shadow:0 4px 14px rgba(15,107,79,.35)}
+.k-slot b{font-size:15px}
+.k-tags{display:flex;gap:6px;flex-wrap:wrap}
+.k-tags span{font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.k-tags .ok{border-color:transparent;background:var(--soft);color:var(--accent);font-weight:700}
+.k-tags .full{border-color:transparent;background:#f1ece2;color:#8a6a3a}
+.k-tags .wide{border-color:transparent;background:#fff3df;color:#8a5a12;font-weight:700}
+.k-tools{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.k-tools div{display:grid;justify-items:center;gap:8px;text-align:center;padding:18px 12px;border-radius:20px;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);font-weight:700}
+.k-tools .ic{width:34px;height:34px;color:var(--accent)}
+.k-rules{display:grid;gap:8px 18px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin:0;padding:0;list-style:none;font-size:13.5px;color:var(--muted)}
+.k-rules li{display:flex;gap:8px;align-items:flex-start}
+.k-rules .ic{width:18px;height:18px;flex:none;color:var(--accent);margin-top:4px}
+@media (max-width:560px){.k-stat{padding:14px}.k-stat .badge{width:38px;height:38px}.k-stat b{font-size:24px}.k-hero{padding:26px 20px}.k-hero .btn{position:static;margin-top:14px}.k-stats{margin-top:14px;padding:0}.k-peak{grid-template-columns:1fr}}
+@media print{.k-hero,.k-screen .ad,.k-bars em i{-webkit-print-color-adjust:exact;print-color-adjust:exact}.k-stat,.k-slot,.k-tools div{box-shadow:none}.k-cal{flex-wrap:wrap;overflow:visible}}
+`;
+
+/** شاشةٌ مصغّرة تبيّن موضع الإعلان وحجمه النسبي في صفحته. */
+function slotScreen(slot: { id: string; width: number; height: number }): string {
+  const w = Math.round(Math.min(100, (slot.width / 640) * 100));
+  const h = Math.max(10, Math.round((slot.height / slot.width) * 100 * (w / 100) * 0.62));
+  const ad = `<span class="ad" style="width:${w}%;height:${h}px"></span>`;
+  const lines = `<i></i><i class="s"></i>`;
+  return `<div class="k-screen">${slot.id === "sponsor" ? ad + lines + lines : lines + ad + lines}</div>`;
+}
+
+/** تقويمُ المواسم: خطٌّ زمني أفقي بألوان المواسم، والموسم الجاري مُضاء. */
 function seasonCalendarHtml(items: CalendarItem[], active: string[]): string {
-  const upcoming = items.slice(0, 12);
+  const upcoming = items.slice(0, 8);
   if (!upcoming.length) return "";
   const COLORS: Record<string, string> = { registration: "var(--accent)", start: "var(--accent2)", middle: "#6b7f8c", finals: "#a0522d", break: "#8a8f98" };
-  return `<h2>تقويم المواسم</h2>
-<div class="card"><p class="note" style="margin-top:0">اختر الموسم الأنسب لمنتجك؛ يمكن ربط إعلانك بموسمٍ أو أكثر فلا يظهر إلا فيه. الموسم الجاري الآن: <b>${active.length ? active.map(seasonLabel).map(esc).join("، ") : "—"}</b>.</p>
-<div class="cal">${upcoming.map(i => `<div class="cal-i${i.now ? " now" : ""}" style="--c:${COLORS[i.season] || "var(--accent)"}"><b>${esc(i.label)}</b><span>${esc(i.term)}</span><small>${esc(dateAr(i.from))} ← ${esc(dateAr(i.to))}${i.now ? " · الآن" : ""}</small></div>`).join("")}</div>
-<p class="note">${SEASONS.map(s => `<b>${esc(s.label)}:</b> ${esc(s.hint)}`).join(" · ")}</p></div>`;
+  const short = (d: string) => esc(dateAr(d).replace(/\\s*\\d{4}$/, ""));
+  return `<h2 class="k-h2">${icon("calendar")}تقويم المواسم${active.length ? ` <small class="note" style="margin:0">· الآن: ${active.map(seasonLabel).map(esc).join("، ")}</small>` : ""}</h2>
+<div class="k-cal">${upcoming.map(i => `<div class="${i.now ? "now" : ""}" style="--c:${COLORS[i.season] || "var(--accent)"}">${i.now ? `<span class="live">● الآن</span>` : ""}<b>${esc(i.label)}</b><small>${esc(i.term)}</small><small>${short(i.from)} ← ${short(i.to)}</small></div>`).join("")}</div>`;
 }
 
 export interface PartnerKitInput {
@@ -302,46 +388,49 @@ export function partnerKitPage(input: PartnerKitInput): string {
   const head = headlineTotals(s);
   const hasVisits = s.visits.days > 0;
   const peak = hasVisits ? peakSummary(s.visits.heat) : null;
-  const peakCard = peak ? `<h2>متى يفتح الطلبة البرنامج؟</h2>
-<div class="card"><p style="margin:0 0 8px">ذروة الاستخدام <b>${esc(peak.topDays.map(d => d.name).join("، "))}</b>${peak.window ? `، وأقوى ساعاتها من <b>${esc(hourAr(peak.window.from))}</b> إلى <b>${esc(hourAr(peak.window.to))}</b> (نحو ${peak.window.share}٪ من الزيارات)` : ""}.</p>
-${barChart(peak.hourTotals.map((v, h) => ({ day: hourAr(h), a: v })), "الزيارات حسب الساعة")}
-<p class="note">بتوقيت الكويت، من زياراتٍ مجهولة ومجمّعة. اختر موسم إعلانك ووقت عرضك على هذا الأساس.</p></div>` : "";
+
+  const peakCard = peak ? `<h2 class="k-h2">${icon("clock")}متى يفتح الطلبة البرنامج؟</h2>
+<div class="card k-peak"><div class="big">${peak.window ? `${esc(hourAr(peak.window.from))} – ${esc(hourAr(peak.window.to))}` : ""}</div>
+<div><div class="k-days">${peak.topDays.map(d => `<span>${esc(d.name)}</span>`).join("")}</div>
+<div class="k-hours" role="img" aria-label="الزيارات حسب الساعة">${peak.hourTotals.map((v, h) => `<i class="${peak.window && h >= peak.window.from && h < peak.window.to ? "on" : ""}" style="height:${Math.max(4, Math.round((v / Math.max(1, ...peak.hourTotals)) * 100))}%" title="${esc(hourAr(h))}"></i>`).join("")}</div></div></div>` : "";
+
+  const demand = s.demand.top.length >= 3 ? (() => {
+    const top = s.demand.top.slice(0, 6), max = Math.max(1, ...top.map(d => d.students));
+    return `<h2 class="k-h2">${icon("book")}ما يبحث عنه الطلبة</h2>
+<div class="card k-bars">${top.map(d => `<div><span>${esc(d.name)}</span><em><i style="width:${Math.round((d.students / max) * 100)}%"></i></em><b>${approx(d.students)}</b></div>`).join("")}</div>`;
+  })() : "";
+
+  const slots = activeSlots().map(slot => {
+    const live = input.liveBySlot[slot.id] || 0;
+    const free = slot.exclusive ? (live ? 0 : 1) : Math.max(0, slot.capacity - live);
+    return `<div class="k-slot" title="${esc(slot.where)}">${slotScreen(slot)}<b>${esc(slot.label)}</b>
+<div class="k-tags"><span><bdi dir="ltr">${slot.width}×${slot.height}</bdi></span>${slot.wholeUniversity ? `<span class="wide">كل الجامعة</span>` : ""}${slot.exclusive ? `<span>حصري</span>` : ""}<span class="${free ? "ok" : "full"}">${free ? "متاح" : "محجوز"}</span></div></div>`;
+  }).join("");
+
   return page("ملف الشراكة · SCHEDULE", nonce, `
-<div class="bar noprint"><p class="brand">SCHEDULE · ملف الشراكة</p><button class="btn" id="print" type="button">طباعة / حفظ PDF</button></div>
-<section class="hero">
-  <p class="brand">SCHEDULE · نظام القرار الأكاديمي</p>
-  <h1>اصل إلى الطلبة والأساتذة<br>في اللحظة التي يحتاجون فيها جدولهم</h1>
-  <p class="lead">منصةٌ يستخدمها الطلبة والكادر في كل فصل لمعرفة جداولهم وتسجيلهم وحالة طلباتهم. إعلانك يظهر في صفحاتٍ يفتحونها بأنفسهم، وبأرقامٍ تراها أنت حيةً.</p>
+<section class="k-hero">
+  <p class="brand">SCHEDULE · ملف الشراكة</p>
+  <h1>جمهورك في لحظة الجدول</h1>
+  <p>طلبةٌ وأساتذة يفتحون جداولهم بأنفسهم، كل فصل.</p>
+  <button class="btn noprint" id="print" type="button">طباعة / PDF</button>
 </section>
-<div class="grid">
-  <div class="kpi"><b>${approx(head.students)}</b><span>الطلبة الذين استخدموا النظام منذ ${AUDIENCE_BASELINE.since}</span><small>أشخاص فريدون، بلا تكرار</small></div>
-  <div class="kpi"><b>${approx(head.visits)}</b><span>زيارة منذ ${AUDIENCE_BASELINE.since}</span><small>الطالب الواحد يزور أكثر من مرة</small></div>
-  <div class="kpi"><b>${approx(head.instructorOpens)}</b><span>فتحٌ لبطاقات أعضاء هيئة التدريس</span><small>عدد مرّات الفتح، وليس عدد الأشخاص</small></div>
-  <div class="kpi"><b><bdi dir="ltr">${Math.floor(head.instructorOpenRate)}%+</bdi></b><span>نسبة فتح بطاقات الأساتذة</span><small>التزامٌ يقيس جدّية الجمهور</small></div>
-  ${hasVisits ? `<div class="kpi"><b>${approx(s.visits.last30)}</b><span>زيارة في آخر ٣٠ يوماً</span><small>مقيسة منذ ${esc(dateAr(s.visits.since))}</small></div>` : ""}
+<div class="k-stats">
+  <div class="k-stat"><span class="badge">${icon("students")}</span><small class="note" style="margin:0">حوالي</small><b>${fmt(head.students)}</b><span>إجمالي الطلبة المستفيدين</span></div>
+  <div class="k-stat"><span class="badge">${icon("visits")}</span><small class="note" style="margin:0">حوالي</small><b>${fmt(head.visits)}</b><span>إجمالي دخول الطلبة</span></div>
+  <div class="k-stat"><span class="badge">${icon("staff")}</span><small class="note" style="margin:0">حوالي</small><b>${fmt(AUDIENCE_BASELINE.instructors)}</b><span>أعضاء هيئة التدريس</span></div>
+  <div class="k-stat"><span class="badge">${icon("tap")}</span><small class="note" style="margin:0">حوالي</small><b>${fmt(head.instructorOpens)}</b><span>إجمالي دخول أعضاء هيئة التدريس</span></div>
 </div>
-${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2><div class="card">${barChart(s.visits.series.map(p => ({ day: p.day, a: p.count })), "الزيارات")}<p class="note">الذروة تأتي غالباً يوم ${esc(s.visits.peakDay || "—")}؛ ونسبة الجوال ${pct(s.visits.mobileRate)} ونسبة العائدين ${pct(s.visits.returningRate)}.</p></div>` : `<p class="note">قياس الزيارات اليومية فعّالٌ ويتراكم يوماً بعد يوم، وتظهر أرقامه هنا فور توفر بياناتٍ كافية.</p>`}
-${s.demand.top.length >= 3 ? `<h2>ما يبحث عنه الطلبة هذا الفصل</h2><div class="card"><table><thead><tr><th>المقرر</th><th>طلبةٌ يريدونه</th></tr></thead><tbody>${s.demand.top.slice(0, 6).map(d => `<tr><td>${esc(d.name)}</td><td class="n">${approx(d.students)}</td></tr>`).join("")}</tbody></table><p class="note">أعدادٌ تقريبية مجمّعة، ولا يظهر مقررٌ يطلبه أقل من ${countOf(s.demand.minStudents, AR.student)} مختلفين.</p></div>` : ""}
-${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
+<div class="k-why"><div>${icon("tap")}<span>يفتحونه بأنفسهم</span></div><div>${icon("repeat")}<span>كل فصل</span></div><div>${icon("shield")}<span>بلا بيانات شخصية</span></div></div>
 ${peakCard}
-<h2>أين يظهر إعلانك</h2>
-<div class="callout"><b>«مساري» لكل الجامعة</b><span>إعلانك في «مساري» ومحطة الاستراحة يراه كل طالبٍ يدخل، من كل الكليات، دون أي تخصيص؛ وإن أردتَ كليةً بعينها فيمكن حصر الحملة بها (لمن أكمل ملفه الشخصي).</span></div>
-<div class="card">${activeSlots().map(slot => {
-  const live = input.liveBySlot[slot.id] || 0;
-  const free = slot.exclusive ? (live ? 0 : 1) : Math.max(0, slot.capacity - live);
-  const maxW = Math.min(180, slot.width / 3.6);
-  return `<div class="slot" style="padding:10px 0;border-bottom:1px solid var(--line)"><div><b>${esc(slot.label)}</b> <span class="note">· ${esc(slot.where)}</span><br><span class="note">المقاس <bdi dir="ltr">${slot.width}×${slot.height}</bdi> · ${slot.wholeUniversity ? `<b class="reach">يصل كل طلبة الجامعة</b> · ` : ""}${slot.exclusive ? "حصري لشركة واحدة" : `يتناوب فيه حتى ${countOf(slot.capacity, AR.campaign)}`} · ${free ? `متاح` : `ممتلئ حالياً`}</span></div><div class="mock" style="width:${maxW}px;aspect-ratio:${slot.width}/${slot.height}"><bdi dir="ltr">${slot.width}×${slot.height}</bdi></div></div>`;
-}).join("")}</div>
-<h2>شروطنا</h2>
-<div class="card"><ul class="rules">${AD_RULES.map(r => `<li>${esc(r)}</li>`).join("")}</ul></div>
-<h2>كيف تتابع نتائجك؟</h2>
-<div class="card"><ul class="rules">
-  <li>لكل حملةٍ رابط تقرير خاص بها يتحدث حياً: ظهور مرئي، مشاهدون، نقرات، ونسبة النقر.</li>
-  <li>اختبار A/B بصورتين لمعرفة أيهما أقوى.</li>
-  <li>كود خصم خاص بشركتك لقياس التحويل عندكم.</li>
-  <li>حملةٌ تجريبية قصيرة بتقريرٍ كامل لتجرّب قبل أن تلتزم.</li>
-</ul></div>
-<footer>SCHEDULE · ${esc(dateAr(today))} · الأرقام مُقرَّبة ومجمّعة ولا تحمل أي هوية. الإجماليات منذ ${AUDIENCE_BASELINE.since} بحسب إدارة النظام حتى ${esc(dateAr(AUDIENCE_BASELINE.asOf))}، ثم يُضاف إليها ما يُقاس بعدها.</footer>`);
+${demand}
+${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
+<h2 class="k-h2">${icon("globe")}أين يظهر إعلانك</h2>
+<div class="k-slots">${slots}</div>
+<h2 class="k-h2">${icon("chart")}تتابع نتائجك حيّة</h2>
+<div class="k-tools"><div>${icon("chart")}<span>تقرير حيّ</span></div><div>${icon("ab")}<span>اختبار A/B</span></div><div>${icon("ticket")}<span>كود خصم</span></div><div>${icon("flask")}<span>تجربة قبل الالتزام</span></div></div>
+<h2 class="k-h2">${icon("shield")}شروطنا</h2>
+<ul class="k-rules">${AD_RULES.map(r => `<li>${icon("check")}<span>${esc(r)}</span></li>`).join("")}</ul>
+<footer>SCHEDULE · ${esc(dateAr(today))} · الأرقام مُقرَّبة ومجمّعة ولا تحمل أي هوية. الإجماليات منذ ${AUDIENCE_BASELINE.since} بحسب إدارة النظام حتى ${esc(dateAr(AUDIENCE_BASELINE.asOf))}، ثم يُضاف إليها ما يُقاس بعدها.</footer>`, KIT_CSS);
 }
 
 /** سياسةُ القياس والإعلانات: صفحةٌ عامة بلا رمز، يصل إليها الطالب من السطر تحت كل إعلان. كلُّ سطرٍ فيها يصف ما يفعله الكود فعلاً. */

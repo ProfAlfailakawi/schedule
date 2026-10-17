@@ -793,8 +793,9 @@ async function main() {
     const { headlineTotals } = await import("../src/utils/audienceStats");
     const head = headlineTotals(stats);
     check(head.students === B.students + 2 && head.visits === B.visits + 55 && head.instructorOpens === B.instructorOpens + 1 && head.instructorOpenRate === 90, "الرصيد: headlineTotals = الرصيد + ما بعده، والنسبة حدٌّ أدنى 90", head);
+    const fmtN = (n: number) => new Intl.NumberFormat("ar-KW-u-nu-latn").format(n);
     const kitPage = (await import("../src/server/adsPages")).partnerKitPage({ stats: stats as any, liveBySlot: {}, today: "2026-11-20", nonce: "N" });
-    check(kitPage.includes("80,000+") && kitPage.includes("5,300,000+") && kitPage.includes("90%+"), "الرصيد: ملف الشراكة يعرض الأرقام نفسها (80,000+ و5,300,000+ و90%+)");
+    check(kitPage.includes(fmtN(B.students + 2)) && kitPage.includes(fmtN(B.visits + 55)) && kitPage.includes(fmtN(B.instructors)) && kitPage.includes(fmtN(B.instructorOpens + 1)) && kitPage.includes("90%") && kitPage.includes("إجمالي الطلبة المستفيدين") && kitPage.includes("إجمالي دخول أعضاء هيئة التدريس"), "ملف الشراكة يأخذ أرقام لوحة الجمهور وعناوينها نفسها");
     check(kitPage.includes("بحسب إدارة النظام حتى") && !kitPage.includes("تقديراتٌ تقريبية") && !kitPage.includes("الأرقام تقريبية"), "الرصيد: ملف الشراكة ينسب الإجماليات إلى إدارة النظام في ذيله (بلا وصفها بالتقدير)");
     const fp = (n: number, pre: string) => Array.from({ length: n }, (_, i) => nd(`${pre}${i}`, "2026-05-01"));
     const t1 = [...fp(20, "a"), ...fp(20, "b")], t2 = [...fp(20, "a"), ...fp(5, "c")].map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" }));
