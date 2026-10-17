@@ -101,6 +101,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   const [edits, setEdits] = useState(0);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const timer = useRef<number | null>(null);
+  /* النطاق الذي حُمِّلت أرقامه فعلاً: لا يُكتب شيءٌ بأرقام نطاقٍ في سجلّ نطاقٍ آخر (قسمٌ بدّلته قبل أن يكتمل تحميل الجديد). */
+  const loadedScope = useRef("");
   useDialogDismiss(report, () => setReport(false));
   useDialogDismiss(Boolean(preview), () => setPreview(null));
 
@@ -114,6 +116,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       .then(async response => { const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error || "تعذّر تحميل تخطيط الشعب"); return body as Payload; })
       .then(body => {
         if (cancelled) return;
+        loadedScope.current = `${collegeId}:${sectionId}:${termId}`;
         setData(body);
         setRemaining(asText(body.remaining));
         setChosen(asText(body.accepted));
@@ -139,6 +142,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   }), [collegeId, sectionId, termId]);
   const persist = useCallback(async () => {
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null; }
+    if (loadedScope.current !== `${collegeId}:${sectionId}:${termId}`) return;
     setSaveState("saving");
     try {
       const response = await fetch("/api/registration-stats", { method: "PUT", headers: { "Content-Type": "application/json" }, body: body() });
@@ -147,7 +151,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       setSavedAt(saved?.updatedAt || new Date().toISOString()); setSavedBy(saved?.updatedBy || "");
       setSaveState("saved");
     } catch { setSaveState("error"); }
-  }, [body]);
+  }, [body, collegeId, sectionId, termId]);
   const persistRef = useRef(persist);
   persistRef.current = persist;
   useEffect(() => {
@@ -159,11 +163,12 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
     const flush = () => {
       if (!timer.current) return;
       window.clearTimeout(timer.current); timer.current = null;
+      if (loadedScope.current !== `${collegeId}:${sectionId}:${termId}`) return;
       try { void fetch("/api/registration-stats", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: body() }); } catch { /* the page is going away */ }
     };
     window.addEventListener("pagehide", flush);
     return () => { window.removeEventListener("pagehide", flush); flush(); };
-  }, [body]);
+  }, [body, collegeId, sectionId, termId]);
   const edit = (setter: React.Dispatch<React.SetStateAction<Record<string, string>>>, key: string, value: string) => {
     setter(current => ({ ...current, [key]: value }));
     setEdits(n => n + 1);
