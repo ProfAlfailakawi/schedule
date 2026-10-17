@@ -11,6 +11,7 @@
  */
 import type { AdCampaign, AdCourse, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
 import { AUDIENCE_BASELINE } from "./audienceBaseline";
+import { currentTermId, sortTermsNewest } from "./termSequence";
 import { addDays, ctrOf, endingSoon, isLive, kuwaitDay, slotById, totalsOf } from "./adsEngine";
 
 export interface TermPoint { termId: number; termName: string; answers: number; students: number }
@@ -210,7 +211,7 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
   const demandHidden = ranked.filter(r => r.students < DEMAND_MIN_STUDENTS).length;
 
   /* ── استمرارية الطلبة: فصلان متتاليان في تسلسل الفصول فقط، وبعيّنةٍ كافية ── */
-  const sequence = [...input.terms].sort((a, b) => Number(a.AdTermId) - Number(b.AdTermId))
+  const sequence = sortTermsNewest(input.terms).reverse()
     .map(t => ({ term: t, people: new Set((input.needsByTerm.get(Number(t.AdTermId)) || []).map(r => r.fingerprint).filter(Boolean)) }));
   const continuity: ContinuityPair[] = [];
   for (let i = 1; i < sequence.length; i++) {
@@ -306,4 +307,13 @@ export function headlineTotals(s: AudienceStats) {
     /** حدٌّ أدنى: يظهر المقيس إن زاد عليه. */
     instructorOpenRate: Math.max(AUDIENCE_BASELINE.instructorOpenRate, s.instructors.openRate || 0),
   };
+}
+
+/**
+ * الفصل الذي تعرضه اللوحة: المطلوب إن وُجد، وإلا الفصل **الجاري تشغيلياً** (`currentTermId`)، لا آخر فصلٍ فيه إجابات.
+ * بعد حذف قائمة اختيار الفصل لا مهرب من هذا الافتراضي، فلو سقط إلى «آخر فصلٍ فيه إجابات» لعرضت اللوحة فصلاً قديماً باسم «هذا الفصل».
+ */
+export function pickDashboardTerm<T extends AdTerm>(recent: readonly T[], allTerms: readonly AdTerm[], requestedId = 0, now = Date.now()): T | undefined {
+  const operational = currentTermId(allTerms as any, now);
+  return recent.find(t => Number(t.AdTermId) === requestedId) || recent.find(t => Number(t.AdTermId) === operational) || recent[0];
 }

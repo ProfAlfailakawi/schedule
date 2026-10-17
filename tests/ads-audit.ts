@@ -807,6 +807,16 @@ async function main() {
     const gap = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [{ AdTermId: 1, AdTermName: "خريف" }, { AdTermId: 2, AdTermName: "ربيع" }, { AdTermId: 3, AdTermName: "صيف" }] as any[], currentTermId: 3, profiles: [], instructorRequests: [],
       needsByTerm: new Map([[1, fp(40, "a") as any[]], [3, fp(40, "a").map(r => ({ ...r, createdAt: "2026-10-01T08:00:00Z" })) as any[]]]) });
     check(gap.continuity.length === 0, "الاستمرارية: فصلٌ بلا إجابات بينهما يقطع التتالي فلا تُقارَن فصلان غير متتاليين", gap.continuity);
+    /* ترتيب الفصول أكاديمي لا برقم المعرّف: A(1) ثم B(3) ثم C(2) — لا يقطع C الفارغ التتالي بين A وB */
+    const termsOutOfOrder = [{ AdTermId: 1, AdTermName: "الفصل الأول 2020/2021" }, { AdTermId: 3, AdTermName: "الفصل الثاني 2020/2021" }, { AdTermId: 2, AdTermName: "الفصل الأول 2021/2022" }];
+    const chrono = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: termsOutOfOrder as any[], currentTermId: 2, profiles: [], instructorRequests: [],
+      needsByTerm: new Map([[1, fp(40, "a") as any[]], [3, fp(40, "a").map(r => ({ ...r, createdAt: "2021-02-01T08:00:00Z" })) as any[]]]) });
+    check(chrono.continuity.length === 1 && chrono.continuity[0].fromTerm === "الفصل الأول 2020/2021" && chrono.continuity[0].toTerm === "الفصل الثاني 2020/2021" && chrono.continuity[0].rate === 100, "الاستمرارية: الترتيب بالتسلسل الأكاديمي لا برقم المعرّف", chrono.continuity);
+    const { pickDashboardTerm } = await import("../src/utils/audienceStats");
+    const dashTerms = [{ AdTermId: 1, AdTermName: "الفصل الأول 2025/2026", AdTermClosed: true }, { AdTermId: 2, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: true }, { AdTermId: 3, AdTermName: "الفصل الأول 2026/2027", AdTermClosed: false }, { AdTermId: 4, AdTermName: "الفصل الثاني 2026/2027" }] as any[];
+    const newestFirst = [...dashTerms].reverse();
+    check(pickDashboardTerm(newestFirst, dashTerms, 0, Date.parse("2026-10-17T00:00:00Z"))?.AdTermId === 3, "اللوحة: الافتراضي هو الفصل الجاري تشغيلياً (غير المنتهي) لا الأحدث ولا آخر فصلٍ فيه إجابات");
+    check(pickDashboardTerm(newestFirst, dashTerms, 2)?.AdTermId === 2, "اللوحة: الفصل المطلوب صراحةً يُقدَّم على الافتراضي");
     const adSlotStats = buildAudienceStats({ now: new Date("2026-11-05T09:00:00Z"), terms: [], currentTermId: 0, needsByTerm: new Map(), profiles: [], instructorRequests: [],
       campaigns: [{ id: "c1", slot: "me", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }, { id: "c2", slot: "schedule", status: "approved", startDay: "2026-10-01", endDay: "2026-12-01" }] as any[],
       adStats: [{ id: "1", campaignId: "c1", creativeId: "x", day: "2026-10-05", impressions: 1000, uniques: 500, clicks: 30, filteredClicks: 0 }, { id: "2", campaignId: "c2", creativeId: "x", day: "2026-10-05", impressions: 400, uniques: 300, clicks: 4, filteredClicks: 0 }, { id: "3", campaignId: "gone", creativeId: "x", day: "2026-10-05", impressions: 99, uniques: 9, clicks: 9, filteredClicks: 0 }] as any[] });

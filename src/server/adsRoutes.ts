@@ -25,7 +25,7 @@ import {
   looksAutomated, nextFreeDay, phaseOf, placementProblems, readImageInfo, rotationOrder, slotById, totalsOf, dailySeries,
   trialProblems, weeklyCompare, slotBenchmarkCtr, TRIAL_DAYS, normCompany, activeSlots,
 } from "../utils/adsEngine";
-import { buildAudienceStats } from "../utils/audienceStats";
+import { buildAudienceStats, pickDashboardTerm } from "../utils/audienceStats";
 import { reportCalendar } from "../utils/adCalendar";
 import { abVerdict, conversionOf } from "../utils/adInsights";
 import { partnerBadgeSvg } from "../utils/adBadge";
@@ -346,8 +346,7 @@ async function audienceInputs(requestedTermId: number) {
   const [days, camps] = await Promise.all([Repository.listAudienceDays(Math.max(120, Math.ceil((Date.now() - Date.parse(`${AUDIENCE_BASELINE.asOf}T00:00:00Z`)) / 86_400_000) + 7)), campaigns()]);
   if (!adStatsCache || Date.now() - adStatsCache.at > 60_000) adStatsCache = { at: Date.now(), rows: await Repository.listAdStats() };
   const recent = [...h.terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).slice(0, 12);
-  const withAnswers = recent.find(term => (h.needsByTerm.get(Number(term.AdTermId)) || []).length > 0);
-  const current = recent.find(term => Number(term.AdTermId) === requestedTermId) || withAnswers || recent[0];
+  const current = pickDashboardTerm(recent, h.terms, requestedTermId);
   const currentTermId = current ? Number(current.AdTermId) : 0;
   let requests: InstructorRequest[] = [];
   if (currentTermId) {
