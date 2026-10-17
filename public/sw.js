@@ -45,6 +45,10 @@ self.addEventListener("fetch",event=>{
      it under APP_SHELL_KEY and an offline launch of the app would show the plan
      instead of the app. They go straight to the network, untouched. */
   if(url.pathname.startsWith("/plans/"))return;
+  /* الإعلانات والنبض: شبكةٌ مباشرة دائماً؛ نسخةٌ قديمة تعني إعلاناً منتهياً أو عدّاداً لا يُحتسب. */
+  if(url.pathname.startsWith("/_ads/")||url.pathname==="/_pulse")return;
+  /* صفحتا الشركاء مستقلتان عن التطبيق وبرمزٍ سرّي: لو مرّتا بقاعدة التنقّل لحلّتا محلّ هيكل التطبيق دون اتصال. */
+  if(url.pathname.startsWith("/ad-report/")||url.pathname.startsWith("/partners/"))return;
   if(url.pathname.startsWith("/api/")){
     // Never persist authentication responses or credential/admin-user payloads.
     if(url.pathname.startsWith("/api/auth/")||url.pathname==="/api/users"||!isCacheableApi(url.pathname))return;
