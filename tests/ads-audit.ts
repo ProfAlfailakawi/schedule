@@ -84,7 +84,7 @@ async function main() {
     check(MAIL.mailConfig({}) === null && MAIL.mailConfig({ AD_MAIL_API_KEY: "k" } as any) === null && MAIL.mailConfig({ AD_MAIL_API_KEY: "k", AD_MAIL_FROM: "f@x.co" } as any)?.url.startsWith("https://"), "A14 البريد معطَّل ما لم تُضبط الإعدادات");
     check(MAIL.weekKey("2026-11-08") === "2026-11-08" && MAIL.weekKey("2026-11-11") === "2026-11-08", "A14 مفتاح الأسبوع: الأحد أوله");
     const wm = MAIL.weeklyMail({ company: "ش", endDay: "2026-12-01" }, { thisWeek: { impressions: 1000, uniques: 0, clicks: 30, ctr: 3 }, lastWeek: { impressions: 800, uniques: 0, clicks: 0, ctr: 0 }, impressionsChange: 25, clicksChange: null, hasLastWeek: true }, "https://x.test/r");
-    check(wm.text.includes("https://x.test/r") && wm.text.includes("ارتفاع") && !wm.text.includes("@"), "A14 رسالة الأسبوع: رابطٌ وتغيّر ولا بريد", wm.text);
+    check(wm.text.split("\n").pop() === "تقريركم الحي: https://x.test/r" && wm.text.includes("ارتفاع") && !wm.text.includes("@"), "A14 رسالة الأسبوع: رابطٌ وتغيّر ولا بريد", wm.text);
     // إرسالٌ حقيقي إلى خادمٍ وهمي: الترويسة والجسم والخطأ
     const seen: any[] = [];
     const stub = http.createServer((req, res) => { let b = ""; req.on("data", d => (b += d)); req.on("end", () => { seen.push({ auth: req.headers.authorization, body: JSON.parse(b || "{}"), url: req.url }); res.statusCode = (req.url || "").includes("fail") ? 500 : 200; res.end("{}"); }); });
