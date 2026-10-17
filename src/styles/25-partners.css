@@ -28,7 +28,7 @@
 .pt-card h3{margin:0 0 4px;font-size:17px}
 .pt-card .pt-sub{margin:0 0 12px;color:var(--muted);font-size:13px}
 .pt-chart{inline-size:100%;block-size:auto;display:block}
-.pt-chart text{fill:var(--muted);font-size:11px}
+.pt-axis{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px;margin-top:6px}
 .pt-empty{padding:26px 14px;text-align:center;color:var(--muted);border:1px dashed var(--line-strong,var(--line));border-radius:16px;font-size:14px}
 
 .pt-hbar{display:grid;gap:9px}

@@ -682,6 +682,12 @@ function tkSet(cur,courseId,offeringId){
 function tkDrop(cur,courseId){var key=cur.label+":"+courseId,base=cur.items.filter(function(i){return Number(i.courseId)===Number(courseId)})[0];
   if(base){S.tkRemoved[key]=true;delete S.tkOverrides[key]}else S.tkAdded[cur.label]=(S.tkAdded[cur.label]||[]).filter(function(a){return Number(a.courseId)!==Number(courseId)})}
 function tkEdited(cur){var any=false;Object.keys(S.tkRemoved).forEach(function(k){if(k.indexOf(cur.label+":")===0)any=true});return any||(S.tkAdded[cur.label]||[]).length>0}
+function tkClock(m){var h=Math.floor(m/60),mm=m%60;return h+':'+(mm<10?'0':'')+mm}
+function tkLongestGap(items){var by={},best=null;
+  items.forEach(function(i){if(!i.timesVisible)return;(i.slots||[]).forEach(function(s){(by[s.day]=by[s.day]||[]).push(s)})});
+  Object.keys(by).forEach(function(d){var a=by[d].sort(function(x,y){return x.start-y.start});
+    for(var n=1;n<a.length;n++){var g=a[n].start-a[n-1].end;if(g>=60&&(!best||g>best.min))best={day:Number(d),from:a[n-1].end,to:a[n].start,min:g}}});
+  return best}
 function tkGrid(items,sel,ghosts){
   var lo=1440,hi=0;
   items.forEach(function(it){if(it.timesVisible)(it.slots||[]).forEach(function(s){lo=Math.min(lo,s.start);hi=Math.max(hi,s.end)})});
@@ -757,8 +763,12 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
     +(tkEdited(cur)&&S.state.phase&&S.state.phase.canEditWishes?'<button type="button" class="btn small" data-act="wish" style="inline-size:auto">'+ic("heart")+'اجعلها رغباتي</button>':'')+'</div>';
   h+='<p class="fine" id="tkerr" role="status" aria-live="polite">'+esc(S.tkErr||"")+'</p>';
   if(t.unmet.length){h+='<details class="more"><summary>'+ic("down")+' ما لم نضعه ('+t.unmet.length+')</summary><div class="list" style="margin-block-start:6px">'+t.unmet.map(function(u){return '<div class="opt off"><span class="tx"><b>'+esc(u.name)+'</b><small>'+esc(WHY[u.reason]||"")+'</small></span></div>'}).join("")+'</div></details>'}
+  var brk=visibleTimes?tkLongestGap(items):null;
+  if(brk)h+='<div id="adx-break-box" data-gap="'+brk.min+'"></div>';
   h+='<p class="fine">'+ic("shield","")+' تقدير فقط — لا يحجز مقعداً.</p></div></section>';
   host.innerHTML=h;
+  /* محطة الاستراحة: أطولُ فراغٍ في أسبوعه يُعرض فيه إعلانٌ إن وُجدت حملةٌ للموقع (السكربت العام يحمّله من الخادم ويحتسب ظهوره). */
+  if(brk&&window.AdxMount)window.AdxMount(document.getElementById("adx-break-box"),"break",{intro:'عندك فراغٌ يوم '+DAYN[brk.day]+' من '+tkClock(brk.from)+' إلى '+tkClock(brk.to)+' (نحو '+countOf(Math.round(brk.min/6)/10,AR.hour)+'). استراحتك برعاية:'});
   host.querySelectorAll('[data-seg="plan"] button').forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");S.tkSel=0;S.tkErr="";paintTicket(host)})});
   host.querySelectorAll('[data-seg="view"] button').forEach(function(b){b.addEventListener("click",function(){S.tkView=b.getAttribute("data-v");paintTicket(host)})});
   host.querySelectorAll(".wk-b[data-c]").forEach(function(b){b.addEventListener("click",function(){var id=Number(b.getAttribute("data-c"));S.tkSel=Number(S.tkSel)===id?0:id;S.tkErr="";paintTicket(host)})});

@@ -98,7 +98,7 @@ import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
-import { adInjection, registerAdsRoutes } from "./src/server/adsRoutes";
+import { adInjection, adNotifications, registerAdsRoutes } from "./src/server/adsRoutes";
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
@@ -1064,8 +1064,9 @@ app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) =
     if (refused && !authEvent && ![403, 409].includes(res.statusCode)) return;
     if (!refused && !startedUser && !authEvent) return;
     const pieces = routePath.split("/").filter(Boolean);
-    const entity = pieces[0] || "system";
-    const entityId = pieces.length > 1 ? pieces[pieces.length - 1] : undefined;
+    /* بعض المعالجات تسمّي كيانها ومعرّفه بنفسها (الإعلانات: «admin/ads/…» لا يقول شيئاً)؛ وإلا فمن المسار كما كان. */
+    const entity = (res.locals?.auditEntity as string | undefined) || pieces[0] || "system";
+    const entityId = (res.locals?.auditEntityId as string | undefined) || (pieces.length > 1 ? pieces[pieces.length - 1] : undefined);
     const action = routePath.includes("/safety-net/") && routePath.endsWith("/undo")
       ? "تراجع"
       : routePath.includes("/versions/") && routePath.endsWith("/restore")
@@ -11771,6 +11772,18 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     }
   } catch (error) {
     console.error("[notifications] feature items:", error instanceof Error ? error.message : error);
+  }
+  /* ── الإعلانات: حملاتٌ تنتهي قريباً، لحساب الإدارة الرئيسي وحده (ليس في الصندوق التجريبي) ── */
+  try {
+    if (Number(req.user?.SystemUserId) === ROOT_ADMIN_USER_ID && !Repository.isDemoRequest()) {
+      const ads = await adNotifications();
+      if (ads.length) {
+        const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
+        items = [...items, ...ads.map(item => ({ ...item, termId, termName }))].sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
+      }
+    }
+  } catch (error) {
+    console.error("[notifications] ads:", error instanceof Error ? error.message : error);
   }
   /* «المقروء» محفوظٌ للمستخدم على الخادم فيتطابق الجرس على أجهزته كلها؛ يُرسل
      منه ما يخصّ القائمة الحاضرة وحده. تعذّرُ قراءته لا يُسقط الجرس. */

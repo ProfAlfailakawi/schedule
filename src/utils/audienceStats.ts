@@ -9,7 +9,7 @@
  * مرةً في اليوم لكل نوع صفحة (تقدير)، ولا نعدّ فتحَ الصفحة، لأن عدّاد المشاهدات
  * يتضخّم بتكرار الطلبات ولا يصحّ أن يُسمّى «زوّاراً».
  */
-import type { AdCampaign, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
+import type { AdCampaign, AdCourse, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
 import { addDays, endingSoon, isLive, kuwaitDay, totalsOf } from "./adsEngine";
 
 export interface TermPoint { termId: number; termName: string; answers: number; students: number }
@@ -48,9 +48,15 @@ export interface AudienceStats {
     peakDay: string;
   };
   ads: { live: number; endingSoon: number; impressions: number; clicks: number; ctr: number };
+  /** ما يطلبه الطلبة هذا الفصل (رغباتهم وطلباتهم)، مجمّعاً بالمقرر. مقرراتٌ بأقل من `DEMAND_MIN_STUDENTS` طلاب لا تظهر أبداً. */
+  demand: { top: Array<{ name: string; students: number }>; hidden: number; minStudents: number };
   /** الجمهور الكلي المقدَّر: أدنى عددٍ مؤكد من الطلبة (الأكبر من الاستبيان وملفات مساري). */
   reach: { studentsMin: number; instructors: number };
 }
+
+/** حدُّ الخصوصية: مقرر لا يطلبه عشرةُ طلابٍ مختلفين على الأقل لا يُعرض ولا يُعدّ ظاهراً، فلا يُستدلّ منه على طالبٍ بعينه. */
+export const DEMAND_MIN_STUDENTS = 10;
+const DEMAND_TOP = 8;
 
 export interface AudienceInput {
   now: Date;
@@ -62,6 +68,7 @@ export interface AudienceInput {
   days?: readonly AudienceDay[];
   campaigns?: readonly AdCampaign[];
   adStats?: readonly AdStatsDay[];
+  courses?: readonly AdCourse[];
 }
 
 const DAY_MS = 86_400_000;
@@ -151,6 +158,26 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
   const campaigns = input.campaigns || [];
   const adTotals = totalsOf(input.adStats || []);
 
+  /* ── اتجاهات الطلب: طلبةٌ فريدون (بصمات) لكل مقرر، من رغبات الفصل وطلباته ── */
+  const byCourseKey = new Map<string, { name: string; who: Set<string> }>();
+  const courseById = new Map((input.courses || []).map(c => [Number(c.AdCourseId), c] as const));
+  const add = (courseId: number, fingerprint: string) => {
+    const course = courseById.get(Number(courseId));
+    if (!course || !fingerprint) return;
+    /* المقرر نفسه في أقسامٍ مختلفة يحمل رمزاً واحداً: يُجمَّع بالرمز لا بالرقم الداخلي. */
+    const key = String(course.CourseCode || course.CourseName).trim().toLowerCase();
+    const cur = byCourseKey.get(key) || { name: course.CourseName, who: new Set<string>() };
+    cur.who.add(fingerprint);
+    byCourseKey.set(key, cur);
+  };
+  for (const profile of input.profiles) {
+    if (profile.wishes && Number(profile.wishes.termId) === input.currentTermId) for (const id of profile.wishes.courseIds || []) add(id, profile.fingerprint);
+  }
+  for (const row of currentRows) for (const id of row.courseIds || []) add(id, row.fingerprint);
+  const ranked = [...byCourseKey.values()].map(v => ({ name: v.name, students: v.who.size })).sort((a, b) => b.students - a.students || a.name.localeCompare(b.name, "ar"));
+  const demandTop = ranked.filter(r => r.students >= DEMAND_MIN_STUDENTS).slice(0, DEMAND_TOP);
+  const demandHidden = ranked.filter(r => r.students < DEMAND_MIN_STUDENTS).length;
+
   return {
     generatedAt: input.now.toISOString(),
     term: term ? { id: Number(term.AdTermId), name: term.AdTermName } : null,
@@ -199,5 +226,6 @@ export function buildAudienceStats(input: AudienceInput): AudienceStats {
       ctr: adTotals.ctr,
     },
     reach: { studentsMin: Math.max(everyone.size, input.profiles.length), instructors: opened },
+    demand: { top: demandTop, hidden: demandHidden, minStudents: DEMAND_MIN_STUDENTS },
   };
 }

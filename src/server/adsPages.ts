@@ -9,8 +9,9 @@
  */
 import type { AdCampaign, AdCreative, AdStatsDay } from "../types";
 import type { AudienceStats } from "../utils/audienceStats";
-import { AD_RULES, AD_SLOTS, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase } from "../utils/adsEngine";
+import { AD_RULES, AD_SLOTS, TRIAL_DAYS, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase, type WeeklyCompare } from "../utils/adsEngine";
 import { AR, countOf } from "../utils/arabicCount";
+import { SEASONS, seasonLabel, type CalendarItem } from "../utils/adSeasons";
 
 export const esc = (value: unknown): string =>
   String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -26,7 +27,7 @@ const dateAr = (day: string): string => {
 export const approx = (n: number): string => {
   if (n < 100) return fmt(n);
   const step = n < 1000 ? 50 : n < 10000 ? 100 : 500;
-  return `${fmt(Math.floor(n / step) * step)}+`;
+  return `<bdi dir="ltr">${fmt(Math.floor(n / step) * step)}+</bdi>`;
 };
 
 const PHASE_LABEL: Record<AdPhase, string> = { draft: "مسودة", paused: "موقوفة", scheduled: "مجدولة", live: "تعمل الآن", ended: "منتهية" };
@@ -53,7 +54,7 @@ h2{font-size:19px;margin:34px 0 12px}
 .kpi small{display:block;color:var(--muted);font-size:12px;margin-top:4px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:var(--shadow)}
 .chart{width:100%;height:auto;display:block}
-.chart text{fill:var(--muted);font-size:11px}
+.axis{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px;margin-top:6px}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:start}
 th{color:var(--muted);font-weight:600;font-size:12.5px}
@@ -66,6 +67,7 @@ td.n{font-variant-numeric:tabular-nums}
 .bar{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .slot{display:grid;gap:10px;grid-template-columns:minmax(0,1fr) 190px;align-items:center}
 .mock{border:1.5px dashed var(--accent);border-radius:10px;background:var(--soft);display:grid;place-items:center;color:var(--accent);font-size:12px;max-width:100%}
+.cal{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.cal-i{border:1px solid var(--line);border-inline-start:5px solid var(--c);border-radius:14px;padding:10px 12px;display:grid;gap:1px;background:var(--card)}.cal-i.now{background:var(--soft)}.cal-i span{color:var(--muted);font-size:12.5px}.cal-i small{color:var(--muted);font-size:12px}
 .rules{margin:0;padding-inline-start:20px}.rules li{margin:6px 0}
 footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
 @media (max-width:560px){.slot{grid-template-columns:1fr}.hero{padding:22px 18px}}
@@ -99,12 +101,12 @@ function barChart(series: Array<{ day: string; a: number; b?: number }>, labelA:
     ? `<polyline fill="none" stroke="var(--accent2)" stroke-width="2.2" stroke-linejoin="round" points="${series.map((p, i) => `${(W - padL - step * (i + 1) + step / 2).toFixed(1)},${(H - padB - ((p.b || 0) / maxB) * (H - padB - padT)).toFixed(1)}`).join(" ")}"/>`
     : "";
   const first = series[0].day.slice(5), last = series[series.length - 1].day.slice(5);
+  /* التسميات خارج الـSVG: النصُّ داخله يُقصّ على الحواف في الاتجاه من اليمين إلى اليسار. */
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(labelA)}">
 <line x1="${padL}" x2="${W - padL}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line)"/>
 <line x1="${padL}" x2="${W - padL}" y1="${y(max / 2)}" y2="${y(max / 2)}" stroke="var(--line)" stroke-dasharray="3 5"/>
-${bars}${line}
-<text x="${W - padL}" y="${H - 8}" text-anchor="end">${esc(first)}</text><text x="${padL}" y="${H - 8}" text-anchor="start">${esc(last)}</text>
-<text x="${W - padL}" y="${padT - 2}" text-anchor="end">${esc(labelA)}: الذروة ${fmt(max)}${labelB ? ` · ${esc(labelB)} (الخط)` : ""}</text></svg>`;
+${bars}${line}</svg>
+<div class="axis"><bdi dir="ltr">${esc(first)}</bdi><span>${esc(labelA)}: الذروة ${fmt(max)}${labelB ? ` · ${esc(labelB)} (الخط)` : ""}</span><bdi dir="ltr">${esc(last)}</bdi></div>`;
 }
 
 export interface CampaignReportInput {
@@ -114,6 +116,36 @@ export interface CampaignReportInput {
   liveInSlot: number;
   today?: string;
   nonce: string;
+  /** الأسبوع مقابل الماضي. */
+  weekly?: WeeklyCompare;
+  /** متوسط نسبة النقر لباقي حملات الموقع، أو null/undefined إن قلّت العيّنة. */
+  benchmarkCtr?: number | null;
+}
+
+const arrow = (v: number | null): string => (v === null ? "—" : v > 0 ? `▲ ${pct(v)}` : v < 0 ? `▼ ${pct(Math.abs(v))}` : "ثابت");
+const tone = (v: number | null): string => (v === null || v === 0 ? "var(--muted)" : v > 0 ? "var(--accent)" : "#b42318");
+
+/** بطاقةُ الأسبوع: ما جرى في آخر ٧ أيام مقارنةً بالسبعة قبلها. */
+function weeklyCard(w: WeeklyCompare): string {
+  return `<h2>هذا الأسبوع مقابل الأسبوع الماضي</h2>
+<div class="grid">
+  <div class="kpi"><b>${fmt(w.thisWeek.impressions)}</b><span>ظهور مرئي</span><small style="color:${tone(w.impressionsChange)}">${w.hasLastWeek ? arrow(w.impressionsChange) : "لا أسبوع سابق للمقارنة"}</small></div>
+  <div class="kpi"><b>${fmt(w.thisWeek.clicks)}</b><span>عدد النقرات الصحيحة</span><small style="color:${tone(w.clicksChange)}">${w.hasLastWeek ? arrow(w.clicksChange) : "—"}</small></div>
+  <div class="kpi"><b>${pct(w.thisWeek.ctr)}</b><span>نسبة النقر</span><small>${w.hasLastWeek ? `الأسبوع الماضي ${pct(w.lastWeek.ctr)}` : "—"}</small></div>
+</div>`;
+}
+
+/** خلاصةُ التجربة المجانية: أرقامها بعبارةٍ واحدة، وما بعدها. */
+function trialCard(args: { phase: AdPhase; totals: ReturnType<typeof totalsOf>; benchmark: number | null | undefined; days: number }): string {
+  const { totals: t, benchmark } = args;
+  const verdict = benchmark == null ? "" : t.ctr >= benchmark
+    ? `نسبة نقر إعلانك (${pct(t.ctr)}) أعلى من متوسط حملات هذا الموقع (${pct(benchmark)}).`
+    : `نسبة نقر إعلانك (${pct(t.ctr)}) دون متوسط حملات هذا الموقع (${pct(benchmark)}) — جرّب صورةً أو عرضاً أوضح.`;
+  const ended = args.phase === "ended";
+  return `<h2>خلاصة التجربة المجانية</h2>
+<div class="card"><p style="margin:0 0 8px"><b>${ended ? "انتهت تجربتك" : "تجربتك جارية"}</b> (${countOf(TRIAL_DAYS, AR.day)} كحدٍّ أقصى): وصل إعلانك إلى نحو <b>${fmt(t.uniques)}</b> مشاهدٍ، وظهر <b>${countOf(t.impressions, AR.visit)}</b>، ونقر عليه <b>${fmt(t.clicks)}</b>.</p>
+${verdict ? `<p style="margin:0 0 8px">${esc(verdict)}</p>` : ""}
+<p class="note" style="margin:0">${ended ? "لمواصلة الظهور في مساحةٍ ثابتة بعد التجربة، تواصل مع الإدارة التي أرسلت لك هذا الرابط." : "عند انتهاء التجربة يتوقف الإعلان تلقائياً، وتبقى أرقامك في هذه الصفحة."}</p></div>`;
 }
 
 export function campaignReportPage(input: CampaignReportInput): string {
@@ -153,6 +185,8 @@ export function campaignReportPage(input: CampaignReportInput): string {
   <div class="kpi"><b>${fmt(totals.clicks)}</b><span>عدد النقرات الصحيحة</span><small>بعد استبعاد الروبوتات والتكرار</small></div>
   <div class="kpi"><b>${pct(totals.ctr)}</b><span>نسبة النقر</span><small>النقرات ÷ الظهور</small></div>
 </div>
+${c.trial ? trialCard({ phase, totals, benchmark: input.benchmarkCtr, days: series.length }) : ""}
+${input.weekly && (input.weekly.hasLastWeek || input.weekly.thisWeek.impressions > 0) ? weeklyCard(input.weekly) : ""}
 <h2>الأداء اليومي</h2>
 <div class="card">${barChart(series.map(p => ({ day: p.day, a: p.impressions, b: p.clicks })), "الظهور", "النقرات")}</div>
 ${input.liveInSlot > 1 ? `<p class="note">يتناوب في هذا الموقع ${countOf(input.liveInSlot, AR.campaign)}، فحصتك المتوقعة من الظهور نحو ${pct(share * 100)}.</p>` : ""}
@@ -170,8 +204,21 @@ ${breakdown.length > 1 ? `<h2>مقارنة الصورتين (A/B)</h2><div class
 <footer>SCHEDULE · تقريرٌ سرّي بين الإدارة والشركة · ${esc(dateAr(today))}</footer>`);
 }
 
+/** تقويمُ المواسم: متى يكون الطالب في موسم التسجيل أو بدء الفصل أو نهايته، لتختار الشركةُ موسمَ منتجها. */
+function seasonCalendarHtml(items: CalendarItem[], active: string[]): string {
+  const upcoming = items.slice(0, 12);
+  if (!upcoming.length) return "";
+  const COLORS: Record<string, string> = { registration: "var(--accent)", start: "var(--accent2)", middle: "#6b7f8c", finals: "#a0522d", break: "#8a8f98" };
+  return `<h2>تقويم المواسم</h2>
+<div class="card"><p class="note" style="margin-top:0">اختر الموسم الأنسب لمنتجك؛ يمكن ربط إعلانك بموسمٍ أو أكثر فلا يظهر إلا فيه. الموسم الجاري الآن: <b>${active.length ? active.map(seasonLabel).map(esc).join("، ") : "—"}</b>.</p>
+<div class="cal">${upcoming.map(i => `<div class="cal-i${i.now ? " now" : ""}" style="--c:${COLORS[i.season] || "var(--accent)"}"><b>${esc(i.label)}</b><span>${esc(i.term)}</span><small>${esc(dateAr(i.from))} ← ${esc(dateAr(i.to))}${i.now ? " · الآن" : ""}</small></div>`).join("")}</div>
+<p class="note">${SEASONS.map(s => `<b>${esc(s.label)}:</b> ${esc(s.hint)}`).join(" · ")}</p></div>`;
+}
+
 export interface PartnerKitInput {
   stats: AudienceStats;
+  calendar?: CalendarItem[];
+  activeSeasons?: string[];
   liveBySlot: Record<string, number>;
   today?: string;
   nonce: string;
@@ -196,6 +243,8 @@ export function partnerKitPage(input: PartnerKitInput): string {
   ${hasVisits ? `<div class="kpi"><b>${approx(s.visits.last30)}</b><span>زيارة في آخر ٣٠ يوماً</span><small>مقيسة منذ ${esc(dateAr(s.visits.since))}</small></div>` : ""}
 </div>
 ${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2><div class="card">${barChart(s.visits.series.map(p => ({ day: p.day, a: p.count })), "الزيارات")}<p class="note">الذروة تأتي غالباً يوم ${esc(s.visits.peakDay || "—")}؛ ونسبة الجوال ${pct(s.visits.mobileRate)} ونسبة العائدين ${pct(s.visits.returningRate)}.</p></div>` : `<p class="note">قياس الزيارات اليومية فعّالٌ ويتراكم يوماً بعد يوم، وتظهر أرقامه هنا فور توفر بياناتٍ كافية.</p>`}
+${s.demand.top.length >= 3 ? `<h2>ما يبحث عنه الطلبة هذا الفصل</h2><div class="card"><table><thead><tr><th>المقرر</th><th>طلبةٌ يريدونه</th></tr></thead><tbody>${s.demand.top.slice(0, 6).map(d => `<tr><td>${esc(d.name)}</td><td class="n">${approx(d.students)}</td></tr>`).join("")}</tbody></table><p class="note">أعدادٌ تقريبية مجمّعة، ولا يظهر مقررٌ يطلبه أقل من ${countOf(s.demand.minStudents, AR.student)} مختلفين.</p></div>` : ""}
+${seasonCalendarHtml(input.calendar || [], input.activeSeasons || [])}
 <h2>أين يظهر إعلانك</h2>
 <div class="card">${AD_SLOTS.map(slot => {
   const live = input.liveBySlot[slot.id] || 0;
@@ -213,4 +262,43 @@ ${hasVisits ? `<h2>الزيارات اليومية (آخر ٣٠ يوماً)</h2>
   <li>حملةٌ تجريبية قصيرة بتقريرٍ كامل لتجرّب قبل أن تلتزم.</li>
 </ul></div>
 <footer>SCHEDULE · ${esc(dateAr(today))} · الأرقام تقريبية ومجمّعة ولا تحمل أي هوية</footer>`);
+}
+
+/** سياسةُ القياس والإعلانات: صفحةٌ عامة بلا رمز، يصل إليها الطالب من السطر تحت كل إعلان. كلُّ سطرٍ فيها يصف ما يفعله الكود فعلاً. */
+export function measurementPage(nonce: string): string {
+  const li = (items: string[]) => `<ul class="rules">${items.map(i => `<li>${i}</li>`).join("")}</ul>`;
+  return page("كيف نقيس الزيارات ونعرض الإعلانات", nonce, `
+<section class="hero">
+  <p class="brand">SCHEDULE · نظام القرار الأكاديمي</p>
+  <h1>كيف نقيس الزيارات ونعرض الإعلانات</h1>
+  <p class="lead">باختصار: نعدّ كم شخصاً زار الصفحة وكم مرةً ظهر إعلان، ولا نعرف من أنت ولا نتتبّعك.</p>
+</section>
+<h2>ما الذي نقيسه؟</h2>
+<div class="card">${li([
+  "<b>زيارةٌ واحدة في اليوم</b> لكل نوع صفحة (مثل «مساري» أو الجدول العام) من كل متصفح، لنعرف حجم من يستعمل البرنامج.",
+  "هل هذه أول زيارةٍ لك أم عدتَ، وهل تتصفح من جوالٍ أم حاسوب، وفي أي ساعةٍ من اليوم.",
+  "<b>ظهور الإعلان:</b> يُحتسب بعد أن يبقى نصفه ظاهراً على شاشتك ثانيةً كاملة. و<b>نقرته</b> عند فتحه.",
+  "عددُ الطلبة الذين يريدون كل مقرر، <b>مجمّعاً</b>، ولا يظهر مقررٌ يطلبه أقل من عشرة طلابٍ مختلفين.",
+])}</div>
+<h2>وما الذي لا نقيسه؟</h2>
+<div class="card">${li([
+  "لا اسمك ولا رقمك المدني ولا بريدك ولا موقعك الجغرافي.",
+  "لا نربط زيارتك بحسابٍ أو بملفّك، ولا نبني سجلَّ تصفّحٍ ولا «بصمةً» لجهازك.",
+  "لا نخزّن عنوان الاتصال (IP): يُستعمل في ذاكرة الخادم لدقيقةٍ واحدة لمنع الإساءة وتكرار النقر، ثم يزول.",
+  "لا نستعمل شبكات إعلانٍ ولا أدوات تتبّعٍ خارجية؛ الإعلانات صورٌ تُخدم من الموقع نفسه.",
+])}</div>
+<h2>ما الذي يُحفظ في متصفحك؟</h2>
+<div class="card">${li([
+  "مفاتيح صغيرة في التخزين المحلي (تبدأ بـ <bdi dir=\"ltr\">adx:</bdi>) تُخبر متصفحك أنك زرتَ اليوم فلا تُعدّ مرتين، وتحدّ عدد مرات ظهور الإعلان نفسه لك في اليوم.",
+  "يمكنك مسحها في أي وقتٍ من إعدادات المتصفح؛ لا يتأثر عملك في البرنامج بذلك.",
+  "إن منعتَ التخزين لن نعرف أنك زرتَ اليوم، فقد تُحتسب كل زيارة؛ لا شيء آخر يتغيّر.",
+])}</div>
+<h2>عن الإعلانات</h2>
+<div class="card">${li([
+  "كل إعلانٍ موسومٌ بكلمة «إعلان» أو «برعاية»، ولا يظهر في صفحات الهوية والاستبيان وحالة الطلب الشخصية والاعتماد والطباعة والتقويم.",
+  "عند الضغط على إعلانٍ تنتقل إلى موقع المعلن، وله سياسته الخاصة.",
+  "لا يُعرض إعلانٌ إلا بعد مراجعته واعتماده من إدارة النظام، ولها إيقافه فوراً.",
+  "تُوقف الإعلانات تلقائياً في موعد انتهاء كل حملة.",
+])}</div>
+<footer>SCHEDULE · هذه الصفحة تصف ما يفعله البرنامج فعلاً؛ وتتغيّر معه إن تغيّر.</footer>`);
 }

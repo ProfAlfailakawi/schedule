@@ -8,6 +8,7 @@
  * التواريخ أيامٌ بتوقيت الكويت (UTC+3) والنهاية شاملة.
  */
 import type { AdCampaign, AdStatsDay } from "../types";
+import { SEASON_IDS } from "./adSeasons";
 
 export interface AdSlotSpec {
   id: string;
@@ -28,6 +29,7 @@ export const AD_SLOTS: readonly AdSlotSpec[] = [
   { id: "me", label: "«مساري»", where: "أسفل البطاقة الرئيسية في «مساري» (/me)", audience: "students", width: 640, height: 200, capacity: 5 },
   { id: "schedule", label: "الجدول العام", where: "أسفل جدول القسم وجدول الطلبة (QR)", audience: "students", width: 640, height: 160, capacity: 3 },
   { id: "status", label: "حالة الطلب", where: "أسفل صفحة «حالة طلبي»", audience: "students", width: 600, height: 250, capacity: 3 },
+  { id: "break", label: "محطة الاستراحة", where: "داخل «تذكرتي» في «مساري» حين يكون للطالب فراغ ساعةٍ فأكثر بين محاضراته", audience: "students", width: 480, height: 160, capacity: 3 },
   { id: "dashboard", label: "لوحة الكادر", where: "بطاقة في لوحة الأساتذة والإداريين", audience: "staff", width: 480, height: 160, capacity: 3 },
 ] as const;
 
@@ -136,7 +138,35 @@ export function phaseOf(campaign: AdCampaign, today = kuwaitDay()): AdPhase {
 
 const overlaps = (a: Pick<AdCampaign, "startDay" | "endDay">, b: Pick<AdCampaign, "startDay" | "endDay">) => a.startDay <= b.endDay && b.startDay <= a.endDay;
 
-export interface Candidate { id?: string; company: string; category: string; slot: string; startDay: string; endDay: string }
+export interface Candidate { id?: string; company: string; category: string; slot: string; startDay: string; endDay: string; seasons?: string[]; colleges?: number[] }
+
+/* ── الاستهداف: المواسم والكليات ── */
+export const cleanSeasons = (raw: unknown): string[] =>
+  [...new Set((Array.isArray(raw) ? raw : []).map(v => String(v)).filter(v => SEASON_IDS.includes(v)))];
+export const cleanColleges = (raw: unknown): number[] =>
+  [...new Set((Array.isArray(raw) ? raw : []).map(v => Number(v)).filter(v => Number.isInteger(v) && v > 0))].slice(0, 60);
+
+/** قائمتان تتقاطعان؟ الفارغة تعني «الكل» فتتقاطع مع أي قائمة. */
+const listsMeet = <T,>(a: readonly T[] | undefined, b: readonly T[] | undefined): boolean =>
+  !a || !a.length || !b || !b.length || a.some(v => b.includes(v));
+/** حملتان قد تظهران أمام الطالب نفسه في اللحظة نفسها؟ (مواسمُهما وكلياتُهما تتقاطعان) */
+export const targetsOverlap = (a: Pick<Candidate, "seasons" | "colleges">, b: Pick<Candidate, "seasons" | "colleges">): boolean =>
+  listsMeet(a.seasons, b.seasons) && listsMeet(a.colleges, b.colleges);
+
+export interface AdContext {
+  today?: string;
+  /** المواسم الفاعلة الآن (utils/adSeasons). */
+  seasons?: readonly string[];
+  /** كلية الطالب إن عرفتها الصفحة (روابط الجدول والحالة)، وإلا undefined. */
+  collegeId?: number;
+}
+/** هل تُعرض هذه الحملة الآن في هذا السياق؟ التواريخ والاعتماد ثم الموسم ثم الكلية. */
+export function eligibleNow(campaign: AdCampaign, ctx: AdContext = {}): boolean {
+  if (!isLive(campaign, ctx.today)) return false;
+  if (campaign.seasons?.length && !campaign.seasons.some(s => ctx.seasons?.includes(s))) return false;
+  if (campaign.colleges?.length && !(ctx.collegeId && campaign.colleges.includes(ctx.collegeId))) return false;
+  return true;
+}
 
 /** يتحقق من بيانات الحملة نفسها قبل الحفظ. يُرجع قائمة أسباب الرفض (فارغة = سليمة). */
 export function campaignProblems(input: Candidate): string[] {
@@ -144,6 +174,7 @@ export function campaignProblems(input: Candidate): string[] {
   if (!slotById(input.slot)) out.push("اختر موقعاً صحيحاً.");
   if (!String(input.company || "").trim()) out.push("اسم الشركة مطلوب.");
   if (!String(input.category || "").trim()) out.push("الفئة مطلوبة.");
+  if (input.seasons?.some(s => !SEASON_IDS.includes(s))) out.push("موسمٌ غير معروف.");
   if (!isDay(input.startDay) || !isDay(input.endDay)) out.push("تاريخا البداية والنهاية مطلوبان بصيغة YYYY-MM-DD.");
   else {
     if (input.endDay < input.startDay) out.push("تاريخ النهاية قبل تاريخ البداية.");
@@ -159,10 +190,10 @@ export function campaignProblems(input: Candidate): string[] {
 export function placementProblems(input: Candidate, others: readonly AdCampaign[]): string[] {
   const slot = slotById(input.slot);
   if (!slot || !isDay(input.startDay) || !isDay(input.endDay)) return [];
-  const same = others.filter(c => c.id !== input.id && c.slot === input.slot && c.status === "approved" && overlaps(c, input));
+  const same = others.filter(c => c.id !== input.id && c.slot === input.slot && c.status === "approved" && overlaps(c, input) && targetsOverlap(c, input));
   const out: string[] = [];
   const rival = same.find(c => c.category === input.category);
-  if (rival) out.push(`«${rival.company}» من الفئة نفسها (${input.category}) في هذا الموقع خلال ${rival.startDay} إلى ${rival.endDay}.`);
+  if (rival) out.push(`«${rival.company}» من الفئة نفسها (${input.category}) في هذا الموقع خلال ${rival.startDay} إلى ${rival.endDay}${rival.seasons?.length || rival.colleges?.length ? " ولجمهورٍ يتقاطع مع جمهورك" : ""}.`);
   const limit = slot.exclusive ? 1 : slot.capacity;
   const span = Math.min(daysBetween(input.startDay, input.endDay), 366);
   for (let i = 0; i <= span; i++) {
@@ -256,3 +287,42 @@ export const looksAutomated = (userAgent: unknown): boolean => {
   const ua = String(userAgent ?? "");
   return !ua || ua.length < 12 || /bot|crawl|spider|slurp|headless|preview|facebookexternalhit|curl|wget|python|httpclient|monitor|lighthouse/i.test(ua);
 };
+
+/* ── التجربة المجانية: سبعة أيام، ومرةً لكل شركة ── */
+export const TRIAL_DAYS = 7;
+const normCompany = (name: string): string => String(name || "").toLowerCase().replace(/[\s\u200e\u200f]+/g, " ").trim();
+
+/** أسبابُ رفض حملةٍ تجريبية: أطول من أسبوع، أو شركةٌ أخذت تجربتها من قبل. */
+export function trialProblems(input: { id?: string; company: string; trial?: boolean; startDay: string; endDay: string }, others: readonly AdCampaign[]): string[] {
+  if (!input.trial) return [];
+  const out: string[] = [];
+  if (isDay(input.startDay) && isDay(input.endDay) && daysBetween(input.startDay, input.endDay) + 1 > TRIAL_DAYS) out.push("الحملة التجريبية سبعة أيام كحدٍّ أقصى.");
+  const name = normCompany(input.company);
+  if (name && others.some(c => c.id !== input.id && c.trial && normCompany(c.company) === name)) out.push("هذه الشركة أخذت تجربتها المجانية من قبل؛ الحملة التجريبية مرةٌ واحدة لكل شركة.");
+  return out;
+}
+
+/* ── الأسبوع مقابل الأسبوع الماضي ── */
+export interface WeekTotals { impressions: number; uniques: number; clicks: number; ctr: number }
+export interface WeeklyCompare { thisWeek: WeekTotals; lastWeek: WeekTotals; impressionsChange: number | null; clicksChange: number | null; hasLastWeek: boolean }
+const changePct = (now: number, before: number): number | null => (before > 0 ? Math.round(((now - before) / before) * 1000) / 10 : null);
+
+/** آخر ٧ أيام (تنتهي اليوم) مقابل ٧ أيامٍ قبلها. التغيّر null حين لا أساس للمقارنة. */
+export function weeklyCompare(rows: readonly AdStatsDay[], today = kuwaitDay()): WeeklyCompare {
+  const sum = (from: string, to: string): WeekTotals => {
+    const t = totalsOf(rows.filter(r => r.day >= from && r.day <= to));
+    return { impressions: t.impressions, uniques: t.uniques, clicks: t.clicks, ctr: t.ctr };
+  };
+  const thisWeek = sum(addDays(today, -6), today);
+  const lastWeek = sum(addDays(today, -13), addDays(today, -7));
+  return { thisWeek, lastWeek, impressionsChange: changePct(thisWeek.impressions, lastWeek.impressions), clicksChange: changePct(thisWeek.clicks, lastWeek.clicks), hasLastWeek: lastWeek.impressions > 0 };
+}
+
+/** متوسط نسبة النقر لباقي حملات الموقع نفسه (≥٢٠٠ ظهور لكلٍّ) للمقارنة؛ null إن قلّت العيّنة (أقل من حملتين). */
+export function slotBenchmarkCtr(campaignId: string, slotId: string, campaigns: readonly AdCampaign[], stats: readonly AdStatsDay[]): number | null {
+  const rates = campaigns.filter(c => c.id !== campaignId && c.slot === slotId)
+    .map(c => totalsOf(stats.filter(r => r.campaignId === c.id)))
+    .filter(t => t.impressions >= 200).map(t => t.ctr);
+  if (rates.length < 2) return null;
+  return Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 10) / 10;
+}
