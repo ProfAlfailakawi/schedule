@@ -56,6 +56,8 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
   const set = <K extends keyof WizardForm>(k: K, v: WizardForm[K]) => setForm(f => ({ ...f, [k]: v }));
   const toggle = <T,>(list: T[], v: T): T[] => (list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
   const span = Math.round((Date.parse(`${form.endDay}T00:00:00Z`) - Date.parse(`${form.startDay}T00:00:00Z`)) / 86_400_000) + 1;
+  /* مواسم جاهزة من تقويم المواسم (غير المنقضية): نقرةٌ واحدة تملأ التواريخ والموسم المستهدَف. */
+  const seasonPresets = data.calendar.filter(i => i.to >= data.today).slice(0, 5);
   const finals = data.calendar.find(i => i.season === "finals" && i.to >= data.today)?.to;
   const seasonText = form.seasons.length ? form.seasons.map(id => data.seasons.find(s => s.id === id)?.label || id).join("، ") : "كل المواسم";
 
@@ -157,6 +159,16 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
               <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => quick(90)}>٩٠ يوماً</button>
               {finals ? <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" type="button" className="ad-chip" onClick={() => setForm(f => ({ ...f, endDay: finals, trial: false }))}>حتى نهاية الفصل <bdi>{dateShort(finals)}</bdi></button> : null}
             </div>
+            {seasonPresets.length ? (
+              <div className="ad-quick" role="group" aria-label="مواسم جاهزة">
+                <small className="ad-note">مواسم جاهزة:</small>
+                {seasonPresets.map(item => (
+                  <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={`${item.season}-${item.from}`} type="button" className={`ad-chip${form.seasons.length === 1 && form.seasons[0] === item.season && form.endDay === item.to ? " on" : ""}`} onClick={() => setForm(f => ({ ...f, startDay: item.from > data.today ? item.from : data.today, endDay: item.to, seasons: [item.season], trial: false }))}>
+                    {item.label} · {item.term}{item.now ? " (الآن)" : ""}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <label className="ad-field">رابط الوجهة (https)<input dir="ltr" value={form.linkUrl} onChange={e => set("linkUrl", e.target.value)} /></label>

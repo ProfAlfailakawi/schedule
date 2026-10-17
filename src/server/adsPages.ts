@@ -7,12 +7,16 @@
  *   تقرير الحملة : ما تراه شركةٌ واحدة عن حملتها وحدها، وطريقةُ العدّ بصراحة.
  *   ملف الشراكة  : ما تراه شركةٌ قبل أن تتعاقد: حجم الجمهور، والمواقع، والشروط.
  */
+import { createHash } from "crypto";
 import type { AdCampaign, AdCreative, AdStatsDay } from "../types";
 import type { AudienceStats } from "../utils/audienceStats";
 import { AD_RULES, TRIAL_DAYS, activeSlots, creativeBreakdown, dailySeries, daysLeft, expectedShare, kuwaitDay, phaseOf, slotById, totalsOf, type AdPhase, type WeeklyCompare } from "../utils/adsEngine";
-import { hourAr, peakSummary, wrapUp, type WrapUp } from "../utils/adInsights";
+import { conversionOf, hourAr, peakSummary, wrapUp, type WrapUp } from "../utils/adInsights";
 import { AR, countOf } from "../utils/arabicCount";
 import { SEASONS, seasonLabel, type CalendarItem } from "../utils/adSeasons";
+
+/** معرّفٌ عام للشارة مشتقٌّ من رمز التقرير بتجزئةٍ لا تُعكس: يُنشر في موقع الشركة دون أن يكشف الرمز السري. */
+export const badgeId = (reportToken: string): string => createHash("sha256").update(`badge:${reportToken}`).digest("hex").slice(0, 32);
 
 export const esc = (value: unknown): string =>
   String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -127,6 +131,8 @@ export interface CampaignReportInput {
   benchmarkCtr?: number | null;
   /** أصلُ الموقع (https://المضيف) لرابط اشتراك التقويم. */
   origin?: string;
+  /** نتيجة نموذج التبليغ عن التحويل: ok | bad. */
+  redemptionResult?: string;
 }
 
 const arrow = (v: number | null): string => (v === null ? "—" : v > 0 ? `▲ ${pct(v)}` : v < 0 ? `▼ ${pct(Math.abs(v))}` : "ثابت");
@@ -156,6 +162,13 @@ ${verdict ? `<p style="margin:0 0 8px">${esc(verdict)}</p>` : ""}
 }
 
 /** خلاصةُ الحملة المنتهية: ما حققته بعبارةٍ واحدة، وأقوى يومٍ وصورة، ثم دعوةُ التجديد. */
+/** أيامٌ متتالية من from إلى to (شاملة) بصيغة YYYY-MM-DD. */
+function daysList(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let t = Date.parse(`${from}T00:00:00Z`), end = Date.parse(`${to}T00:00:00Z`); t <= end && out.length < 400; t += 86_400_000) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+}
+
 function wrapUpCard(w: WrapUp, args: { company: string; labelOf: (id: string) => string; benchmark: number | null | undefined }): string {
   const t = w.totals;
   const lines: string[] = [
@@ -191,6 +204,30 @@ export function campaignReportPage(input: CampaignReportInput): string {
   const origin = (input.origin || "").replace(/\/$/, "");
   const endingBanner = phase === "live" && left <= 7
     ? `<div class="callout"><b>حملتكم تنتهي بعد ${esc(countOf(Math.max(0, left), AR.day))}</b><span>للتجديد أو تثبيت مكانكم في الفصل القادم تواصلوا مع إدارة البرنامج قبل الانتهاء.</span></div>` : "";
+  /* التحويل: تُبلِّغ الشركةُ بنفسها كم استعمل الكود؛ يُعرض لها بوسم «مُبلَّغ منكم» لا بوسم «موثَّق»، ولا يدخل أي مجموعٍ آخر. */
+  const conv = conversionOf(c.redemptions, totals.clicks);
+  const convCard = !c.coupon || phase === "scheduled" || phase === "draft" ? "" : (() => {
+    const days = daysList(c.startDay, c.endDay < today ? c.endDay : today).slice(-14).reverse();
+    const msg = input.redemptionResult === "ok" ? `<p class="note" style="color:var(--accent)">سُجِّل رقمكم. شكراً.</p>` : input.redemptionResult === "bad" ? `<p class="note" style="color:#b42318">تعذّر التسجيل: اختر يوماً ضمن الحملة (لا بعد اليوم) وأدخل عدداً صحيحاً.</p>` : "";
+    const rows = (c.redemptions || []).slice(-10).reverse().map(r => `<tr><td>${esc(dateAr(r.day))}</td><td class="n">${fmt(r.count)}</td></tr>`).join("");
+    return `<h2 id="redemptions">استعمال كود الخصم عندكم</h2>
+<div class="card"><p style="margin:0 0 8px">النقرات التي نقيسها نحن <b>موثَّقة</b>. أما استعمال الكود فلا نراه نحن، فإن أخبرتمونا به رسمنا لكم التحويل، ويبقى هذا الرقم <b>«مُبلَّغاً منكم»</b> ولا نعتمده في أي تقريرٍ آخر ولا نعرضه لغيركم.</p>
+${conv.total ? `<p style="margin:0 0 8px">عدد استعمالات الكود المُبلَّغة: <b>${fmt(conv.total)}</b>${conv.perClick != null ? ` (${pct(conv.perClick)} من نقراتكم الموثَّقة)` : ""}.${conv.note === "above-clicks" ? " ملاحظة: يفوق عدد النقرات؛ طبيعيٌّ إن شُورك الكود خارج الإعلان." : ""}</p>` : ""}
+${rows ? `<table><thead><tr><th>اليوم</th><th>استعمالات الكود</th></tr></thead><tbody>${rows}</tbody></table>` : ""}
+${msg}
+<form method="post" action="${esc(reportPath)}/redemptions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:10px">
+<label style="display:grid;gap:4px;font-size:13px">اليوم<select name="day" required style="padding:8px;border-radius:10px;border:1px solid var(--line);font:inherit">${days.map(d => `<option value="${d}">${esc(dateAr(d))}</option>`).join("")}</select></label>
+<label style="display:grid;gap:4px;font-size:13px">عدد الاستعمالات<input name="count" type="number" min="0" max="100000" step="1" required style="padding:8px;border-radius:10px;border:1px solid var(--line);font:inherit;inline-size:120px"></label>
+<button class="btn" type="submit">سجّل</button></form>
+<p class="note">اختياري تماماً. وروابطُ نقراتكم تحمل وسم <bdi dir="ltr">utm_source=schedule</bdi> لتتحققوا من أرقامنا في تحليلاتكم أنتم.</p></div>`;
+  })();
+  const badgeCard = c.status === "draft" || c.startDay > today || !origin ? "" : `
+<h2>شارة الشراكة</h2>
+<div class="card"><p style="margin:0 0 10px">ضعوها في موقعكم أو متجركم: تعلن أنكم شركاء SCHEDULE.</p>
+<p style="margin:0 0 10px"><img src="/partner-badge/${badgeId(c.reportToken)}.svg" alt="شريك SCHEDULE" width="320" height="92" style="max-width:100%;height:auto;border-radius:16px"></p>
+<p class="btnrow"><a class="btn" href="/partner-badge/${badgeId(c.reportToken)}.svg?dl=1">تنزيل الشارة</a></p>
+<p class="note" style="margin:6px 0 4px">أو انسخوا هذا الكود:</p>
+<textarea readonly rows="2" style="inline-size:100%;box-sizing:border-box;font:12px/1.5 ui-monospace,monospace;border:1px solid var(--line);border-radius:10px;padding:8px;direction:ltr">${esc(`<img src="${origin}/partner-badge/${badgeId(c.reportToken)}.svg" alt="شريك SCHEDULE" width="320">`)}</textarea></div>`;
   const calendarCard = phase === "ended" || c.endDay < today ? "" : `
 <h2>تنبيهاتٌ تصلك بلا حساب</h2>
 <div class="card"><p>لا حاجة لإنشاء حساب: اشترك بهذا الرابط في تقويم جوالك فيذكّرك بنفسه قبل انتهاء الحملة بأسبوع وفي يوم انتهائها، وكل أحدٍ بتقريرك الأسبوعي. وإن تغيّرت تواريخ الحملة يتحدّث وحده.</p>
@@ -219,7 +256,7 @@ export function campaignReportPage(input: CampaignReportInput): string {
 </div>
 ${c.trial ? trialCard({ phase, totals, benchmark: input.benchmarkCtr, days: series.length }) : ""}
 ${phase === "ended" && totals.impressions > 0 ? wrapUpCard(wrapUp(stats, creatives.map(x => x.id)), { company: c.company, labelOf, benchmark: input.benchmarkCtr }) : ""}
-${endingBanner}${input.weekly && (input.weekly.hasLastWeek || input.weekly.thisWeek.impressions > 0) ? weeklyCard(input.weekly) : ""}${calendarCard}
+${endingBanner}${convCard}${input.weekly && (input.weekly.hasLastWeek || input.weekly.thisWeek.impressions > 0) ? weeklyCard(input.weekly) : ""}${calendarCard}
 <h2>الأداء اليومي</h2>
 <div class="card">${barChart(series.map(p => ({ day: p.day, a: p.impressions, b: p.clicks })), "الظهور", "النقرات")}</div>
 ${input.liveInSlot > 1 ? `<p class="note">يتناوب في هذا الموقع ${countOf(input.liveInSlot, AR.campaign)}، فحصتك المتوقعة من الظهور نحو ${pct(share * 100)}.</p>` : ""}
@@ -227,6 +264,7 @@ ${c.coupon ? `<h2>كود الخصم</h2><div class="card"><b style="font-size:22
 ${breakdown.length > 1 ? `<h2>مقارنة الصورتين (A/B)</h2><div class="card"><table><thead><tr><th>الصورة</th><th>ظهور</th><th>نقرات</th><th>نسبة النقر</th></tr></thead><tbody>${breakdown.map(r => `<tr><td>${esc(labelOf(r.creativeId))}${best && best.creativeId === r.creativeId ? " ⭐" : ""}</td><td class="n">${fmt(r.impressions)}</td><td class="n">${fmt(r.clicks)}</td><td class="n">${pct(r.ctr)}</td></tr>`).join("")}</tbody></table>${best ? `<p class="note">الأعلى نقراً حتى الآن: «${esc(labelOf(best.creativeId))}».</p>` : ""}</div>` : ""}
 <h2>تصميم الإعلان</h2>
 <div class="pre">${creatives.map(cr => `<figure><img src="/_ads/img/${esc(cr.id)}" alt="${esc(cr.label)}" width="${cr.width}" height="${cr.height}" loading="lazy"><figcaption>${esc(cr.label)} · <bdi dir="ltr">${cr.width}×${cr.height}</bdi></figcaption></figure>`).join("")}</div>
+${badgeCard}
 <h2>كيف نعدّ؟</h2>
 <div class="card"><ul class="rules">
   <li><b>الظهور المرئي:</b> يُحتسب بعد أن يبقى نصف الإعلان على الأقل ظاهراً على الشاشة ثانيةً كاملة والصفحة مفتوحة.</li>

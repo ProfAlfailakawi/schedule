@@ -291,6 +291,20 @@ export function creativeBreakdown(rows: readonly AdStatsDay[]): Array<{ creative
   return ids.map(creativeId => ({ creativeId, ...totalsOf(rows.filter(r => r.creativeId === creativeId)) }));
 }
 
+/* ── الرابط المتتبَّع: تستطيع الشركة التحقق من أرقامنا في تحليلاتها هي ──
+   يُضاف إلى وجهة النقر وسمُ utm (المصدر والوسيط والحملة) ما لم يكن في الرابط أصلاً أيُّ utm_*، فلا نعبث بوسوم الشركة. */
+export function trackedLink(url: string, campaign: Pick<AdCampaign, "id" | "slot">): string {
+  try {
+    const u = new URL(url);
+    if ([...u.searchParams.keys()].some(k => k.toLowerCase().startsWith("utm_"))) return url;
+    u.searchParams.set("utm_source", "schedule");
+    u.searchParams.set("utm_medium", "banner");
+    u.searchParams.set("utm_campaign", `ad-${campaign.id.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase()}`);
+    u.searchParams.set("utm_content", campaign.slot);
+    return u.toString();
+  } catch { return url; }
+}
+
 /* ── كودُ الخصم ── */
 export const cleanCoupon = (raw: unknown): string => String(raw ?? "").toUpperCase().replace(/[^A-Z0-9؀-ۿ_-]/g, "").slice(0, 24);
 

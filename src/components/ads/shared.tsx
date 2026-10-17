@@ -19,7 +19,7 @@ export interface Campaign {
   creatives: Creative[]; totals: Totals; breakdown: Array<{ creativeId: string } & Totals>; sharePct: number; reportUrl: string;
   seasons?: string[]; colleges?: number[]; series: Array<{ day: string; impressions: number; clicks: number }>;
   weekly?: { thisWeek: WeekTotals; lastWeek: WeekTotals; impressionsChange: number | null; clicksChange: number | null; hasLastWeek: boolean };
-  ab?: AbVerdict; contactEmail?: string; mailLog?: { weekly?: string; renewal?: string };
+  ab?: AbVerdict; conversion?: { total: number; days: number; perClick: number | null; note: "none" | "ok" | "above-clicks" }; contactEmail?: string; mailLog?: { weekly?: string; renewal?: string };
   createdAt: string;
 }
 export interface Season { id: string; label: string; hint: string }

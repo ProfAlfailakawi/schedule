@@ -21,6 +21,9 @@ var ls=null;try{ls=window.localStorage;ls.setItem("adx:t","1");ls.removeItem("ad
 function get(k){try{return ls?ls.getItem(k):null}catch(e){return null}}
 function put(k,v){try{if(ls)ls.setItem(k,v)}catch(e){}}
 var day=new Date(Date.now()+10800000).toISOString().slice(0,10);
+/* سقفُ الظهور اليومي للمتصفح الواحد عبر كل الحملات: بعده لا يُعرض إعلانٌ حتى الغد، فلا يُرهَق الطالب بكثرة الإعلانات. */
+var DAILY_CAP=60;
+function dailyTotal(){return parseInt(get("adx:t:"+day)||"0",10)||0}
 function post(url,obj,beacon){
  var body=JSON.stringify(obj);
  try{
@@ -81,9 +84,11 @@ function flush(beacon){
  if(queue.length)timer=setTimeout(function(){flush(false)},800);
 }
 function record(it){
+ if(dailyTotal()>=DAILY_CAP)return;
  var uk="adx:u:"+it.c+":"+day,nk="adx:n:"+it.c+":"+day;
  var u=get(uk)?0:1;if(u)put(uk,"1");
  put(nk,String((parseInt(get(nk)||"0",10)||0)+1));
+ put("adx:t:"+day,String(dailyTotal()+1));
  queue.push({c:it.c,k:it.k,u:u});
  if(!timer)timer=setTimeout(function(){flush(false)},1500);
 }
@@ -135,6 +140,7 @@ function stage(items,w,h,auto,wrap){
 var PV={};
 function mount(box,slot,opt){
 if(!box||!slot)return;
+if(dailyTotal()>=DAILY_CAP)return;
 box.classList.add("adx");
 fetch("/_ads/serve?slot="+encodeURIComponent(slot)+(tok?"&t="+encodeURIComponent(tok):"")+(!tok&&opt&&opt.college>0?"&c="+encodeURIComponent(opt.college):""),{credentials:"omit",cache:"no-store"})
 .then(function(r){return r.ok?r.json():null})

@@ -19,21 +19,22 @@ import { Repository } from "../db/repository";
 import type { AdCampaign, AdCourse, AdCreative, AdStatsDay, AdTerm, AudienceDay, InstructorRequest, StudentNeed, StudentProfile } from "../types";
 import { PUBLIC_LINK_PAGE_PREFIXES, isDemoLinkToken } from "../utils/demoLinkToken";
 import {
-  AD_CATEGORIES, AD_MAX_BYTES, AD_RULES, AD_SLOTS, MAX_ROTATE_CREATIVES, campaignProblems, cleanColleges, cleanCoupon, cleanLink, cleanSeasons, eligibleNow,
+  trackedLink, AD_CATEGORIES, AD_MAX_BYTES, AD_RULES, AD_SLOTS, MAX_ROTATE_CREATIVES, campaignProblems, cleanColleges, cleanCoupon, cleanLink, cleanSeasons, eligibleNow,
   creativeBreakdown, creativeProblem, daysBetween, daysLeft, endingSoon, expectedShare, isLive, kuwaitDay, kuwaitHour,
   looksAutomated, nextFreeDay, phaseOf, placementProblems, readImageInfo, rotationOrder, slotById, totalsOf, dailySeries,
   trialProblems, weeklyCompare, slotBenchmarkCtr, TRIAL_DAYS, normCompany, activeSlots,
 } from "../utils/adsEngine";
 import { buildAudienceStats } from "../utils/audienceStats";
 import { reportCalendar } from "../utils/adCalendar";
-import { abVerdict } from "../utils/adInsights";
+import { abVerdict, conversionOf } from "../utils/adInsights";
+import { partnerBadgeSvg } from "../utils/adBadge";
 import { cleanEmail, mailConfig, renewalMail, sendMail, weekKey, weeklyMail } from "./adMailer";
 import { SEASONS, activeSeasons, seasonCalendar, seasonsText } from "../utils/adSeasons";
 import { AR, countOf } from "../utils/arabicCount";
 import type { CenterNotification } from "../utils/notificationCenter";
 import { AD_CLIENT_SCRIPT } from "./adClientScript";
 import { analyzeCreative } from "./adQuality";
-import { campaignReportPage, measurementPage, partnerKitPage } from "./adsPages";
+import { badgeId, campaignReportPage, measurementPage, partnerKitPage } from "./adsPages";
 
 /** إشعاراتُ الجرس لحساب الإدارة الرئيسي: حملاتٌ تنتهي قريباً أو انتهت هذه الأيام، ليُجدَّد معها أو تُؤرشف. */
 export async function adNotifications(today = kuwaitDay()): Promise<CenterNotification[]> {
@@ -278,6 +279,7 @@ async function campaignView(c: AdCampaign, stats: AdStatsDay[], heads: Array<Omi
     creatives,
     totals: totalsOf(mine),
     breakdown: creativeBreakdown(mine),
+    conversion: conversionOf(c.redemptions, totalsOf(mine).clicks),
     ab: abVerdict(c.creativeIds.map(id => creativeBreakdown(mine).find(b => b.creativeId === id) ?? { creativeId: id, impressions: 0, clicks: 0 })),
     series: dailySeries(mine, c.startDay, c.endDay, today).slice(-30),
     weekly: weeklyCompare(mine, today),
@@ -437,7 +439,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const ip = String(req.ip || "?");
     const filtered = looksAutomated(req.headers["user-agent"]) || clickWasRepeat(`${ip}|${String(req.headers["user-agent"] || "").slice(0, 160)}|${campaign.id}`) || !underLimit(`click|${ip}`, 120);
     bumpStat(campaign.id, creativeId, filtered ? { filteredClicks: 1 } : { clicks: 1 });
-    res.redirect(302, campaign.linkUrl);
+    res.redirect(302, trackedLink(campaign.linkUrl, campaign));
   });
 
   app.post("/_ads/e", express.json({ limit: "8kb" }), async (req, res) => {
@@ -485,6 +487,39 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     res.send(measurementPage(deps.publicPageNonce(res)));
   });
 
+  /* شارة «شريك SCHEDULE»: صورةٌ ثابتة بمعرّفٍ عام مشتقٍّ من الرمز ولا يكشفه (الشارة تُنشر في موقع الشركة، فلا يجوز أن يحمل رمز التقرير). تتغيّر بتجديد الرمز. لا تُصدَر لمسودة أو لحملةٍ لم تبدأ. */
+  app.get("/partner-badge/:id.svg", async (req, res) => {
+    const id = String(req.params.id || "");
+    const campaign = /^[0-9a-f]{32}$/.test(id) ? (await Repository.listAdCampaigns()).find(c => badgeId(c.reportToken) === id) : undefined;
+    if (!campaign || campaign.status === "draft" || campaign.startDay > kuwaitDay()) { missing(res); return; }
+    noindex(res);
+    res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+    if (req.query.dl) res.setHeader("Content-Disposition", 'attachment; filename="schedule-partner.svg"');
+    res.send(partnerBadgeSvg(campaign));
+  });
+
+  /* تبليغُ الشركة عن استعمال الكود في يوم (نموذجٌ عادي بلا سكربت). غير موثَّق: يُعرض لها ولمديرها بوسم «مُبلَّغ» وحده. */
+  app.post("/ad-report/:token/redemptions", express.urlencoded({ extended: false, limit: "2kb" }), async (req, res) => {
+    const token = String(req.params.token || "");
+    const campaign = token.length >= 20 ? (await Repository.listAdCampaigns()).find(c => c.reportToken === token) : undefined;
+    if (!campaign) { missing(res); return; }
+    noindex(res);
+    const today = kuwaitDay();
+    const day = String(req.body?.day || "");
+    const count = Number(req.body?.count);
+    const back = `/ad-report/${encodeURIComponent(token)}`;
+    if (!underLimit(`red|${String(req.ip || "?")}`, 60)) { res.status(429).send("محاولات كثيرة؛ أعد المحاولة بعد قليل."); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < campaign.startDay || day > campaign.endDay || day > today || !Number.isInteger(count) || count < 0 || count > 100_000) {
+      res.redirect(303, `${back}?red=bad#redemptions`); return;
+    }
+    await Repository.reportAdRedemption(campaign.id, day, count);
+    dropCampaignCache();
+    res.redirect(303, `${back}?red=ok#redemptions`);
+  });
+
   /* اشتراكُ تقويمٍ للشركة (تنبيهاتٌ بلا حساب): الرمزُ هو الهوية. بلا بياناتٍ تتجاوز اسمَ الشركة وتواريخَ حملتها وهي تعرفها. */
   app.get("/ad-report/:token/calendar.ics", async (req, res) => {
     const token = String(req.params.token || "");
@@ -508,7 +543,7 @@ export function registerAdsRoutes(app: Express, deps: AdsDeps): void {
     const nonce = deps.publicPageNonce(res);
     const allStats = await Repository.listAdStats();
     res.send(campaignReportPage({
-      campaign, creatives: heads, stats, nonce, today, origin: `${req.protocol}://${req.get("host")}`,
+      campaign, creatives: heads, stats, nonce, today, origin: `${req.protocol}://${req.get("host")}`, redemptionResult: req.query.red === "ok" || req.query.red === "bad" ? String(req.query.red) : "",
       weekly: weeklyCompare(stats, today), benchmarkCtr: slotBenchmarkCtr(campaign.id, campaign.slot, all, allStats),
       liveInSlot: Math.max(1, all.filter(x => x.slot === campaign.slot && isLive(x, today)).length),
     }));

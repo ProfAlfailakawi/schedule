@@ -4200,6 +4200,24 @@ export const Repository = {
     saveDatabase();
     return true;
   },
+  /** يسجّل تبليغَ الشركة عن استعمال الكود في يوم (إدخالٌ لكل يوم، حدٌّ ٢٠٠)، بمعاملةٍ تكتب redemptions وحده. */
+  reportAdRedemption: async (id: string, day: string, count: number): Promise<boolean> => {
+    const apply = (list: AdCampaign["redemptions"]) => [...(list || []).filter(r => r.day !== day), { day, count, at: new Date().toISOString() }].sort((a, b) => a.day.localeCompare(b.day)).slice(-400);
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("adCampaigns").doc(id);
+      return firestoreDb.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        tx.update(ref, { redemptions: apply((snap.data() as AdCampaign).redemptions) });
+        return true;
+      });
+    }
+    const row = (db.adCampaigns || []).find(item => item.id === id);
+    if (!row) return false;
+    row.redemptions = apply(row.redemptions);
+    saveDatabase();
+    return true;
+  },
   deleteAdCampaign: async (id: string): Promise<void> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const creatives = await firestoreDb.collection("adCreatives").where("campaignId", "==", id).get();
