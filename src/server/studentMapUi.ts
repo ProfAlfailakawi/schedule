@@ -123,6 +123,7 @@ export const STUDENT_MAP_CSS = `
 .kn span{flex:1;display:grid;min-inline-size:0}.kn b{font-size:13.5px;line-height:1.4}.kn small{font-size:11.5px;color:var(--muted)}
 .kn .i{color:var(--muted);inline-size:17px;block-size:17px}.kn.s-ok .i{color:var(--ok)}
 .kn.s-ok{background:var(--ok-soft);border-color:transparent}.kn.s-now{background:#fbf3df;border-color:#c79b5f}
+.kn-list{display:grid;gap:10px}.kn-list .kn{inline-size:100%;min-block-size:78px;padding:12px 16px;border:1px solid var(--line);border-radius:16px;box-shadow:0 3px 10px rgba(24,48,39,.045)}.kn-list .kn.s-ok{background:linear-gradient(110deg,#edf5ef,#e3f0e8);border-color:#d7e7dc}.kn-list .kn em{font-size:16px}.kn-list .kn b{font-size:15px;line-height:1.5}.kn-list .kn small{font-size:12px;line-height:1.5}
 .km-key{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-size:12px;color:var(--muted);font-weight:600}
 .km-key i.d{display:inline-block;inline-size:12px;block-size:12px;border-radius:4px;vertical-align:-1px;margin-inline-end:5px;border:2px solid transparent}
 .km-key .ok{background:var(--accent)}.km-key .now{background:#fbf3df;border-color:#c79b5f}.km-key .wait{background:var(--card2);border-color:var(--line)}.km-key .f{border:2px dashed var(--line-strong)}

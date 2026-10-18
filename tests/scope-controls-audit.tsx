@@ -43,12 +43,17 @@ check("قائمة لم تتحقق بعد: لا منتقي بخيارات خام"
   const html = renderToStaticMarkup(<TermSelect value={0} onValueChange={() => {}}><option value="">اختر الفصل</option></TermSelect>);
   assert(!html.includes("<select")); assert(html.includes("الفصول غير متاحة"));
 });
-check("الحالي الفارغ يبقى إذا أُنشئ فصل تخطيط أحدث", () => {
-  const terms = [{ AdTermId: 11, AdTermName: "الفصل الثاني 2026/2027", AdTermClosed: false }, { ...term, AdTermClosed: false }, { AdTermId: 9, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: true }];
-  const current = currentTermId(terms, Date.UTC(2026, 9, 19)); assert.equal(current, 10); assert.deepEqual(visibleTermIds([11, 10, 9], new Map([[9, 3]]), current), [10, 9]);
+check("رابط الدعوة يملأ حقلي الدخول ويمسح بياناته من العنوان بعد القراءة", () => {
+  const login = fs.readFileSync("src/components/Login.tsx", "utf8"), invitation = fs.readFileSync("src/components/AccountInvitation.tsx", "utf8");
+  assert(login.includes('hash.startsWith("#invite&")') && login.includes("setUsername(invitedUsername)") && login.includes("setPassword(invitedPassword)"));
+  assert(login.includes('window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)') && invitation.includes('`${SITE}#invite&${invite.toString()}`'));
 });
-check("الخادم يستثني الحالي التشغيلي ويخفي مركز الذكاء القسم بحسب شكل النطاق", () => {
-  const server = fs.readFileSync("server.ts", "utf8"); assert(server.includes("visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, current)"));
+check("أحدث فصل أُنشئ يبقى فارغًا، والفصل الأقدم الفارغ يختفي", () => {
+  const terms = [{ AdTermId: 11, AdTermName: "الفصل الثاني 2026/2027", AdTermClosed: false }, { ...term, AdTermClosed: false }, { AdTermId: 9, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: true }];
+  const current = currentTermId(terms, Date.UTC(2026, 9, 19)); assert.equal(current, 10); assert.deepEqual(visibleTermIds([11, 10, 9], new Map([[9, 3]]), 11), [11, 9]);
+});
+check("الخادم يبقي أحدث فصل ويخفي مركز الذكاء القسم بحسب شكل النطاق", () => {
+  const server = fs.readFileSync("server.ts", "utf8"); assert(server.includes("visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, newest)"));
   const intel = fs.readFileSync("src/components/IntelligenceWorkspace.tsx", "utf8"); assert(intel.includes("hideSection={hidesSection(scopeShape(scopes, isPowerAdmin))}")); assert(intel.includes('compareTermOptions.length > 1 ? [{ value: "compare"'));
 });
 check("الرادار يستدعي hook الفصول قبل خروج شاشة التحميل", () => {
