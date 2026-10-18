@@ -75,8 +75,8 @@ try {
 
     /* ══ T5: لا شاشةَ فارغة — كلُّ صفةٍ × كلُّ نطاقٍ × الفصلان ══════════════════════ */
     const terms: any[] = await get("/api/terms");
-    const TERM_MODES: Array<[string, any]> = [["الأول", terms.find(t => Number(t.AdTermId) === 1)], ["الثاني", terms.find(t => Number(t.AdTermId) === 2)], ["الصيفي", terms.find(t => Number(t.AdTermId) === 3)]];
-    check(TERM_MODES.every(([, term]) => !!term), "T5 ثلاثة فصول في التجربة: الأول والثاني والصيفي (2026/2027)");
+    const TERM_MODES: Array<[string, any]> = [["الأول", terms.find(t => Number(t.AdTermId) === 1)]];
+    check(TERM_MODES.every(([, term]) => !!term), "T5 فصلٌ واحد في التجربة: الأول 2026/2027");
     const ROLES = ["admin", "dean", "viceDean", "registrarDean", "registrarHead", "registrarStaff", "departmentHead", "advisor", "committeeChair", "standard"];
     const REGISTRAR = new Set(["registrarDean", "registrarHead", "registrarStaff"]);
     const allSections: any[] = await get("/api/sections");
@@ -91,7 +91,7 @@ try {
       const hasSchedules = perms.includes(7) || role === "admin";
       for (const [mode, term] of TERM_MODES) {
         if (!term) continue;
-        const termId = Number(term.AdTermId), isSummer = termId === 3;
+        const termId = Number(term.AdTermId), isSummer = false;
         for (const { AdCollegeId, AdSectionId } of scopes) {
           const q = `collegeId=${AdCollegeId}&sectionId=${AdSectionId}&termId=${termId}`, where = `${role} · ${mode} · قسم ${AdSectionId}`;
           /* كشف التسجيل */
@@ -146,7 +146,7 @@ try {
       }
     }
     for (const screen of ["registration", "requests", "proposals", "intelligence", "changes", "radar", "plans"]) {
-      check((screensSeen.get(screen) || 0) >= (screen === "plans" ? 3 : 6), `T5 فُحصت شاشة «${screen}» فعلاً (${screensSeen.get(screen) || 0} قراءة) — فلا يمرّ الفحصُ فارغاً`);
+      check((screensSeen.get(screen) || 0) >= (screen === "plans" ? 1 : 2), `T5 فُحصت شاشة «${screen}» فعلاً (${screensSeen.get(screen) || 0} قراءة) — فلا يمرّ الفحصُ فارغاً`);
     }
   }
 } finally {

@@ -4,13 +4,10 @@
  * (2) في القسم الوحيد كلُّ نمط طالب (مستجد … متخرّج، معطَّل بمتطلّب، متعثّر)، على صحيفتين حقيقيتين
  *     (الجديدة فعّالة والقديمة انتقالية)؛
  * (3) لا شاشةَ فارغة: صحيفتان بقواعدَ معتمدة وقاعدةُ تخرّج، ومتعثّرون وناجحون في التسجيل، وحالاتٌ مسمّاة
- *     لكشف التسجيل بقراراتٍ مختلفة؛ ثم قصصُ الفصلين الثاني والصيفي بكل حالاتها.
+ *     لكشف التسجيل بقراراتٍ مختلفة.
  */
-import { createHash } from "crypto";
 import { Repository } from "../src/db/repository";
-import { createDemoSandboxState, DEMO_TERM_NEXT, DEMO_TERM_SUMMER } from "../src/db/demoSandbox";
-import { DEMO_TERM_STORY_SCOPES, seedDemoTermStories } from "../src/server/demoPreviousTermSeed";
-import { DAY_LETTERS, requestItemFromRow } from "../src/utils/instructorRequestItems";
+import { createDemoSandboxState } from "../src/db/demoSandbox";
 import { DEMO_RADAR_SECTION_IDS, DEMO_STUDENT_ARCHETYPES, demoArchetypeOf, demoStudentName, seedDemoRadar } from "../src/server/demoRadarSeed";
 
 let passed = 0, failed = 0;
@@ -69,32 +66,6 @@ await Repository.withDemoSandbox(id, async () => {
   check(["pending", "awaiting-registration", "registered", "rejected", "committee-rejected"].every(kind => kinds.has(kind)), `كشفُ التسجيل بكل حالات القرار (${[...kinds].join("، ")})`);
   check(profiles.every(p => p.nameCipher && NEUTRAL.test(String(p.nameCipher).replace("sealed:", ""))), "كلُّ اسمٍ مختومٍ محايد");
 
-  /* ── 3: قصصُ الفصلين الثاني والصيفي: كشفُ تسجيل ورغباتُ أساتذة ومقترحاتٌ بكل الحالات ── */
-  const deps = {
-    sealIdentity: async (value: string) => `sealed:${value}`,
-    fingerprintOf: async (civil: string) => createHash("sha256").update(civil).digest("hex").slice(0, 32),
-    requestItemFromRow, dayLetters: DAY_LETTERS,
-  };
-  await seedDemoTermStories(deps, DEMO_TERM_NEXT);
-  await seedDemoTermStories(deps, DEMO_TERM_SUMMER);
-  const stateOfNeed = (need: any) => String((need.courseStates || [])[0]?.state || (need.requestType === "graduate" ? "graduate" : "pending"));
-  for (const [label, termId] of [["الثاني", DEMO_TERM_NEXT], ["الصيفي", DEMO_TERM_SUMMER]] as const) {
-    const needsOfTerm = await Repository.getStudentNeedsForTerm(termId);
-    const requests = await Repository.getInstructorRequests(0, 0, termId);
-    const proposals = await Repository.getStudyProposalsByTerm(termId);
-    check(needsOfTerm.every(need => NEUTRAL.test(String(need.nameCipher || "").replace("sealed:", ""))), `أسماء طلبة الفصل ${label} محايدة`);
-    for (const scope of DEMO_TERM_STORY_SCOPES) {
-      const where = `الفصل ${label} · قسم ${scope.sectionId}`;
-      const mine = needsOfTerm.filter(need => Number(need.AdSectionId) === scope.sectionId && String(need.nameCipher || "").includes("تجريبي"));
-      const kinds = new Set(mine.map(stateOfNeed));
-      check(["pending", "awaiting-registration", "registered", "rejected", "committee-rejected", "graduate"].every(kind => kinds.has(kind)) && mine.some(need => need.requestType === "course-conflict"),
-        `${where}: كشفُ التسجيل بكل الحالات (${[...kinds].join("، ")})`);
-      const own = requests.filter(row => Number(row.AdSectionId) === scope.sectionId);
-      check(own.length >= 2, `${where}: رغباتُ أساتذة (${own.length})`);
-      const props = proposals.filter(row => Number(row.AdSectionId) === scope.sectionId);
-      check(props.length >= 2 && new Set(props.map(row => row.status)).size >= 2, `${where}: مقترحاتٌ دراسية بحالاتٍ مختلفة (${props.map(row => row.status).join("، ")})`);
-    }
-  }
 });
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

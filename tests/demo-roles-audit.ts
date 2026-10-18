@@ -86,20 +86,19 @@ for (const account of DEMO_ROLE_ACCOUNTS) {
 
 /* ── ٣) دورةٌ عاشت، لا صندوقٌ فارغ ──────────────────────────────────────── */
 
-check(state.scheduleApprovals.length >= 3, "بُذرت دورةُ اعتمادٍ لعدّة أقسام");
-const submitted = state.scheduleApprovals.find(a => a.status === "submitted");
+check(state.scheduleApprovals.length === 1, "بُذرت دورةُ اعتمادٍ للفصل الوحيد");
+const submitted = state.scheduleApprovals.find(a => a.status === "returned"); // جولاتٌ عدّة: أُرسل وقُبل ثم أُرجع
 const returned = state.scheduleApprovals.find(a => a.status === "returned");
 const accepted = state.scheduleApprovals.find(a => a.status === "accepted" || a.rounds.some((r: any) => r.acceptedAt));
-check(!!submitted, "قسمٌ عند التسجيل — يظهر في وارد المراجعة");
 check(!!returned, "قسمٌ مُرجَعٌ — ينتظر ردّ القسم");
 check(!!accepted, "جدولٌ قُبل (يقرؤه العميدان نسخةً نهائية)");
 
-check(!!submitted && submitted.currentRound >= 2, "القسم المُرسَل في جولةٍ ثانية — للدورة تاريخ");
+check(!!submitted && submitted.currentRound >= 2, "الدورة بجولاتٍ متعدّدة — للدورة تاريخ");
 const baselineId = submitted?.rounds.find(r => r.reviewedVersionId)?.reviewedVersionId;
 check(!!baselineId, "للمقارنة أساسٌ محفوظ: نسخةٌ رآها التسجيل");
 const baseline = state.scheduleVersions.find(v => v.id === baselineId);
 check(!!baseline && baseline.rows.length > 0, "النسخة الأساس تحمل صفوفاً — فالتقرير يُظهر ما تحرّك لا جدولاً جديداً");
-check(!!submitted && submitted.signatures.length === 2, "القسم المُرسَل موقّعٌ من اللجنة ومن رئيس القسم");
+check(!!submitted && submitted.signatures.length === 2, "موقّعٌ من اللجنة ومن رئيس القسم");
 
 /* ── ٤) الملاحظاتُ المفتوحة مفتوحةٌ فعلاً ───────────────────────────────── */
 

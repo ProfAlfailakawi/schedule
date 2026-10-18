@@ -239,7 +239,7 @@ const approval = (over: Partial<ScheduleApproval> = {}): ScheduleApproval => ({ 
   check(withRequest.length === 1 && withRequest[0].extensionRequest!.days > 0 && withRequest[0].extensionRequest!.reason.length > 3, "D10 وطلبٌ واحد ينتظر، بأيامه وسببه");
   check(!approvals.some(row => row.AdSectionId === 4 && Number(row.AdTermId) === 1), "D10 وقسمُ الاستعراض بلا سجلّ في الفصل الجاري (B15؛ وللفصل السابق تاريخٌ معتمد)");
   const grant = decideException(withRequest[0], { action: "grant", termDeadline: deadline, amount: { days: withRequest[0].extensionRequest!.days }, reason: withRequest[0].extensionRequest!.reason, by: "أ. رئيس التسجيل" });
-  check(grant.next?.extensionUntil === addKuwaitDays(deadline, withRequest[0].extensionRequest!.days) && !grant.next?.extensionRequest, "D10 ومنحُ الطلب التجريبي يعمل بالقاعدة نفسها");
+  check(grant.next?.extensionUntil === addKuwaitDays(withRequest[0].extensionUntil || deadline, withRequest[0].extensionRequest!.days) && !grant.next?.extensionRequest, "D10 ومنحُ الطلب التجريبي يعمل بالقاعدة نفسها");
 }
 
 /* الأبعد يحكم: تأخيرُ موعد الفصل بعد منح استثناءٍ أقرب لا يعاقب القسم. */

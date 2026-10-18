@@ -29,8 +29,6 @@ import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurri
 export const DEMO_COLLEGE_ID = 1;
 export const DEMO_SECTION_ID = 1;
 export const DEMO_TERM_CURRENT = 1;
-export const DEMO_TERM_NEXT = 2;
-export const DEMO_TERM_SUMMER = 3;
 export const DEMO_COLLEGE_NAME = "كلية التربية الأساسية";
 export const DEMO_SECTION_NAME = "تكنولوجيا التعليم";
 
@@ -188,14 +186,6 @@ const OFFERINGS: Record<number, ReadonlyArray<readonly [code: string, sections: 
     ["0109114", 1], ["0109125", 1], ["0109135", 1], ["0109217", 1], ["0109227", 1], ["0109235", 1],
     ["0109247", 1], ["0109344", 1], ["0109354", 1],
   ],
-  [DEMO_TERM_NEXT]: [
-    ["0109121", 2], ["0109123", 1], ["0109220", 1], ["0109224", 1], ["0109321", 1], ["0109322", 1], ["0109346", 1], ["0109347", 1],
-    ["0109315", 1], ["0109410", 1], ["0109468", 1], ["0109492", 1], ["0109498", 1],
-    ["0109237", 1], ["0109258", 1], ["0109314", 1], ["0109324", 1], ["0109334", 1], ["0109444", 1], ["0109458", 1], ["0109464", 1],
-  ],
-  [DEMO_TERM_SUMMER]: [
-    ["0109105", 1], ["0109108", 1], ["0109233", 1], ["0109224", 1], ["0109112", 1], ["0109498", 1],
-  ],
 };
 
 const COHORT_SIZE = 6;
@@ -306,12 +296,8 @@ function demoTerms(now: Date): AdTerm[] {
   const day = 86_400_000;
   const start = new Date(now.getTime() - 21 * day);
   start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // الأحد
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const second = new Date(start.getTime() + 22 * 7 * day), summer = new Date(start.getTime() + 44 * 7 * day);
   return [
-    { AdTermId: DEMO_TERM_CURRENT, AdTermName: "الفصل الأول 2026/2027", AdTermStart: iso(start), AdTermWeeks: 15, AdTermSubmissionDeadline: iso(new Date(now.getTime() + 7 * day)) },
-    { AdTermId: DEMO_TERM_NEXT, AdTermName: "الفصل الثاني 2026/2027", AdTermStart: iso(second), AdTermWeeks: 15, AdTermSubmissionDeadline: iso(new Date(second.getTime() - 35 * day)) },
-    { AdTermId: DEMO_TERM_SUMMER, AdTermName: "الفصل الصيفي 2026/2027", AdTermStart: iso(summer), AdTermWeeks: 8, AdTermSubmissionDeadline: iso(new Date(summer.getTime() - 35 * day)) },
+    { AdTermId: DEMO_TERM_CURRENT, AdTermName: "الفصل الأول 2026/2027", AdTermStart: start.toISOString().slice(0, 10), AdTermWeeks: 15, AdTermSubmissionDeadline: new Date(now.getTime() + 7 * day).toISOString().slice(0, 10) },
   ];
 }
 
@@ -471,8 +457,8 @@ function seedApprovalUniverse(schedules: FSchedule[], acceptedFirst: FSchedule[]
       id: key(1), scopeKey: key(1), AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_CURRENT,
       status: "returned", currentRound: 3,
       signatures: [
-        { stage: "committee", SystemUserId: 16, userName: COMMITTEE_NAME, roleLabel: "رئيس لجنة الجدول", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 0, verifyCode: "CMT-2481" },
-        { stage: "head", SystemUserId: 15, userName: HEAD_NAME, roleLabel: "رئيس القسم العلمي", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 0, verifyCode: "HEAD-7193" },
+        { stage: "committee", SystemUserId: 16, userName: COMMITTEE_NAME, roleLabel: "رئيس لجنة الجدول", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 2, verifyCode: "CMT-2481" },
+        { stage: "head", SystemUserId: 15, userName: HEAD_NAME, roleLabel: "رئيس القسم العلمي", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 2, verifyCode: "HEAD-7193" },
       ],
       rounds: [
         { number: 1, submittedAt: iso(24), submittedBy: COMMITTEE_NAME, returnedAt: iso(22), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 1, changedRowCount: 3, reviewedVersionId: seenId },
@@ -489,73 +475,18 @@ function seedApprovalUniverse(schedules: FSchedule[], acceptedFirst: FSchedule[]
     logged(30, COMMITTEE, "PUT", `/api/schedules/${t1[0].id}`, "تعديل", `القاعة ${t1[0].AdRoomCode}/${t1[0].AdRoomHall}`);
   }
 
-  // ── الفصل الثاني: عند التسجيل في جولته الثانية، بأساسٍ محفوظ يُظهر ما تحرّك.
-  const t2 = rowsOf(DEMO_TERM_NEXT).filter(r => !String(r.fdetail || "").includes(DEMO_CONFLICT_MARK));
-  if (t2.length >= 6) {
-    const versionId = "demo-ver-t2-round1";
-    versions.push({
-      id: versionId, scopeKey: key(2), createdAt: iso(10), rowCount: t2.length, SystemUserId: 16, userName: COMMITTEE_NAME,
-      AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_NEXT,
-      label: "نسخة الجولة الأولى — كما رآها التسجيل", source: "manual", rows: seenBaseline(t2, DEMO_TERM_NEXT),
-    });
-    comments.push(
-      {
-        id: "demo-note-t2-1", createdAt: iso(1), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(t2[2].id), AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_NEXT,
-        text: "القاعة صغيرة على عدد الطلبة المتوقّع.",
-        resolved: false, field: "room", valueAtNote: noteValue(t2[2], "room"), round: 2, origin: "registrar",
-      },
-      {
-        id: "demo-note-t2-2", createdAt: iso(1), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(t2[3].id), AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_NEXT,
-        text: "تأكّدوا من إسناد الأستاذ — نصابه هذا الفصل يتجاوز المعتاد.",
-        resolved: false, field: "instructor", valueAtNote: noteValue(t2[3], "instructor"), round: 2, origin: "registrar",
-      },
-      {
-        id: "demo-note-t2-3", createdAt: iso(4), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(t2[0].id), AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_NEXT,
-        text: "يُفضّل تقديم الموعد نصف ساعة.",
-        resolved: false, field: "time", valueAtNote: noteValue(t2[0], "time"), round: 2, origin: "registrar",
-        rebuttal: { text: "الموعد مثبّت بطلب القسم لتوافقه مع مختبرٍ مشترك.", at: iso(2), SystemUserId: 16, userName: COMMITTEE_NAME },
-      },
-    );
-    approvals.push({
-      id: key(2), scopeKey: key(2), AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_NEXT,
-      status: "submitted", currentRound: 2,
-      signatures: [
-        { stage: "committee", SystemUserId: 16, userName: COMMITTEE_NAME, roleLabel: "رئيس لجنة الجدول", at: iso(10), versionId, rowCount: t2.length, regulationNoticeCount: 2, verifyCode: "CMT-5510" },
-        { stage: "head", SystemUserId: 15, userName: HEAD_NAME, roleLabel: "رئيس القسم العلمي", at: iso(10), versionId, rowCount: t2.length, regulationNoticeCount: 2, verifyCode: "HEAD-6620" },
-      ],
-      rounds: [
-        { number: 1, submittedAt: iso(10), submittedBy: COMMITTEE_NAME, returnedAt: iso(6), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, changedRowCount: 3, reviewedVersionId: versionId },
-        { number: 2, submittedAt: iso(2), submittedBy: COMMITTEE_NAME },
-      ],
-      pendingAdditions: [], updatedAt: iso(2),
-    });
-    logged(24 * 6, REG_HEAD, "POST", "/api/approvals/return", "إضافة", "إرجاع الفصل الثاني بملاحظتين — الجولة 1");
-    logged(24 * 5, REG_HEAD, "POST", "/api/approvals/extension", "إضافة", "استثناء الفصل الثاني: 3 أيام بعد موعد الفصل");
-    logged(24 * 2, COMMITTEE, "POST", "/api/approvals/submit", "إضافة", "إرسال الفصل الثاني — الجولة 2 بعد معالجة الملاحظات");
+  /* ── مواعيد التسليم: طلبُ تمديدٍ من القسم ينتظر رئيسَ التسجيل، فيفتح لوحته على ما يفعله: يمنح أو يرفض. */
+  const first = approvals.find(row => row.scopeKey === key(1));
+  if (first) {
+    /* استثناءٌ مُنح سابقاً (3 أيام)، ثم طلبٌ جديدٌ بخمسة أيام ينتظر القرار. */
+    const termDeadline = demoTerms(new Date())[0].AdTermSubmissionDeadline!;
+    first.extensionUntil = new Date(Date.parse(`${termDeadline}T00:00:00Z`) + 3 * 86_400_000).toISOString().slice(0, 10);
+    first.extensionReason = "تأخّر اعتماد المنتدبين من الكلية";
+    first.extensionBy = "أ. رئيس التسجيل";
+    first.extensionAt = iso(5);
+    first.extensionRequest = { by: COMMITTEE_NAME, role: "committeeChair", at: iso(1), reason: "انتظار توزيع القاعات الجديدة للمبنى", days: 5 };
+    first.events = [{ at: iso(1), by: COMMITTEE_NAME, role: "committeeChair", action: "extension-request", round: 3, detail: "5 أيام — انتظار توزيع القاعات الجديدة للمبنى" }];
   }
-
-  /* ── مواعيد التسليم: استثناءٌ ممنوح للفصل الثاني، وطلبُ تمديدٍ ينتظر للصيفي —
-     فيفتح رئيسُ التسجيل لوحته على ما يفعله: يمنح أو يرفض، ويرى استثناءً قائماً. */
-  const termDeadline = demoTerms(new Date())[1].AdTermSubmissionDeadline!;
-  const plus = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
-  const second = approvals.find(row => row.scopeKey === key(2));
-  if (second) {
-    Object.assign(second, {
-      extensionUntil: plus(termDeadline, 3), extensionReason: "تأخّر اعتماد المنتدبين من الكلية",
-      extensionBy: "أ. رئيس التسجيل", extensionAt: iso(5),
-    });
-  }
-  // الصيفي: قيد الإعداد، ويطلب خمسة أيام.
-  approvals.push({
-    id: key(3), scopeKey: key(3), AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_SUMMER,
-    status: "drafting", currentRound: 0, signatures: [], rounds: [], pendingAdditions: [],
-    extensionRequest: { by: COMMITTEE_NAME, role: "committeeChair", at: iso(1), reason: "انتظار توزيع القاعات الجديدة للمبنى", days: 5 },
-    events: [{ at: iso(1), by: COMMITTEE_NAME, role: "committeeChair", action: "extension-request", round: 0, detail: "5 أيام — انتظار توزيع القاعات الجديدة للمبنى" }],
-    updatedAt: iso(1),
-  });
 
   logged(26, REG_STAFF, "POST", "/api/auth/login", "تسجيل دخول", "", 200);
   logged(5, [17, "أ. مستخدم عادي"], "PUT", `/api/schedules/${schedules.find(r => Number(r.AdTermId) === DEMO_TERM_CURRENT)?.id ?? 1}`, "تعديل — مرفوض (خارج الصلاحية)", "", 403);
@@ -620,14 +551,13 @@ export function createDemoSandboxState(): DemoSandboxState {
   const first = placeTerm(DEMO_TERM_CURRENT, courses, 1);
   const acceptedFirst = structuredClone(first);
   plantConflicts(first);
-  const second = placeTerm(DEMO_TERM_NEXT, courses, first.length + 1);
-  second.push(...plantRegulation(second, courses, DEMO_TERM_NEXT, first.length + second.length + 1));
-  const summer = placeTerm(DEMO_TERM_SUMMER, courses, first.length + second.length + 1);
+  /* مخالفتان لائحيتان تُضافان بعد القبول (مراجعةٌ لا منع)، فيُقرأ تقريرُ الجدول بكشفهما. */
+  first.push(...plantRegulation(first, courses, DEMO_TERM_CURRENT, first.length + 1));
   /* المنتدبون يدرّسون شعباً فعلية (لا يزاحمون أحداً: لا يظهرون في الإسناد الطمّاع). */
-  for (const [rows, picks] of [[first, [[6, 13], [9, 14]]], [second, [[6, 13], [9, 15]]]] as const) {
+  for (const [rows, picks] of [[first, [[6, 13], [9, 14], [12, 15]]]] as const) {
     for (const [at, instructorId] of picks) if (rows[at]) rows[at].AdInstructorId = instructorId;
   }
-  const schedules = [...first, ...second, ...summer];
+  const schedules = [...first];
 
   /* أسماءُ الشاشات كما في academicRoles.ts (2…17). الرقمان 1 و13 غير موصوفين هناك فسُمّيا بما اختاره المالك (تجريبي فقط). */
   const FORM_LABELS = ["الصفحة الرئيسية", "الكليات", "الأساتذة", "الأقسام", "الفصول", "المقررات", "الجداول ومركز الذكاء", "استعلام الأساتذة", "استعلام القاعات", "استعلام الأوقات", "المستخدمون", "الصلاحيات", "لوحة المؤشرات", "تقرير القسم", "النطاقات", "القاعات والأوقات", "البحث المتقدم"];
@@ -672,7 +602,7 @@ export function createDemoSandboxState(): DemoSandboxState {
     studentNeeds: [], schedulePublications: [], scheduleConstraints: extras.constraints,
     /* المنتدبون: ثلاثةٌ من أقسامٍ أخرى يدرّسون شعباً في القسم — في دليل القسم وفي
        سجلّ منتدبيه للفصلين الأول والثاني، فتُقرأ عدسةُ «المنتدبون» لكل صفة. */
-    visitingRosters: [DEMO_TERM_CURRENT, DEMO_TERM_NEXT].map(termId => ({
+    visitingRosters: [DEMO_TERM_CURRENT].map(termId => ({
       id: `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${termId}`, scopeKey: `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${termId}`,
       collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID, termId, instructorIds: [...DEMO_VISITING_INSTRUCTOR_IDS], updatedAt: now,
     })),
