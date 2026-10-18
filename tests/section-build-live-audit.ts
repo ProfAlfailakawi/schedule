@@ -99,7 +99,7 @@ try {
     check(currentOnly.body.totals.roomless + usedRooms.length === currentOnly.body.totals.pending, "وما لم تُوجد له قاعةٌ حالية يبقى بلا قاعة (لا تخمين) ويُعدّ", currentOnly.body.totals);
     await call("PUT", `/api/admin/location-registry/rooms/${keepRoom}`, { sectionIds: [2], primarySectionIds: [] });
     const noCurrent = await call("POST", "/api/section-build/preview", wide);
-    check(noCurrent.body.rows.flatMap((r: any) => r.placements).every((p: any) => p.roomId), "وإن لم تكن أيُّ قاعةٍ من تاريخه مسجّلةً له الآن (لا بيانات للمقارنة) بقي التاريخ وحده", noCurrent.body.totals);
+    check(noCurrent.body.rows.flatMap((r: any) => r.placements).filter((p: any) => p.pending).every((p: any) => !p.roomId), "وإن لم تكن أيُّ قاعةٍ من تاريخه مسجّلةً له الآن لا تُؤخذ قاعةٌ من التاريخ وحده: يظهر التثبيت", noCurrent.body.totals);
     const onlyPicked = await call("POST", "/api/section-build/review-rows", { ...base, pick: [pick[0]] });
     check(onlyPicked.status === 200 && onlyPicked.body.added === 1, "المحدَّد في المعاينة وحده يُضاف", onlyPicked.body?.added);
     for (const row of before) await call("DELETE", `/api/schedules/${row.id}`);
