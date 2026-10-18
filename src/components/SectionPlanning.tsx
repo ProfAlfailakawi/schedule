@@ -10,6 +10,7 @@ import {
 import { manualRemainingValue, planRemainingApply, remainingOf, vacantValues, type RejectKind, type RejectMismatch, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 import SectionBuild from "./SectionBuild";
+import { PLAN_SAVED_EVENT } from "./SectionGapNote";
 
 /**
  * ── تخطيط الشعب: كشفُ المتبقي ← مدىً يرسيه التاريخ ← تقرير ─────────────────
@@ -163,6 +164,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       if (!response.ok) throw new Error(saved?.error || "تعذّر الحفظ");
       setSavedAt(saved?.updatedAt || new Date().toISOString()); setSavedBy(saved?.updatedBy || "");
       setSaveState("saved");
+      window.dispatchEvent(new CustomEvent(PLAN_SAVED_EVENT, { detail: { scope: `${collegeId}:${sectionId}:${termId}` } }));
     } catch { setSaveState("error"); }
   }, [body, collegeId, sectionId, termId]);
   const persistRef = useRef(persist);
@@ -376,10 +378,10 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   const nScan = previewRead.filter(item => item.scanAsk && !item.confirmed).length;
   const nNoSections = previewRead.filter(item => item.state === "noSections").length;
   const nMissing = preview?.missing.length || 0;
-  /* شاشة الرفع المختصرة: كشفٌ نصّيّ مقروءٌ كله بلا خانةٍ تحتاج نظراً ولا ملاحظةٍ ولا تحذير يُعبَّأ مباشرةً (كأنما ضغط «تعبئة» بعد المراجعة)؛
-     وأي شيءٍ غير ذلك — خانةٌ غير واضحة، كشفٌ ممسوح أو مصوَّر، ملاحظة — تُعرض له المراجعة الكاملة نفسها كي لا يُعبَّأ ما لم يُرَ. */
-  const autoApply = importOnly && Boolean(preview) && preview!.column != null && canApply && nReview === 0 && preview!.source !== "scan"
-    && !(preview!.assessment?.notes || []).length && !(preview!.warnings || []).length;
+  /* شاشة الرفع المختصرة مقارنةٌ لا استيراد: كشفٌ نصّيّ بلا تحذير فصلٍ مخالف يُعبَّأ مباشرةً بما قُرئ بوضوح (planRemainingApply)،
+     وما لم يتّضح أو ليس من مقررات القسم يُترك بصمت ولا يُخمَّن. أما الممسوح والمصوَّر، أو كشفٌ لفصلٍ آخر، فتُعرض له المراجعة كي لا يُعبَّأ ما لم يُرَ. */
+  const autoApply = importOnly && Boolean(preview) && preview!.column != null && canApply && preview!.source !== "scan"
+    && !(preview!.warnings || []).length;
   /* أسطرُ الكشف التي ليست من مقررات القسم في النظام: تظهر في مكانها من الجدول
      بلونٍ خافت — موجودةٌ في الكشف فتُرى — ولا يُعبَّأ منها شيء. */
   const foreignRows = preview ? [...new Set<string>(preview.foreign.map(String))].map(printed => ({ printed })) : [];
