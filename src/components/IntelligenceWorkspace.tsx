@@ -1595,7 +1595,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }catch(e:any){setError(smartMessage(e));}finally{setPolicyBusy(false);}
   };
   const compareTerms = async () => {
-    if (!compareFrom || !compareTo) return;
+    if (!compareFrom || !compareTo || compareFrom === compareTo) return; // مقارنةُ فصلٍ بنفسه بلا معنى
     setBusy(true);
     try {
       const p = new URLSearchParams({
@@ -5032,7 +5032,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </option>
                 ))}
               </select>
-              <SecondaryButton onClick={compareTerms}>قارن</SecondaryButton>
+              <SecondaryButton onClick={compareTerms} disabled={!compareFrom || !compareTo || compareFrom === compareTo} title={compareFrom === compareTo ? "اختر فصلين مختلفين للمقارنة" : undefined}>قارن</SecondaryButton>
             </div>
             {termCompare ? (
               <div className="compare-result">

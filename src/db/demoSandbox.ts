@@ -457,8 +457,8 @@ function seedApprovalUniverse(schedules: FSchedule[], acceptedFirst: FSchedule[]
       id: key(1), scopeKey: key(1), AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: DEMO_TERM_CURRENT,
       status: "returned", currentRound: 3,
       signatures: [
-        { stage: "committee", SystemUserId: 16, userName: COMMITTEE_NAME, roleLabel: "رئيس لجنة الجدول", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 2, verifyCode: "CMT-2481" },
-        { stage: "head", SystemUserId: 15, userName: HEAD_NAME, roleLabel: "رئيس القسم العلمي", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 2, verifyCode: "HEAD-7193" },
+        { stage: "committee", SystemUserId: 16, userName: COMMITTEE_NAME, roleLabel: "رئيس لجنة الجدول", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 0, verifyCode: "CMT-2481" },
+        { stage: "head", SystemUserId: 15, userName: HEAD_NAME, roleLabel: "رئيس القسم العلمي", at: iso(18), versionId: finalId, rowCount: finalRows.length, regulationNoticeCount: 0, verifyCode: "HEAD-7193" },
       ],
       rounds: [
         { number: 1, submittedAt: iso(24), submittedBy: COMMITTEE_NAME, returnedAt: iso(22), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 1, changedRowCount: 3, reviewedVersionId: seenId },
