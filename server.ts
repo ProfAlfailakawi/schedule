@@ -15902,7 +15902,8 @@ const readDegreeRuleInput=(body:any,fieldTrainingFallback:number):{rule:DegreeRu
   const values=[degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed];
   if(values.some(value=>!Number.isFinite(value)||value<30||value>300))return{error:"كل قيمة يجب أن تكون عدد وحدات بين 30 و 300"};
   // A student cannot be asked to pass more than the degree holds.
-  if(fieldTrainingRequired>degreeUnits||graduateRegularPassed>degreeUnits||graduateSummerPassed>degreeUnits)return{error:"لا يمكن أن يتجاوز أي شرط مجموع وحدات الدرجة"};
+  const over=([["لفتح التدريب الميداني",fieldTrainingRequired],["خريج / متوقع · فصل عادي",graduateRegularPassed],["خريج / متوقع · فصل صيفي",graduateSummerPassed]] as Array<[string,number]>).find(([,value])=>value>degreeUnits);
+  if(over)return{error:`«${over[0]}» (${over[1]}) أكبر من مجموع وحدات الدرجة (${degreeUnits}) — عدّله أو ارفع المجموع`};
   return{rule:{degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed}};
 };
 

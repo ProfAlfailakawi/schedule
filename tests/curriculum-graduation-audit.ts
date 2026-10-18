@@ -132,6 +132,11 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
     "ردّ قسمٍ سابق لا يُعرض تحت القسم المختار الآن");
   check(server.includes("curriculum:curriculumOf(need)") && server.includes("curriculum: curriculumOf(need)"),
     "سجل الحالات وكشف التسجيل يعرضان صحيفة الطالب");
+  /* نموذج القسم كان يخفي «لفتح التدريب الميداني» ويرسل قيمته المقترحة (102+) فيرفض الخادم مجموعاً أصغر (75) بلا سبيل إلى التصحيح. */
+  const sectionsScreen = fs.readFileSync(path.join(process.cwd(), "src/components/Sections.tsx"), "utf8");
+  check(/\["fieldTrainingRequired", "لفتح التدريب الميداني"\]/.test(sectionsScreen), "نموذج قواعد القسم يعرض حقل التدريب الميداني الذي يُرسل مع القاعدة");
+  const limitsFn = between("const readDegreeRuleInput=", "app.get(\"/api/degree-rules\"");
+  check(limitsFn.includes("أكبر من مجموع وحدات الدرجة") && limitsFn.includes("over[0]"), "رفض شرطٍ فوق المجموع يسمّي الشرط وقيمته");
 }
 
 console.log(`\nCurriculum graduation audit: ${passed} passed, ${failed} failed`);

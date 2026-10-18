@@ -340,6 +340,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 const draft = ruleDraft?.AdSectionId === selected.AdSectionId ? ruleDraft : null;
                 const fields: Array<[string, string]> = [
                   ["degreeUnits", "مجموع وحدات الدرجة"],
+                  ["fieldTrainingRequired", "لفتح التدريب الميداني"],
                   ["graduateRegularPassed", "خريج / متوقع · فصل عادي"],
                   ["graduateSummerPassed", "خريج / متوقع · فصل صيفي"],
                 ];
