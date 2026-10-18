@@ -3165,7 +3165,7 @@ app.get("/api/terms", requireAuth, async (req: Request, res: Response) => {
 /* ── الفصول التي لها جدولٌ في النطاق ─────────────────────────────────────────
  *
  * قائمةُ الفصل في كل شاشةٍ لا تُري القسمَ فصلاً لا بيانات له فيه (خاصةً الفصول السابقة)، إلا أحدثَ فصلٍ فيبقى
- * ولو فارغاً لأن القسم قد يريد إنشاءه؛ فإن جاء بعده أحدثُ منه صار قديماً واختفى. تُقرأ من صفوف نطاق القارئ نفسه (readLiveSchedulesForRequest: حارسُ النطاق
+ * ولو فارغاً لأن القسم قد بدأ العمل عليه؛ فإن أُنشئ بعده فصلٌ أحدث صار القديم قديماً واختفى إن لم تكن له بيانات. تُقرأ من صفوف نطاق القارئ نفسه (readLiveSchedulesForRequest: حارسُ النطاق
  * يُطبَّق) فصلاً فصلاً — لا مسحَ بلا فصل — وتُحفظ دقيقةً بمفتاحٍ يشمل نطاقَ القارئ. */
 const scopedTermsCache = new Map<string, { at: number; data: { termIds: number[]; currentTermId: number; newestTermId: number } }>();
 app.get("/api/terms/scoped", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
@@ -3187,7 +3187,7 @@ app.get("/api/terms/scoped", requireAuth, async (req: AuthenticatedRequest, res:
     }));
   }
   const newest = Number(terms[0]?.AdTermId || 0);
-  const data = { termIds: visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, current), currentTermId: current, newestTermId: newest };
+  const data = { termIds: visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, newest), currentTermId: current, newestTermId: newest };
   if (scopedTermsCache.size > 200) scopedTermsCache.clear();
   scopedTermsCache.set(key, { at: Date.now(), data });
   res.json(data);

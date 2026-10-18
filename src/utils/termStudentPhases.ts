@@ -274,9 +274,9 @@ export function studentTimeline(
   const first = (p.rounds || [])[0];
   if (p.wishesClose && first) {
     const from = addDays(p.wishesClose, 1), to = addDays(first.start, -1);
-    steps.push({ id: "frozen", title: "التجميد والتحليل", from: from <= to ? from : undefined, to: from <= to ? to : undefined, state: from <= to ? stateOf(from, to) : "unset", kind: "frozen" });
+    steps.push({ id: "frozen", title: "مراجعة الجدول", from: from <= to ? from : undefined, to: from <= to ? to : undefined, state: from <= to ? stateOf(from, to) : "unset", kind: "frozen" });
   } else {
-    steps.push({ id: "frozen", title: "التجميد والتحليل", state: "unset", kind: "frozen" });
+    steps.push({ id: "frozen", title: "مراجعة الجدول", state: "unset", kind: "frozen" });
   }
   for (const round of p.rounds || []) {
     steps.push({ id: round.id, title: round.name, from: round.start, to: round.end, state: stateOf(round.start, round.end), kind: "round" });

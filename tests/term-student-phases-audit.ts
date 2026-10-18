@@ -87,6 +87,7 @@ const issuesOf = (input: any, submissionDeadline: string | undefined = SUBMIT) =
 {
   const steps = studentTimeline(GOOD, SUBMIT, "2026-10-15");
   check(steps.map(s => s.kind).join(",") === "submission,wishes,frozen,round,round,close", "T3 المحطات: تسليم، رغبات، تجميد، جولتان، إغلاق");
+  check(steps[2].title === "مراجعة الجدول", "T3 اسم مرحلة التجميد واضح للطالب: مراجعة الجدول");
   check(steps[0].state === "done" && steps[1].state === "now" && steps[2].state === "next", "T3 الحالة: مضت / الآن / قادمة");
   check(steps[2].from === "2026-10-26" && steps[2].to === "2026-10-31", "T3 التجميد يُحسب بين نهاية الرغبات وأول جولة");
   const empty = studentTimeline(undefined, undefined, "2026-10-15");

@@ -56,6 +56,18 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   }, []);
 
   useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.startsWith("#invite&")) {
+      const invite = new URLSearchParams(hash.slice("#invite&".length));
+      const invitedUsername = invite.get("username")?.slice(0, 200);
+      const invitedPassword = invite.get("password")?.slice(0, 128);
+      if (invitedUsername) setUsername(invitedUsername);
+      if (invitedPassword) setPassword(invitedPassword);
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
+  }, []);
+
+  useEffect(() => {
     let alive = true;
     fetch("/api/demo/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
       if (!alive) return;

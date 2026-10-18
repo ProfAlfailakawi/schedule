@@ -51,8 +51,8 @@ check(keys(trimScopeSelects(selects(), [{ AdCollegeId: 3, AdSectionId: 0 }], fal
 
 /* F3 */
 const counts = new Map([[1, 5], [2, 0], [3, 7], [4, 0]]);
-check(JSON.stringify(visibleTermIds([4, 3, 2, 1], counts, 4)) === "[4,3,1]", "F3 الحالي يبقى ولو فارغاً، وما فيه صفوف يبقى، والفارغ القديم (2) يختفي");
-check(JSON.stringify(visibleTermIds([5, 4, 3, 2, 1], new Map([...counts, [5, 0]]), 5)) === "[5,3,1]", "F3 انتقل الحالي من 4 إلى 5: يختفي 4 إن كان فارغاً ويبقى الحالي 5");
+check(JSON.stringify(visibleTermIds([4, 3, 2, 1], counts, 4)) === "[4,3,1]", "F3 أحدث فصل يبقى ولو فارغاً، وما فيه صفوف يبقى، والفارغ القديم (2) يختفي");
+check(JSON.stringify(visibleTermIds([5, 4, 3, 2, 1], new Map([...counts, [5, 0]]), 5)) === "[5,3,1]", "F3 أُنشئ فصل جديد: يختفي 4 إن كان فارغاً ويبقى 5 الجديد");
 check(visibleTermIds([1], new Map(), 1).length === 1, "F3 فصلٌ واحد حالي فارغ يبقى");
 
 /* F4 */
