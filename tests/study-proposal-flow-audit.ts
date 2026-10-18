@@ -81,16 +81,27 @@ async function main() {
 
   /* مساعدات: إنشاء شعبة «هيئة تدريسية» وبناء العمليات */
   let nextRoomHall = 1;
+  const madeFaculty: any[] = [];
+  const DAYFLAG: Record<string, string> = { S: "fsunday", M: "fmonday", T: "ftuesday", W: "fwednesday", H: "fthursday" };
+  const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  /* قاعةٌ خاليةٌ في الموعد المطلوب فعلاً (جدولُ العرض يتغيّر، فلا تُفترض قاعةٌ بعينها). */
+  const roomFreeAt = async (flags: string, start: string, end: string) => {
+    const live = await rows();
+    const clash = (r: any, id: string) => r.roomId === id && [...flags].some(f => r[DAYFLAG[f]]) && toMin(r.fstarttime) < toMin(end) && toMin(start) < toMin(r.fendtime);
+    const candidates = [roomFields, ...distinctRooms];
+    return candidates.find(c => !live.some(r => clash(r, String(c.roomId)))) || freshRoom();
+  };
   const makeFaculty = async (courseCode: string, scode: string, flags: string, start: string, end: string, hall?: string) => {
     const c = course(courseCode);
     const body = {
       AdCollegeId: 1, AdSectionId: 1, AdTermId: 1, AdCourseId: c.AdCourseId, SCode: scode, AdInstructorId: placeholder.AdInstructorId,
       fsunday: flags.includes("S"), fmonday: flags.includes("M"), ftuesday: flags.includes("T"), fwednesday: flags.includes("W"), fthursday: flags.includes("H"),
-      fstarttime: start, fendtime: end, ...freshRoom(),
+      fstarttime: start, fendtime: end, ...(await roomFreeAt(flags, start, end)),
     };
     void hall;
     const r = await A("POST", "/api/schedules", body);
     if (r.status !== 201) console.log("makeFaculty refused", r.status, JSON.stringify(r.json).slice(0, 200));
+    madeFaculty.push(r.json);
     return r.json;
   };
   const targetOf = (courseId: number, scode: string, days: string[], start: string, end: string, extra: any = {}) =>
