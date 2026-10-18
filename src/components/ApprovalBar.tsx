@@ -24,6 +24,7 @@ import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import { SectionGapBadge, SectionGapPanel, useSectionGap, type GapKind } from "./SectionGapNote";
+import type { GapItem } from "../utils/sectionGap";
 import QuickPlanSheet from "./QuickPlanSheet";
 import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
@@ -90,6 +91,8 @@ interface Props {
   /** يفتح شاشة التغييرات حيث تُقرأ الملاحظات على مواعيدها. غيابه يعني أنها معروضةٌ هنا. */
   onOpenNotes?: () => void;
   onOpenCourses?: () => void;
+  /** مقرراتُ القسم التي يطلبها الطلبة وشعبها أقل: يقرؤها مفتاحُ الألوان في الجدول فيضع علامةً صغيرة. */
+  onStudentGaps?: (items: GapItem[]) => void;
 }
 
 /** مثل request، لكن يُبقي رمز الحالة ليميّز الصلاحية من الخطأ. */
@@ -116,7 +119,7 @@ const arabicDate = (iso?: string) => {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
-export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, canEditCourses = false, onOpenRow, onChanged, onLockChange, onOpenNotes, onOpenCourses }: Props) {
+export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, canEditCourses = false, onOpenRow, onChanged, onLockChange, onOpenNotes, onOpenCourses, onStudentGaps }: Props) {
   const [state, setState] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -153,6 +156,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [gapOpen, setGapOpen] = useState<GapKind | null>(null);
   const [planSheet, setPlanSheet] = useState(false);
   const gap = useSectionGap(collegeId, sectionId, termId, refreshSignal);
+  useEffect(() => { onStudentGaps?.(gap.studentItems); }, [gap.studentItems, onStudentGaps]);
   const [readinessAll, setReadinessAll] = useState(false);
   const revealTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(revealTimer.current), []);
@@ -667,7 +671,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         <SectionGapBadge items={gap.studentItems} kind="students" open={gapOpen === "students"} onToggle={() => setGapOpen(open => open === "students" ? null : "students")} />
         {gap.loaded && !gap.planImported ? (
           <button type="button" className="apb-badge apb-gap-ghost" onClick={() => setPlanSheet(true)} aria-haspopup="dialog"
-            title="لم يُرفع كشف المتبقي. اضغط لترفعه فتظهر لك الشعب المقترحة." aria-label="ارفع كشف المتبقي لتظهر لك الشعب المقترحة"
+            title="قارن شعبك بكشف المتبقي" aria-label="ارفع كشف المتبقي لتظهر لك الشعب المقترحة"
             data-guide-ignore="أيقونة اختيارية: تفتح شاشةً مختصرة لرفع كشف المتبقي">
             <FileUp aria-hidden="true" />
           </button>

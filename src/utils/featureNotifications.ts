@@ -9,7 +9,7 @@
  *
  * المعرّفُ يحمل ما يجعل التغيّرَ إشعاراً جديداً (وقتَ التعديل، وقتَ تشغيل الرادار، العدد).
  */
-import { AR, countOf, nounFor } from "./arabicCount";
+import { AR, countOf, nounFor, oblique } from "./arabicCount";
 import type { CenterNotification } from "./notificationCenter";
 import { planMatchKey } from "./collegeTrack";
 
@@ -82,4 +82,15 @@ export function buildFeatureNotifications(input: FeatureNotificationInput): Cent
     });
   }
   return items.map(item => ({ ...item, termId: input.termId, termName: input.termName }));
+}
+
+export interface MasariGapNotice { collegeId: number; sectionId: number; sectionName: string; courses: number }
+
+/** مقرراتُ قسمك التي يطلبها طلبةُ «مساري» والشعبُ المفتوحة لا تكفيها (من الحال لحظةَ السؤال؛ يتغيّر العدد فيصير إشعاراً جديداً). */
+export function buildMasariGapNotifications(gaps: readonly MasariGapNotice[], termId?: number, termName?: string): CenterNotification[] {
+  return gaps.filter(gap => gap.courses > 0).slice(0, 4).map(gap => ({
+    id: `masari-gap:${gap.collegeId}:${gap.sectionId}:${gap.courses}`, tone: "action" as const,
+    title: `طلبة «مساري» يحتاجون شعباً في ${countOf(gap.courses, oblique(AR.course))}`,
+    detail: gap.sectionName, view: "schedules" as const, collegeId: gap.collegeId, sectionId: gap.sectionId, termId, termName,
+  }));
 }

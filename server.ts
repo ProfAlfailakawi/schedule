@@ -105,7 +105,8 @@ import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/se
 import { registerStudentShowcase } from "./src/server/studentShowcase";
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { registerPlanSheetRoutes } from "./src/server/planSheetRoutes";
-import { buildFeatureNotifications } from "./src/utils/featureNotifications";
+import { buildFeatureNotifications, buildMasariGapNotifications } from "./src/utils/featureNotifications";
+import { studentGaps } from "./src/utils/sectionGap";
 import { seedDemoRadar, seedDemoPreviousTermRadar } from "./src/server/demoRadarSeed";
 import { seedDemoPreviousTerm, seedDemoCurrentTermStories } from "./src/server/demoPreviousTermSeed";
 import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instructorRequestItems";
@@ -11767,6 +11768,27 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
   } catch (error) {
     console.error("[notifications] feature items:", error instanceof Error ? error.message : error);
   }
+  /* ── «مساري»: مقرراتٌ يطلبها الطلبة ولا تكفيها شعبُ قسمك، لعاملي القسم وحدهم (لا لكل الجامعة) ── */
+  try {
+    const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
+    if (["standard", "committeeChair", "departmentHead"].includes(role) && !isPowerUser(req)) {
+      const gapTerm = planning || termId;
+      const mine = ((await Repository.getSections()) as any[]).filter(sec => isScopeAllowed(req, Number(sec.AdCollegeId), Number(sec.AdSectionId))).slice(0, 4);
+      const found = [];
+      for (const sec of mine) {
+        const data = await cachedSectionGap(Number(sec.AdCollegeId), Number(sec.AdSectionId), gapTerm);
+        const courses = studentGaps(data.courses).length;
+        if (courses) found.push({ collegeId: Number(sec.AdCollegeId), sectionId: Number(sec.AdSectionId), sectionName: String(sec.AdSectionName || ""), courses });
+      }
+      const extra = buildMasariGapNotifications(found, gapTerm, gapTerm === termId ? termName : planningName);
+      if (extra.length) {
+        const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
+        items = [...items, ...extra.map(item => ({ ...item, termId: item.termId ?? termId, termName: item.termName ?? termName }))].sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
+      }
+    }
+  } catch (error) {
+    console.error("[notifications] masari gap:", error instanceof Error ? error.message : error);
+  }
   /* ── الإعلانات: حملاتٌ تنتهي قريباً، لحساب الإدارة الرئيسي وحده (ليس في الصندوق التجريبي) ── */
   try {
     if (Number(req.user?.SystemUserId) === ROOT_ADMIN_USER_ID && !Repository.isDemoRequest()) {
@@ -16384,14 +16406,17 @@ const curriculumLabelsFor=async(needs:any[])=>{
    لكل مقرر للقسم: كم شعبةً مفتوحةً في جدول الفصل، وسعة الشعبة، وكم طالباً طلبه (استبيانٌ + رغبات «مساري»).
    القراءةُ نفسها التي يقوم عليها «رادار الطلب» أعلاه لكن بلا محاكاةٍ ولا بحثِ مواعيد، فتُفتح مع كل شاشةٍ بلا كلفة.
    لا تكتب شيئاً. الحساب والقرار في src/utils/sectionGap.ts. */
-app.get("/api/schedules/section-gap", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.query.collegeId || 0);
-  const sectionId = Number(req.query.sectionId || 0);
-  const termId = Number(req.query.termId || 0);
-  if (!collegeId || !sectionId || !termId || !isScopeAllowed(req, collegeId, sectionId)) {
-    res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
-    return;
-  }
+/* الجرس يسأل كل بضع ثوانٍ: قراءةُ القسم نفسها تُحفظ دقيقةً فلا تتكرر الاستعلامات. */
+const sectionGapCache = new Map<string, { at: number; data: Awaited<ReturnType<typeof sectionGapData>> }>();
+async function cachedSectionGap(collegeId: number, sectionId: number, termId: number) {
+  const key = `${Repository.isDemoRequest() ? "demo:" : ""}${collegeId}:${sectionId}:${termId}`, hit = sectionGapCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.data;
+  const data = await sectionGapData(collegeId, sectionId, termId);
+  if (sectionGapCache.size > 200) sectionGapCache.clear();
+  sectionGapCache.set(key, { at: Date.now(), data });
+  return data;
+}
+async function sectionGapData(collegeId: number, sectionId: number, termId: number) {
   const [allTermNeeds, courses, termWeek, currentProfiles, stats] = await Promise.all([
     Repository.getStudentNeeds(collegeId, 0, termId),
     Repository.getCoursesBySection(sectionId),
@@ -16412,8 +16437,7 @@ app.get("/api/schedules/section-gap", requirePermission(7), async (req: Authenti
     if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
     sectionsOf.get(id)!.add(String(row.SCode));
   }
-  res.setHeader("Cache-Control", "no-store");
-  res.json({
+  return {
     respondents: reading.respondents,
     planImported: Boolean(stats?.remainingSource?.fileName),
     planSource: stats?.remainingSource ? { fileName: stats.remainingSource.fileName, importedAt: stats.remainingSource.importedAt } : null,
@@ -16426,7 +16450,20 @@ app.get("/api/schedules/section-gap", requirePermission(7), async (req: Authenti
       existing: sectionsOf.get(Number(course.AdCourseId))?.size || 0,
       students: studentsOf.get(Number(course.AdCourseId)) || 0,
     })),
-  });
+  };
+}
+
+app.get("/api/schedules/section-gap", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId || !isScopeAllowed(req, collegeId, sectionId)) {
+    res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
+    return;
+  }
+  const data = await sectionGapData(collegeId, sectionId, termId);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(data);
 });
 
 app.get("/api/schedules/demand", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

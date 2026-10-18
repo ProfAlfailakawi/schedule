@@ -137,6 +137,7 @@ import {
   type ScheduleViewDraft,
 } from "../utils/scheduleViews";
 import ScheduleTransfer from "./ScheduleTransfer";
+import type { GapItem as SectionGapItem } from "../utils/sectionGap";
 import VisitingBadge from "./VisitingBadge";
 import { usePageAwake } from "../utils/pageAwake";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
@@ -843,6 +844,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     [instructors, setInstructors] = useState<AdInstructor[]>([]),
     [rows, setRows] = useState<FSchedule[]>([]);
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  /* ما يطلبه طلبة «مساري» ولا تكفيه شعبه، بحسب رمز المقرر: علامةٌ صغيرة على شارة المقرر في مفتاح الألوان. */
+  const [studentGaps, setStudentGaps] = useState<SectionGapItem[]>([]);
+  const gapByCode = useMemo(() => new Map(studentGaps.map(item => [item.code, item])), [studentGaps]);
   const [editor, setEditor] = useState<EditorMode>("index"),
     [editId, setEditId] = useState<number | null>(null),
     [form, setForm] = useState(blank()),
@@ -10212,6 +10216,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           onLockChange={setApprovalLock}
           onOpenNotes={onNavigate ? () => onNavigate("scheduleChanges") : undefined}
           onOpenCourses={onNavigate ? () => onNavigate("courses") : undefined}
+          onStudentGaps={setStudentGaps}
         />
       ) : null}
       <ScheduleExperienceLayer
@@ -10297,6 +10302,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         onClick={() => toggleHueFocus(item.key)}
                       >
                         <i aria-hidden="true" /><span>{item.label}</span><em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
+                        {(() => {
+                          const need = hueBy === "course" ? gapByCode.get(item.key.slice(2).split("·")[0]) : undefined;
+                          return need ? <b className="week-legend-need" title={`يطلبها طلبة «مساري»: الموجود ${need.existing.toLocaleString("ar-KW-u-nu-latn")} والمطلوب ${need.required.toLocaleString("ar-KW-u-nu-latn")}`}>+{need.extra.toLocaleString("ar-KW-u-nu-latn")}</b> : null;
+                        })()}
                       </button>
                       <button
                         type="button"
