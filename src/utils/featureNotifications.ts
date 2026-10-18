@@ -13,7 +13,7 @@ import { AR, countOf, nounFor } from "./arabicCount";
 import type { CenterNotification } from "./notificationCenter";
 import { planMatchKey } from "./collegeTrack";
 
-export interface PlanReviewNotice { planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; /** مسارُ القسم (بنات بمواقعهنّ / بنين): يجمع إشعاراتِ الصحائف المتماثلة. */ groupKey?: string; groupLabel?: string; updatedAt: string }
+export interface PlanReviewNotice { planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; /** مسارُ القسم (بنات بمواقعهنّ / بنين): يجمع إشعاراتِ الصحائف المتماثلة. */ groupKey?: string; groupLabel?: string; /** هويةُ الصحيفة (قسمٌ ومسارٌ وكليةٌ وسنة): يُعدّ بها ما ينتظر. */ unitKey?: string; updatedAt: string }
 export interface RadarNotice { ranAt: string; needsDecision: number; scoped: boolean }
 export interface OutcomeNotice { answered: number; stuck: number; scoped: boolean }
 
@@ -43,13 +43,13 @@ export function buildFeatureNotifications(input: FeatureNotificationInput): Cent
   for (const group of groups.slice(0, 4)) {
     const first = group[0], latest = group.reduce((at, r) => (r.updatedAt > at ? r.updatedAt : at), "");
     /* صحائفُ البنات المتماثلة في المواقع الثلاثة تُعدّ صحيفةً واحدة (بالسنة أو الاسم). */
-    const kinds = new Set(group.map(r => planMatchKey(r.planName))), one = kinds.size === 1;
+    const kinds = new Set(group.map(r => r.unitKey || planMatchKey(r.planName))), one = kinds.size === 1;
     items.push({
-      id: `plan-review:${first.groupKey || `${first.collegeId}:${first.sectionId}`}:${[...new Set(group.map(r => r.planName))].sort().join(",")}:${latest}`, tone: decides ? "action" : "waiting",
+      id: `plan-review:${first.groupKey || `${first.collegeId}:${first.sectionId}`}:${[...kinds].sort().join(",")}:${latest}`, tone: decides ? "action" : "waiting",
       title: one
         ? (decides ? `صحيفة «${first.planName}» تنتظر مراجعتك واعتمادك` : `صحيفة «${first.planName}» قيد المراجعة`)
         : (decides ? `بانتظار مراجعتك واعتمادك: ${countOf(kinds.size, AR.sheet)}` : `قيد المراجعة: ${countOf(kinds.size, AR.sheet)}`),
-      detail: first.groupLabel || first.sectionName, view: "planReview", at: latest, collegeId: first.collegeId, sectionId: first.sectionId,
+      detail: one ? first.sectionName : (first.groupLabel || first.sectionName), view: "planReview", at: latest, collegeId: first.collegeId, sectionId: first.sectionId,
     });
   }
   if (groups.length > 4) {

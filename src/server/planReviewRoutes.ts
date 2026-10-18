@@ -13,7 +13,7 @@
  *     في القواعد (دورة، مجموعةٌ لا تتّسع لحدّها…)، أو تغيّرت المسوّدةُ بعد أن رآها.
  *   · كلُّ تعديلٍ في سجلّ التدقيق.
  */
-import { groupDeptTracks, trackLabels, type DeptTrack } from "../utils/collegeTrack";
+import { groupDeptTracks, planMatchKey, trackLabels, type DeptTrack } from "../utils/collegeTrack";
 import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurricula";
 import { compareCurriculumReference, isTechnologyEducation, referenceCodeKey } from "../utils/curriculumReference";
 import { AR, countOf } from "../utils/arabicCount";
@@ -53,7 +53,7 @@ const READERS = new Set(["committeeChair", "departmentHead", "standard"]);
 const WORKSPACE_FORM = 7;
 
 /** صحائفُ قيد المراجعة التي يراها هذا الحساب: لجرس الإشعارات. نفسُ حارس النطاق والصفة في الشاشة. */
-export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "isScopeAllowed" | "isPowerUser">): Promise<Array<{ planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; groupKey: string; groupLabel: string; updatedAt: string }>> {
+export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "isScopeAllowed" | "isPowerUser">): Promise<Array<{ planId: string; planName: string; sectionId: number; collegeId: number; sectionName: string; groupKey: string; groupLabel: string; unitKey: string; updatedAt: string }>> {
   const role = roleDefinition(req.user?.Role).id;
   const drafts = (await Repository.listRuleDrafts()).filter(draft => draft.status === "review");
   const visible = drafts.filter(draft => deps.isPowerUser(req) || (READERS.has(role) && deps.isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)));
@@ -68,8 +68,10 @@ export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "i
   for (const draft of visible) {
     const plan = (await Repository.getCurriculumPlans(draft.AdSectionId)).find(row => row.id === draft.planId);
     out.push({ planId: draft.planId, planName: plan?.name || "الصحيفة", sectionId: draft.AdSectionId, collegeId: draft.AdCollegeId, sectionName: sections.get(draft.AdSectionId) || "",
-      groupKey: trackOfSection.get(draft.AdSectionId)?.key || `${draft.AdCollegeId}:${draft.AdSectionId}`,
-      groupLabel: (() => { const t = trackOfSection.get(draft.AdSectionId); return t ? `${labels.get(t.key) || t.deptName}${t.mirrors.length ? " (مع الجهراء والفحيحيل)" : ""}` : sections.get(draft.AdSectionId) || ""; })(),
+      /* إشعارٌ واحد لكل قسم (باسمه) مهما تعدّدت كلياتُه ومساراتُه؛ والصحيفةُ تُعدّ بمسارها وكليتها وسنتها (unitKey). */
+      groupKey: trackOfSection.get(draft.AdSectionId)?.deptName || `${draft.AdCollegeId}:${draft.AdSectionId}`,
+      groupLabel: (() => { const t = trackOfSection.get(draft.AdSectionId); return t ? (/^قسم\s/.test(t.deptName) ? t.deptName : `قسم ${t.deptName}`) : sections.get(draft.AdSectionId) || ""; })(),
+      unitKey: `${trackOfSection.get(draft.AdSectionId)?.key || draft.AdSectionId}|${planMatchKey(plan?.name || draft.planId)}`,
       updatedAt: draft.updatedAt });
   }
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
