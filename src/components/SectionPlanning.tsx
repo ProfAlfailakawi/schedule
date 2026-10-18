@@ -441,7 +441,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"
           onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
         {importOnly && saveState === "error" ? (
-          <p className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> تعذّر حفظ الكشف. <button type="button" className="section-plan-retry" onClick={() => void persist()}><RotateCcw aria-hidden="true" /> أعد المحاولة</button></p>
+          <p className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> تعذّر حفظ الكشف. <button data-guide-ignore="إعادة محاولة حفظ الكشف داخل الشاشة المختصرة فقط عند تعذّر الحفظ" type="button" className="section-plan-retry" onClick={() => void persist()}><RotateCcw aria-hidden="true" /> أعد المحاولة</button></p>
         ) : null}
         {importOnly ? null : <div className="section-plan-import-text">
           <strong>الخطة تُبنى على عمود «اعداد الذين لم يسجلوا» من كشف العمادة — المتبقي الإجمالي</strong>
