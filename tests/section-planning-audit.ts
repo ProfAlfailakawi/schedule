@@ -246,8 +246,8 @@ check((server.match(/remainingAssessment\(reading, departmentCode, departmentNam
   "بابا الكشف (الملف والصفحات معاً) يمرّران الفرع المختار، فكشف فرعٍ آخر يُرفض قبل المعاينة");
 {
   const ui = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
-  check(ui.includes("const clearImport = async () =>") && ui.includes("setRemaining({}); setVacant({}); setSource(null);") && ui.includes("await visualConfirm(") && !ui.includes("window.confirm(") && !ui.includes("setDeptConfirmed")
-    && ui.includes("const hasSaved = Boolean(source || legacy || Object.values(remaining).some(value => value !== \"\"));") && ui.includes("disabled={!hasSaved || reading}") && ui.includes("لا كشف مستورد لإزالته"),
+  check(ui.includes("const clearImport = async () =>") && ui.includes("setRemaining({}); setChosen({}); setVacant({}); setSource(null);") && ui.includes("await visualConfirm(") && !ui.includes("window.confirm(") && !ui.includes("setDeptConfirmed")
+    && ui.includes("Object.values(chosen).some(value => value !== \"\")") && ui.includes("disabled={!hasSaved || reading}") && ui.includes("لا كشف مستورد لإزالته"),
     "كشفٌ استُورد خطأً يُزال كله بعد تأكيد (المتبقي وشاغره ومصدره)، والزر ظاهرٌ دائماً: يعمل لأي متبقٍّ محفوظ (كشفٌ موسوم أو «بيانات قديمة» أو أرقامٌ بلا مصدر)، ومعطّلٌ حين لا شيء يُزال؛ ولا خانة «أؤكد…»");
 }
 {

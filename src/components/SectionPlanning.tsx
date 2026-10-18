@@ -284,18 +284,19 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   };
 
   /* كشفٌ استُورد خطأً (قسمٌ أو فرعٌ آخر قبل التحقق): يُزال كله — المتبقي وشاغره ومصدره — ويُحفظ،
-     فيعود الاقتراح إلى التاريخ وحده حتى يُستورد الكشف الصحيح. «المختار» بيد القسم لا يُمسّ. */
+     فيعود الاقتراح إلى التاريخ وحده حتى يُستورد الكشف الصحيح. «المختار» يُمسح معه: مسحُ التخطيط يمسح كل ما بُني عليه،
+     وإلا بقيت شارة «شعبٌ يُفضَّل زيادتها» في شريط الاعتماد بأرقامٍ لا كشف وراءها. */
   /* يظهر الزر ما دام للفصل أيُّ «متبقٍّ» محفوظ: كشفٌ موسوم، أو «بيانات قديمة» بعمودٍ آخر، أو أرقامٌ بلا مصدر. */
   /* التأكيد داخل التطبيق لا window.confirm: المتصفحات وتطبيق الهاتف تحجبه فيرجع «لا» بصمتٍ ولا يُزال شيء. */
   const clearImport = async () => {
     const name = source?.fileName || data?.legacyRemaining?.fileName || "";
     const sure = await visualConfirm({
       title: "إزالة الكشف المستورد؟",
-      message: `ستُزال ${name ? `بيانات الكشف «${name}»` : "أرقام «المتبقي» المحفوظة"} وأرقام «المتبقي» كلها لهذا الفصل. يبقى «المختار» كما هو.`,
+      message: `ستُزال ${name ? `بيانات الكشف «${name}»` : "أرقام «المتبقي» المحفوظة"} وأرقام «المتبقي» و«المختار» كلها لهذا الفصل.`,
       confirmLabel: "نعم، أزِل", cancelLabel: "لا", tone: "danger",
     });
     if (!sure) return;
-    setRemaining({}); setVacant({}); setSource(null); setPreview(null); setLegacyCleared(true);
+    setRemaining({}); setChosen({}); setVacant({}); setSource(null); setPreview(null); setLegacyCleared(true);
     setEdits(n => n + 1);
   };
 
@@ -361,7 +362,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   );
 
   const legacy = !legacyCleared && data.legacyRemaining && Object.keys(data.legacyRemaining.values || {}).length ? data.legacyRemaining : null;
-  const hasSaved = Boolean(source || legacy || Object.values(remaining).some(value => value !== ""));
+  const hasSaved = Boolean(source || legacy || Object.values(remaining).some(value => value !== "") || Object.values(chosen).some(value => value !== ""));
   const STATE_NOTE: Record<Exclude<CellState, "read">, string> = {
     unread: "لم تُقرأ الخانة", lowConfidence: "قراءة غير واضحة", mismatch: "تخالف حساب الكشف (لم يجتازوا − المسجلين)", noSections: "لا شعب له في الكشف — لا قيمة",
   };
@@ -415,7 +416,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
         {/* الزر ظاهرٌ دائماً في مكانه: معطّلٌ حين لا متبقٍّ محفوظ لهذا الفصل، فيُعرف أن لا شيء دخل لا أن الزر غائب. */}
         {/* لا تلميحٌ على الزر المعطّل (لا يُبلغ بالفأرة ولا بلوحة المفاتيح): عبارته المرئية هي الشرح. */}
         {importOnly ? null : <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport} disabled={!hasSaved || reading}>
-          <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : hasSaved ? "إزالة أرقام المتبقي" : "لا كشف مستورد لإزالته"}
+          <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : hasSaved ? "إزالة أرقام التخطيط" : "لا كشف مستورد لإزالته"}
         </SecondaryButton>}
         {importError ? (
           <div ref={importErrorRef} className="section-plan-reject" role="alert" aria-label={importError.message}>
