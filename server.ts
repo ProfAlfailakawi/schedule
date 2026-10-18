@@ -2345,10 +2345,6 @@ async function seedDemoStories(): Promise<void> {
   // ── مقترحان دراسيان (e): واحدٌ مرسَلٌ ينتظر ردّ الأستاذ، وآخرُ مسودة.
   await seedDemoStudyProposals(DEMO_STORY_SCOPE).catch(error => console.error("[demo] seeding study proposals failed:", error));
 
-  // ── رادارُ التسجيل (f): صحائفُ وقواعد وطلبةٌ وتذاكرُ وأجوبة، بالأسماء الوهمية نفسها.
-  await seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() }).catch(error => console.error("[demo] seeding radar failed:", error));
-
-  await seedDemoMasariDemand().catch(error => console.error("[demo] seeding Masari demand failed:", error));
 }
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
@@ -2363,6 +2359,12 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
       await Repository.createSession(sessionId, ROOT_ADMIN_USER_ID, DEMO_SESSION_TTL_MS);
       /* القصصُ زينةٌ للتجربة لا شرطٌ لها: تعذّرُها يُسجَّل ولا يمنع الدخول. */
       await seedDemoStories().catch(error => console.error("[demo] seeding stories failed:", error));
+      /* الرادارُ عرضٌ مستقلّ عن قصص الشاشة الأخرى: لا ينبغي أن تمنع قصةٌ
+         متعثرةٌ تهيئةَ بياناته في الديمو. يُبذر حصراً داخل صندوق هذه الجلسة. */
+      await seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() })
+        .catch(error => console.error("[demo] seeding radar failed:", error));
+      await seedDemoMasariDemand()
+        .catch(error => console.error("[demo] seeding Masari demand failed:", error));
       const identity = await readDemoIdentity(ROOT_ADMIN_USER_ID);
       return demoSessionPayload(identity.user, identity.permissions, identity.scopes);
     });
