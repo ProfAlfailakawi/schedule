@@ -16409,7 +16409,7 @@ const curriculumLabelsFor=async(needs:any[])=>{
 /* الجرس يسأل كل بضع ثوانٍ: قراءةُ القسم نفسها تُحفظ دقيقةً فلا تتكرر الاستعلامات. */
 const sectionGapCache = new Map<string, { at: number; data: Awaited<ReturnType<typeof sectionGapData>> }>();
 async function cachedSectionGap(collegeId: number, sectionId: number, termId: number) {
-  const key = `${Repository.isDemoRequest() ? "demo:" : ""}${collegeId}:${sectionId}:${termId}`, hit = sectionGapCache.get(key);
+  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${termId}`), hit = sectionGapCache.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit.data;
   const data = await sectionGapData(collegeId, sectionId, termId);
   if (sectionGapCache.size > 200) sectionGapCache.clear();
