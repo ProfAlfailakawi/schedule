@@ -35,16 +35,16 @@ check(mixed.length === 1 && mixed[0].id === 2 && mixed[0].basis === "students" &
 
 check(sectionGaps([], null).length === 0 && sectionGaps([c(1, "101", 30, 9, 100)], null).length === 0, "لا نقص ← قائمةٌ فارغة (لا شارة)");
 
-/* العرض: سطرٌ لكل مقرر «الموجود ← المطلوب»، وسببٌ قصير، ودعوةٌ إلى الرفع إن لم يُرفع كشف، ولا نموذجَ ولا حقلَ إدخال. */
+/* العرض: سطرٌ لكل مقرر «الموجود ← المطلوب» ومصدره (طلبة أم تخطيطك). لا رابط يذهب بالمستخدم إلى شاشةٍ أخرى ولا حقل إدخال. */
 const many = Array.from({ length: 7 }, (_, i) => ({ id: 100 + i, code: `9${i}`, name: `مقرر ${i}`, existing: 1, required: 2 + i, extra: 1 + i, basis: "students" as const, demand: 50 }));
 const gap = { items: byStudents.concat(planned, many), planImported: false, loaded: true };
-const html = renderToStaticMarkup(React.createElement(SectionGapPanel, { gap, onClose: () => {}, onOpenPlanning: () => {} }));
-check(html.includes("شعبٌ يُفضَّل زيادتها") && html.includes("اختياري") && html.includes("طلبه") && html.includes("حسب تخطيطك"), "العرض: عنوانٌ واختياري وسببٌ لكل سطر");
-check(html.includes("قارن بكشف المتبقي") && html.includes("الأرقام هنا من طلب الطلبة وحدهم") && !html.includes("<input") && !html.includes("<form"), "العرض: دعوةٌ إلى رفع الكشف مع سببها، بلا حقول إدخال");
+const html = renderToStaticMarkup(React.createElement(SectionGapPanel, { gap, onClose: () => {} }));
+check(html.includes("شعبٌ يُفضَّل زيادتها") && html.includes("اختياري") && html.includes("طلبوه") && html.includes("تخطيطك"), "العرض: عنوانٌ واختياري، ومصدر كل سطر (طلبة أو تخطيطك)");
+check(!html.includes("<a ") && !html.includes("<input") && !html.includes("<form") && !html.includes("قارن") && !html.includes("كشف المتبقي"), "العرض: بلا رابطٍ ولا حقلٍ ولا دعوةٍ إلى شاشة التخطيط");
 const shownRows = (html.match(/<li/g) || []).length;
 check(shownRows === 5 && html.includes("الكل ("), "العرض: خمسة أسطر ثم «الكل»", { shownRows });
-const imported = renderToStaticMarkup(React.createElement(SectionGapPanel, { gap: { ...gap, items: gap.items.slice(0, 2), planImported: true }, onClose: () => {}, onOpenPlanning: () => {} }));
-check(imported.includes("تخطيط الشعب") && !imported.includes("قارن بكشف المتبقي") && !imported.includes("الأرقام هنا من طلب الطلبة وحدهم") && !imported.includes("الكل ("), "بعد رفع الكشف: الرابط إلى «تخطيط الشعب» ولا سببَ دعوةٍ ولا «الكل» لقائمةٍ قصيرة");
+const short = renderToStaticMarkup(React.createElement(SectionGapPanel, { gap: { ...gap, items: gap.items.slice(0, 2), planImported: true }, onClose: () => {} }));
+check(!short.includes("الكل ("), "قائمةٌ قصيرة بلا «الكل»");
 
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

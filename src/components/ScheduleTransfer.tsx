@@ -52,15 +52,13 @@ interface Props {
   onChanged: () => void;
   onSectionChange?: (sectionId: number) => void;
   onClose: () => void;
-  /** يفتح الأدوات على تبويبٍ بعينه (مثلاً «تخطيط الشعب» من دعوة شريط الاعتماد). */
-  initialTab?: "planning";
 }
 
 type Tab = "export" | "import" | "publish" | "retire" | "visiting" | "planning";
 
-export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onSectionChange, onClose, initialTab }: Props) {
+export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onSectionChange, onClose }: Props) {
   useDialogDismiss(true, onClose);
-  const [tab, setTab] = useState<Tab>(initialTab || "export");
+  const [tab, setTab] = useState<Tab>("export");
   /* فصلٌ منتهٍ: لا استيراد ولا تخطيط شعب ولا استبدال ولا منتدبون — يُقرأ ويُصدَّر فقط، كي لا يُكتب في أرشيف. */
   const termEnded = termIsArchive(terms.find(term => Number(term.AdTermId) === Number(termId)) as any, terms as any);
   useEffect(() => { if (termEnded && tab !== "export" && tab !== "publish") setTab("export"); }, [termEnded, tab]);
