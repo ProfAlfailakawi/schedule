@@ -160,7 +160,9 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   /* لا يُعرض في المحدِّد إلا ما يقبله الخادم: فصلُ الباب والفصولُ السابقة المجمَّدة. */
   /* فصولٌ فيها بيانات لنطاق القارئ، والحالي دائماً (useScopedTerms)؛ الباقي كما كان: فصلُ الباب والفصول المجمّدة. */
   const scopedTerms = useScopedTerms<{ AdTermId: number; AdTermName: string }>(terms, 0, 0, termPick, pickTerm);
-  const termOptions = scopedTerms.filter(t => Number(t.AdTermId) === (doorId || data?.term?.id) || termIsFrozen(Number(t.AdTermId), terms as any));
+  /* فصلُ الباب يبقى دائماً (قد يكون قادماً بلا صفوفٍ بعد)، والمجمَّدةُ تُرشَّح بما فيه بيانات. */
+  const termOptions = (terms || []).filter(t => Number(t.AdTermId) === (doorId || data?.term?.id)
+    || (termIsFrozen(Number(t.AdTermId), terms as any) && scopedTerms.some(row => Number(row.AdTermId) === Number(t.AdTermId))));
   const shownView = view || (data?.phase?.namesVisible && outcome && outcome.answers > 0 ? "outcome" : decide.length ? "decide" : "capacity");
 
   return (
