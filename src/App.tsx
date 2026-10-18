@@ -1104,6 +1104,10 @@ export default function App() {
      foot of the rail, where it belongs: a thing you glance at, not a place you
      navigate to. */
   const [journeyOpen, setJourneyOpen] = useState(false);
+  /* «الرحلة» من مساري (/?journey=1&back=/me): تُفتح فوق التطبيق نفسه حين يكون الزائر داخلاً (حساب العرض مثلاً)، لا في شاشة الدخول وحدها. */
+  const [journeyFromMasari, setJourneyFromMasari] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("journey") === "1");
+  /* التطبيق يعيد كتابة العنوان عند الإقلاع فيضيع ?back=: يُلتقط مرةً عند أول رسم. */
+  const [journeyBack] = useState(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("back") : null));
   /* The rail starts present on a desk and folded on a phone; after that its
      state is the reader's, on every width alike. */
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -2258,6 +2262,14 @@ export default function App() {
       data-role={isPowerAdmin ? "admin" : "scheduler"}
       data-demo={user.IsDemo ? "true" : "false"}
     >
+      {journeyFromMasari ? (
+        <Suspense fallback={null}>
+          <ScheduleJourney onClose={() => {
+            if (journeyBack === "/me") { window.location.href = "/me"; return; }
+            setJourneyFromMasari(false);
+          }} />
+        </Suspense>
+      ) : null}
       <header className={`mobile-topbar no-print ${online ? "" : "offline"}`}>
         <button
           type="button"
