@@ -7,7 +7,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { spawn } from "child_process";
-import { sectionGaps } from "../src/utils/sectionGap";
+import { planGaps, studentGaps } from "../src/utils/sectionGap";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string, extra?: unknown) => {
@@ -43,7 +43,7 @@ try {
     check((await call("GET", `/api/schedules/section-gap?collegeId=1&sectionId=1`)).status === 403, "نطاقٌ ناقص يُردّ");
 
     /* بلا كشف: الحساب على الطلب وحده ولا يخترع نقصاً (طلبةُ التجربة قلّة). */
-    const students = sectionGaps(before.body.courses, null);
+    const students = studentGaps(before.body.courses);
     check(students.every(item => item.basis === "students" && item.extra > 0), "بلا كشف: كل سطرٍ من طلب الطلبة وله نقصٌ حقيقي", students);
 
     /* قسمٌ كتب «المختار» بيده ولم يرفع كشفاً: يصل المختار مع القراءة الخفيفة نفسها، ويغلب طلبَ الطلبة. */
@@ -52,7 +52,7 @@ try {
     check(manual.status === 200, "حفظ «المختار» وحده بلا كشف");
     const manualRead = await call("GET", `/api/schedules/section-gap?${Q}`);
     check(manualRead.body.planImported === false && manualRead.body.accepted[first.id] === first.existing + 2 && Object.keys(manualRead.body.remaining).length === 0, "بلا كشف: المختار يصل والمتبقي لا", manualRead.body);
-    const manualGaps = sectionGaps(manualRead.body.courses, { accepted: manualRead.body.accepted, remaining: manualRead.body.remaining, history: {} });
+    const manualGaps = planGaps(manualRead.body.courses, { accepted: manualRead.body.accepted, remaining: manualRead.body.remaining, history: {} });
     check(manualGaps.length === 1 && manualGaps[0].code === "CS101" && manualGaps[0].basis === "plan" && manualGaps[0].extra === 2, "المختار اليدوي يظهر بمصدر «تخطيطك» ولو لم يُرفع كشف", manualGaps);
 
     /* محاكاة قسمٍ رفع الكشف واختار: CS101 يملك 3 شعب ويُختار 6، CS315 يملك 4 ويُختار 6، CS220 يُختار 3 (مثل الموجود). */
@@ -69,7 +69,7 @@ try {
     const after = await call("GET", `/api/schedules/section-gap?${Q}`);
     check(after.body.planImported === true && after.body.planSource?.fileName === "المتبقي.pdf", "بعد الرفع: planImported ومصدره");
     const stats = (await call("GET", `/api/registration-stats?${Q}`)).body;
-    const gaps = sectionGaps(after.body.courses, { remaining: stats.remaining, accepted: stats.accepted, history: stats.history || {} });
+    const gaps = planGaps(after.body.courses, { remaining: stats.remaining, accepted: stats.accepted, history: stats.history || {} });
     const g101 = gaps.find(item => item.code === "CS101"), g315 = gaps.find(item => item.code === "CS315");
     check(!!g101 && g101.basis === "plan" && g101.existing === cs101.existing && g101.required === cs101.existing + 3 && g101.extra === 3, "CS101: الموجود ← المطلوب = +3 بمصدر التخطيط", g101);
     check(!!g315 && g315.extra === 2 && g315.basis === "plan", "CS315: +2", g315);

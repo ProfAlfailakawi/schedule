@@ -18,12 +18,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, Check, ChevronDown, CornerUpLeft, DoorOpen, FilePenLine, Flag, History,
   Hourglass, Users, Landmark, ListChecks, ListPlus, Lock, MessageSquareText, PenLine, Quote, Send, ShieldCheck, Undo2, X,
-  Clock, Layers, Pencil, FileQuestion,
+  Clock, Layers, Pencil, FileUp,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
-import { SectionGapBadge, SectionGapPanel, useSectionGap } from "./SectionGapNote";
+import { SectionGapBadge, SectionGapPanel, useSectionGap, type GapKind } from "./SectionGapNote";
+import QuickPlanSheet from "./QuickPlanSheet";
 import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
 } from "../utils/approvalWorkflow";
@@ -149,7 +150,8 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [revealSteps, setRevealSteps] = useState(false);
   /* قائمة البيانات الناقصة تُفتح من عنصرها هي، لا من طيّ تفاصيل الاعتماد. */
   const [readinessOpen, setReadinessOpen] = useState(false);
-  const [gapOpen, setGapOpen] = useState(false);
+  const [gapOpen, setGapOpen] = useState<GapKind | null>(null);
+  const [planSheet, setPlanSheet] = useState(false);
   const gap = useSectionGap(collegeId, sectionId, termId, refreshSignal);
   const [readinessAll, setReadinessAll] = useState(false);
   const revealTimer = useRef(0);
@@ -528,6 +530,8 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   };
   const ITEM_ICON: Record<string, LucideIcon> = { course: Landmark, schedule: CalendarClock, location: DoorOpen, room: DoorOpen };
   const ITEM_ACTION: Record<string, string> = { course: "افتح المقررات", schedule: "اذهب للموعد", location: "اذهب للموعد", room: "اذهب للموعد" };
+  const gapList = gapOpen === "plan" ? gap.planItems : gapOpen === "students" ? gap.studentItems : [];
+  const gapPanel = gapOpen && gapList.length ? <SectionGapPanel items={gapList} kind={gapOpen} onClose={() => setGapOpen(null)} /> : null;
   const readinessPanel = state.dataReadiness ? (
     <section className="apb-data-readiness" data-ready={state.dataReadiness.ready || undefined} aria-label="بيانات تحتاج استكمالاً">
       <header>
@@ -659,13 +663,16 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             <ChevronDown aria-hidden="true" className="apb-data-chev" />
           </button>
         ) : null}
-        <SectionGapBadge gap={gap} open={gapOpen} onToggle={() => setGapOpen(open => !open)} />
-        {gap.loaded && !gap.planImported && (gap.items.length > 0 || canSignNow) ? (
-          <InfoTip {...tipProps("gap-plan")} label="لم يُرفع كشف المتبقي" tip={[gap.items.some(item => item.basis === "plan") ? "لم يُرفع كشف المتبقي بعد." : "لم يُرفع كشف المتبقي بعد، فالمقارنة من طلب الطلبة وحدهم."]} className="apb-badge apb-gap-ghost"
-            data-guide-ignore="أيقونة تنبيه خفيفة: كشف المتبقي لم يُرفع بعد — تلميحٌ لا فعل">
-            <FileQuestion aria-hidden="true" />
-          </InfoTip>
+        <SectionGapBadge items={gap.planItems} kind="plan" open={gapOpen === "plan"} onToggle={() => setGapOpen(open => open === "plan" ? null : "plan")} />
+        <SectionGapBadge items={gap.studentItems} kind="students" open={gapOpen === "students"} onToggle={() => setGapOpen(open => open === "students" ? null : "students")} />
+        {gap.loaded && !gap.planImported ? (
+          <button type="button" className="apb-badge apb-gap-ghost" onClick={() => setPlanSheet(true)} aria-haspopup="dialog"
+            title="لم يُرفع كشف المتبقي. اضغط لترفعه فتظهر لك الشعب المقترحة." aria-label="ارفع كشف المتبقي لتظهر لك الشعب المقترحة"
+            data-guide-ignore="أيقونة اختيارية: تفتح شاشةً مختصرة لرفع كشف المتبقي">
+            <FileUp aria-hidden="true" />
+          </button>
         ) : null}
+        {planSheet ? <QuickPlanSheet collegeId={collegeId} sectionId={sectionId} termId={termId} gap={gap} onClose={() => setPlanSheet(false)} /> : null}
         {canSignNow && blockingConflicts === 0 ? (
           <span className="apb-badge apb-ready" data-tone="success" data-guide-ignore="شارة جاهزية التوقيع — عرضٌ لا فعل">
             <ShieldCheck aria-hidden="true" /><span>جاهز للتوقيع</span>
@@ -814,11 +821,11 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       </div>
 
       {!showDetails && readinessOpen && readinessPanel ? <div className="apb-expanded apb-expanded-solo">{readinessPanel}</div> : null}
-      {!showDetails && gapOpen && gap.items.length ? <div className="apb-expanded apb-expanded-solo"><SectionGapPanel gap={gap} onClose={() => setGapOpen(false)} /></div> : null}
+      {!showDetails && gapPanel ? <div className="apb-expanded apb-expanded-solo">{gapPanel}</div> : null}
       {showDetails ? (
         <div className="apb-expanded" data-reveal={revealSteps || undefined}>
           {readinessPanel}
-          {gapOpen && gap.items.length ? <SectionGapPanel gap={gap} onClose={() => setGapOpen(false)} /> : null}
+          {gapPanel}
           <div className="apb-expanded-row">
             <Stepper steps={steps} size="lg" returnFrom={returnFrom}
               stamp={(step) => step.sig?.length ? (
