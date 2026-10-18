@@ -1139,6 +1139,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     [copyPreview, setCopyPreview] = useState<any | null>(null),
     [copyUndoPoint, setCopyUndoPoint] = useState<any | null>(null),
     [previewing, setPreviewing] = useState(false);
+  /* قوائمُ الفصل في نماذج الإضافة والنسخ: القاعدةُ نفسها (فصولٌ فيها بيانات للنطاق + أحدثُ فصل). */
+  const copyScopedTerms = useScopedTerms<AdTerm>(terms, copyCollege, copySection, 0);
+  const formScopedTerms = useScopedTerms<AdTerm>(terms, form.AdCollegeId, form.AdSectionId, 0);
   const [physicsNotice, setPhysicsNotice] = useState(""),
     [undoPoint, setUndoPoint] = useState<any>(null),
     [pendingWriteIds, setPendingWriteIds] = useState<Set<number>>(() => new Set()),
@@ -8376,7 +8379,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   required
                 >
                   <option value="">اختر ...</option>
-                  {terms.map((t) => (
+                  {copyScopedTerms.map((t) => (
                     <option key={t.AdTermId} value={t.AdTermId}>
                       {t.AdTermName}
                     </option>
@@ -8406,7 +8409,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   required
                 >
                   <option value="">اختر ...</option>
-                  {terms.map((t) => (
+                  {copyScopedTerms.map((t) => (
                     <option key={t.AdTermId} value={t.AdTermId}>
                       {t.AdTermName}
                     </option>
@@ -8570,7 +8573,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     required
                   >
                     <option value="">اختر ...</option>
-                    {terms.map((t) => (
+                    {formScopedTerms.concat(terms.filter((t) => Number(t.AdTermId) === Number(form.AdTermId) && !formScopedTerms.some((x) => Number(x.AdTermId) === Number(t.AdTermId)))).map((t) => (
                       <option key={t.AdTermId} value={t.AdTermId}>
                         {t.AdTermName}
                       </option>
