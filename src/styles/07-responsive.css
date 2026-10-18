@@ -62,7 +62,9 @@
     letter-spacing:var(--brand-word-track);
   }
   .mobile-brand-wrap{justify-self:center;display:flex;flex-direction:column;align-items:center;line-height:1.15;min-width:0}
+  .mobile-brand-wrap .mobile-brand{min-height:44px;padding-inline:var(--s3)}
   .mobile-brand-wrap .mobile-scope{
+    margin-top:-12px;pointer-events:none;
     display:block;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     font-family:inherit;font-size:10.5px;font-weight:500;letter-spacing:0;color:var(--muted);
   }
