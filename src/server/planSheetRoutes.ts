@@ -83,7 +83,7 @@ export async function buildSheetModel(plan: { id: string; AdCollegeId: number; A
      مجموعُ التخرّج أكبر من المطبوع (112 بدل 75). مجموعةٌ لا مقرر لقسم الصحيفة فيها تدخل بحدّها الأدنى. */
   const inGroup = new Set((live.groups || []).flatMap(group => group.courseIds));
   const foreignIds = [...new Set([...memberIds.filter(id => !isOwn(id)), ...(live.externals || []).map(Number)])].filter(id => id > 0 && !isOwn(id));
-  const groupedForeign = (live.groups || []).filter(group => !group.courseIds.some(id => ownSet.has(id)) && group.courseIds.some(id => foreignIds.includes(id))).reduce((sum, group) => sum + (Number(group.minUnits) || 0), 0);
+  const groupedForeign = (live.groups || []).filter(group => !group.courseIds.some(id => ownSet.has(id)) && group.courseIds.some(id => foreignIds.includes(id))).reduce((sum, group) => sum + Math.max(Number(group.minUnits) || 0, (Number(group.minCourses) || 0) * 3), 0);
   const otherUnits = foreignIds.filter(id => !inGroup.has(id)).reduce((sum, id) => sum + creditOf(id), 0) + groupedForeign;
   const edgeKeys = new Set<string>(), edges: Array<[string, string]> = [];
   const notes: string[] = [];

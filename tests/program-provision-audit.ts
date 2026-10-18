@@ -112,6 +112,16 @@ const snapshot = async () => JSON.stringify([(await Repository.getSections()).le
   check((await snapshot()) === before && ((await Repository.getSections()) as any[]).length === sectionsBefore, "V5 لا شيء تغيّر");
 }
 
+/* V5ب: تشغيلٌ سابقٌ انقطع بعد إنشاء الحساب وقبل صلاحياته ونطاقه: يُكمل الناقص ولا يمسّ غيره. */
+{
+  const head = ((await Repository.getUsers()) as any[]).find(row => row.SystemUserLogin === "tsbhead");
+  await Repository.saveSecurityByUser(Number(head.SystemUserId), []);
+  await Repository.saveUserAssigns(Number(head.SystemUserId), []);
+  const resumed = await provisionProgram(Repository, REF, { apply: true, prefix: "tsb", deptNames: names });
+  check(resumed.accounts.find(row => row.login === "tsbhead")?.status === "completed" && resumed.accounts.filter(row => row.status === "completed").length === 1, "V5ب الحساب المبتور يُكمل وحده", resumed.accounts.map(row => `${row.login}:${row.status}`));
+  check((await Repository.getSecurityByUser(Number(head.SystemUserId))).length > 0 && (await Repository.getUserAssigns(Number(head.SystemUserId))).length === 1, "V5ب عادت صلاحياته ونطاقه (نطاقٌ واحد)");
+}
+
 /* V6 */
 {
   const own = ((await Repository.getSections()) as any[]).find(row => Number(row.AdCollegeId) === 1 && String(row.AdSectionCode) === "51");

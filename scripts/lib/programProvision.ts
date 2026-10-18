@@ -45,7 +45,7 @@ export interface ProvisionReport {
   coursesExisting: number;
   planStatus: "exists" | "created" | "will-create";
   draftStatus: "kept" | "written" | "will-write";
-  accounts: Array<{ login: string; role: string; scope: string; status: "exists" | "created" | "will-create" }>;
+  accounts: Array<{ login: string; role: string; scope: string; status: "exists" | "created" | "completed" | "will-create" }>;
   wrote: boolean;
 }
 
@@ -182,8 +182,18 @@ export async function provisionProgram(Repository: any, ref: CurriculumReference
   /* الحسابات: موقوفة وبلا كلمة سر، على هذه الكلية وحدها. */
   const { roleDefinition } = await import("../../src/utils/academicRoles");
   for (const row of report.accounts) {
-    if (row.status === "exists") continue;
     const role = roleDefinition(row.role);
+    if (row.status === "exists") {
+      /* أُنشئ الحسابُ في تشغيلٍ سابقٍ انقطع قبل الصلاحيات أو النطاق: نُكمل الناقص فقط ولا نغيّر ما ضُبط. */
+      const found = byLogin.get(row.login.toLowerCase());
+      if (!found) continue;
+      const userId = Number(found.SystemUserId);
+      let filled = false;
+      if (!(await Repository.getSecurityByUser(userId)).length) { await Repository.saveSecurityByUser(userId, role.formIds); filled = true; }
+      if (!(await Repository.getUserAssigns(userId)).length) { await Repository.saveUserAssigns(userId, [{ AdCollegeId: collegeId, AdSectionId: SECTION_ROLES.has(row.role) ? ownSectionId : 0 }]); filled = true; }
+      if (filled) { row.status = "completed"; log(`~ أُكمل حساب ${row.login} (${role.label}) — كان ناقص الصلاحيات أو النطاق`); }
+      continue;
+    }
     const user = await Repository.createUser({
       Name: `${role.label} — ${report.college.name}`, SystemUserLogin: row.login, SystemUserPass: "",
       IsAdminUser: false, IsActive: false, IsLocked: false, IsDeleted: false, AdInstructorId: 0, Role: row.role,
