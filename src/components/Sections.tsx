@@ -431,7 +431,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                           <dd>
                             {draft ? (
                               <input
-                                type="number" min={30} max={300} inputMode="numeric" dir="ltr"
+                                type="number" min={0} max={999} inputMode="numeric" dir="ltr"
                                 value={draft[key]}
                                 onChange={event => setRuleDraft({ ...draft, [key]: event.target.value })}
                               />

@@ -26,8 +26,9 @@ export const suggestedDegreeRule = (sectionName: string): DegreeRule => {
 };
 
 /** One validation for every place a graduation rule is typed: a department's own rule and a curriculum plan's rule obey
- * the same bounds. «لفتح التدريب الميداني» لا تعرضه شاشة القسم؛ فحين لا يُرسَل يبقى المحفوظ (أو المقترح) بشرط ألا يتجاوز
- * حدّ الخريج العادي، فلا يُرفض مجموعٌ أصغر برقمٍ قديمٍ لا يراه المستخدم. حين يُرسَل (شاشة الصحائف) يُتحقَّق منه كغيره. */
+ * the same bounds. لكل قسمٍ أرقامُه: لا قيدَ على الأرقام إلا أن تكون عدداً صحيحاً معقولاً (0–999)؛ فلا يُرفض رقمٌ لأنه
+ * فوق المجموع أو دون ٣٠. «لفتح التدريب الميداني» لا تعرضه شاشة القسم؛ فحين لا يُرسَل يبقى المحفوظ (أو المقترح) بشرط ألا
+ * يتجاوز حدّ الخريج العادي. */
 export const readDegreeRuleInput = (body: any, fieldTrainingFallback: number): { rule: DegreeRule } | { error: string } => {
   const read = (key: string) => Math.round(Number(toEnglishDigits((body || {})[key])));
   const degreeUnits = read("degreeUnits");
@@ -36,12 +37,6 @@ export const readDegreeRuleInput = (body: any, fieldTrainingFallback: number): {
   const given = !(raw == null || String(raw).trim() === "");
   const fieldTrainingRequired = given ? read("fieldTrainingRequired") : Math.min(Number(fieldTrainingFallback), graduateRegularPassed);
   const values = [degreeUnits, fieldTrainingRequired, graduateRegularPassed, graduateSummerPassed];
-  if (values.some(value => !Number.isFinite(value) || value < 30 || value > 300)) return { error: "كل قيمة يجب أن تكون عدد وحدات بين 30 و 300" };
-  // A student cannot be asked to pass more than the degree holds.
-  /* المشتقّ لا يُلام: هو ≤ حدّ الخريج العادي، فإن زاد الأخير عن المجموع سُمّي الأخير. */
-  const checked: Array<[string, number]> = [["خريج / متوقع · فصل عادي", graduateRegularPassed], ["خريج / متوقع · فصل صيفي", graduateSummerPassed]];
-  if (given) checked.unshift(["لفتح التدريب الميداني", fieldTrainingRequired]);
-  const over = checked.find(([, value]) => value > degreeUnits);
-  if (over) return { error: `«${over[0]}» (${over[1]}) أكبر من مجموع وحدات الدرجة (${degreeUnits}) — عدّله أو ارفع المجموع` };
+  if (values.some(value => !Number.isFinite(value) || value < 0 || value > 999)) return { error: "كل قيمة يجب أن تكون رقماً بين 0 و999" };
   return { rule: { degreeUnits, fieldTrainingRequired, graduateRegularPassed, graduateSummerPassed } };
 };

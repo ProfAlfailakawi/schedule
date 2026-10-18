@@ -304,7 +304,7 @@ export default function CurriculumPlans({
             {RULE_FIELDS.map(([key, label, hint]) => (
               <label key={key}>
                 <span>{label}</span>
-                <input type="number" min={30} max={300} inputMode="numeric" dir="ltr" value={editing.values[key]}
+                <input type="number" min={0} max={999} inputMode="numeric" dir="ltr" value={editing.values[key]}
                   onChange={e => setRuleDraft({ planId: plan.id, values: { ...editing.values, [key]: e.target.value } })}
                   aria-label={`${label} — ${plan.name}`} />
                 <small>{hint}</small>

@@ -145,12 +145,15 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
   check(ok(keep) && (keep as any).rule.fieldTrainingRequired === 102, "المحفوظ المعقول يبقى كما هو حين لا يُرسل");
   const arabicDigits = readDegreeRuleInput({ degreeUnits: "٧٥", graduateRegularPassed: "٦٠", graduateSummerPassed: "٦٣" }, 102);
   check(ok(arabicDigits) && (arabicDigits as any).rule.graduateSummerPassed === 63, "الأرقام الهندية تُقبل");
-  const tooHigh = readDegreeRuleInput({ degreeUnits: 75, graduateRegularPassed: 80, graduateSummerPassed: 63 }, 102);
-  check(!ok(tooHigh) && /خريج \/ متوقع · فصل عادي/.test((tooHigh as any).error) && /\(80\)/.test((tooHigh as any).error), "شرطٌ ظاهر فوق المجموع يُرفض ويسمّي الشرط");
+  /* لكل قسمٍ أرقامُه: لا يُرفض رقمٌ فوق المجموع ولا دون ٣٠. */
+  const free = readDegreeRuleInput({ degreeUnits: 75, graduateRegularPassed: 80, graduateSummerPassed: 90 }, 102);
+  check(ok(free) && (free as any).rule.graduateSummerPassed === 90, "شرطٌ فوق المجموع يُقبل (لكل قسم أرقامه)");
+  const low = readDegreeRuleInput({ degreeUnits: 12, fieldTrainingRequired: 6, graduateRegularPassed: 10, graduateSummerPassed: 11 }, 50);
+  check(ok(low) && (low as any).rule.degreeUnits === 12, "رقمٌ دون ٣٠ يُقبل");
   const explicit = readDegreeRuleInput({ degreeUnits: 75, fieldTrainingRequired: 90, graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50);
-  check(!ok(explicit) && /لفتح التدريب الميداني/.test((explicit as any).error), "في شاشة الصحائف (الحقل ظاهر) يبقى التحقق صارماً");
-  const bad = readDegreeRuleInput({ degreeUnits: 75, graduateRegularPassed: 20, graduateSummerPassed: 63 }, 102);
-  check(!ok(bad), "قيمةٌ خارج 30–300 تُرفض");
+  check(ok(explicit) && (explicit as any).rule.fieldTrainingRequired === 90, "شاشة الصحائف: التدريب الميداني المُرسَل يُقبل كما كُتب");
+  check(!ok(readDegreeRuleInput({ degreeUnits: "abc", graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50)), "ما ليس رقماً يُرفض");
+  check(!ok(readDegreeRuleInput({ degreeUnits: 75, graduateRegularPassed: -5, graduateSummerPassed: 63 }, 50)) && !ok(readDegreeRuleInput({ degreeUnits: 5000, graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50)), "السالب وما فوق ٩٩٩ يُرفضان (خطأ كتابة)");
   const sectionsScreen = fs.readFileSync(path.join(process.cwd(), "src/components/Sections.tsx"), "utf8");
   check(sectionsScreen.includes("fieldTrainingRequired: _hidden") && !/\["fieldTrainingRequired"/.test(sectionsScreen), "شاشة القسم لا تعرض التدريب الميداني ولا ترسل رقمه المخفي");
 }
