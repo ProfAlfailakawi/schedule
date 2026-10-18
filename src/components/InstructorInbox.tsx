@@ -44,7 +44,7 @@ import { proposalApi, type StaffProposalView } from "./proposal/proposalApi";
 const StudyProposalWorkspace = React.lazy(() => import("./proposal/StudyProposalWorkspace"));
 import TermFrozenRibbon, { TermFrozenContext, useFrozenScreen, useTermFrozen } from "./TermFrozenRibbon";
 import { useScopedTerms } from "./useScopedTerms";
-import ScopeAskBar, { pinSingleScope, type ScopeAskSelect } from "./ScopeAskBar";
+import ScopeAskBar, { trimScopeSelects, type ScopeAskSelect } from "./ScopeAskBar";
 import {
   Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface,
 } from "./ui";
@@ -1250,7 +1250,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         onAskSubmit={setAsk}
         askPlaceholder="اسأل: باسم الأستاذ"
         onClear={() => { setAsk(""); setInstructorFilter(0); }}
-        selects={pinSingleScope(selects, scopes, powerAdmin)}
+        selects={trimScopeSelects(selects, scopes, powerAdmin)}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
           if (key === "instructor") { setInstructorFilter(id); return; }

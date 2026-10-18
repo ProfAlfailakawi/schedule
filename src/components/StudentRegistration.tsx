@@ -25,7 +25,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, MessageSquareText, Users, X, Zap } from "lucide-react";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { useScopedTerms } from "./useScopedTerms";
-import ScopeAskBar, { pinSingleScope, type ScopeAskSelect } from "./ScopeAskBar";
+import ScopeAskBar, { trimScopeSelects, type ScopeAskSelect } from "./ScopeAskBar";
 import ApplyProposal from "./ApplyProposal";
 import StudentCasesTable, { exportStudentCasesXlsx, GRADUATE_REASON_LABEL, STUDENT_CASE_TYPE_LABEL, type StudentCaseView } from "./StudentCasesTable";
 import {
@@ -787,7 +787,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         onAskSubmit={setAsk}
         askPlaceholder="اسأل: رقم الحالة أو اسم الطالب"
         onClear={() => setAsk("")}
-        selects={pinSingleScope(selects, scopes, powerAdmin)}
+        selects={trimScopeSelects(selects, scopes, powerAdmin)}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
           if (key === "college") {

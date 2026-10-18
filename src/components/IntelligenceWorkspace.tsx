@@ -89,6 +89,7 @@ import IntelligenceContextBar from "./IntelligenceContextBar";
 import { AR, countOf, nounFor, oblique, studentNounsFor } from "../utils/arabicCount";
 import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer";
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { hidesCollege, scopeShape } from "../utils/scopeShape";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { sortByName, byRoom, byArabic } from "../utils/sorting";
 import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
@@ -2106,9 +2107,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       availableSections={availableSections}
       terms={terms}
       online={online}
-      lockCollege={scopedContext.lockCollege}
+      hideCollege={hidesCollege(scopeShape(scopes, isPowerAdmin))}
       lockSection={singleDepartmentOf(scopes, collegeId, isPowerAdmin) !== null}
-      hideSection={!isPowerAdmin && singleDepartmentOf(scopes, collegeId, isPowerAdmin) === null}
+      hideSection={!isPowerAdmin}
       onCollegeChange={(nextCollegeId, firstSectionId) => {
         pendingReadingAction.current = null;
         const nextSectionId = nextCollegeId ? (isPowerAdmin ? firstSectionId : (resolveScopeSelection(scopes, nextCollegeId, false).defaultSectionId || firstSectionId)) : 0;

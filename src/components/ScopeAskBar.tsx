@@ -25,7 +25,8 @@ import React from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { Field, GhostButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
-import { singleDepartmentOf, soleCollegeOf, type ScopeAssignmentLike } from "../utils/scopeContext";
+import type { ScopeAssignmentLike } from "../utils/scopeContext";
+import { hidesCollege, hidesSection, scopeShape } from "../utils/scopeShape";
 
 export interface ScopeAskOption {
   value: string | number;
@@ -41,8 +42,6 @@ export interface ScopeAskSelect {
   placeholder: string;
   options: ScopeAskOption[];
   disabled?: boolean;
-  /** نصٌّ ثابت بدل القائمة: لا خيارَ حقيقيّ للمستخدم (كليةٌ أو قسمٌ وحيد). */
-  fixed?: string;
 }
 
 export interface ScopeAskBarProps {
@@ -79,28 +78,13 @@ export interface ScopeAskBarProps {
 }
 
 /**
- * يثبّت الكلية والقسم نصّاً لمن لا خيارَ أمامه: كليةٌ واحدة (soleCollegeOf) وقسمٌ واحد (singleDepartmentOf).
- * القرار في هاتين الدالتين وحدهما؛ والإدارةُ تُبقي المنتقيات. تبقى قائمةُ الفصل وغيرها كما هي.
+ * يُخفي ما لا خيارَ فيه لمن دخل بحساب قسمه (scopeShape): قسمٌ واحد في كليةٍ → لا كلية ولا قسم؛
+ * قسمٌ في عدّة مواقع → لا قسم. والقيمُ تبقى افتراضيةً في حالة الشاشة؛ والفصلُ وغيرُه كما هي. الإدارة ومن له أقسامٌ عدّة
+ * يرون كل شيء.
  */
-export function pinSingleScope(selects: ScopeAskSelect[], scopes: ScopeAssignmentLike[], isAdmin: boolean): ScopeAskSelect[] {
-  const college = soleCollegeOf(scopes, isAdmin);
-  return selects.map(select => {
-    if (select.key === "college" && college) {
-      const label = select.options.find(option => Number(option.value) === college)?.label;
-      return label ? { ...select, value: college, fixed: label } : select;
-    }
-    if (select.key === "section") {
-      const only = singleDepartmentOf(scopes, college || Number(selects.find(item => item.key === "college")?.value || 0), isAdmin);
-      const label = only ? select.options.find(option => Number(option.value) === only)?.label : undefined;
-      return label ? { ...select, value: only as number, fixed: label } : select;
-    }
-    return select;
-  });
-}
-
-/** نطاقٌ ثابتٌ بهيئة الحقل — لمن لا خيارَ أمامه (كليةٌ أو قسمٌ وحيد). */
-export function FixedScopeValue({ children }: { children: React.ReactNode }) {
-  return <span className="fixed-scope-value" data-guide-ignore="نطاقٌ ثابت للعرض — لا اختيار فيه">{children}</span>;
+export function trimScopeSelects(selects: ScopeAskSelect[], scopes: ScopeAssignmentLike[], isAdmin: boolean): ScopeAskSelect[] {
+  const shape = scopeShape(scopes, isAdmin);
+  return selects.filter(select => !(select.key === "college" && hidesCollege(shape)) && !(select.key === "section" && hidesSection(shape)));
 }
 
 /**
@@ -165,7 +149,7 @@ export default function ScopeAskBar({
              كذلك عند React. الغلافُ يُبقي الحدّ حيث هو. */
           <React.Fragment key={select.key}>
             <Field label={select.label}>
-              {select.fixed ? <FixedScopeValue>{select.fixed}</FixedScopeValue> : <select
+              <select
                 value={select.value || ""}
                 disabled={select.disabled}
                 onChange={event => onSelect(select.key, event.target.value)}
@@ -174,7 +158,7 @@ export default function ScopeAskBar({
                 {select.options.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
-              </select>}
+              </select>
             </Field>
           </React.Fragment>
         ))}

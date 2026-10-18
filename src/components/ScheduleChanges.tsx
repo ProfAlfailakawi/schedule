@@ -27,7 +27,7 @@ import { ApprovalDnaStepper, DeadlineDnaRing } from "./dna/scheduleDna";
 import ApprovalBar from "./ApprovalBar";
 import SubmissionDeadlines from "./SubmissionDeadlines";
 import { useScopedTerms } from "./useScopedTerms";
-import ScopeAskBar, { pinSingleScope, type ScopeAskSelect } from "./ScopeAskBar";
+import ScopeAskBar, { trimScopeSelects, type ScopeAskSelect } from "./ScopeAskBar";
 import { EMPTY_INBOX_ASK, matchesInboxAsk, parseInboxAsk, type InboxAsk, type InboxAskSignal } from "../utils/inboxAsk";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, ESCALATE_AFTER_INSISTS } from "../utils/approvalWorkflow";
@@ -378,7 +378,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
         askPlaceholder={audience.department ? "اسأل: المتأخر أو اللي فيه ملاحظات" : "اسأل: الأقسام المتأخرة اللي عندها موانع"}
         askNote={askNote}
         onClear={clearAll}
-        selects={pinSingleScope(selects, scopes, powerAdmin)}
+        selects={trimScopeSelects(selects, scopes, powerAdmin)}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
           if (key === "college") { sharedScope.pick({ collegeId: id, sectionId: 0 }); setCollegeId(id); setSectionId(0); }

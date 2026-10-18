@@ -116,8 +116,8 @@ import {
   scheduleTimeFromMinutes as timeFromMins,
   type DayKey,
 } from "./scheduleWorkspace";
-import { coerceScopeValues, describeScopeSelection, resolveScopeSelection, singleDepartmentOf, soleCollegeOf } from "../utils/scopeContext";
-import { FixedScopeValue } from "./ScopeAskBar";
+import { coerceScopeValues, describeScopeSelection, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { hidesCollege, hidesSection, scopeShape } from "../utils/scopeShape";
 import { useScopedTerms } from "./useScopedTerms";
 import { readSharedScope, resolveSharedScope, useSharedScope, type SharedScope } from "../utils/sharedScope";
 import { runVisualTransition } from "../utils/visualTransition";
@@ -9985,8 +9985,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         </div>
         ) : null}
         <div className="filter-strip">
-          {soleCollegeOf(scopes, isPowerAdmin) ? <Field label="الكلية"><FixedScopeValue>{filterColleges.find(c => Number(c.AdCollegeId) === soleCollegeOf(scopes, isPowerAdmin))?.AdCollegeName || ""}</FixedScopeValue></Field> : <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>}
-          {singleDepartmentOf(scopes, filterCollege || soleCollegeOf(scopes, isPowerAdmin) || 0, isPowerAdmin) === null ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : <Field label={"القسم العلمي"}><FixedScopeValue>{filterSections.find(x => Number(x.AdSectionId) === singleDepartmentOf(scopes, filterCollege || soleCollegeOf(scopes, isPowerAdmin) || 0, isPowerAdmin))?.AdSectionName || ""}</FixedScopeValue></Field>}
+          {hidesCollege(scopeShape(scopes, isPowerAdmin)) ? null : <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>}
+          {!hidesSection(scopeShape(scopes, isPowerAdmin)) && singleDepartmentOf(scopes, filterCollege, isPowerAdmin) === null ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
           <Field label="الفصل الدراسي">
             <select
               data-guide-target="schedule.filter.term"

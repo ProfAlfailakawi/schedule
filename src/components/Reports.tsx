@@ -13,8 +13,8 @@ import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
 import type { ScheduleApprovalStatus } from "../types";
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
-import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf, soleCollegeOf } from "../utils/scopeContext";
-import { FixedScopeValue } from "./ScopeAskBar";
+import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { hidesCollege, hidesSection, scopeShape } from "../utils/scopeShape";
 import { useScopedTerms } from "./useScopedTerms";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { safeStorage } from "../utils/safeStorage";
@@ -2024,9 +2024,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         </form>
         {askNote ? <p className="query-ask-note" id="query-ask-note" role="status">{askNote}</p> : null}
 
-        <div className="query-scope query-primary-filters" data-count={3} aria-label="المرشحات الأساسية">
-          <Field label="الكلية">
-            {soleCollegeOf(scopes, isPowerAdmin) ? <FixedScopeValue>{cleanOptionText(collegeOptions.find(row => Number(row.AdCollegeId) === soleCollegeOf(scopes, isPowerAdmin))?.AdCollegeName || "")}</FixedScopeValue> : <select
+        <div className="query-scope query-primary-filters" data-count={3 - (hidesCollege(scopeShape(scopes, isPowerAdmin)) ? 1 : 0) - (soleDepartment !== null || hidesSection(scopeShape(scopes, isPowerAdmin)) ? 1 : 0)} aria-label="المرشحات الأساسية">
+          {hidesCollege(scopeShape(scopes, isPowerAdmin)) ? null : <Field label="الكلية">
+            <select
               value={filters.collegeId || ""}
               onChange={event => {
                 const id = Number(event.target.value) || 0;
@@ -2035,14 +2035,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             >
               <option value="">اختر الكلية</option>
               {collegeOptions.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{cleanOptionText(row.AdCollegeName)}</option>)}
-            </select>}
-          </Field>
-          {soleDepartment !== null ? (
-            <Field label="القسم">
-              <FixedScopeValue>{cleanOptionText(sectionOptions.find(row => Number(row.AdSectionId) === soleDepartment)?.AdSectionName || "")}</FixedScopeValue>
-            </Field>
-          ) : null}
-          {soleDepartment === null ? (
+            </select>
+          </Field>}
+          {soleDepartment === null && !hidesSection(scopeShape(scopes, isPowerAdmin)) ? (
             <Field label="القسم">
               <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => pickScope({ sectionId: Number(event.target.value) || 0 })}>
                 <option value="">كل الأقسام</option>
