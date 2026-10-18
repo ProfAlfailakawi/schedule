@@ -107,6 +107,14 @@ check(ex.headers.getSetCookie().join("|").includes(`${SHOWCASE_COOKIE}=;`), "S4 
     const r4 = await put(c.jar, [foreign.id]);
     check(!r4.passedCourseIds.includes(foreign.id), "S6 مقررُ قسمٍ آخر بمسبقه من قسمه: لا يُعلَّم قبل مسبقه", { id: foreign.id });
   }
+  /* المحوَّل المعادَلة له مقررات: يعلن ذلك فيُحفظ المعادَل بلا مسبقاته، وبغير إعلانٍ يُهمَل الطلب. */
+  const putEq = async (jar: string, body: any) => (await fetch(base + "/api/public/me/profile", { method: "PUT", headers: { "content-type": "application/json", cookie: jar }, body: JSON.stringify({ sectionId: st.profile.sectionId, curriculumPlanId: st.profile.planId, ...body }) })).json() as Promise<any>;
+  const e1 = await putEq(c.jar, { passedCourseIds: [advanced.id], transfer: true, equivalentCourseIds: [advanced.id] });
+  check(e1.passedCourseIds.includes(advanced.id) && e1.transfer === true && e1.equivalentCourseIds.includes(advanced.id) && e1.droppedPassed === 0, "S6 المحوَّل: مقرر معادَل يُحفظ بلا مسبقاته ويُوسَم", e1);
+  const e2 = await putEq(c.jar, { passedCourseIds: [advanced.id], transfer: false, equivalentCourseIds: [advanced.id] });
+  check(!e2.passedCourseIds.includes(advanced.id) && e2.transfer === false, "S6 بلا إعلان «محوَّل»: طلبُ المعادلة يُهمَل ويُسقَط المقرر", e2.passedCourseIds);
+  const e3 = await putEq(c.jar, { passedCourseIds: [advanced.id, locked.find((x: any) => x.id !== advanced.id && x.level >= 300)?.id].filter(Boolean), transfer: true, equivalentCourseIds: [advanced.id] });
+  check(e3.passedCourseIds.includes(advanced.id) && e3.passedCourseIds.length <= 2, "S6 الإعفاء لما أُعلن معادَلاً وحده", e3.passedCourseIds);
   const planList = await (await get("/api/public/me/plan?sectionId=" + st.profile.sectionId, c.jar)).json() as any;
   const withPrereq = planList.plans.flatMap((pl: any) => pl.courses).filter((x: any) => x.prereq);
   check(withPrereq.length > 5, "S6 قائمةُ «ما أنجزتُه» تحمل مسبقاتِ كل مقرر ليمنعها المتصفح", withPrereq.length);

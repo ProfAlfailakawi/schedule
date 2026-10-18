@@ -7,6 +7,8 @@
  *
  * يُسقَط ما اختلّ شرطُه، وما بُني عليه، حتى يستقرّ المجموع. والحساب نفسُه في المتصفح (kmCore.unmet) وفي الخادم
  * (هنا)، فالواجهةُ تمنع والخادمُ لا يثق بها.
+ *
+ * الاستثناءُ الوحيد: الطالبُ المحوَّل الذي أُعادِلت له مقررات (`exempt`)، وقد قال ذلك بنفسه في ملفه.
  */
 import { unmetPrereq } from "./curriculumRules";
 import type { CoursePrereq } from "../types";
@@ -17,6 +19,8 @@ export function closePassed(
   passed: readonly number[],
   prereqOf: (courseId: number) => CoursePrereq | undefined,
   credit: ReadonlyMap<number, number>,
+  /** المقررات المعادَلة (طالبٌ محوَّل): تُعدّ منجَزةً بلا مسبقاتها، فلا تُسقَط ويُبنى عليها ما بعدها. */
+  exempt: ReadonlySet<number> = new Set(),
 ): PassedClosure {
   const set = new Set(passed);
   const dropped: number[] = [];
@@ -24,6 +28,7 @@ export function closePassed(
     changed = false;
     const units = [...set].reduce((sum, id) => sum + (credit.get(id) || 0), 0);
     for (const id of [...set]) {
+      if (exempt.has(id)) continue;
       const lack = unmetPrereq(prereqOf(id), set, units);
       if (lack.all.length || lack.anyOf.length || lack.unitsShort) { set.delete(id); dropped.push(id); changed = true; break; }
     }
