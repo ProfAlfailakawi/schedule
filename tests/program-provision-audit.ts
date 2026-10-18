@@ -67,6 +67,24 @@ const snapshot = async () => JSON.stringify([(await Repository.getSections()).le
   check((await snapshot()) === before, "V2 المعاينة لا تكتب شيئاً");
 }
 
+/* V2ب: إنشاء الكلية صريحٌ فقط، ومعاينته لا تكتب. */
+{
+  const before = await snapshot();
+  const colleges = ((await Repository.getColleges()) as any[]).length;
+  const allNames = Object.fromEntries([...new Set(REF.groups.flatMap(group => group.courses.map(course => course.code.slice(2, 4))))].map(code => [code, `قسم ${code}`]));
+  const usedCode = String(((await Repository.getColleges()) as any[])[0].AdCollegeCode);
+  const opts = { prefix: "tsn", collegeMatch: ["كلية جديدة تماماً"], deptNames: allNames, createCollege: { code: "77", name: "كلية جديدة تماماً - بنين" } };
+  const preview = await provisionProgram(Repository, REF, { ...opts, apply: false });
+  check(preview.ok && preview.collegeToCreate?.code === "77" && preview.coursesToCreate === 58 && preview.accounts.every(row => row.status === "will-create"), "V2ب معاينة الكلية الجديدة: تُعدّ الكلية وكل المقررات (58) والحسابات جديدة", [preview.error, preview.coursesToCreate]);
+  check((await snapshot()) === before && ((await Repository.getColleges()) as any[]).length === colleges, "V2ب المعاينة لا تُنشئ الكلية");
+  const clash = await provisionProgram(Repository, REF, { ...opts, apply: false, createCollege: { code: usedCode, name: "كلية جديدة تماماً - بنين" } });
+  check(!clash.ok && /مستخدم/.test(clash.error || ""), "V2ب رمز كليةٍ مستخدم: يتوقف");
+  const made = await provisionProgram(Repository, REF, { ...opts, apply: true });
+  check(made.ok && made.wrote && made.college!.id > 0 && ((await Repository.getColleges()) as any[]).length === colleges + 1, "V2ب التنفيذ ينشئ الكلية ثم أقسامها ومقرراتها", made.error);
+  const again = await provisionProgram(Repository, REF, { ...opts, apply: true });
+  check(again.ok && !again.collegeToCreate && ((await Repository.getColleges()) as any[]).length === colleges + 1 && again.coursesToCreate === 0, "V2ب الإعادة لا تكرر الكلية");
+}
+
 /* V3 + V4 */
 {
   const run = await provisionProgram(Repository, REF, { apply: true, prefix: "tsb", deptNames: names });

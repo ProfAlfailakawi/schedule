@@ -9,6 +9,8 @@
  *   npx tsx scripts/provision-marine-diploma.ts --apply               تنفيذ
  *
  *   --college=<رقم>          إن التبس اسم الكلية أو أردت كليةً بعينها
+ *   --create-college         تُنشأ الكلية إن لم توجد (اسمها «كلية الدراسات التكنولوجية - بنين» ورمزها 04)
+ *   --college-name= / --college-code=   اسمٌ أو رمزٌ آخر للكلية المُنشأة
  *   --prefix=tsb             بادئة أسماء الدخول (tsbdean، tsbhead…)
  *   --dept=30=اللغة الإنجليزية   اسم قسمٍ غائب عن الكلية (يتكرر لكل قسم)
  *
@@ -36,10 +38,13 @@ const { provisionProgram } = await import("./lib/programProvision");
 await initDatabase();
 console.log(apply ? "تطبيق (--apply)" : "معاينة فقط — لن يُكتب شيء");
 const report = await provisionProgram(Repository, MARINE_MECHANICAL_DIPLOMA, {
-  apply, collegeId: arg("college") ? Number(arg("college")) : undefined, prefix: arg("prefix") || "tsb", deptNames, log: line => console.log("  " + line),
+  apply, collegeId: arg("college") ? Number(arg("college")) : undefined,
+  createCollege: process.argv.includes("--create-college")
+    ? { code: arg("college-code") || MARINE_MECHANICAL_DIPLOMA.groups[0].courses[0].code.slice(0, 2), name: arg("college-name") || `${MARINE_MECHANICAL_DIPLOMA.college} - بنين` }
+    : undefined, prefix: arg("prefix") || "tsb", deptNames, log: line => console.log("  " + line),
 });
 if (report.error) { console.log(`\n✗ ${report.error}`); process.exit(1); }
-console.log(`\nالكلية: ${report.college!.name} (${report.college!.id})`);
+console.log(`\nالكلية: ${report.college!.name}${report.collegeToCreate ? ` — ${apply ? "أُنشئت" : "ستُنشأ"} برمز ${report.collegeToCreate.code}` : ` (${report.college!.id})`}`);
 if (report.sectionsToCreate.length) console.log(`أقسام ستُنشأ: ${report.sectionsToCreate.map(row => `${row.name} [${row.code}]`).join("، ")}`);
 console.log(`المقررات: ${report.coursesExisting} موجودة، ${report.coursesToCreate} ${apply ? "أُنشئت" : "ستُنشأ"}`);
 console.log(`الصحيفة: ${report.planStatus} · القواعد: ${report.draftStatus}`);

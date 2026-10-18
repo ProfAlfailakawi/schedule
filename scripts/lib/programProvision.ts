@@ -25,6 +25,8 @@ export interface ProvisionOptions {
   apply: boolean;
   /** رقم الكلية صراحةً (وإلا تُستنتج من الاسم). */
   collegeId?: number;
+  /** تُنشأ الكلية بهذا الرمز والاسم إن لم توجد (لا تُنشأ بغير هذا الخيار الصريح، ولا إن وُجدت). */
+  createCollege?: { code: string; name: string };
   /** نصٌّ يجب أن يرد في اسم الكلية؛ الافتراضي: الدراسات التكنولوجية. */
   collegeMatch?: string[];
   /** بادئة اسم الدخول: `tsb` ← tsbdean، tsbhead… */
@@ -39,6 +41,7 @@ export interface ProvisionReport {
   ok: boolean;
   error?: string;
   college?: { id: number; name: string };
+  collegeToCreate?: { code: string; name: string };
   sectionsToCreate: Array<{ code: string; name: string }>;
   sectionsMissingName: string[];
   coursesToCreate: number;
@@ -65,16 +68,27 @@ export async function provisionProgram(Repository: any, ref: CurriculumReference
   const actor = options.actor || `تجهيز ${ref.program}`;
   const report: ProvisionReport = { ok: false, sectionsToCreate: [], sectionsMissingName: [], coursesToCreate: 0, coursesExisting: 0, planStatus: "will-create", draftStatus: "will-write", accounts: [], wrote: false };
 
-  /* ١. الكلية: صريحةً أو بالاسم، ولا تُنشأ. */
+  /* ١. الكلية: صريحةً أو بالاسم؛ وتُنشأ فقط إن طُلب ذلك صراحةً ولم توجد. */
   const colleges = (await Repository.getColleges()) as any[];
   const match = options.collegeMatch || [ref.college.replace(/^كلية\s+/, ""), "بنين"];
-  const candidates = options.collegeId
+  let candidates = options.collegeId
     ? colleges.filter(row => Number(row.AdCollegeId) === options.collegeId)
     : colleges.filter(row => match.every(part => String(row.AdCollegeName || "").includes(part)));
+  if (!candidates.length && !options.collegeId && options.createCollege) {
+    const { code, name } = options.createCollege;
+    if (colleges.some(row => String(row.AdCollegeCode) === code)) {
+      report.error = `رمز الكلية ${code} مستخدم لكليةٍ أخرى — مرّر --college-code=<رمز آخر> أو --college=<رقم الكلية القائمة>.`;
+      return report;
+    }
+    report.collegeToCreate = { code, name };
+    /* المعاينة تمضي على كليةٍ افتراضية (رقم 0) فتُعدّ كل أقسامها ومقرراتها جديدة؛ والتنفيذ ينشئها فعلاً. */
+    candidates = options.apply ? [await Repository.createCollege(code, name)] : [{ AdCollegeId: 0, AdCollegeName: name }];
+    if (options.apply) log(`+ كلية ${name} [${code}]`);
+  }
   if (candidates.length !== 1) {
     report.error = candidates.length
       ? `التبس تحديد الكلية (${candidates.map(row => `${row.AdCollegeId}: ${row.AdCollegeName}`).join(" | ")}) — مرّر --college=<الرقم>.`
-      : `لا كلية مسجّلة باسم يحوي «${match.join("» و«")}» — أضفها من شاشة الكليات أولاً أو مرّر --college=<الرقم>.`;
+      : `لا كلية مسجّلة باسم يحوي «${match.join("» و«")}» — أضفها من شاشة الكليات أو أنشئها بخيار --create-college أو مرّر --college=<الرقم>.`;
     return report;
   }
   const college = candidates[0];
