@@ -180,7 +180,7 @@ async function p4Stories() {
     "(b) بالبصمة والختم نفسيهما، وبأرقامٍ وهمية");
   check(seed.includes("judgeRequestItems(") && seed.includes("requestFullySettled(decidedItems)") && seed.includes("alternatives: offered"),
     "(c) طلبا أستاذين يحكم عليهما النظام نفسُه: واحدٌ ينتظر، وآخرُ رُفض ببدائل");
-  check(seed.includes("Repository.saveDegreeRule(rule)"), "(d) قاعدةُ تخرّجٍ محفوظة لعلوم الحاسب");
+  check(seed.includes("Repository.saveDegreeRule({ ...rule, degreeUnits: 130"), "(d) قاعدةُ تخرّج الصحيفة القديمة محفوظةٌ قبل إنشاء الصحائف (وللجديدة قاعدتُها في seedDemoRadar)");
   const demoRoute = body('app.post("/api/auth/demo"');
   check(demoRoute.includes("await seedDemoStories()"), "تُبذر القصصُ عند دخول التجربة");
   check(body('app.post("/api/demo/reset"').includes("seedDemoStories()"), "وعند إعادة ضبط الصندوق");
