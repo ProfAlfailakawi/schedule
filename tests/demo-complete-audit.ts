@@ -116,13 +116,13 @@ function p2Registry() {
   const perHall = new Map<string, number>();
   state.schedules.filter(r => r.AdTermId === 1).forEach(r => perHall.set(String(r.roomId), (perHall.get(String(r.roomId)) || 0) + 1));
   check(Math.max(...perHall.values()) <= 5, "ولا قاعةٌ تحمل أكثر من خمس محاضرات — فلا «نقطة اعتماد حساسة» مصطنعة");
-  /* فصلٌ جارٍ حيّ أيّاً كان يوم الدخول، وفصلٌ سابقٌ انتهى يُبنى منه الجديد. */
-  const [current, previous] = state.terms;
+  /* فصلٌ جارٍ حيّ أيّاً كان يوم الدخول، وفصلان قادمان للتخطيط. */
+  const [current, next, summer] = state.terms;
   const day = 86_400_000, startOf = (t: any) => Date.parse(t.AdTermStart), endOf = (t: any) => startOf(t) + t.AdTermWeeks * 7 * day;
   check(startOf(current) <= Date.now() && endOf(current) > Date.now(), `الفصل الجاري جارٍ اليوم (${current.AdTermName})`);
-  check(!!previous && endOf(previous) < Date.now() && state.schedules.some(r => r.AdTermId === previous.AdTermId && r.AdSectionId === 1),
-    `وفصلٌ سابقٌ انتهى وله جدولٌ لعلوم الحاسب (${previous?.AdTermName}) — مصدرُ «بداية الفصل»`);
-  check(!state.schedules.some(r => r.AdTermId === previous?.AdTermId && /حالة تجريبية مقصودة/.test(String(r.fdetail || ""))), "والحالتان المقصودتان لا تُورَّثان للتاريخ");
+  check(startOf(next) > Date.now() && startOf(summer) > startOf(next), `والثاني والصيفي قادمان (${next?.AdTermName}، ${summer?.AdTermName})`);
+  check([current, next, summer].every(t => /2026\/2027/.test(String(t?.AdTermName))), "وكلُّ الفصول من السنة الدراسية 2026/2027 وحدها");
+  check([1, 2, 3].every(id => state.schedules.some(r => r.AdTermId === id && r.AdSectionId === 1)), "ولكلِّ فصلٍ جدولٌ للقسم");
   const server = read("src/db/repository.ts");
   check(server.includes("return [...(db.locationBuildings||[])];") && server.includes("return [...(db.locationRooms||[])];"),
     "Repository يقرأ سجلَّ الصندوق داخل الجلسة التجريبية");

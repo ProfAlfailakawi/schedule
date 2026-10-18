@@ -2,6 +2,7 @@
 import fs from "fs";
 import { Repository } from "../src/db/repository";
 import { computeTermForecast } from "../src/utils/termForecast";
+import { addMultiSiteFixture } from "./helpers/multiSiteSandbox";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -44,6 +45,7 @@ async function behaviour() {
   const id = `demo_forecast_${Date.now()}`;
   Repository.createDemoSandbox(id, 60_000);
   await Repository.withDemoSandbox(id, async () => {
+    await addMultiSiteFixture();
     const sections = await Repository.getSections();
     const [a, b] = sections.slice(0, 2);
     const ca = Number(a.AdCollegeId), sa = Number(a.AdSectionId), cb = Number(b.AdCollegeId), sb = Number(b.AdSectionId);

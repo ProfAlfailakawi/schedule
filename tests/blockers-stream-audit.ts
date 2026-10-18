@@ -200,19 +200,22 @@ await (async () => {
   const scopeRows = (collegeId: number, sectionId: number, termId = 1) => demo.schedules.filter(r => r.AdCollegeId === collegeId && r.AdSectionId === sectionId && Number(r.AdTermId) === termId);
   const sectionKeys = demo.schedules.map(r => `${r.AdTermId}:${r.AdCourseId}:${r.SCode}`);
   check(new Set(sectionKeys).size === sectionKeys.length, "B15 لا شعبة مكرّرة (المقرر نفسه والشعبة نفسها مرتين)");
+  /* الفصل الأول أُرجع بعد القبول وعُدّل فيه موعدان فنشأ تعارضان مقصودان؛ أمّا المرسَلُ والمعتمد فلا مانعَ فيهما. */
   for (const approval of demo.scheduleApprovals) {
     const count = approvalBlockerCount(scopeRows(approval.AdCollegeId, approval.AdSectionId, Number(approval.AdTermId)), demo.schedules, opts);
-    check(count === 0, `B15 نطاق «${approval.status}» ${approval.scopeKey} بلا مانع اعتماد (${count})`);
+    const allowed = approval.status === "returned" ? 2 : 0;
+    check(count <= allowed, `B15 نطاق «${approval.status}» ${approval.scopeKey} بلا مانع اعتماد غير مقصود (${count})`);
   }
-  check(!demo.scheduleApprovals.some((a: any) => a.AdSectionId === DEMO_CONFLICT_SECTION_ID && Number(a.AdTermId) === 1), "B15 قسم الاستعراض ما زال في طور الإعداد (في الفصل الجاري؛ وتاريخُه في الفصل السابق معتمدٌ بلا الحالتين المقصودتين)");
-  const showcase = scopeRows(2, DEMO_CONFLICT_SECTION_ID);
+  check(demo.scheduleApprovals.some((a: any) => a.AdTermId === 1 && a.status === "returned"), "B15 الفصل الأول مُرجَعٌ بعد القبول (عملُ اللجنة)");
+  check(demo.scheduleApprovals.some((a: any) => a.AdTermId === 2 && a.status === "submitted"), "B15 الفصل الثاني عند التسجيل");
+  check(demo.scheduleApprovals.some((a: any) => a.AdTermId === 3 && a.status === "drafting"), "B15 الفصل الصيفي قيد الإعداد");
+  const showcase = scopeRows(1, DEMO_CONFLICT_SECTION_ID);
   const clashes = blockingConflicts(showcase, demo.schedules, opts);
-  check(clashes.length >= 1 && clashes.length <= 2, `B15 تعارضٌ أو اثنان مقصودان في قسم الاستعراض (${clashes.length})`);
+  check(clashes.length >= 1 && clashes.length <= 2, `B15 تعارضٌ أو اثنان مقصودان في الفصل الأول (${clashes.length})`);
   check(clashes.every(c => [c.rowId, c.otherId].some(id => /حالة تجريبية مقصودة/.test(String(demo.schedules.find(r => r.id === id)?.fdetail || "")))),
     "B15 وكل تعارضٍ مقصود مشروحٌ في ملاحظة موعده");
-  const others = demo.sections.filter(s => s.AdSectionId !== DEMO_CONFLICT_SECTION_ID)
-    .reduce((sum, s) => sum + approvalBlockerCount(scopeRows(s.AdCollegeId, s.AdSectionId), demo.schedules, opts), 0);
-  check(others === 0, "B15 ولا تعارض في أي قسمٍ آخر");
+  const others = [2, 3].reduce((sum, termId) => sum + approvalBlockerCount(scopeRows(1, DEMO_CONFLICT_SECTION_ID, termId), demo.schedules, opts), 0);
+  check(others === 0, "B15 ولا تعارض في الفصلين الثاني والصيفي");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

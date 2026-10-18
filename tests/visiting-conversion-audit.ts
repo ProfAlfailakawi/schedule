@@ -6,6 +6,7 @@ import fs from "fs";
 import { Repository } from "../src/db/repository";
 import { planVisitingConversion, ConversionState } from "../src/utils/visitingConversion";
 import { readConversionState, runVisitingConversion } from "../src/db/visitingConversion";
+import { addMultiSiteFixture } from "./helpers/multiSiteSandbox";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -52,11 +53,12 @@ async function behaviour() {
   const id = `demo_conv_${Date.now()}`;
   Repository.createDemoSandbox(id, 60_000);
   await Repository.withDemoSandbox(id, async () => {
+    await addMultiSiteFixture();
     const isl = (await Repository.getSections()).filter(s => String(s.AdSectionCode) === "ISL");
     const other = (await Repository.getSections()).find(s => String(s.AdSectionCode) !== "ISL")!;
     const [a] = isl.map(s => ({ collegeId: Number(s.AdCollegeId), sectionId: Number(s.AdSectionId) }));
     const b = { collegeId: Number(other.AdCollegeId), sectionId: Number(other.AdSectionId) };
-    const person = 13;
+    const person = 16; // أستاذ غير منتدَب سلفاً في الصندوق (13–15 منتدبون)
     const st0 = await readConversionState(person);
     const current = st0.currentTermId, past = st0.pastTermIds[0];
     check(Boolean(current && past), "في الصندوق فصلٌ حالي وفصلٌ مضى");

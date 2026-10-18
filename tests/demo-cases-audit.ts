@@ -1,18 +1,16 @@
 /**
- * ── حالاتُ التجربة كاملة وأسماؤها محايدة ───────────────────────────────────
+ * ── حالاتُ التجربة كاملة وأسماؤها محايدة (كليةٌ واحدة · قسمٌ واحد · 2026/2027) ─────
  * يزرع رادارَ التجربة داخل صندوقٍ حقيقي ويثبت: (1) لا اسمَ شخصٍ واقعيّ ولا لقبَ عائلة؛
- * (2) كلُّ قسمٍ من الأقسام التسعة (بما فيها قسمُ المواقع الثلاثة والرياضيات) مبذورٌ فيه كلُّ نمط طالب
- *     (مستجد … متخرّج، معطَّل بمتطلّب، متعثّر)؛
- * (3) لا شاشةَ فارغة، ولا قسمَ «قيد المراجعة» أو «بلا قواعد» يُخرجه من الرادار: لكل قسمٍ صحيفةٌ بقواعدَ
- *     معتمدة وقاعدةُ تخرّج، ومتعثّرون وناجحون في التسجيل، وحالاتٌ مسمّاة لكشف التسجيل بقراراتٍ مختلفة.
- *     (كان قسما «علم البيانات» و«الإدارة» حالتين مقصودتين بلا تذاكر؛ تغيّر قصدُ العرض إلى بياناتٍ كاملةٍ للجميع.)
+ * (2) في القسم الوحيد كلُّ نمط طالب (مستجد … متخرّج، معطَّل بمتطلّب، متعثّر)، على صحيفتين حقيقيتين
+ *     (الجديدة فعّالة والقديمة انتقالية)؛
+ * (3) لا شاشةَ فارغة: صحيفتان بقواعدَ معتمدة وقاعدةُ تخرّج، ومتعثّرون وناجحون في التسجيل، وحالاتٌ مسمّاة
+ *     لكشف التسجيل بقراراتٍ مختلفة؛ ثم قصصُ الفصلين الثاني والصيفي بكل حالاتها.
  */
 import { createHash } from "crypto";
 import { Repository } from "../src/db/repository";
-import { createDemoSandboxState, DEMO_PREVIOUS_TERM_ID } from "../src/db/demoSandbox";
-import { DEMO_CURRENT_TERM_EXTRA_SCOPES, DEMO_PREVIOUS_TERM_SCOPES, seedDemoCurrentTermStories, seedDemoPreviousTerm } from "../src/server/demoPreviousTermSeed";
+import { createDemoSandboxState, DEMO_TERM_NEXT, DEMO_TERM_SUMMER } from "../src/db/demoSandbox";
+import { DEMO_TERM_STORY_SCOPES, seedDemoTermStories } from "../src/server/demoPreviousTermSeed";
 import { DAY_LETTERS, requestItemFromRow } from "../src/utils/instructorRequestItems";
-import { termIsFrozen } from "../src/utils/termSequence";
 import { DEMO_RADAR_SECTION_IDS, DEMO_STUDENT_ARCHETYPES, demoArchetypeOf, demoStudentName, seedDemoRadar } from "../src/server/demoRadarSeed";
 
 let passed = 0, failed = 0;
@@ -34,7 +32,7 @@ await Repository.withDemoSandbox(id, async () => {
   await seedDemoRadar({ sealIdentity: async (v: string) => `sealed:${v}`, today });
   const profiles = await Repository.listStudentProfiles();
   const sections = (await Repository.getSections() as any[]).filter(r => DEMO_RADAR_SECTION_IDS.includes(Number(r.AdSectionId)));
-  check(sections.length === 9, `تسعةُ أقسامٍ في الرادار (${sections.length})`);
+  check(sections.length === 1, `قسمٌ واحد في الرادار (${sections.length})`);
   check(profiles.length === 320, `٣٢٠ ملفاً مبذوراً (${profiles.length})`);
   const termForNeeds = (await Repository.getTerms())[0];
   const needsAll = await Repository.getStudentNeedsForTerm(Number(termForNeeds.AdTermId));
@@ -45,9 +43,14 @@ await Repository.withDemoSandbox(id, async () => {
     const stuck = mine.some(p => p.registration?.answers?.some(a => a.state === "stuck")), ok = mine.some(p => p.registration?.answers?.length && p.registration.answers.every(a => a.state === "registered"));
     check(stuck && ok, `القسم ${sec.AdSectionCode} (${sec.AdSectionId}): متعثّرون وناجحون في التسجيل`);
     /* صحيفةٌ بقواعدَ معتمدة ومقرّرٌ لا يُطرح وقاعدةُ تخرّج — فلا «بلا قواعد» ولا «قيد المراجعة» يُسقط القسمَ من الرادار. */
-    const plan = (await Repository.getCurriculumPlans(Number(sec.AdSectionId))).find(row => row.status === "active");
+    const plans = await Repository.getCurriculumPlans(Number(sec.AdSectionId));
+    const plan = plans.find(row => row.status === "active");
     const live = plan ? await Repository.getRuleSet(plan.id) : undefined;
-    check(!!plan && !!live && live.version >= 1 && live.rules.length >= 4, `القسم ${sec.AdSectionCode}: صحيفةٌ نشطةٌ بقواعدَ معتمدة (${live?.rules.length ?? 0} قاعدة)`);
+    check(!!plan && !!live && live.version >= 1 && live.rules.length >= 20, `القسم ${sec.AdSectionCode}: صحيفةٌ نشطةٌ بقواعدَ معتمدة (${live?.rules.length ?? 0} قاعدة)`);
+    const old = plans.find(row => row.status === "transition");
+    const oldLive = old ? await Repository.getRuleSet(old.id) : undefined;
+    check(!!old && !!oldLive && oldLive.rules.length >= 20, `القسم ${sec.AdSectionCode}: وصحيفةٌ قديمةٌ انتقالية بقواعدَ (${oldLive?.rules.length ?? 0})`);
+    check(mine.some(p => p.curriculumPlanId === plan?.id) && mine.some(p => p.curriculumPlanId === old?.id), `القسم ${sec.AdSectionCode}: طلبةٌ على الصحيفتين`);
     check((await Repository.getDegreeRules()).some(rule => Number(rule.AdSectionId) === Number(sec.AdSectionId)), `القسم ${sec.AdSectionCode}: قاعدةُ تخرّجٍ محفوظة`);
     const sectionNeeds = needsAll.filter(need => Number(need.AdSectionId) === Number(sec.AdSectionId));
     check(sectionNeeds.length >= 3, `القسم ${sec.AdSectionCode}: حالاتٌ مسمّاة لكشف التسجيل (${sectionNeeds.length})`);
@@ -60,31 +63,27 @@ await Repository.withDemoSandbox(id, async () => {
   check(graduated.length > 0, "طلبةٌ متخرّجون (أنهوا الصحيفة)");
   const term = (await Repository.getTerms())[0];
   const needs = await Repository.getStudentNeedsForTerm(Number(term.AdTermId));
-  check(needs.length >= 60, `حالاتٌ مسمّاة لكشف التسجيل (${needs.length})`);
+  check(needs.length >= 10, `حالاتٌ مسمّاة لكشف التسجيل (${needs.length})`);
   const stateOf = (need: any) => String((need.courseStates || [])[0]?.state || "pending");
   const kinds = new Set(needs.map(stateOf));
   check(["pending", "awaiting-registration", "registered", "rejected", "committee-rejected"].every(kind => kinds.has(kind)), `كشفُ التسجيل بكل حالات القرار (${[...kinds].join("، ")})`);
   check(profiles.every(p => p.nameCipher && NEUTRAL.test(String(p.nameCipher).replace("sealed:", ""))), "كلُّ اسمٍ مختومٍ محايد");
 
-  /* ── 3: قصصُ الفصل الجاري (بقية الأقسام) والفصلُ السابق — «للعرض فقط» لا فارغاً ── */
+  /* ── 3: قصصُ الفصلين الثاني والصيفي: كشفُ تسجيل ورغباتُ أساتذة ومقترحاتٌ بكل الحالات ── */
   const deps = {
     sealIdentity: async (value: string) => `sealed:${value}`,
     fingerprintOf: async (civil: string) => createHash("sha256").update(civil).digest("hex").slice(0, 32),
     requestItemFromRow, dayLetters: DAY_LETTERS,
   };
-  await seedDemoCurrentTermStories(deps, Number(term.AdTermId));
-  await seedDemoPreviousTerm(deps);
-  const terms = await Repository.getTerms();
-  check(termIsFrozen(DEMO_PREVIOUS_TERM_ID, terms as any) && !termIsFrozen(Number(term.AdTermId), terms as any), "الفصلُ السابق مجمَّد (للعرض فقط) والجاري مفتوح");
-  const allNeeds = await Repository.getStudentNeedsForTerm(DEMO_PREVIOUS_TERM_ID);
-  check(allNeeds.every(need => NEUTRAL.test(String(need.nameCipher || "").replace("sealed:", ""))), "أسماء طلبة الفصل السابق محايدة");
-  check(!FAMILY.test(JSON.stringify(allNeeds.map(need => need.nameCipher))), "ولا لقبَ عائلةٍ فيها");
+  await seedDemoTermStories(deps, DEMO_TERM_NEXT);
+  await seedDemoTermStories(deps, DEMO_TERM_SUMMER);
   const stateOfNeed = (need: any) => String((need.courseStates || [])[0]?.state || (need.requestType === "graduate" ? "graduate" : "pending"));
-  for (const [label, termId, scopes] of [["السابق", DEMO_PREVIOUS_TERM_ID, DEMO_PREVIOUS_TERM_SCOPES], ["الجاري", Number(term.AdTermId), DEMO_CURRENT_TERM_EXTRA_SCOPES]] as const) {
+  for (const [label, termId] of [["الثاني", DEMO_TERM_NEXT], ["الصيفي", DEMO_TERM_SUMMER]] as const) {
     const needsOfTerm = await Repository.getStudentNeedsForTerm(termId);
     const requests = await Repository.getInstructorRequests(0, 0, termId);
     const proposals = await Repository.getStudyProposalsByTerm(termId);
-    for (const scope of scopes) {
+    check(needsOfTerm.every(need => NEUTRAL.test(String(need.nameCipher || "").replace("sealed:", ""))), `أسماء طلبة الفصل ${label} محايدة`);
+    for (const scope of DEMO_TERM_STORY_SCOPES) {
       const where = `الفصل ${label} · قسم ${scope.sectionId}`;
       const mine = needsOfTerm.filter(need => Number(need.AdSectionId) === scope.sectionId && String(need.nameCipher || "").includes("تجريبي"));
       const kinds = new Set(mine.map(stateOfNeed));
@@ -92,15 +91,10 @@ await Repository.withDemoSandbox(id, async () => {
         `${where}: كشفُ التسجيل بكل الحالات (${[...kinds].join("، ")})`);
       const own = requests.filter(row => Number(row.AdSectionId) === scope.sectionId);
       check(own.length >= 2, `${where}: رغباتُ أساتذة (${own.length})`);
-      if (label === "السابق") check(own.some(row => row.status === "settled") && own.some(row => row.status !== "settled"), `${where}: رغباتٌ منتهيةٌ وأخرى ما زالت مفتوحة (تُعرض معطّلةً)`);
       const props = proposals.filter(row => Number(row.AdSectionId) === scope.sectionId);
       check(props.length >= 2 && new Set(props.map(row => row.status)).size >= 2, `${where}: مقترحاتٌ دراسية بحالاتٍ مختلفة (${props.map(row => row.status).join("، ")})`);
     }
   }
-  const prevApprovals = (await Repository.getScheduleApproval(1, 1, DEMO_PREVIOUS_TERM_ID));
-  check(prevApprovals?.status === "accepted" && prevApprovals.rounds.length === 2 && !!prevApprovals.rounds[0].reviewedVersionId, "الفصل السابق: دورةُ اعتمادٍ من جولتين بنسخةٍ محفوظة تُظهر «ما تحرّك»");
-  const prevNotes = await Repository.getScheduleCommentsByScope(1, 1, DEMO_PREVIOUS_TERM_ID);
-  check(prevNotes.length >= 2 && prevNotes.every((note: any) => note.resolved), "وملاحظاتُه محلولة (للعرض)");
 });
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

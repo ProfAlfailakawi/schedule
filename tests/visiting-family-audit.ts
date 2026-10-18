@@ -7,6 +7,7 @@ import fs from "fs";
 import { Repository } from "../src/db/repository";
 import { departmentFamily, departmentFamilyKey, departmentFamilyResolver } from "../src/utils/sectionLabel";
 import { termVisitingIds } from "../src/utils/liveVisiting";
+import { addMultiSiteFixture } from "./helpers/multiSiteSandbox";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -32,6 +33,7 @@ async function behaviour() {
   const id = `demo_family_${Date.now()}`;
   Repository.createDemoSandbox(id, 60_000);
   await Repository.withDemoSandbox(id, async () => {
+    await addMultiSiteFixture();
     const isl = (await Repository.getSections()).filter(s => String(s.AdSectionCode) === "ISL");
     check(isl.length === 3, "قسم الدراسات الإسلامية في الكليات الثلاث");
     const [a, b, c] = isl.map(s => ({ collegeId: Number(s.AdCollegeId), sectionId: Number(s.AdSectionId) }));

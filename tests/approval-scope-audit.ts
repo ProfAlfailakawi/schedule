@@ -11,6 +11,7 @@
 import { Repository } from "../src/db/repository";
 import { departmentFamily } from "../src/utils/sectionLabel";
 import { diffSchedules } from "../src/utils/scheduleDiff";
+import { addMultiSiteFixture } from "./helpers/multiSiteSandbox";
 import {
   approvalScopeKey, authorityBaselineLabel, AUTHORITY_BASELINE_LABEL, authorityRowsForScope,
   createScopeGuard, rowsInApprovalScope,
@@ -77,6 +78,7 @@ async function behaviour() {
   const id = `demo_approval_scope_${Date.now()}`;
   Repository.createDemoSandbox(id, 60_000);
   await Repository.withDemoSandbox(id, async () => {
+    await addMultiSiteFixture();
     const sections = await Repository.getSections();
     const isl = sections.filter(s => String(s.AdSectionCode) === "ISL");
     check(isl.length === 3, "قسم الدراسات الإسلامية في الكليات الثلاث");

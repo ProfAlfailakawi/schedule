@@ -925,7 +925,7 @@ export async function seedDemoStudyProposals(scope: { collegeId: number; section
   }
   if (rooms.length < 2 || requests.length < 2) return;
   const courseOf = (code: string) => (courses as AdCourse[]).find(row => String(row.CourseCode) === code && Number(row.AdSectionId) === sectionId);
-  const ai = courseOf("CS315"), security = courseOf("CS350");
+  const ai = courseOf("0109401"), security = courseOf("0109454");
   if (!ai || !security) return;
 
   let placeholder = (instructors as any[]).find(row => String(row.AdInstructorName || "").startsWith("هيئة"));
@@ -952,14 +952,14 @@ export async function seedDemoStudyProposals(scope: { collegeId: number; section
   const sources = new Map<number, FSchedule>([[aiRow.id, aiRow], [secRow.id, secRow]]);
   const assign = (row: FSchedule, id: string): StudyProposalOp => {
     const snapshot = snapshotOf(row, catalog);
-    return { id, kind: "assign", source: snapshot, target: specOf(courseOf(row === aiRow ? "CS315" : "CS350")!, snapshot.SCode, snapshot.days, snapshot.fstarttime, snapshot.fendtime, rooms[row === aiRow ? 0 : 1]) };
+    return { id, kind: "assign", source: snapshot, target: specOf(courseOf(row === aiRow ? "0109401" : "0109454")!, snapshot.SCode, snapshot.days, snapshot.fstarttime, snapshot.fendtime, rooms[row === aiRow ? 0 : 1]) };
   };
   void sources;
-  const dataStructures = (courses as AdCourse[]).find(row => String(row.CourseName) === "هياكل البيانات" && Number(row.AdSectionId) === sectionId);
+  const dataStructures = courseOf("0109226");
   const [first, second] = [...requests].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const message = PROPOSAL_DEFAULT_MESSAGE;
   const now = new Date().toISOString();
-  const by = "د. رئيس لجنة جدول الحاسب";
+  const by = "د. رئيس لجنة جدول تكنولوجيا التعليم";
   const newOp: StudyProposalOp | null = dataStructures ? {
     id: "op-demo-create", kind: "create", target: specOf(dataStructures, "501", ["fthursday"], "10:00", "11:30", rooms[1]),
   } : null;

@@ -55,35 +55,18 @@ try {
     check(summary.run.withoutRules === 0 && summary.run.capacity.unknown === 0 && summary.run.dataQuality.excluded === 0, "T1 كلُّ الصحائف بقواعد معتمدة: لا «بلا قواعد» ولا «غير معلوم» ولا ملفاتٍ مستبعدة", { w: summary.run.withoutRules, c: summary.run.capacity, q: summary.run.dataQuality });
     check(summary.run.capacity.canReach12To14 + summary.run.capacity.canReach15 > 0 && summary.run.capacity.below12 > 0, "T1 للرادار أطيافٌ: من يبلغ 12 وحدة ومن لا يبلغها", summary.run.capacity);
     check(summary.run.capacity.canReach15 > 0 && summary.run.capacity.canReach12To14 > 0, "T1 نطاقُ «15 وحدة» غيرُ صفر (مقرّراتٌ مطروحةٌ بوحداتٍ تُبلغ سقف 15) وبجانبه نطاقُ 12–14", summary.run.capacity);
-    /* الرادارُ على الفصل السابق: مجمَّدٌ للعرض، وأرقامُه كاملة، والخادمُ يردّ على كل كتابة. */
-    const termsList: any[] = await get("/api/terms");
-    const prevTerm = termsList.find(t => Number(t.AdTermId) !== Number(summary.term.id));
-    const prevSummary = await get(`/api/simulation/summary?termId=${prevTerm.AdTermId}`);
-    check(prevSummary.frozen === true && prevSummary.canRun === false && prevSummary.term.id === prevTerm.AdTermId && prevSummary.run?.students > 0 && prevSummary.run.stale === false && prevSummary.courses.length >= 20
-      && prevSummary.run.capacity.canReach15 > 0 && prevSummary.run.capacity.below12 > 0, "T1b رادارُ الفصل السابق: مجمَّدٌ للعرض، ورقمٌ كاملٌ بكل نطاقاته", prevSummary.run?.capacity);
-    const prevOutcome = await get(`/api/simulation/outcome?termId=${prevTerm.AdTermId}`);
-    check(prevOutcome.term.id === prevTerm.AdTermId && prevOutcome.answered > 0 && prevOutcome.courses.some((c: any) => c.stuck > 0 && c.registered > 0), "T1b أجوبةُ «هل سجلت؟» للفصل السابق غيرُ فارغة", [prevOutcome.answered, prevOutcome.courses?.length]);
-    const prevInsight = await get(`/api/simulation/insight?termId=${prevTerm.AdTermId}`);
-    check(prevInsight.ready === true && prevInsight.students > 0 && prevInsight.stale === false, "T1b أسبابُ النقص للفصل السابق محسوبةٌ لا فارغة", prevInsight);
-    check((await call("/api/simulation/summary?termId=999")).status === 400 && (await call("/api/simulation/summary?termId=abc")).status === 400, "T1b فصلٌ مجهول يُردّ ولا يُؤخذ على الثقة");
-    const frozenRun = await call("/api/simulation/run", { method: "POST", body: JSON.stringify({ termId: prevTerm.AdTermId }) });
-    check(frozenRun.status === 409 && frozenRun.json?.code === "term-frozen", "T1b تشغيلُ الرادار باسم فصلٍ سابق يُردّ 409 term-frozen", frozenRun);
-    const frozenWhatIf = await call("/api/schedules/what-if", { method: "POST", body: JSON.stringify({ termId: prevTerm.AdTermId, kind: "move", moves: [] }) });
-    check(frozenWhatIf.status === 409 && frozenWhatIf.json?.code === "term-frozen", "T1b «ماذا لو؟» على فصلٍ سابق يُردّ 409 term-frozen", frozenWhatIf);
-    const currentAfter = await get("/api/simulation/summary");
-    check(currentAfter.frozen === false && currentAfter.run.capacity.canReach15 === summary.run.capacity.canReach15, "T1b قراءةُ السابق لا تمسّ رادارَ الجاري");
     const full = summary.courses.filter((c: any) => c.unmet?.full > 0), notOffered = summary.courses.filter((c: any) => c.unmet?.["not-offered"] > 0);
     check(full.length >= 3 && notOffered.length >= 5, `T1 عدّادا «مقرراتٌ تمتلئ» و«مطلوبةٌ ولا تُطرح» غير صفرين (${full.length} و${notOffered.length})`);
     const sectionsWithDemand = new Set(summary.courses.filter((c: any) => c.wanted > 0).map((c: any) => `${c.collegeId}:${c.sectionId}`));
-    check(sectionsWithDemand.size >= 9, `T1 كلُّ الأقسام التسعة لها طلبٌ في الرادار (${sectionsWithDemand.size})`);
+    check(sectionsWithDemand.size === 1, `T1 للقسم الوحيد طلبٌ في الرادار (${sectionsWithDemand.size})`);
     const outcome = await get("/api/simulation/outcome");
     check(outcome.answered > 0 && outcome.answered <= summary.run.students && outcome.courses.some((c: any) => c.stuck > 0 && c.registered > 0), "T2 أجوبةُ «هل سجلت؟» من المشاركين فقط وبها سجّلتُ وتعثّرتُ", [outcome.answered, outcome.courses.length]);
     const plans = await get("/api/plan-review/status");
-    check(plans.pending.length === 1 && plans.sections.length >= 9 && plans.sections.find((s: any) => s.plans[0].pending)?.plans[0].status === "active", "T3 تعديلٌ واحدٌ قيد المراجعة يتصدّر قسمَه، وللأقسام التسعة صحائف", plans.pending);
+    check(plans.pending.length === 1 && plans.sections.length === 1 && plans.sections.find((s: any) => s.plans[0].pending)?.plans[0].status === "active", "T3 تعديلٌ واحدٌ قيد المراجعة يتصدّر قسمَه، وللقسم صحيفتان", plans.pending);
     const ds = plans.pending[0];
     const dsPlan = await get(`/api/plan-review/plan?planId=${ds.planId}&sectionId=${ds.sectionId}`);
     check(dsPlan.state.status === "review" && dsPlan.state.live?.version === 1 && dsPlan.rules.length >= 4, "T3 ما قيد المراجعة تعديلٌ فوق نسخةٍ معتمدة (الإصدار ١) — فبياناتُ القسم كاملةٌ ولا تتأثر", dsPlan.state);
-    check(plans.approved.length >= 8, `T3 بقية الصحائف معتمدة (${plans.approved.length})`);
+    check(plans.approved.length >= 1, `T3 والصحيفةُ القديمة معتمدة (${plans.approved.length})`);
     const bell = await get("/api/notifications");
     const titles: string[] = bell.items.map((i: any) => i.title);
     const needsDecision = summary.courses.filter((course: any) => course.unmet?.full > 0 || course.unmet?.["not-offered"] > 0).length > 0;
@@ -92,10 +75,9 @@ try {
 
     /* ══ T5: لا شاشةَ فارغة — كلُّ صفةٍ × كلُّ نطاقٍ × الفصلان ══════════════════════ */
     const terms: any[] = await get("/api/terms");
-    const current = terms.find(t => /الأول 2026|الأول \d{4}\/\d{4}/.test(String(t.AdTermName))) || terms[0];
-    const previous = terms.find(t => Number(t.AdTermId) !== Number(current.AdTermId));
-    check(!!previous, "T5 فصلان في التجربة: الجاري والسابق");
-    const ROLES = ["admin", "dean", "viceDean", "registrarDean", "registrarHead", "registrarStaff", "departmentHead", "advisor", "committeeChair", "standard", "committeeChairMultiSite"];
+    const TERM_MODES: Array<[string, any]> = [["الأول", terms.find(t => Number(t.AdTermId) === 1)], ["الثاني", terms.find(t => Number(t.AdTermId) === 2)], ["الصيفي", terms.find(t => Number(t.AdTermId) === 3)]];
+    check(TERM_MODES.every(([, term]) => !!term), "T5 ثلاثة فصول في التجربة: الأول والثاني والصيفي (2026/2027)");
+    const ROLES = ["admin", "dean", "viceDean", "registrarDean", "registrarHead", "registrarStaff", "departmentHead", "advisor", "committeeChair", "standard"];
     const REGISTRAR = new Set(["registrarDean", "registrarHead", "registrarStaff"]);
     const allSections: any[] = await get("/api/sections");
     const screensSeen = new Map<string, number>();
@@ -107,9 +89,9 @@ try {
       const scopes: Array<{ AdCollegeId: number; AdSectionId: number }> = role === "admin"
         ? allSections.map(s => ({ AdCollegeId: s.AdCollegeId, AdSectionId: s.AdSectionId })) : switched.json.scopes;
       const hasSchedules = perms.includes(7) || role === "admin";
-      for (const [mode, term] of [["الجاري", current], ["السابق", previous]] as const) {
+      for (const [mode, term] of TERM_MODES) {
         if (!term) continue;
-        const termId = Number(term.AdTermId), isPrev = mode === "السابق";
+        const termId = Number(term.AdTermId), isSummer = termId === 3;
         for (const { AdCollegeId, AdSectionId } of scopes) {
           const q = `collegeId=${AdCollegeId}&sectionId=${AdSectionId}&termId=${termId}`, where = `${role} · ${mode} · قسم ${AdSectionId}`;
           /* كشف التسجيل */
@@ -119,9 +101,8 @@ try {
               seen("registration");
               const t = reg.json.totals;
               check(t.students > 0 && t.courses > 0, `T5 كشف التسجيل غيرُ فارغ — ${where}`, t);
-              if (isPrev) check(t.pendingCommittee > 0 && t.registered > 0 && t.rejected > 0 && t.waiting > 0 && t.committeeRejected > 0 || REGISTRAR.has(role), `T5 كشف الفصل السابق بكل حالاته (تنتظر اللجنة، سُلّمت، سُجّلت، رُدّت، لم توافق اللجنة) — ${where}`, t);
             } else {
-              check(reg.status === 409 && REGISTRAR.has(role) && !isPrev && reg.json?.code === "not-signed", `T5 كشف التسجيل مرفوضٌ بسببٍ مقصود فقط (جدولٌ لم يُوقَّع لموظفي التسجيل) — ${where}`, { s: reg.status, j: reg.json });
+              check(reg.status === 409 && REGISTRAR.has(role) && isSummer && reg.json?.code === "not-signed", `T5 كشف التسجيل مرفوضٌ بسببٍ مقصود فقط (جدولٌ لم يُوقَّع لموظفي التسجيل) — ${where}`, { s: reg.status, j: reg.json });
             }
           }
           if (hasSchedules) {
@@ -131,14 +112,12 @@ try {
               seen("requests");
               const rows: any[] = requests.json.rows || [];
               check(rows.length > 0, `T5 رغباتُ الأساتذة غيرُ فارغة — ${where}`, requests.json.totals);
-              if (isPrev) check(rows.some(r => r.status === "settled") && rows.some(r => r.status !== "settled"), `T5 رغباتُ الفصل السابق بحالاتٍ مختلفة (منتهية وما زالت مفتوحة) — ${where}`, rows.map(r => r.status));
             } else check(false, `T5 رغباتُ الأساتذة متاحةٌ لمن يملك الجدول — ${where}`, requests.status);
             const proposals = await call(`/api/study-proposals?${q}`);
             if (proposals.status === 200) {
               seen("proposals");
               const list: any[] = proposals.json.proposals || [];
               check(list.length > 0, `T5 المقترحاتُ الدراسية غيرُ فارغة — ${where}`);
-              if (isPrev) check(new Set(list.map(p => p.proposal.status)).size >= 2, `T5 مقترحاتُ الفصل السابق بحالاتٍ مختلفة — ${where}`, list.map(p => p.proposal.status));
             } else check(false, `T5 المقترحاتُ متاحةٌ لمن يملك الجدول — ${where}`, proposals.status);
             /* مركز الذكاء */
             const intel = await call(`/api/intelligence/overview?${q}`);
@@ -149,8 +128,7 @@ try {
           if (changes.status === 200) {
             seen("changes");
             check(Boolean(changes.json.approval) && Number(changes.json.rowCount) > 0, `T5 تغييراتُ الجدول تقرأ جدولاً ودورةَ اعتماد — ${where}`, { a: !!changes.json.approval, n: changes.json.rowCount });
-            if (isPrev) check(changes.json.approval?.status === "accepted" && (changes.json.rounds?.length || changes.json.approval?.rounds?.length) >= 2 && String(changes.json.summary || "").length > 0, `T5 تغييراتُ الفصل السابق: دورةٌ معتمدة بجولتين وملخّص — ${where}`, changes.json.summary);
-          } else if (isPrev) check(false, `T5 تغييراتُ الفصل السابق متاحةٌ — ${where}`, changes.status);
+          } else check(changes.status === 403 && (role === "dean" || role === "viceDean"), `T5 تغييراتُ الجدول متاحةٌ لمن يملكها (العميدان يقرآن النهائيَّ فقط) — ${where}`, changes.status);
         }
       }
       /* الرادار والصحائف: بحدود نطاق الصفة */
@@ -168,7 +146,7 @@ try {
       }
     }
     for (const screen of ["registration", "requests", "proposals", "intelligence", "changes", "radar", "plans"]) {
-      check((screensSeen.get(screen) || 0) >= (screen === "plans" ? 3 : 10), `T5 فُحصت شاشة «${screen}» فعلاً (${screensSeen.get(screen) || 0} قراءة) — فلا يمرّ الفحصُ فارغاً`);
+      check((screensSeen.get(screen) || 0) >= (screen === "plans" ? 3 : 6), `T5 فُحصت شاشة «${screen}» فعلاً (${screensSeen.get(screen) || 0} قراءة) — فلا يمرّ الفحصُ فارغاً`);
     }
   }
 } finally {

@@ -70,7 +70,7 @@ const staff = DEMO_ROLE_ACCOUNTS.find(a => a.role === "registrarStaff")!;
 const staffAssigns = assignsByUser(staff.SystemUserId);
 check(staffAssigns.length > 0 && staffAssigns.every(a => a.AdSectionId > 0),
   "موظف التسجيل على أقسامٍ حقيقية لا صفراً — فيرى واردَه كرئيس التسجيل");
-check(new Set(staffAssigns.map(a => a.AdCollegeId)).size >= 2, "وعلى أكثر من كلية");
+check(new Set(staffAssigns.map(a => a.AdCollegeId)).size === 1, "وعلى كلية التربية الأساسية وحدها (كليةٌ واحدة في الصندوق)");
 
 // رئيس القسم: يقرأ ولا يبني — بلا ورشة تعديل، ومدخلُه شاشةُ التغييرات.
 check(!roleDefinition("departmentHead").formIds.includes(7),
@@ -89,10 +89,10 @@ for (const account of DEMO_ROLE_ACCOUNTS) {
 check(state.scheduleApprovals.length >= 3, "بُذرت دورةُ اعتمادٍ لعدّة أقسام");
 const submitted = state.scheduleApprovals.find(a => a.status === "submitted");
 const returned = state.scheduleApprovals.find(a => a.status === "returned");
-const accepted = state.scheduleApprovals.find(a => a.status === "accepted");
+const accepted = state.scheduleApprovals.find(a => a.status === "accepted" || a.rounds.some((r: any) => r.acceptedAt));
 check(!!submitted, "قسمٌ عند التسجيل — يظهر في وارد المراجعة");
 check(!!returned, "قسمٌ مُرجَعٌ — ينتظر ردّ القسم");
-check(!!accepted, "قسمٌ معتمد");
+check(!!accepted, "جدولٌ قُبل (يقرؤه العميدان نسخةً نهائية)");
 
 check(!!submitted && submitted.currentRound >= 2, "القسم المُرسَل في جولةٍ ثانية — للدورة تاريخ");
 const baselineId = submitted?.rounds.find(r => r.reviewedVersionId)?.reviewedVersionId;
