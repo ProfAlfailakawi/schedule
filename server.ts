@@ -107,7 +107,7 @@ import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planR
 import { registerPlanSheetRoutes } from "./src/server/planSheetRoutes";
 import { buildFeatureNotifications, buildMasariGapNotifications } from "./src/utils/featureNotifications";
 import { studentGaps } from "./src/utils/sectionGap";
-import { seedDemoRadar, seedDemoPreviousTermRadar } from "./src/server/demoRadarSeed";
+import { seedDemoRadar, seedDemoPreviousTermRadar, seedDemoMasariDemand } from "./src/server/demoRadarSeed";
 import { seedDemoPreviousTerm, seedDemoCurrentTermStories } from "./src/server/demoPreviousTermSeed";
 import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instructorRequestItems";
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
@@ -2372,6 +2372,7 @@ async function seedDemoStories(): Promise<void> {
   await seedDemoCurrentTermStories(storyDeps, termId).catch(error => console.error("[demo] seeding current-term stories failed:", error));
   await seedDemoPreviousTerm(storyDeps).catch(error => console.error("[demo] seeding previous term failed:", error));
   await seedDemoPreviousTermRadar().catch(error => console.error("[demo] seeding previous-term radar failed:", error));
+  await seedDemoMasariDemand().catch(error => console.error("[demo] seeding Masari demand failed:", error));
 }
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
@@ -15249,15 +15250,22 @@ async function remainingContext(collegeId: number, sectionId: number, termId: nu
   const branch = { code: site.length >= 3 ? site.slice(0, 3) : "", collegeName: String(college?.AdCollegeName || "") };
   return { departmentCode, departmentName, branch, catalogue, termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || "") };
 }
-/* الترويسة تقول لأيّ قسمٍ وأيّ فصلٍ طُبع الكشف: يُنبَّه القسم ولا يُمنع، فالقراءة الضوئية قد تخطئ رقماً. */
-function remainingWarnings(headerText: string, departmentCode: string, termName: string): string[] {
+/* الترويسة تقول لأيّ فصلٍ طُبع الكشف: كشفُ فصلٍ غير الذي تخطّطه يُرفض كله (كرفض القسم والفرع) ولا يُكتفى بالتنبيه،
+   فأرقامه تخصّ فصلاً آخر وتفسد الخطة. ما لم تُقرأ ترويستُه يبقى على مساره (الممسوح يُراجَع). */
+function remainingTermRefusal(headerText: string, termName: string): { error: string; termMismatch: { sheet: string; chosen: string } } | null {
   const header = readReportHeader(headerText);
-  const warnings: string[] = [];
   const season = REMAINING_SEASONS[String(termSeasonOf(termName) || "")];
   const years = termName.match(/(\d{4})\s*\/\s*(\d{4})/);
-  if (header.season && header.years && (header.season !== season || (years && Number(years[1]) !== header.years[0])))
-    warnings.push(`الكشف للفصل ${REMAINING_SEASON_NAMES[header.season]} ${header.years[0]}/${header.years[1]}، وأنت تخطط «${termName}».`);
-  return warnings;
+  if (header.season && header.years && (header.season !== season || (years && Number(years[1]) !== header.years[0]))) {
+    const sheet = `الفصل ${REMAINING_SEASON_NAMES[header.season]} ${header.years[0]}/${header.years[1]}`;
+    return { error: `الكشف لفصلٍ آخر: هو كشف ${sheet}، وأنت تخطط «${termName}». ارفع كشف هذا الفصل — لم يُستورد شيء.`, termMismatch: { sheet, chosen: termName } };
+  }
+  return null;
+}
+/* لا يبقى تنبيهٌ يُعبَّأ بعده: المخالفة رفضٌ (أعلاه)، فالقائمة فارغةٌ دائماً وتبقى للتوافق مع واجهة المعاينة. */
+function remainingWarnings(headerText: string, departmentCode: string, termName: string): string[] {
+  const refusal = remainingTermRefusal(headerText, termName);
+  return refusal ? [refusal.error] : [];
 }
 /* يُرفض قبل المعاينة: قسمٌ آخر، أو لا عمود «المقاعد المتبقية»، أو لا خانةً مقروءة. وما قُرئ جزئياً يُعرض والناقص أصفر. */
 function remainingAssessment(reading: ReturnType<typeof readRemainingReport>, departmentCode: string, departmentName: string, headerText: string, branch?: { code?: string; collegeName?: string }) {
@@ -15304,6 +15312,8 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
     const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
     const assessment = remainingAssessment(reading, departmentCode, departmentName, cells.headerText, branch);
     if (assessment.reject) { res.status(422).json({ error: assessment.reject, rejectKind: assessment.rejectKind || null, mismatch: assessment.mismatch || null, detectedDepartment: assessment.detectedDepartment || null }); return; }
+    const termRefusal = remainingTermRefusal(cells.headerText, termName);
+    if (termRefusal) { res.status(422).json({ error: termRefusal.error, rejectKind: "wrongTerm", termMismatch: termRefusal.termMismatch }); return; }
     res.json({ ...reading, assessment, departmentName, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
       warnings: remainingWarnings(cells.headerText, departmentCode, termName),
       cells: cells.pages, headerText: cells.headerText.slice(0, 4000), template: cells.template || null });
@@ -15330,6 +15340,8 @@ app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requi
   const headerText = String(req.body?.headerText || "").slice(0, 4000);
   const assessment = remainingAssessment(reading, departmentCode, departmentName, headerText, branch);
   if (assessment.reject) { res.status(422).json({ error: assessment.reject, rejectKind: assessment.rejectKind || null, mismatch: assessment.mismatch || null, detectedDepartment: assessment.detectedDepartment || null }); return; }
+  const termRefusal = remainingTermRefusal(headerText, termName);
+  if (termRefusal) { res.status(422).json({ error: termRefusal.error, rejectKind: "wrongTerm", termMismatch: termRefusal.termMismatch }); return; }
   res.json({ ...reading, assessment, departmentName, warnings: remainingWarnings(headerText, departmentCode, termName) });
 });
 

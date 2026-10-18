@@ -606,7 +606,7 @@ export function confirmReportDepartment(headerText: string, departmentCode: stri
 }
 
 /** نوع الرفض، لتعرضه الواجهة أيقونةً وكلمتين بدل فقرة. */
-export type RejectKind = "mismatch" | "noCode" | "branchUnread" | "departmentUnread" | "noCourses" | "noColumn" | "unread";
+export type RejectKind = "mismatch" | "wrongTerm" | "noCode" | "branchUnread" | "departmentUnread" | "noCourses" | "noColumn" | "unread";
 /** ما في الكشف وما المختار، للحقول المختلفة وحدها — يُرسم مقارنةً لا جملة. */
 export interface RejectMismatch {
   fields: Array<"department" | "branch">;

@@ -239,7 +239,7 @@ check(server.includes('app.get("/api/registration-stats", requirePermission(7)')
   && server.includes('app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw(') && server.includes("documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {\n  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);\n  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: \"حدد الكلية والقسم والفصل\" }); return; }\n  if (!isScopeAllowed(req, collegeId, sectionId))"),
   "أبواب الإحصاء والكشف محميّة بالصلاحية والنطاق، والكشف محدودُ المعدّل وفي طابور قراءة المستندات");
 check(server.includes('app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requirePermission(7)') && server.includes("if (!isScopeAllowed(req, collegeId, sectionId))")
-  && server.includes('"image/*"], limit: "24mb" })') && server.includes("remainingWarnings(cells.headerText, departmentCode, termName)") && server.includes("imageOrientationRefusal(") && server.includes("assessment.reject"),
+  && server.includes('"image/*"], limit: "24mb" })') && server.includes("remainingTermRefusal(cells.headerText, termName)") && server.includes("imageOrientationRefusal(") && server.includes("assessment.reject"),
   "صفحات الصور تُقرأ معاً بالباب نفسه وحدوده، والصور مقبولة، وترويسة الكشف تُفحص");
 check((server.match(/remainingAssessment\(reading, departmentCode, departmentName, (cells\.)?headerText, branch\)/g) || []).length === 2
   && server.includes("const branch = { code: site.length >= 3 ? site.slice(0, 3) : \"\", collegeName: String(college?.AdCollegeName || \"\") };"),

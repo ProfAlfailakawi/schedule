@@ -344,3 +344,44 @@ export async function seedDemoPreviousTermRadar(): Promise<void> {
     });
   }
 }
+
+/**
+ * ── رغباتُ «مساري» في التجربة ──────────────────────────────────────────────────
+ * الطلبةُ المبذورون لهم رغباتٌ بلا مقررات، فلا تظهر لشارة «مساري» ولا لعلامة «+N» في مفتاح الألوان ولا لجرس القسم
+ * ما يُعرَض به الطلب على الشعب. تُملأ هنا رغباتُ كلٍّ منهم بمقرراتٍ من قسمه — بعد أن يُحسب الرادارُ والفصلُ السابق، فلا يتغيّر
+ * رقمٌ فيهما — فيرى العارضُ مقرراتٍ يزيد طلبُها على شعبها (الأقلُّ سعةً والأقلُّ شعباً أكثرَ طلباً، كما في الواقع).
+ */
+export async function seedDemoMasariDemand(): Promise<void> {
+  if (!Repository.isDemoRequest()) return;
+  const door = pickDoorTerm((await Repository.getTerms()) as any);
+  if (!door) return;
+  const doorId = Number(door.AdTermId);
+  const random = rng(20261018);
+  const coursesOf = new Map<number, AdCourse[]>();
+  let at = 0;
+  for (const profile of await Repository.listStudentProfiles()) {
+    if (!profile.wishes || Number(profile.wishes.termId) !== doorId || profile.wishes.courseIds?.length) continue;
+    const sectionId = Number(profile.AdSectionId);
+    if (!coursesOf.has(sectionId)) {
+      const list = ((await Repository.getCoursesBySection(sectionId)) as AdCourse[]).slice()
+        .sort((a, b) => (Number(a.MaxStudent) || 0) - (Number(b.MaxStudent) || 0) || String(a.CourseCode).localeCompare(String(b.CourseCode)));
+      coursesOf.set(sectionId, list);
+    }
+    const pool = [...(coursesOf.get(sectionId) || [])];
+    if (!pool.length) continue;
+    /* الأصغر سعةً أعلى وزناً: يُسحب بلا تكرار ثلاثةً إلى خمسة مقررات. */
+    const picks: number[] = [];
+    const want = Math.min(pool.length, 3 + (at % 3));
+    while (picks.length < want) {
+      const weights = pool.map((_, index) => pool.length - index + 1);
+      let roll = random() * weights.reduce((sum, weight) => sum + weight, 0), chosen = 0;
+      for (; chosen < weights.length - 1 && roll >= weights[chosen]; chosen += 1) roll -= weights[chosen];
+      picks.push(Number(pool[chosen].AdCourseId));
+      pool.splice(chosen, 1);
+    }
+    await Repository.updateStudentProfile(profile.id, current => current && current.wishes
+      ? { ...current, wishes: { ...current.wishes, courseIds: picks } } as StudentProfile
+      : current);
+    at += 1;
+  }
+}

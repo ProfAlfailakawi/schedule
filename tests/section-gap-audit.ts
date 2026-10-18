@@ -81,6 +81,9 @@ check(bar.includes('title="قارن شعبك بكشف المتبقي"'), "تلم
 check((schedules.match(/\{needMark\(item\.key\)\}/g) || []).length === 3, "العلامة في مفاتيح الألوان الثلاثة: القائمة والأسبوع والقاعات");
 check(bar.includes("() => onStudentGaps?.([])"), "زوال الشريط يمحو علاماته");
 check(/slice\(0, 30\);\s*const found/.test(server) && !/slice\(0, 4\);\s*const found/.test(server), "يُفحص كل أقسام العامل ثم يُقتصر الناتج على أربعة");
+/* كشفُ فصلٍ آخر يُرفض كله بالبابين (الملف والصفحات)، لا يُنبَّه إليه فقط: القاعدةُ نفسها في شاشة المقارنة وتخطيط الشعب. */
+check((server.match(/const termRefusal = remainingTermRefusal\(/g) || []).length === 2 && (server.match(/rejectKind: "wrongTerm"/g) || []).length === 2 && server.includes("function remainingTermRefusal("), "كشفُ فصلٍ آخر يُرفض بالبابين");
+check(planning.includes('importError.kind === "wrongTerm"') && fs.readFileSync("src/utils/remainingReport.ts", "utf8").includes('"wrongTerm"'), "رفضُ الفصل يُعرض في الواجهة بمقارنة «في الكشف / المختار»");
 
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
