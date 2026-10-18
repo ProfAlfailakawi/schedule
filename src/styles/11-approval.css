@@ -1547,3 +1547,27 @@
 .apb-dr-link select{min-block-size:36px;max-inline-size:150px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit;font-size:.8rem;padding-inline:8px}
 .apb-dr-link select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
 @media (max-width:560px){.apb-dr-list li{align-items:flex-start}.apb-dr-fix{inline-size:100%;justify-content:flex-start}.apb-dr-link select{flex:1 1 40%;max-inline-size:none}}
+
+/* ── شعبٌ يُفضَّل زيادتها (اختياري) ───────────────────────────────────────── */
+.apb-gap-ghost{--badge-tone:var(--muted);background:transparent;font-weight:650}
+.apb-gap{display:grid;gap:10px;padding:12px 14px;border-radius:16px;background:var(--info-soft);color:var(--ink)}
+.apb-gap>header{display:flex;align-items:center;gap:10px}
+.apb-gap>header strong{font-size:.9rem}
+.apb-gap>header small{color:var(--muted);font-size:.74rem}
+.apb-gap-ic{inline-size:30px;block-size:30px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info);flex:none}
+.apb-gap-ic svg{inline-size:16px;block-size:16px}
+.apb-gap-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.apb-gap-list li{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--line)}
+.apb-gap-name{display:grid;gap:1px;min-inline-size:0;flex:1}
+.apb-gap-name b{font-size:.86rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apb-gap-name small{color:var(--muted);font-size:.72rem}
+.apb-gap-why{color:var(--muted);font-size:.74rem;white-space:nowrap}
+.apb-gap-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--r-full);background:var(--info-soft);color:var(--info);font-variant-numeric:tabular-nums;font-size:.86rem}
+.apb-gap-pill i{font-style:normal;opacity:.7}
+.apb-gap-pill em{font-style:normal;font-size:.8rem}
+.apb-gap-pill b{font-weight:800}
+.apb-gap>footer{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.apb-gap-link{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--info);font:inherit;font-size:.8rem;font-weight:700;cursor:pointer;padding:4px 2px}
+.apb-gap-link svg{inline-size:14px;block-size:14px}
+@media (max-width:560px){.apb-gap-why{display:none}}
+.apb-gap-note{margin:0;color:var(--muted);font-size:.78rem;line-height:1.7}
