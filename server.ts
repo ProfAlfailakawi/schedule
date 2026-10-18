@@ -2209,7 +2209,9 @@ async function seedDemoStories(): Promise<void> {
 
   // ── قاعدةُ التخرّج (d)
   const rule = { AdSectionId: sectionId, degreeUnits: 125, fieldTrainingRequired: 95, graduateRegularPassed: 108, graduateSummerPassed: 114, updatedAt: iso(-20), updatedBy: committee.name };
-  await Repository.saveDegreeRule(rule);
+  /* القاعدةُ المحفوظة وقتَ إنشاء الصحائف تنتقل إلى «الصحيفة السابقة» (القديمة، 130 وحدة)؛ فتُحفظ هنا قاعدةُ القديمة،
+     ثم يحفظ seedDemoRadar قاعدةَ الجديدة (125) بعد إنشاء الصحيفتين فلا تتشاركان قاعدةً واحدة. */
+  await Repository.saveDegreeRule({ ...rule, degreeUnits: 130, fieldTrainingRequired: 100, graduateRegularPassed: 112, graduateSummerPassed: 118 });
 
   // ── رابطا القسم (a)
   const linkBase = { AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, SystemUserId: committee.id, userName: committee.name };
