@@ -96,7 +96,7 @@ import { readStudentDemand, mergeCurrentDemandResponses, cohortPairs, sharedBetw
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
 import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
-import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
+import { suggestedDegreeRule, readDegreeRuleInput, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
@@ -15890,22 +15890,6 @@ function surveyCourseIdsForSection(courses: any[], history: any[], sectionId: nu
   for (const course of courses) if (taught.has(Number(course.AdCourseId))) allowed.add(Number(course.AdCourseId));
   return { taught, allowed };
 }
-
-/** One validation for every place a graduation rule is typed: a department's
- * own rule and a curriculum plan's rule obey the same bounds. */
-const readDegreeRuleInput=(body:any,fieldTrainingFallback:number):{rule:DegreeRule}|{error:string}=>{
-  const read=(key:string)=>Math.round(Number(asciiDigits((body||{})[key])));
-  const degreeUnits=read("degreeUnits");
-  const fieldTrainingRaw=(body||{}).fieldTrainingRequired;
-  const fieldTrainingRequired=fieldTrainingRaw==null||String(fieldTrainingRaw).trim()===""?Number(fieldTrainingFallback):read("fieldTrainingRequired");
-  const graduateRegularPassed=read("graduateRegularPassed"),graduateSummerPassed=read("graduateSummerPassed");
-  const values=[degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed];
-  if(values.some(value=>!Number.isFinite(value)||value<30||value>300))return{error:"كل قيمة يجب أن تكون عدد وحدات بين 30 و 300"};
-  // A student cannot be asked to pass more than the degree holds.
-  const over=([["لفتح التدريب الميداني",fieldTrainingRequired],["خريج / متوقع · فصل عادي",graduateRegularPassed],["خريج / متوقع · فصل صيفي",graduateSummerPassed]] as Array<[string,number]>).find(([,value])=>value>degreeUnits);
-  if(over)return{error:`«${over[0]}» (${over[1]}) أكبر من مجموع وحدات الدرجة (${degreeUnits}) — عدّله أو ارفع المجموع`};
-  return{rule:{degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed}};
-};
 
 app.get("/api/degree-rules", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   /* قواعدُ أقسام النطاق وحدها — كقائمة الأقسام نفسها (/api/sections). */

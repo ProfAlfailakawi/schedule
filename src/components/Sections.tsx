@@ -86,12 +86,14 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
   const saveRule = async (explicit?: any) => {
     const draftToSave = explicit || ruleDraft;
     if (!draftToSave) return;
+    /* «لفتح التدريب الميداني» ليس في هذه الشاشة: لا يُرسل رقمه القديم المخفي، فيُضبط في الخادم بما لا يتجاوز حدّ الخريج. */
+    const { fieldTrainingRequired: _hidden, ...payload } = draftToSave;
     setRuleBusy(true); setRuleNote(null);
     try {
       const response = await fetch(`/api/degree-rules/${draftToSave.AdSectionId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draftToSave),
+        body: JSON.stringify(payload),
       });
       const saved = await response.json();
       if (!response.ok) throw new Error(saved.error || "تعذّر حفظ قواعد التخرج");
@@ -340,7 +342,6 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 const draft = ruleDraft?.AdSectionId === selected.AdSectionId ? ruleDraft : null;
                 const fields: Array<[string, string]> = [
                   ["degreeUnits", "مجموع وحدات الدرجة"],
-                  ["fieldTrainingRequired", "لفتح التدريب الميداني"],
                   ["graduateRegularPassed", "خريج / متوقع · فصل عادي"],
                   ["graduateSummerPassed", "خريج / متوقع · فصل صيفي"],
                 ];
