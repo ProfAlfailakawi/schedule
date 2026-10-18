@@ -13,6 +13,7 @@ import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBl
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
+import { useScopedTerms } from "./useScopedTerms";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { assignAuthoritySections, authoritySectionCodeLooksPlausible, withoutImportEvidence } from "../utils/authorityAcademicCodes";
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
@@ -296,6 +297,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     person => person.AdInstructorName,
   ), [departmentIds, instructors]);
   const sortedTerms = useMemo(() => sortTermsNewest(terms), [terms]);
+  /* «انسخ من فصل»: فصولٌ للقسم فيها بيانات فقط — الفارغ القديم لا يُنسخ منه شيء. */
+  const copyScopedTerms = useScopedTerms<{ AdTermId: number; AdTermName: string }>(terms, collegeId, sectionId, 0);
+  const copySourceTerms = useMemo(() => sortTermsNewest(copyScopedTerms), [copyScopedTerms]);
 
   /* ── وما لا تراه المعاينة وحدها ─────────────────────────────────────────────
    *
@@ -1657,7 +1661,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               <div className="roster-copy roster-copy-rich">
                 <select value={copyFrom || ""} onChange={e => void loadCopyRoster(Number(e.target.value) || 0)}>
                   <option value="">انسخ من فصل…</option>
-                  {sortedTerms.filter(term => Number(term.AdTermId) !== termId).map(term => (
+                  {copySourceTerms.filter(term => Number(term.AdTermId) !== termId).map(term => (
                     <option key={term.AdTermId} value={term.AdTermId}>{term.AdTermName}</option>
                   ))}
                 </select>

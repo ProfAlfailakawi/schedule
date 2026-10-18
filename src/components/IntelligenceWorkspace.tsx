@@ -86,6 +86,7 @@ import type {
   FSchedule,
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
+import { useScopedTerms } from "./useScopedTerms";
 import { AR, countOf, nounFor, oblique, studentNounsFor } from "../utils/arabicCount";
 import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer";
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
@@ -1595,6 +1596,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setPolicyResult(await fetchJson("/api/intelligence/policy-simulate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionId,termId,...policyDraft,analysisScope:policyDraft.scope === "family" ? "department" : "college",scope:policyDraft.scope === "university" && isPowerAdmin ? "university" : "department"})}));
     }catch(e:any){setError(smartMessage(e));}finally{setPolicyBusy(false);}
   };
+  /* قائمتا المقارنة: فصولُ نطاق القسم التي فيها بيانات، ويبقى المختارُ حالياً فيهما فلا تفرغ الخانة. */
+  const compareScopedTerms = useScopedTerms<AdTerm>(terms, collegeId, sectionId, 0);
+  const compareTermOptions = useMemo(
+    () => terms.filter(t => compareScopedTerms.some(c => c.AdTermId === t.AdTermId) || t.AdTermId === compareFrom || t.AdTermId === compareTo),
+    [terms, compareScopedTerms, compareFrom, compareTo],
+  );
   const compareTerms = async () => {
     if (!compareFrom || !compareTo || compareFrom === compareTo) return; // مقارنةُ فصلٍ بنفسه بلا معنى
     setBusy(true);
@@ -5016,7 +5023,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 value={compareFrom || ""}
                 onChange={(e) => setCompareFrom(Number(e.target.value) || 0)}
               >
-                {terms.map((t) => (
+                {compareTermOptions.map((t) => (
                   <option key={t.AdTermId} value={t.AdTermId}>
                     {t.AdTermName}
                   </option>
@@ -5027,7 +5034,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 value={compareTo || ""}
                 onChange={(e) => setCompareTo(Number(e.target.value) || 0)}
               >
-                {terms.map((t) => (
+                {compareTermOptions.map((t) => (
                   <option key={t.AdTermId} value={t.AdTermId}>
                     {t.AdTermName}
                   </option>
