@@ -47,7 +47,7 @@ import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 import { singleDepartmentOf } from "./utils/scopeContext";
 import { scopeShape } from "./utils/scopeShape";
-import { multiSiteDepartment, multiSiteHeadline } from "./utils/inboxAudience";
+import { multiSiteDepartment } from "./utils/inboxAudience";
 import ScopeContextChip from "./components/ScopeContextChip";
 import { readSharedScope, setSharedScopeUser, writeSharedScope } from "./utils/sharedScope";
 import { warmStart } from "./utils/warmStart";
@@ -1516,10 +1516,10 @@ export default function App() {
   /* شارةُ السياق لحساب القسم (scopeShape): الكلية والقسم مخفيّان في الشاشات، فيُقال له أين يعمل في رأسها. */
   const scopeContext = (() => {
     const shape = scopeShape(scopes as any, isPowerAdmin);
-    if (shape === "single") return { department: String(scopes[0]?.AdSectionName || ""), place: String(scopes[0]?.AdCollegeName || "") };
+    if (shape === "single") return { department: String(scopes[0]?.AdSectionName || "") };
     if (shape === "multiSite") {
       const dept = multiSiteDepartment(scopes as any);
-      return dept ? { department: dept.name, place: multiSiteHeadline(dept).replace(/^قسمك في\s*/, "") } : null;
+      return dept ? { department: dept.name } : null;
     }
     return null;
   })();
@@ -2652,7 +2652,7 @@ export default function App() {
       ) : null}
       <main className="app-main">
         <div className="content-frame">
-          {scopeContext ? <ScopeContextChip department={scopeContext.department} place={scopeContext.place} /> : null}
+          {scopeContext ? <ScopeContextChip department={scopeContext.department} /> : null}
           <Suspense fallback={<div className="view-loading" aria-busy="true"><span /><i /><i /><i /></div>}>{renderView()}</Suspense>
         </div>
       </main>
