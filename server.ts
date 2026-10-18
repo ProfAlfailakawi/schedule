@@ -14982,11 +14982,18 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
     const pairs = cohortPairs(demand);
     /* قاعات القسم من تاريخه (موثّقة وفعّالة)، الأكثر استعمالاً أولاً؛ وللمقرر قاعاتُه هو قبلها. فيختار النظام القاعة ولا يُترك التثبيت إلا لما لم تُوجد له. */
     const activeRoomIds = new Set((registry.rooms as any[]).filter(room => room.active && room.confidence === "CONFIRMED").map(room => String(room.id)));
+    /* قاعاتُ القسم «الحالية»: ما زالت مسجّلةً باسمه في سجلّ المباني (أو مثبَّتةً له)، لا قاعةً استعملها يوماً ثم صارت لقسمٍ آخر.
+       تُقارَن بها قاعاتُ التاريخ فلا يبقى إلا المشترك بينهما. فإن لم تكن أيُّ قاعةٍ من تاريخه مسجّلةً له أو مثبَّتةً (لا بيانات للمقارنة) بقي التاريخ وحده. */
+    const pinnedIds = confirmedDepartmentRoomIds(registry as any, await Repository.getPinnedDepartmentRooms(collegeId, sectionId).catch(() => []), collegeId);
+    const ownedNow = new Set((registry.rooms as any[]).filter(room => activeRoomIds.has(String(room.id)) && (pinnedIds.has(String(room.id)) || (Array.isArray(room.sectionIds) && room.sectionIds.map(Number).includes(sectionId)))).map(room => String(room.id)));
+    const historyRoomIds = new Set(history.filter(item => item.locationStatus === "VERIFIED" && item.roomId).map(item => String(item.roomId)));
+    const compareWithCurrent = [...historyRoomIds].some(id => ownedNow.has(id));
     const capacityOf = new Map((registry.rooms as any[]).map(room => [String(room.id), Number(room.capacity) || 0] as const));
     const roomsByUse = (rows: FSchedule[]): PendingRoom[] => {
       const use = new Map<string, { n: number; row: FSchedule }>();
       for (const item of rows) {
         if (item.locationStatus !== "VERIFIED" || !item.roomId || !item.buildingId || !activeRoomIds.has(String(item.roomId))) continue;
+        if (compareWithCurrent && !ownedNow.has(String(item.roomId))) continue;
         use.set(String(item.roomId), { n: (use.get(String(item.roomId))?.n || 0) + 1, row: item });
       }
       return [...use.values()].sort((a, b) => b.n - a.n).map(({ row }) => ({ roomId: String(row.roomId), buildingId: String(row.buildingId), code: String(row.AdRoomCode || ""), hall: String(row.AdRoomHall || ""), capacity: capacityOf.get(String(row.roomId)) || 0 }));
