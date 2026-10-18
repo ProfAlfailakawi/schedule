@@ -11,7 +11,7 @@ import { AR, countOf } from "../utils/arabicCount";
  * رمز QR يُرسم في المتصفح بالمولّد الموجود، فلا خدمةَ خارجية.
  */
 interface SheetRow { planId: string; name: string; ruleVersion: number; published: boolean; publishedAt: string; stale: boolean; url: string }
-interface SectionRow { sectionId: number; sectionName: string; collegeName?: string; track?: string; trackLabel?: string; members?: number[]; campuses?: number; sheets: SheetRow[]; deptUrl: string; indexUrl: string }
+interface SectionRow { sectionId: number; sectionName: string; collegeName?: string; label?: string; family?: string; track?: string; trackLabel?: string; members?: number[]; campuses?: number; sheets: SheetRow[]; deptUrl: string; indexUrl: string }
 interface State { sections: SectionRow[]; canPublish: boolean }
 type QrFactory = (t: number, e: "L" | "M" | "Q" | "H") => { addData(s: string): void; make(): void; createSvgTag(o?: { cellSize?: number; margin?: number; scalable?: boolean }): string };
 
@@ -40,12 +40,12 @@ export default function PlanSheetPublisher({ onChanged, focusSectionId = 0 }: { 
 
   /* قسمُ نطاق القرار المختار: رمزُ QR لصفحته يظهر في أعلى اللوحة بلا بحثٍ ولا ضغط. */
   /* للقسم مساران لا غير: بنات (بمواقعهنّ الجهراء والفحيحيل) وبنين — الصحيفةُ للبنات واحدة وتُنسخ إلى مواقعهنّ. */
-  const labelOf = (row: SectionRow) => row.trackLabel ? `${row.sectionName} — ${row.trackLabel}` : row.sectionName;
+  const labelOf = (row: SectionRow) => row.label || (row.trackLabel ? `${row.sectionName} — ${row.trackLabel}` : row.sectionName);
   const isFocus = (row: SectionRow) => row.sectionId === focusSectionId || Boolean(row.members?.includes(focusSectionId));
   const focus = state?.sections.find(isFocus);
   const focusPublished = Boolean(focus?.sheets.some(x => x.published));
   /* قسمٌ بالاسم نفسه في كليةٍ أخرى له صحائف معتمدة: سببُ «لا صحيفة» الشائع حين يُعتمد في كلية ويُختار نطاقُ كليةٍ أخرى. */
-  const sibling = focus && !focus.sheets.length ? state?.sections.find(row => row.sectionId !== focus.sectionId && row.sectionName === focus.sectionName && row.sheets.length > 0) : undefined;
+  const sibling = focus && !focus.sheets.length ? state?.sections.find(row => row.sectionId !== focus.sectionId && row.sectionName === focus.sectionName && row.family === focus.family && row.sheets.length > 0) : undefined;
   const [focusQr, setFocusQr] = useState("");
   useEffect(() => {
     let live = true;
