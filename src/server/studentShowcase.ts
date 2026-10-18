@@ -140,11 +140,17 @@ export function registerStudentShowcase(app: Express, deps: ShowcaseDeps): void 
       const codeHash = randomUUID();
       const nameCipher = await deps.sealIdentity(SHOWCASE_STUDENT_NAME), civilCipher = await deps.sealIdentity("000000000000");
       await Repository.withDemoSandbox(id, async () => {
+        const sampleWishes = state.courses
+          .filter(course => Number(course.AdSectionId) === profile.AdSectionId
+            && OFFERED.has(String(course.CourseCode))
+            && !profile.passedCourseIds.includes(Number(course.AdCourseId)))
+          .slice(0, 8)
+          .map(course => Number(course.AdCourseId));
         await Repository.updateStudentProfile(fingerprint, () => ({
           id: fingerprint, fingerprint, ...profile,
           /* رغباتٌ تجريبية كي تظهر تذكرةٌ حقيقية البنية بخططها الثلاث في «مساري»،
              من دون تشغيل الرادار أو إنشاء أي سجل خارج صندوق هذه الزيارة. */
-          wishes: { termId: 1, targetUnits: 15, courseIds: [], constraints: {}, updatedAt: iso },
+          wishes: { termId: 1, targetUnits: 15, courseIds: sampleWishes, constraints: {}, updatedAt: iso },
           codeHash, codeSalt: "demo", nameCipher, civilCipher, updatedAt: iso, ...base, ...profileLifetime(base, new Date()),
         } as any));
         const term = (await Repository.getTerms() as any[]).find(row => Number(row.AdTermId) === 1);
