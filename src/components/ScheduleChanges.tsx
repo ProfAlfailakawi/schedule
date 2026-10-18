@@ -1440,8 +1440,6 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   /* وحين لا يُفتح قسمٌ بعينه: فصولُ نطاق القارئ نفسه — القاعدةُ ذاتها (الفارغ القديم يختفي، والأحدثُ يبقى). */
   const ownTerms = useScopedTerms<AdTerm>(opened ? null : terms, 0, 0, opened ? 0 : termId, pickTerm);
   const shownTerms = opened ? openedTerms : ownTerms;
-  /* ومن بقي له فصلٌ واحد وقد فرّغ اختياره يبقى المنتقي، وإلا علق على «اختر الفصل». */
-  const showTermPicker = (shownTerms.length > 1 && (active || !termId)) || (!termId && shownTerms.length > 0);
   useEffect(() => { setOpened(null); setInboxRows(null); }, [termId]);
   /* ── الإشعار يفتح على قسمه (N16) ─────────────────────────────────────
      يُؤخذ التركيز مرّةً بعد أن يُعرف الفصل: فصلُ الإشعار إن اختلف، ثم القسم.
@@ -1468,6 +1466,8 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   /* القسم يفتح على تقريره مباشرةً: لا وارد عنده يختار منه. */
   const single = scope && !role.canReview ? { ...scope } : null;
   const active = opened || single;
+  /* ومن بقي له فصلٌ واحد وقد فرّغ اختياره يبقى المنتقي، وإلا علق على «اختر الفصل». */
+  const showTermPicker = (shownTerms.length > 1 && (active || !termId)) || (!termId && shownTerms.length > 0);
   const deadlinesShown = Boolean(termId && !active && term && !termIsArchive(term, terms || []) && audience.deadlinesPanel);
 
   return (
