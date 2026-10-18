@@ -163,7 +163,8 @@ export default function QuickCreatePopover({
   // nothing here is saved until «إنشاء» is pressed, so leaving costs nothing.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.stopPropagation(); onCancel(); }
+      /* قائمةُ مقررٍ مفتوحة داخل البطاقة تأخذ Escape وحدها (تُغلق هي)، فلا تُهمل المسوّدة. */
+      if (e.key === "Escape") { if (ref.current?.querySelector(".ss-pop")) return; e.stopPropagation(); onCancel(); }
     };
     const away = (e: PointerEvent) => {
       if (!ref.current || ref.current.contains(e.target as Node)) return;
@@ -223,6 +224,7 @@ export default function QuickCreatePopover({
             onChange={(picked) => chooseCourse(Number(picked) || 0)}
             options={orderedCourses.map((c) => ({ value: c.AdCourseId, label: c.CourseName, hint: c.CourseCode || undefined, keywords: String(c.CourseCode || "") }))}
             placeholder="اختر المقرر…"
+            ariaLabel="المقرر"
             searchPlaceholder="اكتب اسم المقرر أو رمزه"
             className="ss-compact"
           />

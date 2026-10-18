@@ -105,7 +105,8 @@ export default function SearchableSelect({
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); close(); } };
     document.addEventListener("mousedown", away);
     window.addEventListener("keydown", escape, true);
-    const drift = () => { if (fixed) close(); };
+    /* تُغلق القائمة الثابتة بحركة الصفحة لا بتمرير قائمتها نفسها. */
+    const drift = (event: Event) => { if (fixed && !(event.target instanceof Node && box.current?.contains(event.target))) close(); };
     window.addEventListener("scroll", drift, true);
     window.addEventListener("resize", drift);
     return () => {

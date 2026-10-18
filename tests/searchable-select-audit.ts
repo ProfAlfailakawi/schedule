@@ -46,6 +46,9 @@ for (const file of ["QuickCreatePopover.tsx", "IntelligenceWorkspace.tsx", "Curr
   check(text.includes("<SearchableSelect") && text.includes('import SearchableSelect from "./SearchableSelect"'), `${file}: اختيار المقرر بالمكوّن القابل للبحث`);
 }
 check(!/<select[^>]*aria-label="إضافة مقرر"/.test(read("PlanReview.tsx")) && !/<select[^>]*import-course-picker/.test(read("ImportPreviewTable.tsx")), "لا <select> عادي بقي لاختيار مقررٍ في هذه الشاشات");
+check(/ariaLabel="المقرر الدراسي"/.test(schedules) && /ariaLabel="رمز المقرر الدراسي"/.test(schedules) && /ariaLabel="المقرر"/.test(read("IntelligenceWorkspace.tsx")) && /ariaLabel="المقرر"/.test(read("QuickCreatePopover.tsx")), "الزر يحمل اسم الحقل لقارئ الشاشة (Field لا يربطه بمكوّنٍ مخصص)");
+check(sel.includes("box.current?.contains(event.target)"), "القائمة الثابتة لا تُغلق بتمرير قائمتها نفسها");
+check(read("QuickCreatePopover.tsx").includes('querySelector(".ss-pop")'), "Escape داخل قائمة المقرر لا يُلغي بطاقة الإنشاء السريع");
 
 console.log(`\nSearchable select audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

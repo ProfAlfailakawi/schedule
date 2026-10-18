@@ -4293,6 +4293,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           }
                           options={scopedCourses.map((c) => ({ value: c.AdCourseId, label: c.CourseName, hint: c.CourseCode, keywords: String(c.CourseCode || "") }))}
                           placeholder="اختر المقرر..."
+                          ariaLabel="المقرر"
                           searchPlaceholder="اكتب اسم المقرر أو رمزه"
                         />
                       </Field>

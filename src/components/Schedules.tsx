@@ -8582,6 +8582,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 <Field label="المقرر الدراسي" required>
                   <SearchableSelect
                     guideField="course-name"
+                    ariaLabel="المقرر الدراسي"
                     value={courseName}
                     disabled={!form.AdSectionId}
                     onChange={(name) => {
@@ -8599,6 +8600,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     value={form.AdCourseId || ""}
                     disabled={!courseName}
                     autoSingle
+                    ariaLabel="رمز المقرر الدراسي"
                     onChange={(picked) => {
                       const courseId = Number(picked) || 0;
                       setForm((p) => {

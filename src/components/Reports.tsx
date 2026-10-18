@@ -2102,6 +2102,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 title={selectedCourse ? cleanOptionText(selectedCourse.CourseName) : "كل المقررات"}
                 options={[{ value: "", label: "الكل" }, ...courseOptions.map(row => ({ value: row.AdCourseId, label: cleanOptionText(row.CourseName), hint: row.CourseCode || undefined, keywords: String(row.CourseCode || "") }))]}
                 placeholder="الكل"
+                ariaLabel="المقرر"
                 searchPlaceholder="اكتب اسم المقرر أو رمزه"
               />
             </div>
