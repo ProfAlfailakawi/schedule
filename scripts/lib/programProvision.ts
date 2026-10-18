@@ -53,6 +53,8 @@ export interface ProvisionReport {
   approveBlocked?: string;
   /** مسبقاتٌ لم تدخل القواعد لأن مقررها الخارجي غير موجود في الكتالوج (مع --own-only). */
   notes: string[];
+  /** مع --own-only: ما يُفقده القسم الواحد (وحداتٌ خارجية لا تدخل مجموع الخريطة ومسبقاتٌ لا تُفرض). */
+  ownOnlyWarning?: string;
   sectionsToCreate: Array<{ code: string; name: string }>;
   sectionsMissingName: string[];
   coursesToCreate: number;
@@ -112,6 +114,15 @@ export async function provisionProgram(Repository: any, ref: CurriculumReference
   /* قسمٌ جديد وحده: لا أقسام أخرى ولا مقرراتها؛ مسبقاتُ المقررات الخارجية تُهمَل وتُذكر في التقرير (ملاحظات). */
   const allCourses = ref.groups.flatMap(group => group.courses).filter(course => !options.ownOnly || deptOf(course.code) === ownCode);
   if (options.ownOnly) for (const course of allCourses) for (const need of course.prerequisites) if (deptOf(need) !== ownCode) report.notes.push(`متطلب «${need}» لمقرر «${course.name}» من قسمٍ لم يُنشأ — لا يدخل القواعد.`);
+  if (options.ownOnly) {
+    /* ما لا يدخل مجموع الخريطة: وحدات مقررات الأقسام الأخرى الإلزامية، وحدّ المجموعات الاختيارية التي لا مقرر فيها لقسم البرنامج. */
+    const missing = ref.groups.reduce((sum, group) => {
+      const foreign = group.courses.filter(course => deptOf(course.code) !== ownCode);
+      if (!group.elective) return sum + foreign.reduce((units, course) => units + course.credit, 0);
+      return sum + (foreign.length === group.courses.length ? group.requiredUnits : 0);
+    }, 0);
+    report.ownOnlyWarning = `قسم البرنامج وحده: ${missing} وحدة من مقررات أقسام أخرى لا تدخل مجموع الخريطة (يظهر ${ref.degreeUnits - missing} بدل ${ref.degreeUnits}) ولا تُفرض أو تُعرض مسبقاتها من تلك الأقسام (${report.notes.length}) حتى تُضاف تلك الأقسام.`;
+  }
   const deptCodes = [...new Set(allCourses.map(course => deptOf(course.code)))];
   let sections = ((await Repository.getSections()) as any[]).filter(row => Number(row.AdCollegeId) === collegeId);
   const sectionByCode = new Map(sections.map(row => [referenceCodeKey(row.AdSectionCode).padStart(2, "0"), row]));

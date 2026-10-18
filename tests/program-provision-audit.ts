@@ -118,6 +118,7 @@ const snapshot = async () => JSON.stringify([(await Repository.getSections()).le
   const preview = await provisionProgram(Repository, REF, { ...o, apply: false });
   check(preview.ok && preview.notes.length > 0 && preview.sectionsToCreate.length === 1 && preview.coursesToCreate === 32, "V2د معاينة القسم وحده: قسمٌ واحد و32 مقرراً ومسبقات خارجية مهملة تُذكر", [preview.error, preview.sectionsToCreate.length, preview.coursesToCreate, preview.notes.length]);
   check(((await Repository.getSections()) as any[]).length === sectionsBefore, "V2د المعاينة لا تكتب");
+  check(/20 وحدة/.test(preview.ownOnlyWarning || "") && /يظهر 55 بدل 75/.test(preview.ownOnlyWarning || ""), "V2د التنبيه يعلن ما يفقده القسم الواحد: 20 وحدة، ويظهر 55 بدل 75", preview.ownOnlyWarning);
   const made = await provisionProgram(Repository, REF, { ...o, apply: true, approve: true, password: "12345678" });
   check(made.ok && made.wrote && made.draftStatus === "approved", "V2د التنفيذ ينجح ويعتمد", made.error || made.approveBlocked);
   const cid = made.college!.id;

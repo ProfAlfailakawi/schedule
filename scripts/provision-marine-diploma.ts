@@ -51,6 +51,7 @@ console.log(`\nالكلية: ${report.college!.name}${report.collegeToCreate ? `
 if (report.sectionsToCreate.length) console.log(`أقسام ستُنشأ: ${report.sectionsToCreate.map(row => `${row.name} [${row.code}]`).join("، ")}`);
 console.log(`المقررات: ${report.coursesExisting} موجودة، ${report.coursesToCreate} ${apply ? "أُنشئت" : "ستُنشأ"}`);
 console.log(`الصحيفة: ${report.planStatus} · القواعد: ${report.draftStatus}`);
+if (report.ownOnlyWarning) console.log(`⚠ ${report.ownOnlyWarning}`);
 if (report.notes.length) console.log(`مسبقات من أقسام أخرى لم تدخل القواعد (${report.notes.length}): ${report.notes.slice(0, 3).join(" | ")}${report.notes.length > 3 ? " …" : ""}`);
 if (report.approveBlocked) console.log(`⚠ ${report.approveBlocked}`);
 console.log("الحسابات:");
