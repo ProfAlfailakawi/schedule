@@ -120,8 +120,8 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
   check(!/storedDegreeRuleForSection\(sectionId\)/.test(proof + submit + reuse), "لا مسار خريج يقرأ قاعدة القسم وحدها بعد الآن");
   check(server.includes('app.put("/api/curriculum/plans/:planId"') && server.includes("readDegreeRuleInput(req.body.degreeRule"),
     "شروط الصحيفة تُحفظ بالتحقق نفسه الذي لقواعد القسم");
-  check((server.match(/const readDegreeRuleInput=/g) || []).length === 1 && !server.includes('const read=(key:string)=>Math.round(Number(asciiDigits((req.body||{})[key])));'),
-    "حدود قواعد التخرج مكتوبة في مكان واحد");
+  check(!/const readDegreeRuleInput=/.test(server) && server.includes("readDegreeRuleInput,") && !server.includes('const read=(key:string)=>Math.round(Number(asciiDigits((req.body||{})[key])));'),
+    "حدود قواعد التخرج مكتوبة في مكان واحد (src/utils/degreeRules.ts)");
   const planPut = between('app.put("/api/curriculum/plans/:planId"', 'app.post("/api/curriculum/plans/:planId/courses"');
   check(!planPut.includes("patch.code="), "رمز «LEGACY» لا يُعدَّل من الواجهة، فلا تنتقل القاعدة الموروثة إلى صحيفة أخرى");
   const sectionPut = between('app.put("/api/degree-rules/:sectionId"', "const surveyPayloadCache");
@@ -132,6 +132,30 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
     "ردّ قسمٍ سابق لا يُعرض تحت القسم المختار الآن");
   check(server.includes("curriculum:curriculumOf(need)") && server.includes("curriculum: curriculumOf(need)"),
     "سجل الحالات وكشف التسجيل يعرضان صحيفة الطالب");
+}
+
+/* ── 4. حفظ قواعد القسم: الرقم المخفي لا يرفض مجموعاً أصغر ─────────────── */
+{
+  const { readDegreeRuleInput } = await import("../src/utils/degreeRules");
+  const ok = (r: any) => "rule" in r;
+  /* الحالة التي رُفضت: مجموع 75 وحدّا خريج 60 و63، والمحفوظ/المقترح للتدريب الميداني 102 لا تعرضه الشاشة. */
+  const saved = readDegreeRuleInput({ degreeUnits: "75", graduateRegularPassed: "60", graduateSummerPassed: "63" }, 102);
+  check(ok(saved) && (saved as any).rule.fieldTrainingRequired === 60 && (saved as any).rule.degreeUnits === 75, "مجموع 75 مع 60 و63 يُحفظ، والتدريب الميداني المخفي لا يتجاوز حدّ الخريج");
+  const keep = readDegreeRuleInput({ degreeUnits: 130, graduateRegularPassed: 107, graduateSummerPassed: 109 }, 102);
+  check(ok(keep) && (keep as any).rule.fieldTrainingRequired === 102, "المحفوظ المعقول يبقى كما هو حين لا يُرسل");
+  const arabicDigits = readDegreeRuleInput({ degreeUnits: "٧٥", graduateRegularPassed: "٦٠", graduateSummerPassed: "٦٣" }, 102);
+  check(ok(arabicDigits) && (arabicDigits as any).rule.graduateSummerPassed === 63, "الأرقام الهندية تُقبل");
+  /* لكل قسمٍ أرقامُه: لا يُرفض رقمٌ فوق المجموع ولا دون ٣٠. */
+  const free = readDegreeRuleInput({ degreeUnits: 75, graduateRegularPassed: 80, graduateSummerPassed: 90 }, 102);
+  check(ok(free) && (free as any).rule.graduateSummerPassed === 90, "شرطٌ فوق المجموع يُقبل (لكل قسم أرقامه)");
+  const low = readDegreeRuleInput({ degreeUnits: 12, fieldTrainingRequired: 6, graduateRegularPassed: 10, graduateSummerPassed: 11 }, 50);
+  check(ok(low) && (low as any).rule.degreeUnits === 12, "رقمٌ دون ٣٠ يُقبل");
+  const explicit = readDegreeRuleInput({ degreeUnits: 75, fieldTrainingRequired: 90, graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50);
+  check(ok(explicit) && (explicit as any).rule.fieldTrainingRequired === 90, "شاشة الصحائف: التدريب الميداني المُرسَل يُقبل كما كُتب");
+  check(!ok(readDegreeRuleInput({ degreeUnits: "abc", graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50)), "ما ليس رقماً يُرفض");
+  check(!ok(readDegreeRuleInput({ degreeUnits: 75, graduateRegularPassed: -5, graduateSummerPassed: 63 }, 50)) && !ok(readDegreeRuleInput({ degreeUnits: 5000, graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50)), "السالب وما فوق ٩٩٩ يُرفضان (خطأ كتابة)");
+  const sectionsScreen = fs.readFileSync(path.join(process.cwd(), "src/components/Sections.tsx"), "utf8");
+  check(sectionsScreen.includes("fieldTrainingRequired: _hidden") && !/\["fieldTrainingRequired"/.test(sectionsScreen), "شاشة القسم لا تعرض التدريب الميداني ولا ترسل رقمه المخفي");
 }
 
 console.log(`\nCurriculum graduation audit: ${passed} passed, ${failed} failed`);
