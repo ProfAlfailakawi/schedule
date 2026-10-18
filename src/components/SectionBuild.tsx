@@ -14,7 +14,7 @@ import { ImpactCard, postWhatIf, type ChangeImpact } from "./ApplyProposal";
 
 interface Placement { pending?: boolean; days?: string[]; index: number; day: string; dayLabel: string; start: string; end: string; roomCode: string; roomHall: string; instructorName: string; sectionCode: string; buildingId: string; roomId: string; instructorId: number }
 interface BuildRow { courseId: number; name: string; code: string; target: number | null; existing: number; remaining: number; state: "done" | "missing" | "over" | "unset"; placements: Placement[]; unplaced: number; reason: string }
-interface Built { rows: BuildRow[]; started: boolean; fingerprint: string; totals: { target: number; existing: number; remaining: number; placeable: number; pending: number } }
+interface Built { rows: BuildRow[]; started: boolean; fingerprint: string; totals: { target: number; existing: number; remaining: number; placeable: number; pending: number; roomless: number } }
 
 /** ما يفعله القسم لكل سببٍ يمنع البناء: يُستخرج من نصّ السبب القادم من الخادم. */
 const FIX_FOR = (reason: string) => /قاعة/.test(reason) ? "أضِف سعة القاعات في سجلّ القاعات"
@@ -136,7 +136,7 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
                   return p.pending ? (
                     <div key={key} className="sb-slot is-pending">
                       <span><b>شعبة {p.sectionCode}</b> · {p.dayLabel} {p.start}–{p.end}</span>
-                      <small><DoorClosed aria-hidden="true" /> قاعة؟ · {p.instructorName || "أستاذ؟"}</small>
+                      <small>{p.roomId ? `${p.roomCode}/${p.roomHall}` : <><DoorClosed aria-hidden="true" /> قاعة؟</>} · {p.instructorName || "أستاذ؟"}</small>
                     </div>
                   ) : (
                     <label key={key} className="sb-slot">
@@ -158,9 +158,8 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
             <div className="sb-review">
               <ClipboardPenLine aria-hidden="true" />
               <p>
-                <b>راجع وعدّل</b> في شاشة المراجعة نفسها التي بعد استيراد الملف: تظهر مواعيد القسم الحالية والشعب المقترحة (<b>{countOf(chosenCount, AR.section)}</b>) معاً، فتعدّل المقرر والأستاذ والقاعة والوقت ثم تنشر.
-                {totals.pending > 0 ? ` منها ${countOf(totals.pending, AR.section)} بأوقات الفصل المماثل بانتظار القاعة والأستاذ.` : ""}
-                {" "}النشر هناك يستبدل جدول القسم في الفصل بما تراه في الشاشة.
+                افتح الشعب المقترحة (<b>{countOf(chosenCount + totals.pending, AR.section)}</b>) في المراجعة لتعدّلها ثم تنزّلها.
+                {totals.roomless > 0 ? <> <b>{countOf(totals.roomless, AR.section)}</b> منها تحتاج تثبيت قاعة.</> : null}
               </p>
               <PrimaryButton type="button" disabled={busy} onClick={review} data-guide-ignore="فتح الشعب المقترحة مع مواعيد القسم الحالية في شاشة مراجعة الاستيراد للتعديل قبل النشر">راجع وعدّل</PrimaryButton>
             </div>

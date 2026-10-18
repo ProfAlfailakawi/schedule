@@ -82,6 +82,7 @@ try {
     const widePreview = await call("POST", "/api/section-build/preview", wide);
     const wideReview = await call("POST", "/api/section-build/review-rows", wide);
     check(widePreview.body.totals.pending === 3 && widePreview.body.totals.placeable === 3 && wideReview.status === 200 && wideReview.body.existing === before.length && wideReview.body.count === before.length + 3 && wideReview.body.pending === 3, "فصلٌ فيه مواعيد: ما لا أستاذ سابق له يُعرض معلّقاً في المراجعة ولا يُهمَل", { totals: widePreview.body.totals, count: wideReview.body?.count, pending: wideReview.body?.pending, before: before.length });
+    check(widePreview.body.totals.roomless === 0 && widePreview.body.rows.flatMap((r: any) => r.placements).every((p: any) => p.roomId && p.roomCode && p.roomHall) && wideReview.body.roomless === 0 && wideReview.body.rows.slice(before.length).every((r: any) => r["القاعة"] && r["المبنى"]), "والنظام يختار لها قاعةً من تاريخ القسم فلا تبقى بانتظار التثبيت", widePreview.body.totals);
     const widePick = widePreview.body.rows.flatMap((r: any) => r.placements.map((p: any) => `${r.courseId}:${p.sectionCode}`));
     const wideApply = await call("POST", "/api/section-build/apply", { ...wide, fingerprint: widePreview.body.fingerprint, pick: widePick });
     check(wideApply.status === 409 && wideApply.body?.code === "needs-review" && ((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).length === before.length, "والمعلّق لا يُكتب مباشرةً ولو في فصلٍ فيه مواعيد", wideApply.body);
@@ -98,6 +99,7 @@ try {
     check(all.some((p: any) => p.note === "كالفصل المماثل"), "الأوقات من الفصل المماثل حين تتوفّر");
     const pendPick = empty.body.rows.flatMap((r: any) => r.placements.map((p: any) => `${r.courseId}:${p.sectionCode}`));
     check((await call("POST", "/api/section-build/apply", { ...base, fingerprint: empty.body.fingerprint, pick: pendPick })).status === 409, "المعلّقة لا تُكتب مباشرةً: تُراجَع أولاً");
+    check(empty.body.totals.roomless === empty.body.totals.pending && empty.body.totals.pending > 0, "وبلا قاعات موثّقة تبقى كلها بانتظار التثبيت ويُعدّ ذلك", empty.body.totals);
     const review = await call("POST", "/api/section-build/review-rows", base);
     check(review.status === 200 && review.body.count === empty.body.totals.placeable && review.body.pending === empty.body.totals.pending && review.body.rows[0]["الوقت"] && review.body.rows[0]["رمز المقرر"], "صفوف المراجعة بشكل نموذج الاستيراد", { status: review.status, count: review.body?.count, pending: review.body?.pending });
     const imp = await call("POST", "/api/intelligence/import-preview", { collegeId: 1, sectionId: 1, termId: 1, rows: review.body.rows });

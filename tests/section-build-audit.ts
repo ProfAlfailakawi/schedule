@@ -96,6 +96,22 @@ check(pend.length === 2 && pend.every(p => p.pending && p.roomId === "" && p.ins
 check(!(pend[0].start === "08:00" && pend[0].days.includes("fsunday")), "القالب المتعارض مع مقررٍ من مستواه (الزوج 1|2) لا يُستعمل بل يُنقل إلى وقتٍ خالٍ");
 check(new Set(pend.map(p => `${p.days.join()}${p.start}`)).size === 2, "لا شعبتان بالوقت نفسه");
 check(pend.map(p => p.sectionCode).join() === "7,8", "أرقام الشعب تكمل ترقيم المقرر");
+/* اختيار القاعة من تاريخ القسم: لا تثبيتَ لاحقاً إلا لما لم تُوجد له قاعة */
+const R = (roomId: string, capacity = 0) => ({ roomId, buildingId: "b", code: roomId, hall: "1", capacity });
+const baseInput = { course: courses[0], count: 2, firstCode: 7, templates: tpl, seed: pastTpl[0], pairs: new Set(["1|2"]), doorway: 0, rhythm, termId: 7, instructorId: 9, instructorName: "هيئة تدريسية", fallbackLength: 60, draftId: () => nid-- };
+const busyR1: FSchedule = { ...row(90, 3, "1", "r1", "10:00", 5), AdTermId: 7, fmonday: true, fwednesday: true, fsunday: false, fendtime: "11:00" };
+const roomed = placePending({ ...baseInput, working: [{ ...pastTpl[2], id: 77, AdTermId: 7 }, busyR1], rooms: [R("r1"), R("r2"), R("r3")] });
+check(roomed.length === 2 && roomed.every(p => p.roomId && !p.roomPending), "تُختار لكل شعبةٍ قاعةٌ من قاعات القسم فلا تبقى بانتظار التثبيت");
+check(!roomed.some(p => p.roomId === "r1" && p.start === "10:00" && p.days.includes("fmonday")), "ولا تُختار قاعةٌ مشغولةٌ في الوقت نفسه (قاعة r1 مشغولة الاثنين ١٠)");
+check(roomed.every(p => p.buildingId === "b" && p.roomCode && p.roomHall), "القاعة المختارة تحمل مبناها ورقمها");
+const noRoomsAtAll = placePending({ ...baseInput, working: [{ ...pastTpl[2], id: 77, AdTermId: 7 }], rooms: [] });
+check(noRoomsAtAll.length === 2 && noRoomsAtAll.every(p => !p.roomId && p.roomPending), "بلا قاعات في تاريخ القسم: تبقى الشعبة بوقتها وتنتظر تثبيت القاعة");
+const tooSmall = placePending({ ...baseInput, working: [{ ...pastTpl[2], id: 77, AdTermId: 7 }], rooms: [R("r1", 10)], seatsNeeded: 30 });
+check(tooSmall.length === 2 && tooSmall.every(p => !p.roomId && p.roomPending), "قاعةٌ سعتها المسجّلة أصغر من الشعبة لا تُختار");
+const unknownCap = placePending({ ...baseInput, working: [{ ...pastTpl[2], id: 77, AdTermId: 7 }], rooms: [R("r1", 0)], seatsNeeded: 30 });
+check(unknownCap.every(p => p.roomId === "r1"), "قاعةٌ سعتها غير مسجّلة (مخفيّة) لا تُقصى");
+const allBusy = placePending({ ...baseInput, count: 1, working: [{ ...pastTpl[2], id: 77, AdTermId: 7 }, ...tpl.flatMap((t, i) => ["r1"].map(r => ({ ...row(200 + i, 3, "1", r, t.start, 5), AdTermId: 7, fsunday: t.days.includes("fsunday"), fmonday: t.days.includes("fmonday"), ftuesday: t.days.includes("ftuesday"), fwednesday: t.days.includes("fwednesday"), fendtime: t.end } as FSchedule)))], rooms: [R("r1")] });
+check(allBusy.length === 1 && (allBusy[0].roomId === "" ? allBusy[0].roomPending : !allBusy[0].roomPending), "إن شُغلت القاعة في قوالب القسم أُخذ وقتٌ آخر لها أو بقيت بلا قاعة، ولا تعارض");
 check(facultyPlaceholderOf([{ AdInstructorId: 5, AdInstructorName: "هيئة  تدريسية" }, { AdInstructorId: 6, AdInstructorName: "هيئة تدريسية" }], new Set([6]))?.AdInstructorId === 6, "سجلّ «هيئة تدريسية» من أساتذة القسم وحده");
 /* ترقيم الشعب المقترحة صالحٌ للاستيراد دائماً (٣ خانات من 501) */
 check(nextSectionCodes([], 3).join() === "501,502,503", "مقررٌ بلا رموز ⇒ 501، 502، 503 لا 1، 2، 3");

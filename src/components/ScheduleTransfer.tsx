@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Layers, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, DoorClosed, Download, History, Layers, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton, useDialogDismiss, visualConfirm } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
@@ -499,7 +499,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     const existingNow = planningRowsNow.filter(row => row.planningOrigin === "existing").length;
     const newRows = planningRowsNow.filter(row => row.planningOrigin === "new");
     const originalExisting = Number(xlsxPreview?.planning?.existing || 0);
-    return { existing: existingNow, added: newRows.length, pending: newRows.filter(row => !row.roomId).length, removed: Math.max(0, originalExisting - existingNow) };
+    const roomless = newRows.filter(row => !row.roomId);
+    return { existing: existingNow, added: newRows.length, pending: roomless.length, removed: Math.max(0, originalExisting - existingNow), roomless: roomless.map(row => `${row.AdCourseName || ""} ${row.SCode || ""}`.trim()) };
   })();
   /* Pages still waiting for «راجعت الصفحة» — named beside the publish button,
      which otherwise just disappears with no word about why. */
@@ -1262,20 +1263,33 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           ) : null}
 
           {tab === "import" && fromPlanning && xlsxPreview && !xlsxDraft.startsWith("published:") ? (
+            <>
             <section className="tp-banner" aria-label="مراجعة نزّل الشعب">
               <span className="tp-mark" aria-hidden="true"><Layers /></span>
               <div>
-                <span className="tp-kicker">من تخطيط الشعب</span>
+                <span className="tp-kicker">من تخطيط الشعب · ليست استيراد ملف</span>
                 <strong>مراجعة «نزّل الشعب»</strong>
                 <p>
-                  هذه ليست استيراد ملف. تظهر مواعيد القسم الحالية (<b>{countOf(planningMeta.existing, AR.appointment)}</b>) مع الشعب المقترحة (<b>{countOf(planningMeta.added, AR.section)}</b>)،
-                  فعدّل ما شئت بـ«تعديل سريع» ثم انزل بها في الجدول. النزول يستبدل جدول القسم في الفصل بما تراه هنا، والمواعيد الحالية محمولة معه.
-                  {planningMeta.pending > 0 ? ` منها ${countOf(planningMeta.pending, AR.section)} قاعتها وأستاذها بانتظار التثبيت.` : ""}
-                  {planningMeta.removed > 0 ? <strong className="tp-removed"> حذفتَ {countOf(planningMeta.removed, AR.appointment)} من مواعيد القسم الحالية، وستُزال من الجدول عند النزول.</strong> : null}
+                  <b>{countOf(planningMeta.existing, AR.appointment)}</b> حالياً + <b>{countOf(planningMeta.added, AR.section)}</b> مقترحة. عدّل بـ«تعديل سريع» ثم انزل بها؛ النزول يستبدل جدول القسم بما تراه.
+                  {planningMeta.removed > 0 ? <strong className="tp-removed"> حذفتَ {countOf(planningMeta.removed, AR.appointment)} حالياً، وستُزال من الجدول.</strong> : null}
                 </p>
               </div>
               <SecondaryButton type="button" data-guide-ignore="يعود إلى شاشة تخطيط الشعب دون كتابة شيء في الجدول" onClick={() => goTab("planning")}>رجوع إلى التخطيط</SecondaryButton>
             </section>
+            {planningMeta.roomless.length ? (
+              <div className="tp-rooms" role="status">
+                <span className="tp-rooms-mark" aria-hidden="true"><DoorClosed /></span>
+                <div>
+                  <strong>{countOf(planningMeta.roomless.length, AR.section)} تحتاج تثبيت قاعة</strong>
+                  <small>لم نجد لها قاعة خالية من قاعات القسم في ذلك الوقت. اختر قاعتها بـ«تعديل سريع».</small>
+                  <span className="tp-rooms-chips">
+                    {planningMeta.roomless.slice(0, 4).map(label => <i key={label}>{label}</i>)}
+                    {planningMeta.roomless.length > 4 ? <i>+{planningMeta.roomless.length - 4}</i> : null}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+          </>
           ) : null}
           {tab === "import" && branchSite ? (
             <div className="transfer-branch-import" role="note" hidden={fromPlanning}>

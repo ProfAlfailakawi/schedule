@@ -41,6 +41,9 @@ export function templatesFromHistory(past: readonly FSchedule[], termOrder: read
   return out;
 }
 
+/** قاعةٌ يستعملها القسم فعلاً (موثّقة): تُجرَّب للشعبة المعلّقة بترتيب الأقرب لعادة القسم في هذا المقرر. */
+export interface PendingRoom { roomId: string; buildingId: string; code: string; hall: string; capacity: number }
+
 export interface PendingInput {
   course: Pick<AdCourse, "AdCourseId" | "CourseName">;
   count: number;
@@ -58,6 +61,10 @@ export interface PendingInput {
   instructorName: string;
   fallbackLength: number;
   draftId: () => number;
+  /** قاعات القسم من تاريخه، الأولى بالمقرر نفسه فالأكثر استعمالاً؛ فارغةٌ فتبقى القاعة بانتظار التثبيت. */
+  rooms?: readonly PendingRoom[];
+  /** سعة الشعبة الواحدة؛ تُشترط على القاعة حين تكون سعتها مسجّلة. */
+  seatsNeeded?: number;
 }
 
 const draftRow = (input: PendingInput, days: DayKey[], start: number, end: number, template?: Template): FSchedule => {
@@ -70,10 +77,20 @@ const draftRow = (input: PendingInput, days: DayKey[], start: number, end: numbe
   return next as FSchedule;
 };
 
+/** أول قاعةٍ من قاعات القسم خاليةٌ في هذا الوقت (مع بقية أقسام الفصل وما وُضع قبلها)، أو null. */
+const roomedRow = (row: FSchedule, input: PendingInput): FSchedule | null => {
+  for (const room of input.rooms || []) {
+    if (room.capacity > 0 && input.seatsNeeded && room.capacity < input.seatsNeeded) continue;
+    const candidate = { ...row, roomId: room.roomId, buildingId: room.buildingId, AdRoomCode: room.code, AdRoomHall: room.hall, locationStatus: "VERIFIED" } as FSchedule;
+    if (free(candidate, input)) return candidate;
+  }
+  return null;
+};
+
 const free = (row: FSchedule, input: PendingInput) => findConflicts([row], [...input.working, row], { cohortPairs: input.pairs, doorwayMinutes: input.doorway }).length === 0;
 
-export function placePending(input: PendingInput): Array<Placement & { days: DayKey[]; pending: true }> {
-  const placed: Array<Placement & { days: DayKey[]; pending: true }> = [];
+export function placePending(input: PendingInput): Array<Placement & { days: DayKey[]; pending: true; roomPending: boolean }> {
+  const placed: Array<Placement & { days: DayKey[]; pending: true; roomPending: boolean }> = [];
   const usedTemplates = new Set<number>();
   /* شعبتان لمقررٍ واحد لا تقعان في الوقت نفسه: يتوزّع القسم على الأسبوع لا يتكدّس. */
   const usedSlots = new Set<string>();
@@ -82,37 +99,42 @@ export function placePending(input: PendingInput): Array<Placement & { days: Day
     input.working.push(row);
     placed.push({
       index, day: days[0], days, dayLabel: days.map(day => DAY_LABEL.get(day) || "").join(" و "), start: row.fstarttime, end: row.fendtime,
-      buildingId: String(row.buildingId || ""), roomId: "", roomCode: String(row.AdRoomCode || ""), roomHall: "",
-      instructorId: input.instructorId, instructorName: input.instructorName, sectionCode: String(input.firstCode + index - 1), note, pending: true,
+      buildingId: String(row.buildingId || ""), roomId: String(row.roomId || ""), roomCode: String(row.AdRoomCode || ""), roomHall: String(row.AdRoomHall || ""),
+      instructorId: input.instructorId, instructorName: input.instructorName, sectionCode: String(input.firstCode + index - 1), note, pending: true, roomPending: !row.roomId,
     });
   };
-  for (let slot = 1; slot <= input.count; slot += 1) {
-    let done = false;
+  /* needRoom: أولاً لا يُقبل وقتٌ إلا ومعه قاعةٌ خالية من قاعات القسم؛ فإن تعذّر أيُّ وقتٍ بقاعة أُخذ وقتٌ بلا قاعة (تُثبَّت في المراجعة). */
+  const attempt = (slot: number, needRoom: boolean): boolean => {
+    const settle = (row: FSchedule): FSchedule | null => {
+      if (!free(row, input)) return null;
+      return needRoom ? roomedRow(row, input) : row;
+    };
     /* ١) قالبٌ من الفصل المماثل لم يُستعمل بعد ويخلو من التعارض. */
-    for (let i = 0; i < input.templates.length && !done; i += 1) {
+    for (let i = 0; i < input.templates.length; i += 1) {
       if (usedTemplates.has(i)) continue;
       const t = input.templates[i];
       if (usedSlots.has(slotKey(t.days, t.start))) continue;
-      const row = draftRow(input, t.days, timeToMinutes(t.start), timeToMinutes(t.end), t);
-      if (!free(row, input)) continue;
-      usedTemplates.add(i); usedSlots.add(slotKey(t.days, t.start)); push(slot, row, t.days, "كالفصل المماثل"); done = true;
+      const row = settle(draftRow(input, t.days, timeToMinutes(t.start), timeToMinutes(t.end), t));
+      if (!row) continue;
+      usedTemplates.add(i); usedSlots.add(slotKey(t.days, t.start)); push(slot, row, t.days, "كالفصل المماثل"); return true;
     }
     /* ٢) لا قالبَ خالٍ: عادةُ القسم في ساعات اليوم، مدةً من أقرب قالب أو من تاريخه. */
-    if (!done) {
-      const length = input.templates[0] ? timeToMinutes(input.templates[0].end) - timeToMinutes(input.templates[0].start) : input.fallbackLength;
-      if (length > 0) for (const day of DAY_KEYS) {
-        const ladder = input.rhythm?.forDay(day)?.ladder || [];
-        for (const time of ladder) {
-          if (done) break;
-          const at = timeToMinutes(time);
-          if (usedSlots.has(slotKey([day], minutesToTime(at)))) continue;
-          const row = draftRow(input, [day], at, at + length, input.templates[0]);
-          if (free(row, input)) { usedSlots.add(slotKey([day], minutesToTime(at))); push(slot, row, [day], "وقتٌ معتاد للقسم"); done = true; }
-        }
-        if (done) break;
+    const length = input.templates[0] ? timeToMinutes(input.templates[0].end) - timeToMinutes(input.templates[0].start) : input.fallbackLength;
+    if (length > 0) for (const day of DAY_KEYS) {
+      const ladder = input.rhythm?.forDay(day)?.ladder || [];
+      for (const time of ladder) {
+        const at = timeToMinutes(time);
+        if (usedSlots.has(slotKey([day], minutesToTime(at)))) continue;
+        const row = settle(draftRow(input, [day], at, at + length, input.templates[0]));
+        if (!row) continue;
+        usedSlots.add(slotKey([day], minutesToTime(at))); push(slot, row, [day], "وقتٌ معتاد للقسم"); return true;
       }
     }
-    if (!done) break;
+    return false;
+  };
+  for (let slot = 1; slot <= input.count; slot += 1) {
+    if (input.rooms?.length && attempt(slot, true)) continue;
+    if (!attempt(slot, false)) break;
   }
   return placed;
 }
