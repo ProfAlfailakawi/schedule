@@ -111,6 +111,27 @@ const snapshot = async () => JSON.stringify([(await Repository.getSections()).le
   check(JSON.stringify(await Repository.getRuleSet(plan.id)) === liveBefore && (await Repository.getRuleDraft(plan.id))?.status === "review", "V2ج تعديلٌ لاحقٌ على صحيفةٍ معتمدة يبقى لرئيس اللجنة");
 }
 
+/* V2د: --own-only: القسم وحده. */
+{
+  const o = { prefix: "tso", collegeMatch: ["كلية الاختبار د"], createCollege: { code: "79", name: "كلية الاختبار د - بنين" }, ownOnly: true as const };
+  const sectionsBefore = ((await Repository.getSections()) as any[]).length;
+  const preview = await provisionProgram(Repository, REF, { ...o, apply: false });
+  check(preview.ok && preview.notes.length > 0 && preview.sectionsToCreate.length === 1 && preview.coursesToCreate === 32, "V2د معاينة القسم وحده: قسمٌ واحد و32 مقرراً ومسبقات خارجية مهملة تُذكر", [preview.error, preview.sectionsToCreate.length, preview.coursesToCreate, preview.notes.length]);
+  check(((await Repository.getSections()) as any[]).length === sectionsBefore, "V2د المعاينة لا تكتب");
+  const made = await provisionProgram(Repository, REF, { ...o, apply: true, approve: true, password: "12345678" });
+  check(made.ok && made.wrote && made.draftStatus === "approved", "V2د التنفيذ ينجح ويعتمد", made.error || made.approveBlocked);
+  const cid = made.college!.id;
+  const secs = ((await Repository.getSections()) as any[]).filter(row => Number(row.AdCollegeId) === cid);
+  const courses = ((await Repository.getCourses()) as any[]).filter(row => Number(row.AdCollegeId) === cid);
+  check(secs.length === 1 && String(secs[0].AdSectionCode) === "51" && courses.length === 32, "V2د الكلية فيها قسم البرنامج وحده ومقرراته (32) بلا أقسام ولا مقررات أخرى", [secs.length, courses.length]);
+  const planRow = ((await Repository.getCurriculumPlans(Number(secs[0].AdSectionId))) as any[]).find(row => row.code === "DP-0405-2023");
+  const live = await Repository.getRuleSet(planRow.id);
+  const ids = new Set(courses.map(row => Number(row.AdCourseId)));
+  check(live?.rules?.length === 32 && live.rules.every((rule: any) => (rule.prereq?.all || []).every((id: number) => ids.has(id))) && (live.externals || []).length === 0 && live.groups.length === 2, "V2د القواعد 32 ومسبقاتها من داخل القسم وحده ومجموعتا اختيار (فيهما مقرراتُ القسم وحدها) بلا متطلبات خارجية", [live?.rules?.length, live?.groups?.length]);
+  const users = ((await Repository.getUsers()) as any[]).filter(row => /^tso/.test(row.SystemUserLogin));
+  check(users.length === 9 && users.every(row => row.IsActive === true), "V2د الحسابات التسعة فعّالة", users.length);
+}
+
 /* V3 + V4 */
 {
   const run = await provisionProgram(Repository, REF, { apply: true, prefix: "tsb", deptNames: names });
