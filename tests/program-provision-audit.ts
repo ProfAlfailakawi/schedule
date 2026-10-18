@@ -79,9 +79,13 @@ const snapshot = async () => JSON.stringify([(await Repository.getSections()).le
   check((await snapshot()) === before && ((await Repository.getColleges()) as any[]).length === colleges, "V2ب المعاينة لا تُنشئ الكلية");
   const clash = await provisionProgram(Repository, REF, { ...opts, apply: false, createCollege: { code: usedCode, name: "كلية جديدة تماماً - بنين" } });
   check(!clash.ok && /مستخدم/.test(clash.error || ""), "V2ب رمز كليةٍ مستخدم: يتوقف");
-  const made = await provisionProgram(Repository, REF, { ...opts, apply: true });
+  const made = await provisionProgram(Repository, REF, { ...opts, apply: true, approve: true });
   check(made.ok && made.wrote && made.college!.id > 0 && ((await Repository.getColleges()) as any[]).length === colleges + 1, "V2ب التنفيذ ينشئ الكلية ثم أقسامها ومقرراتها", made.error);
-  const again = await provisionProgram(Repository, REF, { ...opts, apply: true });
+  const newOwn = ((await Repository.getSections()) as any[]).find(row => Number(row.AdCollegeId) === made.college!.id && String(row.AdSectionCode) === "51");
+  const newPlan = ((await Repository.getCurriculumPlans(Number(newOwn.AdSectionId))) as any[]).find(row => row.code === "DP-0405-2023");
+  const liveRules = await Repository.getRuleSet(newPlan.id);
+  check(made.draftStatus === "approved" && liveRules?.rules?.length === 32 && liveRules.version === 1, "V2ب --approve: القواعد معتمدة (32 قاعدة، نسخة 1)", [made.draftStatus, liveRules?.rules?.length]);
+  const again = await provisionProgram(Repository, REF, { ...opts, apply: true, approve: true });
   check(again.ok && !again.collegeToCreate && ((await Repository.getColleges()) as any[]).length === colleges + 1 && again.coursesToCreate === 0, "V2ب الإعادة لا تكرر الكلية");
 }
 

@@ -27,6 +27,8 @@ export interface ProvisionOptions {
   collegeId?: number;
   /** تُنشأ الكلية بهذا الرمز والاسم إن لم توجد (لا تُنشأ بغير هذا الخيار الصريح، ولا إن وُجدت). */
   createCollege?: { code: string; name: string };
+  /** يعتمد قواعد الصحيفة فور كتابتها (بتفويض المالك) بدل تركها «قيد المراجعة» لرئيس اللجنة. */
+  approve?: boolean;
   /** كلمة سرٍّ افتراضية: تُفعَّل بها حساباتُ هذه الأداة (الجديدة، أو المُنشأة سابقاً وما زالت بلا كلمة سر) ولا يُمسّ حسابٌ سواها. */
   password?: string;
   /** نصٌّ يجب أن يرد في اسم الكلية؛ الافتراضي: الدراسات التكنولوجية. */
@@ -49,7 +51,7 @@ export interface ProvisionReport {
   coursesToCreate: number;
   coursesExisting: number;
   planStatus: "exists" | "created" | "will-create";
-  draftStatus: "kept" | "written" | "will-write";
+  draftStatus: "kept" | "written" | "approved" | "will-write";
   accounts: Array<{ login: string; role: string; scope: string; status: "exists" | "created" | "completed" | "activated" | "will-create" }>;
   wrote: boolean;
 }
@@ -195,7 +197,16 @@ export async function provisionProgram(Repository: any, ref: CurriculumReference
     log(`+ قواعد الصحيفة (${built.rules.length} مقرراً، ${groups.length} مجموعتا اختيار) قيد المراجعة`);
   }
 
-  /* الحسابات: موقوفة وبلا كلمة سر، على هذه الكلية وحدها. */
+  if (options.approve) {
+    const pending = await Repository.getRuleDraft(plan.id);
+    if (pending?.status === "review") {
+      await Repository.approveRuleDraft(plan.id, pending.updatedAt, actor);
+      report.draftStatus = "approved";
+      log("+ اعتُمدت قواعد الصحيفة (تظهر للطلبة في «مساري»)");
+    }
+  }
+
+  /* الحسابات: موقوفة وبلا كلمة سر ما لم تُعطَ --password، على هذه الكلية وحدها. */
   const { roleDefinition } = await import("../../src/utils/academicRoles");
   for (const row of report.accounts) {
     const role = roleDefinition(row.role);
