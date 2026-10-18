@@ -1561,7 +1561,8 @@
 .apb-gap-name{display:grid;gap:1px;min-inline-size:0;flex:1}
 .apb-gap-name b{font-size:.86rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .apb-gap-name small{color:var(--muted);font-size:.72rem}
-.apb-gap-why{color:var(--muted);font-size:.74rem;white-space:nowrap}
+.apb-gap-why{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:.74rem;white-space:nowrap}
+.apb-gap-why svg{inline-size:13px;block-size:13px}
 .apb-gap-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--r-full);background:var(--info-soft);color:var(--info);font-variant-numeric:tabular-nums;font-size:.86rem}
 .apb-gap-pill i{font-style:normal;opacity:.7}
 .apb-gap-pill em{font-style:normal;font-size:.8rem}
@@ -1569,5 +1570,4 @@
 .apb-gap>footer{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .apb-gap-link{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--info);font:inherit;font-size:.8rem;font-weight:700;cursor:pointer;padding:4px 2px}
 .apb-gap-link svg{inline-size:14px;block-size:14px}
-@media (max-width:560px){.apb-gap-why{display:none}}
-.apb-gap-note{margin:0;color:var(--muted);font-size:.78rem;line-height:1.7}
+@media (max-width:560px){.apb-gap-list li{flex-wrap:wrap}.apb-gap-name{flex:1 1 60%}.apb-gap-why{order:3;inline-size:100%}}

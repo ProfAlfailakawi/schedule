@@ -6,7 +6,8 @@
  * الحساب في utils/sectionGap.ts؛ المصدران: /api/schedules/section-gap و/api/registration-stats.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronDown, FileUp, Layers, X } from "lucide-react";
+import { ChevronDown, ClipboardList, Layers, Users, X } from "lucide-react";
+import { AR, countOf } from "../utils/arabicCount";
 import { sectionGaps, type GapCourse, type GapPlan } from "../utils/sectionGap";
 
 interface GapPayload {
@@ -56,30 +57,20 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
 
 type Gap = ReturnType<typeof useSectionGap>;
 
-/** الشارة: عددُ المقررات التي تنقصها شعب. وإن لم يُرفع كشفٌ بعد ولم يبقَ ما يقال، دعوةٌ خافتة إليه عند حلول وقت التوقيع. */
-export function SectionGapBadge({ gap, open, onToggle, inviteImport, onOpenPlanning }: { gap: Gap; open: boolean; onToggle: () => void; inviteImport: boolean; onOpenPlanning?: () => void }) {
-  if (gap.items.length) {
-    return (
-      <button type="button" className="apb-badge apb-data-btn" data-tone="info" aria-expanded={open} onClick={onToggle}
-        title="شعبٌ يُفضَّل زيادتها · اختياري ولا يمنع التوقيع"
-        data-guide-ignore="قائمة الشعب المقترح زيادتها — اختيارية، تعرض مقرراتٍ ينقصها شعب">
-        <Layers aria-hidden="true" /><span>شعب</span><b>{num(gap.items.length)}</b><ChevronDown aria-hidden="true" className="apb-data-chev" />
-      </button>
-    );
-  }
-  if (inviteImport && gap.loaded && !gap.planImported && onOpenPlanning) {
-    return (
-      <button type="button" className="apb-badge apb-data-btn apb-gap-ghost" onClick={onOpenPlanning}
-        title="لم يُرفع كشف المتبقي بعد. بالرفع نقارن شعبك بالمتبقي من التسجيل ونقترح الزيادة بدقة أكبر من طلب الطلبة وحدهم."
-        data-guide-ignore="دعوةٌ اختيارية لرفع كشف المتبقي من عمادة التسجيل">
-        <FileUp aria-hidden="true" /><span>قارن بكشف المتبقي</span>
-      </button>
-    );
-  }
-  return null;
+/** الشارة: عددُ المقررات التي تنقصها شعب. */
+export function SectionGapBadge({ gap, open, onToggle }: { gap: Gap; open: boolean; onToggle: () => void }) {
+  if (!gap.items.length) return null;
+  return (
+    <button type="button" className="apb-badge apb-data-btn" data-tone="info" aria-expanded={open} onClick={onToggle}
+      title="شعبٌ يُفضَّل زيادتها · اختياري ولا يمنع التوقيع"
+      data-guide-ignore="قائمة الشعب المقترح زيادتها — اختيارية، تعرض مقرراتٍ ينقصها شعب">
+      <Layers aria-hidden="true" /><span>شعب</span><b>{num(gap.items.length)}</b><ChevronDown aria-hidden="true" className="apb-data-chev" />
+    </button>
+  );
 }
 
-export function SectionGapPanel({ gap, onClose, onOpenPlanning }: { gap: Gap; onClose: () => void; onOpenPlanning?: () => void }) {
+/** قائمةٌ قصيرة: اسم المقرر، ومن أين جاء الرقم (طلبةٌ أم تخطيطك)، و«الموجود ← المطلوب». لا روابط ولا إدخال. */
+export function SectionGapPanel({ gap, onClose }: { gap: Gap; onClose: () => void }) {
   const [all, setAll] = useState(false);
   const list = all ? gap.items : gap.items.slice(0, SHOWN);
   return (
@@ -94,28 +85,22 @@ export function SectionGapPanel({ gap, onClose, onOpenPlanning }: { gap: Gap; on
         {list.map(item => (
           <li key={item.id}>
             <span className="apb-gap-name"><b>{item.name}</b><small>{item.code}</small></span>
-            <span className="apb-gap-why">{item.basis === "plan" ? "حسب تخطيطك" : `طلبه ${num(item.demand)}`}</span>
+            {item.basis === "plan"
+              ? <span className="apb-gap-why"><ClipboardList aria-hidden="true" />تخطيطك</span>
+              : <span className="apb-gap-why"><Users aria-hidden="true" />{countOf(item.demand, AR.student)} طلبوه</span>}
             <span className="apb-gap-pill" title={`الموجود ${num(item.existing)} والمطلوب ${num(item.required)}`}>
               <i>{num(item.existing)}</i><em aria-hidden="true">←</em><b>{num(item.required)}</b>
             </span>
           </li>
         ))}
       </ul>
-      {!gap.planImported ? (
-        <p className="apb-gap-note">الأرقام هنا من طلب الطلبة وحدهم. ارفع كشف المتبقي لنقارن شعبك بالمتبقي من التسجيل وتصير الزيادة أدق.</p>
-      ) : null}
-      <footer>
-        {gap.items.length > SHOWN ? (
+      {gap.items.length > SHOWN ? (
+        <footer>
           <button type="button" className="apb-gap-link" onClick={() => setAll(value => !value)} data-guide-ignore="عرض كل المقررات المقترحة أو إخفاؤها">
             {all ? "أقل" : `الكل (${num(gap.items.length)})`}
           </button>
-        ) : <span />}
-        {onOpenPlanning ? (
-          <button type="button" className="apb-gap-link" onClick={onOpenPlanning} data-guide-ignore="يفتح تخطيط الشعب لرفع كشف المتبقي">
-            <FileUp aria-hidden="true" />{gap.planImported ? "تخطيط الشعب" : "قارن بكشف المتبقي"}
-          </button>
-        ) : null}
-      </footer>
+        </footer>
+      ) : null}
     </section>
   );
 }
