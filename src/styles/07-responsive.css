@@ -61,6 +61,12 @@
     font-weight:var(--brand-word-weight);
     letter-spacing:var(--brand-word-track);
   }
+  .mobile-brand-wrap{justify-self:center;display:flex;flex-direction:column;align-items:center;line-height:1.15;min-width:0}
+  .mobile-brand-wrap .mobile-scope{
+    display:block;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-family:inherit;font-size:10.5px;font-weight:500;letter-spacing:0;color:var(--muted);
+  }
+  .scope-context{display:none}
   .mobile-topbar.offline .mobile-brand::after{
     content:"";display:inline-block;width:6px;height:6px;margin-inline-start:6px;
     border-radius:50%;background:var(--warning);vertical-align:middle;

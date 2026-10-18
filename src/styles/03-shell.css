@@ -2090,3 +2090,20 @@ html[data-dialog-open] .notify-toast{visibility:hidden}
   .smart-guide-fab:not(.icon-only) .smart-guide-fab-copy{display:none}
   .smart-guide-fab:not(.icon-only) .smart-guide-fab-mark{width:34px;height:34px;border-radius:12px;box-shadow:none}
 }
+
+/* شارة النطاق: قرينةٌ هادئة لمن أُخفيت عنه الكلية والقسم — لا تُنقر. */
+.scope-context{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  max-width:100%;margin-bottom:var(--s4);
+  padding:5px var(--s3) 5px 6px;
+  border:1px solid var(--line);border-radius:999px;
+  background:var(--surface-2);color:var(--muted);font-size:12.5px;
+}
+.scope-context strong{color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scope-context span:not(.scope-context-icon){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scope-context i{width:3px;height:3px;border-radius:50%;background:var(--muted);flex:none;opacity:.7}
+.scope-context-icon{display:grid;place-items:center;width:22px;height:22px;flex:none;border-radius:50%;background:var(--canvas);color:var(--ink-2)}
+.scope-context-icon svg{width:13px;height:13px}
+.mobile-scope{display:none}
+html[data-schedule-workspace="focus"] .scope-context,
+html[data-schedule-workspace="presentation"] .scope-context{display:none}

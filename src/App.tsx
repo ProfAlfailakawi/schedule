@@ -46,6 +46,9 @@ import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 import { singleDepartmentOf } from "./utils/scopeContext";
+import { scopeShape } from "./utils/scopeShape";
+import { multiSiteDepartment, multiSiteHeadline } from "./utils/inboxAudience";
+import ScopeContextChip from "./components/ScopeContextChip";
 import { readSharedScope, setSharedScopeUser, writeSharedScope } from "./utils/sharedScope";
 import { warmStart } from "./utils/warmStart";
 import { setDemoSession } from "./utils/demoSession";
@@ -1510,6 +1513,16 @@ export default function App() {
     [permissions],
   );
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.IsRootAdmin);
+  /* شارةُ السياق لحساب القسم (scopeShape): الكلية والقسم مخفيّان في الشاشات، فيُقال له أين يعمل في رأسها. */
+  const scopeContext = (() => {
+    const shape = scopeShape(scopes as any, isPowerAdmin);
+    if (shape === "single") return { department: String(scopes[0]?.AdSectionName || ""), place: String(scopes[0]?.AdCollegeName || "") };
+    if (shape === "multiSite") {
+      const dept = multiSiteDepartment(scopes as any);
+      return dept ? { department: dept.name, place: multiSiteHeadline(dept).replace(/^قسمك في\s*/, "") } : null;
+    }
+    return null;
+  })();
   const planReviewAccess = Boolean(user && (user.IsAdminUser || user.IsRootAdmin || ["committeeChair", "departmentHead", "standard"].includes(sessionRole.id)) && (hasPerm(7) || hasPerm(14)));
   const planReviewVisible = planReviewAccess && (Boolean(user?.IsAdminUser || user?.IsRootAdmin) || planReviewCount > 0);
 
@@ -2281,6 +2294,7 @@ export default function App() {
         >
           <Menu />
         </button>
+        <div className="mobile-brand-wrap">
         <button
           type="button"
           className="mobile-brand"
@@ -2290,6 +2304,8 @@ export default function App() {
         >
           SCHEDULE
         </button>
+        {scopeContext?.department ? <small className="mobile-scope">{scopeContext.department}</small> : null}
+        </div>
         <button
           type="button"
           onClick={() => setSearchOpen(true)}
@@ -2636,6 +2652,7 @@ export default function App() {
       ) : null}
       <main className="app-main">
         <div className="content-frame">
+          {scopeContext ? <ScopeContextChip department={scopeContext.department} place={scopeContext.place} /> : null}
           <Suspense fallback={<div className="view-loading" aria-busy="true"><span /><i /><i /><i /></div>}>{renderView()}</Suspense>
         </div>
       </main>
