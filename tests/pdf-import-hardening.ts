@@ -486,7 +486,7 @@ check("a scanned course number that lost its last digit is settled by its family
   /* The course cell never shows what the scan printed («بويد القران الكريم وحفظه (1)»); a course the number did not
      settle is chosen from the department's courses by their system names (owner, 2026-09-27). */
   assert.doesNotMatch(table,/row\.sourceCourseText/);
-  assert.match(table,/departmentCourseOptions\.map\(item => <option key=\{item\.AdCourseId\} value=\{item\.AdCourseId\}>\{item\.CourseCode\} — \{item\.CourseName\}<\/option>\)/);
+  assert.match(table,/departmentCourseOptions\.map\(item => \(\{ value: item\.AdCourseId, label: item\.CourseName, hint: item\.CourseCode, keywords: String\(item\.CourseCode \|\| ""\) \}\)\)/);
   assert.match(table,/patchManual\(index, "course", \{ AdCourseId: Number\(picked\.AdCourseId\), AdCourseName: String\(picked\.CourseName \|\| ""\) \}\)/);
 });
 check("a scanned instructor name garbled by noise is shown as its clean words and called unclear, never «غير مسجّل»",()=>{

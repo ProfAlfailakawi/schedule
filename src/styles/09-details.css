@@ -1003,6 +1003,56 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .instructor-new .btn{flex:1;min-height:38px}
 
 /* ==========================================================================
+   SEARCHABLE SELECT
+   قائمة اختيارٍ يُبحث فيها بالكتابة (مقررات، رموز): تفتح كقائمة الأستاذ وتضيق بما يُكتب.
+   ========================================================================== */
+.ss-select{position:relative;min-width:0}
+.ss-trigger{
+  width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:0 var(--s4);border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--ink);text-align:start;cursor:pointer;
+}
+.ss-trigger:hover:not(:disabled){border-color:var(--line-strong)}
+.ss-trigger:disabled{opacity:.55;cursor:not-allowed}
+.ss-select.is-open .ss-trigger,.ss-trigger:focus-visible{border-color:var(--accent);box-shadow:var(--ring);outline:0}
+.ss-trigger>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ss-trigger .ss-placeholder{color:var(--muted-2)}
+.ss-trigger svg{width:14px;height:14px;color:var(--muted-2);flex:none}
+.ss-select.is-open .ss-trigger svg{transform:rotate(180deg)}
+.ss-static{
+  display:flex;align-items:center;min-height:44px;padding:0 var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-3);color:var(--ink);
+  font-variant-numeric:tabular-nums;
+}
+.ss-required{position:absolute;inset-inline-start:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
+.ss-pop{
+  position:absolute;z-index:60;inset-inline-start:0;top:calc(100% + 6px);
+  min-width:min(280px,calc(100vw - 32px));width:max(100%,280px);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);box-shadow:var(--shadow-lg);overflow:hidden;animation:rise .16s var(--ease-out) both;
+}
+.ss-pop.is-up{top:auto;bottom:calc(100% + 6px)}
+.ss-search{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line)}
+.ss-search svg{width:15px;height:15px;color:var(--muted-2);flex:none}
+.ss-search input,.ss-search input:hover,.ss-search input:focus,.ss-search input:focus-visible{flex:1;min-width:0;min-height:0;border:0;outline:0;box-shadow:none;background:transparent;padding:0;color:var(--ink);font-size:var(--t-body)}
+.ss-search>button{width:22px;height:22px;display:grid;place-items:center;border-radius:var(--r-full);background:var(--surface-3);color:var(--muted);flex:none}
+.ss-search>button svg{width:12px;height:12px}
+.ss-list{overflow-y:auto;max-height:min(45vh,300px);outline:0}
+.ss-list>button{
+  width:100%;display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);
+  color:var(--ink);text-align:start;border-bottom:1px solid var(--line);
+}
+.ss-list>button:last-child{border-bottom:0}
+.ss-list>button.is-active{background:var(--surface-2)}
+.ss-list>button.chosen{background:var(--accent-softer);color:var(--accent-ink)}
+.ss-list>button>span{flex:1;min-width:0;display:grid;gap:1px}
+.ss-list b{font-size:var(--t-sm);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.ss-list small{color:var(--muted-2);font:500 var(--t-xs)/1.4 var(--font-mono)}
+.ss-list svg{width:14px;height:14px;color:var(--accent);flex:none}
+.ss-empty{padding:var(--s6) var(--s4);text-align:center;color:var(--muted);font-size:var(--t-sm)}
+.ss-compact .ss-trigger,.ss-compact .ss-static{min-height:36px;font-size:var(--t-sm)}
+
+/* ==========================================================================
    MOVING A TERM — IMPORT · EXPORT · REPLACE
    Three jobs that all mean "change many appointments at once", so they share
    one discipline: the consequence is shown, then accepted, then applied.

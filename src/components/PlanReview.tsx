@@ -8,6 +8,7 @@
  * القسمُ يعدّل مقرراته وحدها — بطاقةُ مقررٍ من قسمٍ آخر مقفلةٌ تُرى ولا تُمَسّ،
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
+import SearchableSelect from "./SearchableSelect";
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
 import PlanMapLines, { levelHue, planEdges } from "./PlanMapLines";
 import { arabicMatchKey } from "../utils/arabicText";
@@ -462,10 +463,16 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave, onSav
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); if (previousFocus?.isConnected) previousFocus.focus(); };
   }, []);
   const pick = (current: number[], set: (v: number[]) => void) => (
-    <select aria-label="إضافة مقرر" value="" disabled={!editable} onChange={e => { const id = Number(e.target.value); if (id && !current.includes(id)) set([...current, id]); }}>
-      <option value="">＋ إضافة</option>
-      {options.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
-    </select>
+    <SearchableSelect
+      ariaLabel="إضافة مقرر"
+      value=""
+      disabled={!editable}
+      onChange={picked => { const id = Number(picked); if (id && !current.includes(id)) set([...current, id]); }}
+      options={options.map(c => ({ value: c.id, label: c.name, hint: c.code, keywords: String(c.code) }))}
+      placeholder="＋ إضافة"
+      searchPlaceholder="اكتب اسم المقرر أو رمزه"
+      className="ss-compact"
+    />
   );
   const chips = (list: number[], set: (v: number[]) => void) => list.map(id => (
     <span key={id} className="pr-chip">{nameOf(id)}{editable ? <button type="button" aria-label="إزالة" onClick={() => set(list.filter(x => x !== id))} data-guide-ignore="إزالةُ مقررٍ من شرطٍ داخل محرّر شاشةٍ مسجّلة في المرشد باسم page.planReview"><X size={12} /></button> : null}</span>

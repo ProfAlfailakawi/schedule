@@ -1,3 +1,4 @@
+import SearchableSelect from "./SearchableSelect";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Clock3, Maximize2, X } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
@@ -102,7 +103,7 @@ export default function QuickCreatePopover({
   onCreate: (draft: QuickDraft) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const firstField = useRef<HTMLSelectElement | null>(null);
+  const firstField = useRef<HTMLButtonElement | null>(null);
   const [box, setBox] = useState<{ left: number; top: number } | null>(null);
   const openedStart = minutesOf(seed.start);
   const openedEnd = Math.max(openedStart + 30, minutesOf(seed.end));
@@ -162,7 +163,8 @@ export default function QuickCreatePopover({
   // nothing here is saved until «إنشاء» is pressed, so leaving costs nothing.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.stopPropagation(); onCancel(); }
+      /* قائمةُ مقررٍ مفتوحة داخل البطاقة تأخذ Escape وحدها (تُغلق هي)، فلا تُهمل المسوّدة. */
+      if (e.key === "Escape") { if (ref.current?.querySelector(".ss-pop")) return; e.stopPropagation(); onCancel(); }
     };
     const away = (e: PointerEvent) => {
       if (!ref.current || ref.current.contains(e.target as Node)) return;
@@ -216,18 +218,16 @@ export default function QuickCreatePopover({
       <div className="qc-fields">
         <label className="qc-field qc-wide">
           <span>المقرر</span>
-          <select
-            ref={firstField}
+          <SearchableSelect
+            triggerRef={firstField}
             value={draft.courseId || ""}
-            onChange={(e) => chooseCourse(Number(e.target.value) || 0)}
-          >
-            <option value="">اختر المقرر…</option>
-            {orderedCourses.map((c) => (
-              <option key={c.AdCourseId} value={c.AdCourseId}>
-                {c.CourseCode ? `${c.CourseCode} · ` : ""}{c.CourseName}
-              </option>
-            ))}
-          </select>
+            onChange={(picked) => chooseCourse(Number(picked) || 0)}
+            options={orderedCourses.map((c) => ({ value: c.AdCourseId, label: c.CourseName, hint: c.CourseCode || undefined, keywords: String(c.CourseCode || "") }))}
+            placeholder="اختر المقرر…"
+            ariaLabel="المقرر"
+            searchPlaceholder="اكتب اسم المقرر أو رمزه"
+            className="ss-compact"
+          />
         </label>
         <label className="qc-field qc-narrow">
           <span>الشعبة</span>

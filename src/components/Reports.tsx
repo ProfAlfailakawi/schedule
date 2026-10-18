@@ -1,3 +1,4 @@
+import SearchableSelect from "./SearchableSelect";
 import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 import { flushSync } from "react-dom";
@@ -2095,14 +2096,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 still, so nothing is ever unreadable. */}
             <div className="field query-course-field">
               <label>المقرر</label>
-              <select
+              <SearchableSelect
                 value={filters.courseId || ""}
-                onChange={event => set("courseId", Number(event.target.value) || 0)}
+                onChange={picked => set("courseId", Number(picked) || 0)}
                 title={selectedCourse ? cleanOptionText(selectedCourse.CourseName) : "كل المقررات"}
-              >
-                <option value="">الكل</option>
-                {courseOptions.map(row => <option key={row.AdCourseId} value={row.AdCourseId}>{cleanOptionText(row.CourseName)}</option>)}
-              </select>
+                options={[{ value: "", label: "الكل" }, ...courseOptions.map(row => ({ value: row.AdCourseId, label: cleanOptionText(row.CourseName), hint: row.CourseCode || undefined, keywords: String(row.CourseCode || "") }))]}
+                placeholder="الكل"
+                ariaLabel="المقرر"
+                searchPlaceholder="اكتب اسم المقرر أو رمزه"
+              />
             </div>
             <div className="field query-period-field">
               <label>الفترة</label>
