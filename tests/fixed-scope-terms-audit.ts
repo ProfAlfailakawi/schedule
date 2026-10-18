@@ -65,6 +65,10 @@ check(/hidesCollege\(scopeShape\(/.test(read("src/components/Reports.tsx")) && /
 check(/hideCollege \? null/.test(read("src/components/IntelligenceContextBar.tsx")) && /hideCollege=\{hidesCollege\(scopeShape\(/.test(read("src/components/IntelligenceWorkspace.tsx")) && /useScopedTerms<AdTerm>\(/.test(read("src/components/IntelligenceContextBar.tsx")), "F4 مركز الذكاء: إخفاءُ الكلية وفصولٌ مرشّحة");
 check(/pickerSections\.length === 1 \? null/.test(read("src/components/CurriculumPlans.tsx")), "F4 الصحائف: القسم الوحيد لا يُسأل عنه");
 check(/useScopedTerms/.test(read("src/components/RegistrationRehearsal.tsx")), "F4 الرادار يرشّح فصوله");
+for (const [file, label] of [["src/components/ScheduleTransfer.tsx", "نسخ قائمة الأساتذة"], ["src/components/LivingScheduleLayer.tsx", "الفصل المصدر في الجدول الحي"], ["src/components/IntelligenceWorkspace.tsx", "مقارنة الفصول"]]) {
+  check(/useScopedTerms</.test(read(file)), `F5 ${label}: فصولٌ مرشّحة بالقاعدة نفسها`);
+}
+check(/copySourceTerms\.filter/.test(read("src/components/ScheduleTransfer.tsx")) && /scopedSourceTerms/.test(read("src/components/LivingScheduleLayer.tsx")) && /compareTermOptions\.map/.test(read("src/components/IntelligenceWorkspace.tsx")), "F5 القوائم تقرأ من المرشَّح لا من الخام");
 const server = read("server.ts");
 const route = server.slice(server.indexOf('app.get("/api/terms/scoped"'), server.indexOf('app.post("/api/terms"'));
 check(/readLiveSchedulesForRequest\(req,/.test(route) && /visibleTermIds\(/.test(route) && /dataContextCacheKey\(/.test(route), "F4 المسار: صفوفُ نطاق القارئ + القاعدة الواحدة + مفتاح السياق");

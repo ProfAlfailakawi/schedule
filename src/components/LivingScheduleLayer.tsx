@@ -1,5 +1,6 @@
 import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useScopedTerms } from "./useScopedTerms";
 import { TimeField } from "./TimeField";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import {
@@ -208,12 +209,14 @@ export default function LivingScheduleLayer({
     () => terms.find((term) => term.AdTermId === termId) || null,
     [terms, termId],
   );
+  /* الفصلُ المصدر: فصولٌ سابقة للقسم فيها بيانات فقط. */
+  const scopedSourceTerms = useScopedTerms<AdTerm>(terms, collegeId, sectionId, 0);
   const sourceTerms = useMemo(() => {
     const targetOrder = termChronology(targetTerm);
-    return [...terms]
+    return [...scopedSourceTerms]
       .filter((term) => term.AdTermId !== termId && termChronology(term) < targetOrder)
       .sort((a, b) => termChronology(b) - termChronology(a));
-  }, [terms, termId, targetTerm]);
+  }, [scopedSourceTerms, termId, targetTerm]);
   const contextQuery = () => {
     const p = new URLSearchParams();
     if (collegeId) p.set("collegeId", String(collegeId));

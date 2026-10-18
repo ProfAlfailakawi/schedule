@@ -86,6 +86,7 @@ import type {
   FSchedule,
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
+import { useScopedTerms } from "./useScopedTerms";
 import { AR, countOf, nounFor, oblique, studentNounsFor } from "../utils/arabicCount";
 import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer";
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
@@ -1595,6 +1596,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setPolicyResult(await fetchJson("/api/intelligence/policy-simulate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionId,termId,...policyDraft,analysisScope:policyDraft.scope === "family" ? "department" : "college",scope:policyDraft.scope === "university" && isPowerAdmin ? "university" : "department"})}));
     }catch(e:any){setError(smartMessage(e));}finally{setPolicyBusy(false);}
   };
+  /* قائمتا المقارنة: فصولٌ فيها بيانات في النطاق الذي تقرؤه المقارنة نفسه — وفي قراءة «القسم كله» تقرأ كل مواقعه، فيُسأل عن نطاق القارئ كله. */
+  const compareFamily = readingMode === "department";
+  const compareTermOptions = useScopedTerms<AdTerm>(terms, compareFamily ? 0 : collegeId, compareFamily ? 0 : sectionId, 0);
+  /* اختيارٌ خارج المرشَّح (افتراضيٌّ فارغ أو قديمٌ من نطاق سابق) يُستبدل حين يصل الجواب بدل أن يبقى في القائمة. */
+  useEffect(() => {
+    if (compareTermOptions.length < 1) return;
+    const ids = compareTermOptions.map(t => Number(t.AdTermId));
+    const ordered = sortTermsNewest(compareTermOptions).map(t => Number(t.AdTermId));
+    if (compareTo && !ids.includes(Number(compareTo))) setCompareTo(ordered[0] || 0);
+    if (compareFrom && !ids.includes(Number(compareFrom))) setCompareFrom(ordered[1] || ordered[0] || 0);
+  }, [compareTermOptions, compareFrom, compareTo]);
   const compareTerms = async () => {
     if (!compareFrom || !compareTo || compareFrom === compareTo) return; // مقارنةُ فصلٍ بنفسه بلا معنى
     setBusy(true);
@@ -5016,7 +5028,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 value={compareFrom || ""}
                 onChange={(e) => setCompareFrom(Number(e.target.value) || 0)}
               >
-                {terms.map((t) => (
+                {compareTermOptions.map((t) => (
                   <option key={t.AdTermId} value={t.AdTermId}>
                     {t.AdTermName}
                   </option>
@@ -5027,7 +5039,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 value={compareTo || ""}
                 onChange={(e) => setCompareTo(Number(e.target.value) || 0)}
               >
-                {terms.map((t) => (
+                {compareTermOptions.map((t) => (
                   <option key={t.AdTermId} value={t.AdTermId}>
                     {t.AdTermName}
                   </option>
