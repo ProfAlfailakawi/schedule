@@ -1755,6 +1755,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  /* يفتح أدوات البيانات على تبويبٍ بعينه (دعوة «قارن بكشف المتبقي» من شريط الاعتماد). */
+  const [transferStartTab, setTransferStartTab] = useState<"planning" | undefined>(undefined);
   /**
    * بديل اليوم — dated one-day facts over a lecture (cancel / cover).
    *
@@ -10212,6 +10214,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           onLockChange={setApprovalLock}
           onOpenNotes={onNavigate ? () => onNavigate("scheduleChanges") : undefined}
           onOpenCourses={onNavigate ? () => onNavigate("courses") : undefined}
+          onOpenPlanning={() => { setTransferStartTab("planning"); setTransferOpen(true); }}
         />
       ) : null}
       <ScheduleExperienceLayer
@@ -12415,7 +12418,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             setFilterSection(nextSectionId);
             setLiveFeedSerial(serial => serial + 1);
           }}
-          onClose={() => setTransferOpen(false)}
+          initialTab={transferStartTab}
+          onClose={() => { setTransferOpen(false); setTransferStartTab(undefined); }}
         />
       ) : null}
       {dayToolRow ? (
