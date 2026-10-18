@@ -84,6 +84,7 @@ check(/slice\(0, 30\);\s*const found/.test(server) && !/slice\(0, 4\);\s*const f
 /* كشفُ فصلٍ آخر يُرفض كله بالبابين (الملف والصفحات)، لا يُنبَّه إليه فقط: القاعدةُ نفسها في شاشة المقارنة وتخطيط الشعب. */
 check((server.match(/const termRefusal = remainingTermRefusal\(/g) || []).length === 2 && (server.match(/rejectKind: "wrongTerm"/g) || []).length === 2 && server.includes("function remainingTermRefusal("), "كشفُ فصلٍ آخر يُرفض بالبابين");
 check(planning.includes('importError.kind === "wrongTerm"') && fs.readFileSync("src/utils/remainingReport.ts", "utf8").includes('"wrongTerm"'), "رفضُ الفصل يُعرض في الواجهة بمقارنة «في الكشف / المختار»");
+check(server.includes("(season && header.season !== season)") && server.includes("فصلٌ بلا موسمٍ يُقرأ من اسمه"), "اسمُ فصلٍ غير معتاد لا يُرفض به كشف: لا خلافَ يمكن إثباته");
 
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

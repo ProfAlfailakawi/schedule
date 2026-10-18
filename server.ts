@@ -15256,7 +15256,8 @@ function remainingTermRefusal(headerText: string, termName: string): { error: st
   const header = readReportHeader(headerText);
   const season = REMAINING_SEASONS[String(termSeasonOf(termName) || "")];
   const years = termName.match(/(\d{4})\s*\/\s*(\d{4})/);
-  if (header.season && header.years && (header.season !== season || (years && Number(years[1]) !== header.years[0]))) {
+  /* فصلٌ بلا موسمٍ يُقرأ من اسمه (اسمٌ غير معتاد عدّله مسؤول) لا يُبنى عليه رفض: لا خلافَ يمكن إثباته، فيبقى الكشف قابلاً للمراجعة. */
+  if (header.season && header.years && (season || years) && ((season && header.season !== season) || (years && Number(years[1]) !== header.years[0]))) {
     const sheet = `الفصل ${REMAINING_SEASON_NAMES[header.season]} ${header.years[0]}/${header.years[1]}`;
     return { error: `الكشف لفصلٍ آخر: هو كشف ${sheet}، وأنت تخطط «${termName}». ارفع كشف هذا الفصل — لم يُستورد شيء.`, termMismatch: { sheet, chosen: termName } };
   }
