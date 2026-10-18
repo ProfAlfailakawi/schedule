@@ -45,22 +45,22 @@ try {
     /* بلا كشف: الحساب على الطلب وحده ولا يخترع نقصاً (طلبةُ التجربة قلّة). */
     const students = studentGaps(before.body.courses);
     check(students.every(item => item.basis === "students" && item.extra > 0), "بلا كشف: كل سطرٍ من طلب الطلبة وله نقصٌ حقيقي", students);
-    /* الديمو يُعرَض للجمهور: رغباتُ «مساري» المبذورة تُظهر مقرراتٍ يزيد طلبُها على شعبها (CS101 وCS220 قليلتا السعة، ومقرراتٌ مطلوبة بلا شعبة)،
+    /* الديمو يُعرَض للجمهور: رغباتُ «مساري» المبذورة تُظهر مقرراتٍ يزيد طلبُها على شعبها (0109105 و0109108 قليلتا السعة، ومقرراتٌ مطلوبة بلا شعبة)،
        فتظهر الشارةُ وعلاماتُ المقررات وجرسُ القسم بلا تعديلٍ يدويّ. */
-    check(students.length >= 3 && students.some(item => item.code === "CS101" && item.extra > 0) && students.some(item => item.existing === 0), "الديمو: طلبٌ يزيد على الشعب (مقررٌ قليل السعة ومقرراتٌ بلا شعبة)", students.map(item => `${item.code}:${item.existing}←${item.required}`));
+    check(students.length >= 3 && students.some(item => item.code === "0109105" && item.extra > 0) && students.some(item => item.existing === 0), "الديمو: طلبٌ يزيد على الشعب (مقررٌ قليل السعة ومقرراتٌ بلا شعبة)", students.map(item => `${item.code}:${item.existing}←${item.required}`));
 
     /* قسمٌ كتب «المختار» بيده ولم يرفع كشفاً: يصل المختار مع القراءة الخفيفة نفسها، ويغلب طلبَ الطلبة. */
-    const first = before.body.courses.find((course: any) => course.code === "CS101");
+    const first = before.body.courses.find((course: any) => course.code === "0109105");
     const manual = await call("PUT", "/api/registration-stats", { collegeId: 1, sectionId: 1, termId: 1, accepted: { [first.id]: first.existing + 2 } });
     check(manual.status === 200, "حفظ «المختار» وحده بلا كشف");
     const manualRead = await call("GET", `/api/schedules/section-gap?${Q}`);
     check(manualRead.body.planImported === false && manualRead.body.accepted[first.id] === first.existing + 2 && Object.keys(manualRead.body.remaining).length === 0, "بلا كشف: المختار يصل والمتبقي لا", manualRead.body);
     const manualGaps = planGaps(manualRead.body.courses, { accepted: manualRead.body.accepted, remaining: manualRead.body.remaining, history: {} });
-    check(manualGaps.length === 1 && manualGaps[0].code === "CS101" && manualGaps[0].basis === "plan" && manualGaps[0].extra === 2, "المختار اليدوي يظهر بمصدر «تخطيطك» ولو لم يُرفع كشف", manualGaps);
+    check(manualGaps.length === 1 && manualGaps[0].code === "0109105" && manualGaps[0].basis === "plan" && manualGaps[0].extra === 2, "المختار اليدوي يظهر بمصدر «تخطيطك» ولو لم يُرفع كشف", manualGaps);
 
     /* محاكاة قسمٍ رفع الكشف واختار: CS101 يملك 3 شعب ويُختار 6، CS315 يملك 4 ويُختار 6، CS220 يُختار 3 (مثل الموجود). */
     const byCode = (code: string) => before.body.courses.find((course: any) => course.code === code);
-    const cs101 = byCode("CS101"), cs315 = byCode("CS315"), cs220 = byCode("CS220");
+    const cs101 = byCode("0109105"), cs315 = byCode("0109323"), cs220 = byCode("0109108");
     const saved = await call("PUT", "/api/registration-stats", {
       collegeId: 1, sectionId: 1, termId: 1,
       remaining: { [cs101.id]: 120, [cs315.id]: 200, [cs220.id]: 60 },
@@ -73,11 +73,11 @@ try {
     check(after.body.planImported === true && after.body.planSource?.fileName === "المتبقي.pdf", "بعد الرفع: planImported ومصدره");
     const stats = (await call("GET", `/api/registration-stats?${Q}`)).body;
     const gaps = planGaps(after.body.courses, { remaining: stats.remaining, accepted: stats.accepted, history: stats.history || {} });
-    const g101 = gaps.find(item => item.code === "CS101"), g315 = gaps.find(item => item.code === "CS315");
-    check(!!g101 && g101.basis === "plan" && g101.existing === cs101.existing && g101.required === cs101.existing + 3 && g101.extra === 3, "CS101: الموجود ← المطلوب = +3 بمصدر التخطيط", g101);
-    check(!!g315 && g315.extra === 2 && g315.basis === "plan", "CS315: +2", g315);
-    check(!gaps.some(item => item.code === "CS220"), "CS220: المختار = الموجود فلا تُقترح زيادة");
-    check(gaps[0].code === "CS101" && gaps.indexOf(g315!) > gaps.indexOf(g101!), "الترتيب بالأكثر نقصاً أولاً");
+    const g101 = gaps.find(item => item.code === "0109105"), g315 = gaps.find(item => item.code === "0109323");
+    check(!!g101 && g101.basis === "plan" && g101.existing === cs101.existing && g101.required === cs101.existing + 3 && g101.extra === 3, "0109105: الموجود ← المطلوب = +3 بمصدر التخطيط", g101);
+    check(!!g315 && g315.extra === 2 && g315.basis === "plan", "0109323: +2", g315);
+    check(!gaps.some(item => item.code === "0109108"), "0109108: المختار = الموجود فلا تُقترح زيادة");
+    check(gaps[0].code === "0109105" && gaps.indexOf(g315!) > gaps.indexOf(g101!), "الترتيب بالأكثر نقصاً أولاً");
     check(((await call("GET", `/api/schedules?${Q}`)).body as any[]).length === week.length, "القراءة لم تكتب شيئاً في الجدول");
   }
 } finally {

@@ -59,8 +59,8 @@ async function main() {
   const A = (method: string, path: string, body?: unknown) => http(method, path, body, cookie);
 
   const reqs = (await A("GET", `/api/instructor-requests?${SCOPE}`)).json.rows as any[];
-  const salem = reqs.find(r => r.instructorName === "عضو هيئة تدريس تجريبي 1")!;
-  const noura = reqs.find(r => r.instructorName === "عضو هيئة تدريس تجريبي 2")!;
+  /* أستاذا الرغبتين المبذورتين: أول أستاذين في جدول الفصل الأول (ترتيبُ الأسماء لا يفترض أرقاماً). */
+  const [salem, noura] = [...reqs].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   const instructors = (await A("GET", "/api/instructors")).json as any[];
   const civilOf = (name: string) => String(instructors.find(i => i.AdInstructorName === name).AdInstructorCivil);
   const placeholder = instructors.find(i => String(i.AdInstructorName).startsWith("هيئة"));
@@ -81,16 +81,27 @@ async function main() {
 
   /* مساعدات: إنشاء شعبة «هيئة تدريسية» وبناء العمليات */
   let nextRoomHall = 1;
+  const madeFaculty: any[] = [];
+  const DAYFLAG: Record<string, string> = { S: "fsunday", M: "fmonday", T: "ftuesday", W: "fwednesday", H: "fthursday" };
+  const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  /* قاعةٌ خاليةٌ في الموعد المطلوب فعلاً (جدولُ العرض يتغيّر، فلا تُفترض قاعةٌ بعينها). */
+  const roomFreeAt = async (flags: string, start: string, end: string) => {
+    const live = await rows();
+    const clash = (r: any, id: string) => r.roomId === id && [...flags].some(f => r[DAYFLAG[f]]) && toMin(r.fstarttime) < toMin(end) && toMin(start) < toMin(r.fendtime);
+    const candidates = [roomFields, ...distinctRooms];
+    return candidates.find(c => !live.some(r => clash(r, String(c.roomId)))) || freshRoom();
+  };
   const makeFaculty = async (courseCode: string, scode: string, flags: string, start: string, end: string, hall?: string) => {
     const c = course(courseCode);
     const body = {
       AdCollegeId: 1, AdSectionId: 1, AdTermId: 1, AdCourseId: c.AdCourseId, SCode: scode, AdInstructorId: placeholder.AdInstructorId,
       fsunday: flags.includes("S"), fmonday: flags.includes("M"), ftuesday: flags.includes("T"), fwednesday: flags.includes("W"), fthursday: flags.includes("H"),
-      fstarttime: start, fendtime: end, ...freshRoom(),
+      fstarttime: start, fendtime: end, ...(await roomFreeAt(flags, start, end)),
     };
     void hall;
     const r = await A("POST", "/api/schedules", body);
     if (r.status !== 201) console.log("makeFaculty refused", r.status, JSON.stringify(r.json).slice(0, 200));
+    madeFaculty.push(r.json);
     return r.json;
   };
   const targetOf = (courseId: number, scode: string, days: string[], start: string, end: string, extra: any = {}) =>
@@ -111,7 +122,7 @@ async function main() {
   const getP = async (pid: string) => ((await A("GET", `/api/study-proposals?${SCOPE}`)).json.proposals as any[]).find(p => p.proposal.id === pid);
 
   /* ═══ ١) الإسناد: الشعبة نفسها تنتقل، ولا تتكرر عند التكرار ═══════════════ */
-  const fac1 = await makeFaculty("CS315", "601", "H", "17:00", "17:50");
+  const fac1 = await makeFaculty("0109401", "601", "H", "17:00", "17:50");
   const termCount0 = (await rows()).length;
   let p1 = (await newProposal(salem, [opAssign("a1", fac1)])).json;
   check(p1.proposal?.status === "draft", "المقترح يُحفظ مسودةً مستقلة", p1.error);
@@ -127,10 +138,10 @@ async function main() {
   check(wrong.status === 403 || wrong.status === 400, "رقمٌ مدني خاطئ لا يوقّع الردّ", wrong.json);
   const other = await http("GET", `/api/public/request/${noura.linkId}/proposals/${p1.proposal.id}`);
   check(other.status === 404, "رابط أستاذٍ آخر لا يرى مقترح غيره");
-  const ok1 = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1");
+  const ok1 = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], salem.instructorName);
   check(ok1.status === 200 && ok1.json.proposal.status === "approved", "ردّ الأستاذ الموقَّع بالرقم المدني يُسجَّل موافقة", ok1.json);
-  check(JSON.stringify((await getP(p1.proposal.id)).proposal).includes(civilOf("عضو هيئة تدريس تجريبي 1")) === false, "الرقم المدني لا يُخزَّن في المقترح");
-  check((await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1")).json.duplicate === true, "تكرار الموافقة نفسها لا يسجَّل مرتين");
+  check(JSON.stringify((await getP(p1.proposal.id)).proposal).includes(civilOf(salem.instructorName)) === false, "الرقم المدني لا يُخزَّن في المقترح");
+  check((await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "approve" }], salem.instructorName)).json.duplicate === true, "تكرار الموافقة نفسها لا يسجَّل مرتين");
   check((await rows()).find(r => r.id === fac1.id).AdInstructorId === placeholder.AdInstructorId, "موافقة الأستاذ وحدها لا تغيّر الجدول (بانتظار تثبيت القسم)");
   const cur1 = await getP(p1.proposal.id);
   const dry = await A("POST", `/api/study-proposals/${p1.proposal.id}/commit`, { rev: cur1.proposal.rev });
@@ -142,16 +153,16 @@ async function main() {
   check(after1.find(r => r.id === fac1.id).AdInstructorId === salemInstructorId, "الشعبة نفسها (بمعرّفها) صارت للأستاذ");
   const again = await A("POST", `/api/study-proposals/${p1.proposal.id}/commit`, { rev: cur1.proposal.rev, confirm: true });
   check(again.status === 200 && again.json.alreadyCommitted === true && (await rows()).length === termCount0, "تكرار التثبيت لا يكرّر الإسناد");
-  const closed = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "changes" }], "عضو هيئة تدريس تجريبي 1", { reason: "time" });
+  const closed = await respond(salem, p1.proposal.id, 1, [{ opId: "a1", decision: "changes" }], salem.instructorName, { reason: "time" });
   check(closed.status === 409, "لا ردّ على مقترحٍ مثبّت", closed.json);
 
   /* ═══ ٢) الشعبة الجديدة: تُنشأ عند التثبيت فقط ═════════════════════════════ */
-  const ds = course("CS220") || courses.find(c => c.AdSectionId === 1 && c.CourseCode !== "CS315");
+  const ds = course("0109226") || courses.find(c => c.AdSectionId === 1 && c.CourseCode !== "0109401");
   const p2 = (await newProposal(salem, [opCreate("c1", ds.AdCourseId, "701", ["fthursday"], "18:00", "18:50")])).json;
   check((await rows()).filter(r => r.SCode === "701").length === 0, "إضافة المادة إلى المسودة لا تُنشئها في الجدول الفعلي");
   await sendIt(p2);
   check((await rows()).filter(r => r.SCode === "701").length === 0, "إرسالها للأستاذ لا يُنشئها أيضاً");
-  await respond(salem, p2.proposal.id, 1, [{ opId: "c1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1");
+  await respond(salem, p2.proposal.id, 1, [{ opId: "c1", decision: "approve" }], salem.instructorName);
   const c2 = await getP(p2.proposal.id);
   const done2 = await A("POST", `/api/study-proposals/${p2.proposal.id}/commit`, { rev: c2.proposal.rev, confirm: true });
   const made = (await rows()).filter(r => r.SCode === "701");
@@ -162,13 +173,13 @@ async function main() {
 
   /* ═══ ٣) التعارضات: الأستاذ، القاعة، رقم الشعبة، وتمييز الموانع من الملاحظات ═ */
   const clashRow = salemRows[0];
-  ev = await evaluate(salem, [opCreate("x1", course("CS350").AdCourseId, "702", daysOfRow(clashRow), clashRow.fstarttime, clashRow.fendtime, { AdRoomHall: "999", roomId: undefined, locationStatus: "PENDING_ROOM" })]);
+  ev = await evaluate(salem, [opCreate("x1", course("0109454").AdCourseId, "702", daysOfRow(clashRow), clashRow.fstarttime, clashRow.fendtime, { AdRoomHall: "999", roomId: undefined, locationStatus: "PENDING_ROOM" })]);
   check(ev.counts.blockers >= 1 && ev.findings.some(f => f.kind === "blocker" && f.code === "instructor"), "تعارضٌ مع محاضرةٍ قائمة للأستاذ: مانع", ev.findings);
   check(!ev.readiness.canSend, "المقترح الذي فيه مانع لا يُرسل كعرضٍ جاهز");
-  const blockedSend = await (async () => { const p = (await newProposal(salem, [opCreate("x1", course("CS350").AdCourseId, "702", daysOfRow(clashRow), clashRow.fstarttime, clashRow.fendtime, { roomId: undefined, locationStatus: "PENDING_ROOM" })])).json; return sendIt(p); })();
+  const blockedSend = await (async () => { const p = (await newProposal(salem, [opCreate("x1", course("0109454").AdCourseId, "702", daysOfRow(clashRow), clashRow.fstarttime, clashRow.fendtime, { roomId: undefined, locationStatus: "PENDING_ROOM" })])).json; return sendIt(p); })();
   check(blockedSend.status === 409 && blockedSend.json.code === "not-ready", "الخادم يعيد الفحص عند الإرسال ويمنع ما فيه مانع", blockedSend.json.error);
   const other2 = base.find(r => r.AdInstructorId !== salemInstructorId && r.roomId && r.AdInstructorId !== placeholder.AdInstructorId)!;
-  ev = await evaluate(salem, [opCreate("x2", course("CS350").AdCourseId, "703", daysOfRow(other2), other2.fstarttime, other2.fendtime, { AdRoomCode: other2.AdRoomCode, AdRoomHall: other2.AdRoomHall, buildingId: other2.buildingId, roomId: other2.roomId, locationStatus: "VERIFIED" })]);
+  ev = await evaluate(salem, [opCreate("x2", course("0109454").AdCourseId, "703", daysOfRow(other2), other2.fstarttime, other2.fendtime, { AdRoomCode: other2.AdRoomCode, AdRoomHall: other2.AdRoomHall, buildingId: other2.buildingId, roomId: other2.roomId, locationStatus: "VERIFIED" })]);
   check(ev.findings.some(f => f.kind === "blocker" && (f.code === "room" || f.code === "instructor")), "قاعةٌ مشغولة أو أستاذٌ مشغول: مانع", ev.findings.map(f => f.code));
   ev = await evaluate(salem, [opCreate("x3", ds.AdCourseId, "701", ["fthursday"], "19:00", "19:50")]);
   check(ev.findings.some(f => f.code === "section-code-taken" && f.kind === "blocker"), "رقم شعبةٍ مستخدمٍ لنفس المقرر: مانع", ev.findings.map(f => f.code));
@@ -176,7 +187,7 @@ async function main() {
   check(ev.status === "partial" && ev.incompleteReasons.length > 0 && !ev.readiness.canSend, "بيانات ناقصة: الفحص «غير مكتمل» ولا يُعرض «لا تعارضات»");
   ev = await evaluate(salem, [opCreate("x5", ds.AdCourseId, "706", ["fthursday"], "20:00", "20:50")]);
   check(ev.status === "partial" || ev.incompleteReasons.length > 0, "وقتٌ خارج ساعات اليوم الدراسي لا يُفحص كأنه صحيح");
-  const f2 = await makeFaculty("CS315", "602", "S", "08:30", "09:20");
+  const f2 = await makeFaculty("0109401", "602", "S", "08:30", "09:20");
   ev = await evaluate(salem, [opAssign("a9", f2)]);
   check(ev.findings.some(f => f.kind === "blocker" && f.code === "instructor"), "تُفحص الشعبة المُسندة بهوية الأستاذ المستهدف لا بهوية «هيئة تدريسية»", ev.findings.map(f => f.code));
   const wholeDay = await evaluate(salem, [opCreate("y1", ds.AdCourseId, "711", ["fthursday"], "09:00", "09:50"), opCreate("y2", ds.AdCourseId, "712", ["fthursday"], "09:30", "10:20")]);
@@ -190,7 +201,7 @@ async function main() {
   ev = await evaluate(salem, [editOp]);
   check(ev.after.metrics.sections === ev.before.metrics.sections, "التعديل: عدد الشعب بعده = قبله (القديم لا يُحسب مع الجديد)", [ev.before.metrics.sections, ev.after.metrics.sections]);
   check(ev.after.ghosts.some((g: any) => g.state === "out") && ev.after.items.some((i: any) => i.state === "modified"), "معاينة التعديل تُظهر الموضع القديم (ghost) والجديد (معدّل)");
-  const f3 = await makeFaculty("CS350", "603", "M", "17:00", "17:50");
+  const f3 = await makeFaculty("0109454", "603", "M", "17:00", "17:50");
   const swapOut = salemRows.find(r => r.id !== movable.id && r.id !== fac1.id)!;
   const replaceOp = { id: "r1", kind: "replace", incoming: "assign", source: { id: f3.id }, out: { snapshot: { id: swapOut.id }, action: "unassign" }, target: targetOf(f3.AdCourseId, f3.SCode, daysOfRow(f3), f3.fstarttime, f3.fendtime, ownRoom(f3)) };
   ev = await evaluate(salem, [replaceOp]);
@@ -201,21 +212,21 @@ async function main() {
   const lp = (await newProposal(salem, [replaceOp], "linked")).json;
   check(lp.proposal?.responseMode === "linked", "الترتيب المترابط يُحفظ بنوعه");
   await sendIt(lp);
-  const lr = await respond(salem, lp.proposal.id, 1, "changes", "عضو هيئة تدريس تجريبي 1", { reason: "time", note: "الخميس مزدحم" });
+  const lr = await respond(salem, lp.proposal.id, 1, "changes", salem.instructorName, { reason: "time", note: "الخميس مزدحم" });
   check(lr.status === 200 && lr.json.proposal.status === "changes", "ترتيبٌ مترابط: طلبُ التعديل يشمل المجموعة", lr.json);
   const lcur = await getP(lp.proposal.id);
   const lcommit = await A("POST", `/api/study-proposals/${lp.proposal.id}/commit`, { rev: lcur.proposal.rev, confirm: true });
   check(lcommit.status === 409, "لا تثبيت لمجموعةٍ طلب الأستاذ تعديلها", lcommit.json);
-  const edited = await A("PUT", `/api/study-proposals/${lp.proposal.id}`, { rev: lcur.proposal.rev, ops: [{ ...replaceOp, target: { ...replaceOp.target, fstarttime: "16:00", fendtime: "16:50" } }] });
+  const edited = await A("PUT", `/api/study-proposals/${lp.proposal.id}`, { rev: lcur.proposal.rev, ops: [{ ...replaceOp, target: { ...replaceOp.target, fstarttime: "18:00", fendtime: "18:50" } }] });
   check(edited.status === 200 && edited.json.proposal.version === 2 && edited.json.proposal.status === "draft", "تعديل تفاصيل ما أُرسل ينشئ نسخةً جديدة (٢) مسودة", edited.json.error);
   check(edited.json.proposal.versions.length === 1 && edited.json.proposal.responses.length === 1, "تاريخ النسخ والردود السابقة محفوظ لا يُمحى");
-  const midResp = await respond(salem, lp.proposal.id, 1, "approve", "عضو هيئة تدريس تجريبي 1");
+  const midResp = await respond(salem, lp.proposal.id, 1, "approve", salem.instructorName);
   check(midResp.status === 409, "أثناء تجهيز نسخةٍ جديدة لا يُقبل الردّ على القديمة", midResp.json);
   const sent2 = await A("POST", `/api/study-proposals/${lp.proposal.id}/send`, { rev: edited.json.proposal.rev });
-  check(sent2.status === 200 && sent2.json.proposal.sentVersion === 2, "إرسال النسخة المعدّلة", sent2.json.error);
-  const oldVer = await respond(salem, lp.proposal.id, 1, "approve", "عضو هيئة تدريس تجريبي 1");
+  check(sent2.status === 200 && sent2.json.proposal.sentVersion === 2, "إرسال النسخة المعدّلة", sent2.json.evaluation?.findings?.map((f: any) => `${f.kind}:${f.code}:${f.title}:${f.detail}`) ?? sent2.json.error);
+  const oldVer = await respond(salem, lp.proposal.id, 1, "approve", salem.instructorName);
   check(oldVer.status === 409 && oldVer.json.code === "stale-version", "موافقةٌ على نسخةٍ قديمة تُرفض ولا تنطبق على الأحدث", oldVer.json);
-  const newVer = await respond(salem, lp.proposal.id, 2, "approve", "عضو هيئة تدريس تجريبي 1");
+  const newVer = await respond(salem, lp.proposal.id, 2, "approve", salem.instructorName);
   check(newVer.status === 200 && newVer.json.proposal.status === "approved", "الموافقة على النسخة الحالية");
   const hist = (await getP(lp.proposal.id)).proposal;
   check(hist.responses.length === 2 && hist.responses[0].version === 1, "ردُّ النسخة القديمة محفوظٌ بجانب الجديد");
@@ -228,12 +239,12 @@ async function main() {
   check(afterLinked.length === beforeLinked.length, "الاستبدال لا يحذف شعبةً من جدول القسم عند فك الإسناد");
 
   /* ═══ ٦) مواد مستقلة: موافقةٌ جزئية تُثبّت ما وُوفق عليه وحده ═══════════════ */
-  const f4 = await makeFaculty("CS315", "604", "H", "18:00", "18:50");
-  const f5 = await makeFaculty("CS350", "605", "H", "19:00", "19:50");
+  const f4 = await makeFaculty("0109401", "604", "H", "18:00", "18:50");
+  const f5 = await makeFaculty("0109454", "605", "H", "19:00", "19:50");
   const p6 = (await newProposal(noura, [opAssign("n1", f4), opAssign("n2", f5)])).json;
   const s6 = await sendIt(p6);
   check(s6.status === 200, "تجهيز مقترح المواد المستقلة وإرساله", s6.json.evaluation?.findings?.map((f: any) => `${f.kind}:${f.code}:${f.title}:${f.detail}`));
-  const pr = await respond(noura, p6.proposal.id, 1, [{ opId: "n1", decision: "approve" }, { opId: "n2", decision: "changes" }], "عضو هيئة تدريس تجريبي 2", { reason: "place", note: "أفضّل قاعةً أخرى" });
+  const pr = await respond(noura, p6.proposal.id, 1, [{ opId: "n1", decision: "approve" }, { opId: "n2", decision: "changes" }], noura.instructorName, { reason: "place", note: "أفضّل قاعةً أخرى" });
   check(pr.status === 200 && pr.json.proposal.status === "partial", "موافقةٌ على مادة وطلبُ تعديل أخرى = موافقةٌ جزئية", pr.json);
   const c6 = await getP(p6.proposal.id);
   check(c6.commitReadiness.ok === true && c6.commitReadiness.partial === true && c6.commitReadiness.opIds.join() === "n1", "الجاهز للتثبيت هو المادة الموافَق عليها وحدها");
@@ -242,11 +253,11 @@ async function main() {
   check(d6.status === 200 && r6.find(r => r.id === f4.id).AdInstructorId === noura.AdInstructorId && r6.find(r => r.id === f5.id).AdInstructorId === placeholder.AdInstructorId, "ثُبّتت المادة الموافَق عليها وبقيت الأخرى لـ«هيئة تدريسية»", d6.json);
 
   /* ═══ ٧) تغيّر البيانات أثناء انتظار الرد ═══════════════════════════════ */
-  const f6 = await makeFaculty("CS315", "606", "S", "17:00", "17:50");
+  const f6 = await makeFaculty("0109401", "606", "S", "17:00", "17:50");
   const p7 = (await newProposal(salem, [opAssign("s1", f6)])).json;
   const sent7 = await sendIt(p7);
   check(sent7.status === 200, "تجهيز مقترحٍ سيتغيّر جدوله", sent7.json.error);
-  await respond(salem, p7.proposal.id, 1, [{ opId: "s1", decision: "approve" }], "عضو هيئة تدريس تجريبي 1");
+  await respond(salem, p7.proposal.id, 1, [{ opId: "s1", decision: "approve" }], salem.instructorName);
   const fresh = (await rows()).find(r => r.id === f6.id);
   const takenBy = base.find(r => r.AdInstructorId !== placeholder.AdInstructorId && r.AdInstructorId !== salemInstructorId)!.AdInstructorId;
   const put = await A("PUT", `/api/schedules/${f6.id}`, { ...fresh, AdInstructorId: takenBy, rev: fresh.rev });

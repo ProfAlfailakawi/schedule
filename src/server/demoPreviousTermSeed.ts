@@ -13,7 +13,6 @@
  * يُبذر داخل صندوق الزائر وحده، بدوالّ الخادم نفسها، وكلُّ الأسماء والأرقام وهمية.
  */
 import { Repository } from "../db/repository";
-import { DEMO_PREVIOUS_TERM_ID } from "../db/demoSandbox";
 import { generateSyntheticCivilId, normalizeCivilId } from "../utils/civilId";
 import { verificationCode } from "../utils/approvalWorkflow";
 import { endForRequest, type RequestDayKey } from "../utils/instructorRequestVerdict";
@@ -33,28 +32,17 @@ export interface PreviousTermSeedDeps {
   judge?: (request: InstructorRequest) => Promise<InstructorRequest>;
 }
 
-/** الأقسامُ التي لها جدولٌ في التاريخ، فلها كشفٌ ورغباتٌ في الفصل السابق. */
-export const DEMO_PREVIOUS_TERM_SCOPES: ReadonlyArray<{ collegeId: number; sectionId: number }> = [
-  { collegeId: 1, sectionId: 1 }, { collegeId: 1, sectionId: 2 }, { collegeId: 2, sectionId: 3 },
-  { collegeId: 2, sectionId: 4 }, { collegeId: 3, sectionId: 5 }, { collegeId: 1, sectionId: 9 },
-  { collegeId: 1, sectionId: 6 }, { collegeId: 2, sectionId: 7 }, { collegeId: 3, sectionId: 8 },
-];
-/** الفصلُ الجاري: كلُّ الأقسام عدا علوم الحاسب (لها قصّتُها في seedDemoStories). */
-export const DEMO_CURRENT_TERM_EXTRA_SCOPES = DEMO_PREVIOUS_TERM_SCOPES.filter(scope => scope.sectionId !== 1);
+/** القسمُ الوحيد في الصندوق: لكل فصلٍ قادمٍ كشفٌ ورغباتٌ ومقترحاتٌ بحالاتها كلِّها. */
+export const DEMO_TERM_STORY_SCOPES: ReadonlyArray<{ collegeId: number; sectionId: number }> = [{ collegeId: 1, sectionId: 1 }];
 
 type Phase = "past" | "now";
 
 const DAY_KEYS: RequestDayKey[] = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"];
 const START_CHOICES = ["08:00", "09:30", "11:00", "12:30", "14:00", "15:30", "10:00", "13:30"];
 
-/** الفصلُ السابق: كلُّ شيءٍ مضى وانتهى، فيُقرأ «للعرض فقط». */
-export async function seedDemoPreviousTerm(deps: PreviousTermSeedDeps): Promise<void> {
-  await seedTermStories(deps, DEMO_PREVIOUS_TERM_ID, "past", DEMO_PREVIOUS_TERM_SCOPES);
-}
-
-/** الفصلُ الجاري: طلباتُ طلبةٍ وأساتذةٌ ومقترحاتٌ حيّةٌ في الأقسام التي لا قصّةَ لها بعد. */
-export async function seedDemoCurrentTermStories(deps: PreviousTermSeedDeps, termId: number): Promise<void> {
-  await seedTermStories(deps, termId, "now", DEMO_CURRENT_TERM_EXTRA_SCOPES);
+/** الفصلُ القادم أو الصيفي: طلباتُ طلبةٍ وأساتذةٌ ومقترحاتٌ حيّةٌ بكل حالاتها (فصل الجاري له قصّتُه في seedDemoStories). */
+export async function seedDemoTermStories(deps: PreviousTermSeedDeps, termId: number): Promise<void> {
+  await seedTermStories(deps, termId, "now", DEMO_TERM_STORY_SCOPES);
 }
 
 /** نهايةُ موعدٍ يبدأ عند `start` بمدة المحاضرة القائمة نفسها. */
@@ -79,7 +67,7 @@ async function seedTermStories(deps: PreviousTermSeedDeps, termId: number, phase
   /* «مضى منذ n يوماً»: للفصل السابق تُقاس n من نحو نصف سنةٍ مضت (فكلُّ تاريخٍ قبل الفصل الجاري)، وللجاري تُصغَّر. */
   const d = (n: number) => new Date(Date.now() - (past ? 150 + n : Math.max(1, Math.round(n / 8))) * 86_400_000).toISOString();
   const ahead = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
-  const committee = { id: 16, name: "د. رئيس لجنة جدول الحاسب", role: "رئيس لجنة الجدول" };
+  const committee = { id: 16, name: "د. رئيس لجنة جدول تكنولوجيا التعليم", role: "رئيس لجنة الجدول" };
   const registrarRole = "موظف التسجيل";
   const courseById = new Map((courses as AdCourse[]).map(row => [Number(row.AdCourseId), row] as const));
   const collegeNameById = new Map(colleges.map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));

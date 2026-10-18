@@ -14,7 +14,7 @@ import fs from "fs";
 import path from "path";
 import { departmentNameKey, inboxAudience, multiSiteDepartment, multiSiteHeadline } from "../src/utils/inboxAudience";
 import { ACADEMIC_ROLES } from "../src/utils/academicRoles";
-import { createDemoSandboxState, DEMO_MULTI_SITE, DEMO_SWITCH_ACCOUNTS, demoActiveRoleKey } from "../src/db/demoSandbox";
+import { createDemoSandboxState, DEMO_SWITCH_ACCOUNTS, demoActiveRoleKey } from "../src/db/demoSandbox";
 import { visibleFilterOptions } from "../src/components/InstructorInbox";
 
 let passed = 0, failed = 0;
@@ -211,20 +211,14 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   check(stale.length === 0, `C-inventory لا سطرَ مراجعةٍ لمسارٍ لم يعد موجوداً${stale.length ? ` (${stale.join("، ")})` : ""}`);
 }
 
-/* ── B-demo: الحسابُ المتعدّد المواقع في البيئة التجريبية ────────────────────── */
+/* ── B-demo: الصندوقُ كليةٌ واحدة وقسمٌ واحد — لا حسابَ متعدّد المواقع ──────── */
 {
   const state = createDemoSandboxState();
-  const assigns = state.collegeUserAssign.filter(row => row.SystemUserId === DEMO_MULTI_SITE.id);
-  const scopes = assigns.map(row => ({ ...row, AdSectionName: state.sections.find(s => s.AdSectionId === row.AdSectionId)?.AdSectionName }));
-  check(assigns.length === 3 && new Set(assigns.map(row => row.AdCollegeId)).size === 3, "B-demo حسابٌ بقسمٍ واحد في الكليات الثلاث");
-  check(multiSiteDepartment(scopes)?.sites === 3, "B-demo يُقرأ «قسمك في 3 مواقع»");
-  check(DEMO_SWITCH_ACCOUNTS.some(account => account.role === DEMO_MULTI_SITE.key && account.SystemUserId === DEMO_MULTI_SITE.id),
-    "B-demo شريطُ الديمو يبدّل إليه بمفتاحه");
-  check(demoActiveRoleKey(DEMO_MULTI_SITE.id, "committeeChair") === DEMO_MULTI_SITE.key && demoActiveRoleKey(16, "committeeChair") === "committeeChair",
-    "B-demo الشريط يعرفه بمفتاحه لا بصفته، ولا يخلطه برئيس اللجنة الآخر");
-  const rows = state.schedules.filter(row => assigns.some(a => a.AdSectionId === Number(row.AdSectionId)) && Number(row.AdTermId) === 1);
-  check(rows.length === 6 && rows.every(row => row.fthursday && !row.fsunday && !row.fmonday), "B-demo موعدان لكل موقع يومَ الخميس");
-  check(state.locationRooms.some(room => room.sectionIds.includes(6)) && state.locationRooms.some(room => room.sectionIds.includes(8)), "B-demo لكل موقعٍ قاعته");
+  check(state.colleges.length === 1 && state.sections.length === 1, "B-demo كليةٌ واحدة وقسمٌ واحد");
+  check(DEMO_SWITCH_ACCOUNTS.every(account => account.SystemUserId !== 18) && demoActiveRoleKey(16, "committeeChair") === "committeeChair",
+    "B-demo الشريط يبدّل بين الصفات وحدها");
+  check(state.collegeUserAssign.filter(row => row.SystemUserId !== 1 && row.AdSectionId > 0).every(row => row.AdCollegeId === 1 && row.AdSectionId === 1),
+    "B-demo كلُّ نطاقٍ على القسم الوحيد");
 }
 
 /* ── D: «إخفاء الفارغ» — أيقونةٌ أو عدّادٌ أو مرشّحٌ لا يحمل شيئاً لا يُعرض ──────

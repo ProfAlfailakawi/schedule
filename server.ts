@@ -9,7 +9,7 @@ import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
 import { activeDataMode, ApprovalRevisionConflict, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
-import { DEMO_SWITCH_ACCOUNTS, DEMO_MULTI_SITE, demoActiveRoleKey } from "./src/db/demoSandbox";
+import { DEMO_SWITCH_ACCOUNTS, demoActiveRoleKey } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
@@ -107,8 +107,8 @@ import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planR
 import { registerPlanSheetRoutes } from "./src/server/planSheetRoutes";
 import { buildFeatureNotifications, buildMasariGapNotifications } from "./src/utils/featureNotifications";
 import { studentGaps } from "./src/utils/sectionGap";
-import { seedDemoRadar, seedDemoPreviousTermRadar, seedDemoMasariDemand } from "./src/server/demoRadarSeed";
-import { seedDemoPreviousTerm, seedDemoCurrentTermStories } from "./src/server/demoPreviousTermSeed";
+import { seedDemoRadar, seedDemoMasariDemand } from "./src/server/demoRadarSeed";
+import { seedDemoTermStories } from "./src/server/demoPreviousTermSeed";
 import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instructorRequestItems";
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
 import { registerInsightRoutes } from "./src/server/insightRoutes";
@@ -2205,11 +2205,13 @@ async function seedDemoStories(): Promise<void> {
   if (!term || !scopeRows.length) return;
   const termName = String(term.AdTermName || ""), sectionName = sections.find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || "";
   const iso = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
-  const committee = { id: 16, name: "د. رئيس لجنة جدول الحاسب", role: roleLabel("committeeChair") };
+  const committee = { id: 16, name: "د. رئيس لجنة جدول تكنولوجيا التعليم", role: roleLabel("committeeChair") };
 
   // ── قاعدةُ التخرّج (d)
-  const rule = { AdSectionId: sectionId, degreeUnits: 130, fieldTrainingRequired: 100, graduateRegularPassed: 112, graduateSummerPassed: 118, updatedAt: iso(-20), updatedBy: committee.name };
-  await Repository.saveDegreeRule(rule);
+  const rule = { AdSectionId: sectionId, degreeUnits: 125, fieldTrainingRequired: 95, graduateRegularPassed: 108, graduateSummerPassed: 114, updatedAt: iso(-20), updatedBy: committee.name };
+  /* القاعدةُ المحفوظة وقتَ إنشاء الصحائف تنتقل إلى «الصحيفة السابقة» (القديمة، 130 وحدة)؛ فتُحفظ هنا قاعدةُ القديمة،
+     ثم يحفظ seedDemoRadar قاعدةَ الجديدة (125) بعد إنشاء الصحيفتين فلا تتشاركان قاعدةً واحدة. */
+  await Repository.saveDegreeRule({ ...rule, degreeUnits: 130, fieldTrainingRequired: 100, graduateRegularPassed: 112, graduateSummerPassed: 118 });
 
   // ── رابطا القسم (a)
   const linkBase = { AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, SystemUserId: committee.id, userName: committee.name };
@@ -2230,7 +2232,7 @@ async function seedDemoStories(): Promise<void> {
 
   // ── حالاتُ الطلبة (b)
   const courseOf = (code: string) => courses.find(row => String(row.CourseCode) === code);
-  const cs220 = courseOf("CS220"), ds110 = courseOf("DS110"), cs315 = courseOf("CS315"), cs350 = courseOf("CS350");
+  const cs220 = courseOf("0109233"), ds110 = courseOf("0109321"), cs315 = courseOf("0109323"), cs350 = courseOf("0109343");
   const saveCase = async (name: string, civil: string, entry: Partial<StudentNeed>) => Repository.saveStudentNeed({
     fingerprint: await surveyFingerprint(civil), AdCollegeId: collegeId, AdSectionId: sectionId, studentSectionId: sectionId,
     surveySectionId: sectionId, surveyLinkId: survey.id, AdTermId: termId, courseIds: [], requestType: "new-course",
@@ -2244,7 +2246,7 @@ async function seedDemoStories(): Promise<void> {
   const graduate = await saveCase("نورة (طالبة تجريبية)", graduateCivil, {
     requestType: "graduate", graduateReason: "field-conflict",
     details: "التطبيق الميداني يتعارض مع آخر مقرّرٍ في خطتي — أحتاج شعبةً مسائية.",
-    passedUnits: 118, requiredUnits: graduateThreshold(rule, termName), degreeUnits: rule.degreeUnits, eligibility: "eligible", proofNameMatched: true,
+    passedUnits: 114, requiredUnits: graduateThreshold(rule, termName), degreeUnits: rule.degreeUnits, eligibility: "eligible", proofNameMatched: true,
   });
   await Repository.setStudentCaseDecision(graduate.id, "committee", { state: "approved", note: "الحالة مستوفية؛ أُحيلت إلى التسجيل.", byRole: committee.role, at: iso(-1) });
   remember("خريجة — وافقت اللجنة وتنتظر التسجيل", graduateCivil, graduate);
@@ -2263,30 +2265,10 @@ async function seedDemoStories(): Promise<void> {
   if (cs350) {
     const civil = generateSyntheticCivilId();
     const need = await saveCase("خالد (طالب تجريبي)", civil, { requestType: "new-course", courseIds: [Number(cs350.AdCourseId)] });
-    await Repository.setStudentCourseState(need.id, { courseId: Number(cs350.AdCourseId), state: "committee-rejected", reasonCode: "prerequisite", note: "يلزم اجتياز «هياكل البيانات» أولاً.", by: "department", byRole: committee.role, at: iso(-2) });
+    await Repository.setStudentCourseState(need.id, { courseId: Number(cs350.AdCourseId), state: "committee-rejected", reasonCode: "prerequisite", note: "يلزم اجتياز «إنتاج الفيديو التعليمي» أولاً.", by: "department", byRole: committee.role, at: iso(-2) });
     remember("فتح مقرّر — لم توافق اللجنة", civil, need);
   }
   Repository.setDemoGuide({ freshStudentCivil: generateSyntheticCivilId(), cases });
-
-  /* حالةُ طالبٍ لقسم المواقع الثلاثة (DEMO_MULTI_SITE): رابطُ استبيانٍ لموقع كلية
-     العلوم، وطالبةٌ تطلب شعبةً مسائية من «مدخل إلى الدراسات الإسلامية» — فيفتح
-     حسابُه «كشف التسجيل» على طلبٍ ينتظر لجنته، لا على «لا طلبات بعد». */
-  const islSection = sections.find(row => Number(row.AdCollegeId) === collegeId && String(row.AdSectionCode) === "ISL");
-  const isl101 = islSection && courses.find(row => Number(row.AdSectionId) === Number(islSection.AdSectionId) && String(row.CourseCode) === "ISL101");
-  if (islSection && isl101) {
-    const islSectionId = Number(islSection.AdSectionId);
-    const islSurvey = await Repository.createShareLink({
-      AdCollegeId: collegeId, AdSectionId: islSectionId, AdTermId: termId, SystemUserId: DEMO_MULTI_SITE.id, userName: DEMO_MULTI_SITE.name,
-      kind: "survey", label: shareLinkLabel("survey", String(islSection.AdSectionName || ""), termName), expiresAt: iso(30), showInstructors: true,
-    } as any);
-    const civil = generateSyntheticCivilId();
-    await Repository.saveStudentNeed({
-      fingerprint: await surveyFingerprint(civil), AdCollegeId: collegeId, AdSectionId: islSectionId, studentSectionId: sectionId,
-      surveySectionId: islSectionId, surveyLinkId: islSurvey.id, AdTermId: termId, courseIds: [Number(isl101.AdCourseId)], requestType: "new-course",
-      nameCipher: await sealStudentIdentity("شهد (طالبة تجريبية)"), civilCipher: await sealStudentIdentity(civil),
-      details: "أعمل صباحاً — أحتاج شعبةً مسائية من المقرّر.", eligibility: "not-checked",
-    } as any);
-  }
 
   // ── طلبا أستاذين (c): واحدٌ ينتظر القسم، وآخرُ قُرّر برفضٍ وبدائل.
   const courseName = new Map(courses.map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
@@ -2366,12 +2348,10 @@ async function seedDemoStories(): Promise<void> {
   // ── رادارُ التسجيل (f): صحائفُ وقواعد وطلبةٌ وتذاكرُ وأجوبة، بالأسماء الوهمية نفسها.
   await seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() }).catch(error => console.error("[demo] seeding radar failed:", error));
 
-  // ── بقيةُ الأقسام في الفصل الجاري، ثم الفصلُ السابق (g): كشفُ تسجيل ورغباتُ أساتذة ومقترحاتٌ
-  //    في كل قسم، ليُعرض كلُّ شيءٍ ممتلئاً — والسابقُ «للعرض فقط».
+  // ── الفصلان الثاني والصيفي (g): كشفُ تسجيل ورغباتُ أساتذة ومقترحاتٌ بحالاتها كلِّها.
   const storyDeps = { sealIdentity: sealStudentIdentity, fingerprintOf: surveyFingerprint, requestItemFromRow, dayLetters: DAY_LETTERS, judge: (request: InstructorRequest) => judgeRequestItems(request) };
-  await seedDemoCurrentTermStories(storyDeps, termId).catch(error => console.error("[demo] seeding current-term stories failed:", error));
-  await seedDemoPreviousTerm(storyDeps).catch(error => console.error("[demo] seeding previous term failed:", error));
-  await seedDemoPreviousTermRadar().catch(error => console.error("[demo] seeding previous-term radar failed:", error));
+  await seedDemoTermStories(storyDeps, 2).catch(error => console.error("[demo] seeding next-term stories failed:", error));
+  await seedDemoTermStories(storyDeps, 3).catch(error => console.error("[demo] seeding summer stories failed:", error));
   await seedDemoMasariDemand().catch(error => console.error("[demo] seeding Masari demand failed:", error));
 }
 
