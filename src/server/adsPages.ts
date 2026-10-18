@@ -309,7 +309,7 @@ const icon = (name: string): string => `<svg class="ic" viewBox="0 0 24 24" aria
 
 const KIT_CSS = `
 .k-hero{position:relative;overflow:hidden;border-radius:28px;padding:34px 28px;color:#fff;background:radial-gradient(90% 120% at 0% 0%,#1f8f6a 0%,transparent 60%),linear-gradient(135deg,#0b4f3a,#0f6b4f 55%,#13805e);box-shadow:var(--shadow)}
-.k-hero:after{content:"";position:absolute;inset-inline-start:-60px;bottom:-80px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.07)}
+.k-hero:after{content:"";position:absolute;inset-inline-start:-60px;bottom:-80px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none}
 .k-hero .brand{color:rgba(255,255,255,.72)}
 .k-hero h1{margin:6px 0 8px;color:#fff}
 .k-hero p{margin:0;color:rgba(255,255,255,.86);font-size:16px}
@@ -360,7 +360,7 @@ const KIT_CSS = `
 .k-rules li{display:flex;gap:8px;align-items:flex-start}
 .k-rules .ic{width:18px;height:18px;flex:none;color:var(--accent);margin-top:4px}
 @media (max-width:560px){.k-stat{padding:14px}.k-stat .badge{width:38px;height:38px}.k-stat b{font-size:24px}.k-hero{padding:26px 20px}.k-hero .btn{position:static;margin-top:14px}.k-stats{margin-top:14px;padding:0}.k-peak{grid-template-columns:1fr}}
-.k-cta{display:inline-flex;gap:8px;align-items:center;margin-top:16px;background:#fff;color:#0b4f3a;font-weight:800;padding:12px 22px;border-radius:14px;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.k-cta{position:relative;z-index:1;display:inline-flex;gap:8px;align-items:center;margin-top:16px;background:#fff;color:#0b4f3a;font-weight:800;padding:12px 22px;border-radius:14px;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .k-cta .ic{width:20px;height:20px}
 .k-new{display:none;position:fixed;inset:0;z-index:20;overflow-y:auto;padding:16px;background:rgba(10,25,19,.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
 .k-new:target{display:flex}
