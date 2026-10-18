@@ -376,12 +376,18 @@ const KIT_CSS = `
 .k-f input,.k-f select{min-height:46px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px 14px;font:inherit;font-weight:400}
 .k-f input:focus,.k-f select:focus{outline:2px solid var(--accent);outline-offset:1px}
 .k-f small{font-weight:400}
-.k-pick{display:flex;flex-wrap:wrap;gap:8px}
-.k-pick label{cursor:pointer}
+.k-pick{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+.k-pick label{cursor:pointer;display:block}
 .k-pick input{position:absolute;opacity:0;pointer-events:none}
-.k-pick span{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);font-size:13.5px}
-.k-pick input:checked+span{background:var(--soft);border-color:var(--accent);color:var(--accent);font-weight:800}
-.k-pick input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.k-pick .k-opt{position:relative;display:grid;gap:3px;align-content:start;padding:12px 14px 12px 38px;min-block-size:70px;border-radius:16px;border:1.5px solid var(--line);background:var(--bg);transition:border-color .15s,background .15s}
+.k-pick .k-opt:before{content:"";position:absolute;inset-inline-end:12px;inset-block-start:13px;inline-size:18px;block-size:18px;border-radius:50%;border:1.5px solid var(--line);background:var(--card)}
+.k-pick .k-opt b{font-size:14.5px;line-height:1.5;padding-inline-end:26px}
+.k-pick .k-opt small{color:var(--muted);font-size:12px;font-weight:400;line-height:1.6}
+.k-pick label:hover .k-opt{border-color:var(--accent)}
+.k-pick input:checked+.k-opt{background:var(--soft);border-color:var(--accent)}
+.k-pick input:checked+.k-opt:before{border-color:var(--accent);background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7'/%3E%3C/svg%3E") center/12px no-repeat}
+.k-pick input:checked+.k-opt b{color:var(--accent)}
+.k-pick input:focus-visible+.k-opt{outline:2px solid var(--accent);outline-offset:2px}
 .k-send{display:inline-flex;gap:8px;align-items:center;justify-content:center;min-height:50px;border:0;border-radius:16px;background:var(--accent);color:#fff;font:inherit;font-weight:800;font-size:16px;cursor:pointer;padding:0 26px;justify-self:start}
 .k-send .ic{width:20px;height:20px}
 .k-ok,.k-bad{display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:16px;font-weight:700;margin-bottom:12px}
@@ -470,7 +476,7 @@ ${banner}
     <label class="k-f"><span>${icon("mail")}البريد <small>(اختياري)</small></span><input name="email" type="email" dir="ltr" maxlength="120" autocomplete="email"></label>
   </div>
   <div class="k-f"><span>${icon("globe")}أين تريد ظهور إعلانك؟</span>
-    <div class="k-pick" role="group" aria-label="المواقع">${activeSlots().map(slot => `<label title="${esc(slot.hint)}"><input type="checkbox" name="slots" value="${esc(slot.id)}"><span>${esc(slot.label)}</span></label>`).join("")}</div></div>
+    <div class="k-pick" role="group" aria-label="المواقع">${activeSlots().map(slot => `<label><input type="checkbox" name="slots" value="${esc(slot.id)}"><span class="k-opt"><b>${esc(slot.label)}</b><small>${esc(slot.hint)}</small></span></label>`).join("")}</div></div>
   <label class="k-f"><span>${icon("calendar")}متى؟</span><select name="season"><option value="">في أي وقت</option>${SEASONS.map(se => `<option value="${esc(se.id)}">${esc(se.label)}</option>`).join("")}</select></label>
   <label class="k-f"><span>${icon("send")}كلمة لنا <small>(اختياري)</small></span><input name="note" maxlength="300"></label>
   <div class="k-hp" aria-hidden="true"><label>لا تملأ هذا الحقل<input name="website" tabindex="-1" autocomplete="off"></label></div>
