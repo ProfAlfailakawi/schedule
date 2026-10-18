@@ -25,6 +25,8 @@ import React from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { Field, GhostButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
+import type { ScopeAssignmentLike } from "../utils/scopeContext";
+import { hidesCollege, hidesSection, scopeShape } from "../utils/scopeShape";
 
 export interface ScopeAskOption {
   value: string | number;
@@ -73,6 +75,16 @@ export interface ScopeAskBarProps {
   children?: React.ReactNode;
   /** معرّفٌ فريدٌ يربط الحقل بملاحظته وبلوحة «المزيد». */
   idPrefix?: string;
+}
+
+/**
+ * يُخفي ما لا خيارَ فيه لمن دخل بحساب قسمه (scopeShape): قسمٌ واحد في كليةٍ → لا كلية ولا قسم؛
+ * قسمٌ في عدّة مواقع → لا قسم. والقيمُ تبقى افتراضيةً في حالة الشاشة؛ والفصلُ وغيرُه كما هي. الإدارة ومن له أقسامٌ عدّة
+ * يرون كل شيء.
+ */
+export function trimScopeSelects(selects: ScopeAskSelect[], scopes: ScopeAssignmentLike[], isAdmin: boolean): ScopeAskSelect[] {
+  const shape = scopeShape(scopes, isAdmin);
+  return selects.filter(select => !(select.key === "college" && hidesCollege(shape)) && !(select.key === "section" && hidesSection(shape)));
 }
 
 /**

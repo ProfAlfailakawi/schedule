@@ -495,9 +495,9 @@ export default function CurriculumPlans({
               {pickerColleges.map(college => <option key={college.AdCollegeId} value={college.AdCollegeId}>{college.AdCollegeName}</option>)}
             </select>
           ) : null}
-          <select value={sectionId} onChange={e => setSectionId(Number(e.target.value))} aria-label="القسم العلمي">
+          {pickerSections.length === 1 ? null : <select value={sectionId} onChange={e => setSectionId(Number(e.target.value))} aria-label="القسم العلمي">
             {sortByName<AdSection>(pickerSections, row => labelOf.get(row.AdSectionId) || row.AdSectionName).map(section => <option key={section.AdSectionId} value={section.AdSectionId}>{labelOf.get(section.AdSectionId) || section.AdSectionName}</option>)}
-          </select>
+          </select>}
         </Surface>
 
         {loading && !data ? <Surface className="curriculum-loading">يجري تحميل صحائف القسم…</Surface> : data ? <>

@@ -117,6 +117,8 @@ import {
   type DayKey,
 } from "./scheduleWorkspace";
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { hidesCollege, hidesSection, scopeShape } from "../utils/scopeShape";
+import { useScopedTerms } from "./useScopedTerms";
 import { readSharedScope, resolveSharedScope, useSharedScope, type SharedScope } from "../utils/sharedScope";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
@@ -1110,6 +1112,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
      */
     [rowsScope, setRowsScope] = useState(""),
     [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
+  const scopedTerms = useScopedTerms<AdTerm>(terms, filterCollege, filterSection, filterTerm, setFilterTerm);
   const [agendaNarrow, setAgendaNarrow] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 760px)").matches);
   useEffect(() => {
     const mq = window.matchMedia?.("(max-width: 760px)");
@@ -9982,8 +9985,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         </div>
         ) : null}
         <div className="filter-strip">
-          <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
-          {singleDepartmentOf(scopes, filterCollege, isPowerAdmin) === null ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
+          {hidesCollege(scopeShape(scopes, isPowerAdmin)) ? null : <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>}
+          {!hidesSection(scopeShape(scopes, isPowerAdmin)) && singleDepartmentOf(scopes, filterCollege, isPowerAdmin) === null ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
           <Field label="الفصل الدراسي">
             <select
               data-guide-target="schedule.filter.term"
@@ -9991,7 +9994,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               onChange={(e) => setFilterTerm(Number(e.target.value) || 0)}
             >
               <option value="">اختر الفصل</option>
-              {terms.map((t) => (
+              {scopedTerms.map((t) => (
                 <option key={t.AdTermId} value={t.AdTermId}>
                   {t.AdTermName}
                 </option>

@@ -95,7 +95,9 @@ for (const file of files) {
     scopedSelectors++;
     const before = src.slice(Math.max(0, (match.index || 0) - 320), match.index);
     const line = src.slice(0, match.index).split("\n").length;
-    check(GUARD.test(before), `S4 ${file}:${line} منتقي القسم محروسٌ بـ singleDepartmentOf`);
+    /* شريط النطاق: القرارُ في trimScopeSelects (scopeShape)، فتكفي مروره على المنتقيات. */
+    const pinned = /key: "section"/.test(match[0]) && /trimScopeSelects\(selects, scopes, (?:powerAdmin|isPowerAdmin)\)/.test(src);
+    check(GUARD.test(before) || pinned, `S4 ${file}:${line} منتقي القسم محروسٌ بـ singleDepartmentOf`);
   }
   check(!/scopes\.length\s*===?\s*1/.test(src), `S4 ${file} لا يعدّ صفوف النطاق بنفسه (scopes.length === 1)`);
   check(!/\.lockSection\b/.test(src) || file.endsWith("IntelligenceContextBar.tsx"), `S4 ${file} لا يقرأ lockSection محلياً`);
@@ -128,7 +130,7 @@ for (const file of ["src/components/StudentRegistration.tsx", "src/components/In
 // والتخطيط يتّسع حين يغيب المنتقي.
 check(/\.query-scope\[data-count="2"\]/.test(read("src/styles/06-intelligence.css")), "S4 صفّ المرشّحات له تخطيطٌ لحقلين");
 check(/data-count=\{selects\.length\}/.test(read("src/components/ScopeAskBar.tsx")), "S4 شريط النطاق يعلن عدد حقوله");
-check(/data-count=\{soleDepartment === null \? 3 : 2\}/.test(read("src/components/Reports.tsx")), "S4 مركز الاستعلام يعلن عدد حقوله");
+check(/data-count=\{3 - /.test(read("src/components/Reports.tsx")), "S4 مركز الاستعلام يعلن عدد حقوله بعد الإخفاء");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

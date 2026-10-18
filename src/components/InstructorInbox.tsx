@@ -43,7 +43,8 @@ import { ProposalLauncherBar, ProposalStrip, type OpenWorkspace } from "./propos
 import { proposalApi, type StaffProposalView } from "./proposal/proposalApi";
 const StudyProposalWorkspace = React.lazy(() => import("./proposal/StudyProposalWorkspace"));
 import TermFrozenRibbon, { TermFrozenContext, useFrozenScreen, useTermFrozen } from "./TermFrozenRibbon";
-import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
+import { useScopedTerms } from "./useScopedTerms";
+import ScopeAskBar, { trimScopeSelects, type ScopeAskSelect } from "./ScopeAskBar";
 import {
   Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface,
 } from "./ui";
@@ -837,6 +838,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   }, []);
 
   /* تغيّرٌ من شاشةٍ أخرى أو لسانٍ آخر يُعرض على النطاق ثم يُتبع. */
+  /* قائمةُ الفصل: ما فيه بيانات للنطاق المختار، والحالي دائماً (useScopedTerms). */
+  const scopedTerms = useScopedTerms<AdTerm>(terms, collegeId, sectionId, termId, setTermId);
   const sharedScope = useSharedScope((incoming) => {
     const next = resolveSharedScope(incoming, { scopes, isAdmin: powerAdmin, terms: terms || undefined, fallbackTermId: termId });
     setCollegeId(next.collegeId);
@@ -1208,11 +1211,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
 
   const selects: ScopeAskSelect[] = [
     { key: "college", label: "الكلية", value: collegeId, placeholder: "اختر الكلية", options: collegeOptions },
-    /* من لا يملك في الكلية إلا قسماً واحداً لا يُسأل عن القسم (singleDepartmentOf). */
-    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null
-      ? [{ key: "section", label: "القسم", value: sectionId, placeholder: "كل أقسام الكلية", options: sectionOptions, disabled: !collegeId }]
-      : []),
-    { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: (terms || []).map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
+    { key: "section", label: "القسم", value: sectionId, placeholder: "كل أقسام الكلية", options: sectionOptions, disabled: !collegeId },
+    { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: scopedTerms.map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
     { key: "instructor", label: "الأستاذ", value: instructorFilter, placeholder: "كل الأساتذة", options: instructorOptions, disabled: !instructorOptions.length },
   ];
 
@@ -1250,7 +1250,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         onAskSubmit={setAsk}
         askPlaceholder="اسأل: باسم الأستاذ"
         onClear={() => { setAsk(""); setInstructorFilter(0); }}
-        selects={selects}
+        selects={trimScopeSelects(selects, scopes, powerAdmin)}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
           if (key === "instructor") { setInstructorFilter(id); return; }

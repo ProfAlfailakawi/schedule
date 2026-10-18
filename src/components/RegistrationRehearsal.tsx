@@ -7,6 +7,7 @@
  * وهي **تقديرٌ** من ملفّات الطلبة وجداولِ الأقسام (مسوّدةً أو معتمدة)، لا بياناتُ
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
+import { useScopedTerms } from "./useScopedTerms";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarPlus, Check, CircleAlert, CircleHelp, Download, GraduationCap, History, Info, Layers, Sparkles, Ticket, TrendingUp, Users } from "lucide-react";
 import { EmptyState, Field, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
@@ -157,7 +158,11 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   /* يفتح الرادار على ما يحتاج فعلاً: بعد بدء التسجيل أجوبةُ الطلبة، وقبله ما يحتاج قراراً. */
   const frozen = Boolean(data?.frozen);
   /* لا يُعرض في المحدِّد إلا ما يقبله الخادم: فصلُ الباب والفصولُ السابقة المجمَّدة. */
-  const termOptions = (terms || []).filter(t => Number(t.AdTermId) === (doorId || data?.term?.id) || termIsFrozen(Number(t.AdTermId), terms as any));
+  /* فصولٌ فيها بيانات لنطاق القارئ، والحالي دائماً (useScopedTerms)؛ الباقي كما كان: فصلُ الباب والفصول المجمّدة. */
+  const scopedTerms = useScopedTerms<{ AdTermId: number; AdTermName: string }>(terms, 0, 0, termPick, pickTerm);
+  /* فصلُ الباب يبقى دائماً (قد يكون قادماً بلا صفوفٍ بعد)، والمجمَّدةُ تُرشَّح بما فيه بيانات. */
+  const termOptions = (terms || []).filter(t => Number(t.AdTermId) === (doorId || data?.term?.id)
+    || (termIsFrozen(Number(t.AdTermId), terms as any) && scopedTerms.some(row => Number(row.AdTermId) === Number(t.AdTermId))));
   const shownView = view || (data?.phase?.namesVisible && outcome && outcome.answers > 0 ? "outcome" : decide.length ? "decide" : "capacity");
 
   return (

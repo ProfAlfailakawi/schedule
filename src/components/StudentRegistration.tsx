@@ -24,7 +24,8 @@ import { byArabic } from "../utils/sorting";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, MessageSquareText, Users, X, Zap } from "lucide-react";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
-import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
+import { useScopedTerms } from "./useScopedTerms";
+import ScopeAskBar, { trimScopeSelects, type ScopeAskSelect } from "./ScopeAskBar";
 import ApplyProposal from "./ApplyProposal";
 import StudentCasesTable, { exportStudentCasesXlsx, GRADUATE_REASON_LABEL, STUDENT_CASE_TYPE_LABEL, type StudentCaseView } from "./StudentCasesTable";
 import {
@@ -329,6 +330,8 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   }, []);
 
   /* تغيّرٌ من شاشةٍ أخرى أو لسانٍ آخر يُعرض على النطاق ثم يُتبع. */
+  /* قائمةُ الفصل: ما فيه بيانات للنطاق المختار، والحالي دائماً (useScopedTerms). */
+  const scopedTerms = useScopedTerms<AdTerm>(terms, collegeId, sectionId, termId, setTermId);
   const sharedScope = useSharedScope((incoming) => {
     const next = resolveSharedScope(incoming, { scopes, isAdmin: powerAdmin, terms: terms || undefined, fallbackTermId: termId });
     setCollegeId(next.collegeId);
@@ -761,11 +764,8 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
 
   const selects: ScopeAskSelect[] = [
     { key: "college", label: "الكلية", value: collegeId, placeholder: "اختر الكلية", options: collegeOptions },
-    /* من لا يملك في الكلية إلا قسماً واحداً يرى «الكلية + الفصل» كلوحة الجدول. */
-    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null
-      ? [{ key: "section", label: "القسم", value: sectionId, placeholder: "اختر القسم", options: sectionOptions, disabled: !collegeId }]
-      : []),
-    { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: (terms || []).map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
+    { key: "section", label: "القسم", value: sectionId, placeholder: "اختر القسم", options: sectionOptions, disabled: !collegeId },
+    { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: scopedTerms.map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
   ];
 
   if (!terms) return <MicroLoader label="يقرأ الفصول…" />;
@@ -787,7 +787,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         onAskSubmit={setAsk}
         askPlaceholder="اسأل: رقم الحالة أو اسم الطالب"
         onClear={() => setAsk("")}
-        selects={selects}
+        selects={trimScopeSelects(selects, scopes, powerAdmin)}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
           if (key === "college") {

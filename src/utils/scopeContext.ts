@@ -70,6 +70,18 @@ export function singleDepartmentOf(
 }
 
 /**
+ * ── كليةٌ واحدة: لا منتقيَ للكلية ───────────────────────────────────────────
+ *
+ * من لا يملك نطاقه إلا كليةً واحدة لا خيارَ أمامه بين كليات: تُعرض الكليةُ ثابتةً نصّاً في كل شاشة
+ * ولا تُرسم قائمةُ اختيارها. والإدارةُ تُبقي المنتقي دائماً. تُرجع رقم الكلية الوحيدة أو null.
+ */
+export function soleCollegeOf(scopes: ScopeAssignmentLike[] = [], isAdmin = false): number | null {
+  if (isAdmin || !Array.isArray(scopes) || !scopes.length) return null;
+  const colleges = [...new Set(scopes.map((scope) => Number(scope?.AdCollegeId || 0)).filter(Boolean))];
+  return colleges.length === 1 ? colleges[0] : null;
+}
+
+/**
  * UI scope resolver.
  * Admin is deliberately never auto-locked: admin must always see the complete
  * college/section selectors. Normal users only see a selector when there is a
