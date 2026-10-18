@@ -2346,9 +2346,9 @@ export default function App() {
         {user.IsDemo ? (
           <div className="demo-rail-chip" role="status" aria-label="بيئة تجريبية معزولة">
             <FlaskConical aria-hidden="true" /><span>تجريبي</span><i aria-hidden="true" />
-            <a className="demo-student-link" href="/me/demo" target="_blank" rel="noopener" title="افتح «مساري» كما تراه طالبة، ببياناتٍ افتراضية"
+            <a className="demo-student-link" href="/me/demo" target="_blank" rel="noopener" title="افتح «مساري» كما يراه طالب، ببياناتٍ افتراضية"
               data-guide-ignore="رابطٌ خاصّ ببيئة Demo يفتح تجربة «مساري» للطالب في صندوقٍ معزول ببيانات وهمية">
-              <GraduationCap aria-hidden="true" /><span>جرّب كطالبة</span>
+              <GraduationCap aria-hidden="true" /><span>جرّب كطالب</span>
             </a>
             {demoInfo && demoInfo.roles.length ? (
               <label className="demo-role-switch" title="جرّب النظام بصفةٍ مختلفة">
