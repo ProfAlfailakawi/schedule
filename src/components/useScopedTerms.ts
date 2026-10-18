@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+/* الطلبات المتطابقة المتزامنة (القائمة الرئيسية ونموذجا النسخ والإضافة على النطاق نفسه) تتشارك جواباً واحداً. */
+const inflight = new Map<string, Promise<any>>();
+function fetchScoped(url: string): Promise<any> {
+  let pending = inflight.get(url);
+  if (!pending) {
+    pending = fetch(url).then(response => (response.ok ? response.json() : null)).finally(() => inflight.delete(url));
+    inflight.set(url, pending);
+  }
+  return pending;
+}
+
 /**
  * قائمةُ الفصل لا تُري القسمَ فصلاً لا بيانات له فيه — خاصةً الفصول السابقة — عدا أحدثَ فصلٍ فيبقى ولو فارغاً
  * (قد يريد القسم إنشاءه، فإن جاء بعده أحدثُ منه صار قديماً واختفى). القرارُ في الخادم (`/api/terms/scoped`) من صفوف نطاق القارئ نفسه؛ وهنا تُرشَّح القائمةُ بما
@@ -17,8 +28,7 @@ export function useScopedTerms<T extends { AdTermId: number }>(
   const [loaded, setLoaded] = useState<{ scope: string; ids: number[]; current: number; newest: number } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/terms/scoped?collegeId=${collegeId || 0}&sectionId=${sectionId || 0}`)
-      .then(response => (response.ok ? response.json() : null))
+    fetchScoped(`/api/terms/scoped?collegeId=${collegeId || 0}&sectionId=${sectionId || 0}`)
       .then(body => { if (!cancelled && body && Array.isArray(body.termIds)) setLoaded({ scope, ids: body.termIds.map(Number), current: Number(body.currentTermId) || 0, newest: Number(body.newestTermId) || 0 }); })
       .catch(() => { /* تبقى القائمة كاملة: إخفاءُ الفصول تحسينٌ لا شرط */ });
     return () => { cancelled = true; };
