@@ -4995,7 +4995,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             title="بطاقات الاعتماد"
             hint="كل بطاقة تفتح صفحتها وحدها — لا شيء تحت شيء."
             cards={[
-              { value: "compare", label: "مقارنة الفصول", detail: "ما تغيّر بين فصل وفصل", icon: <ArrowLeftRight /> },
+              ...(terms.length > 1 ? [{ value: "compare", label: "مقارنة الفصول", detail: "ما تغيّر بين فصل وفصل", icon: <ArrowLeftRight /> }] : []),
               { value: "drafts", label: "المسودات", detail: "ما لم يُنشر بعد", icon: <FileClock />,
                 metric: String(drafts.length || 0) },
               { value: "versions", label: "سجل النسخ", detail: "كل نشرة سابقة ومن نشرها", icon: <History /> },
@@ -5032,7 +5032,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </option>
                 ))}
               </select>
-              <SecondaryButton onClick={compareTerms} disabled={!compareFrom || !compareTo || compareFrom === compareTo} title={compareFrom === compareTo ? "اختر فصلين مختلفين للمقارنة" : undefined}>قارن</SecondaryButton>
+              <SecondaryButton onClick={compareTerms}>قارن</SecondaryButton>
             </div>
             {termCompare ? (
               <div className="compare-result">
