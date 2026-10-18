@@ -78,7 +78,7 @@ function AutoApply({ run }: { run: () => void }) {
   return null;
 }
 
-export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved, onPreviewChange }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly). */ onSaved?: () => void; /** يُبلَّغ به متى تُفتح مراجعة الكشف ومتى تُغلق، فلا تأخذ الشاشةُ الأم الـEscape من نافذتها الداخلية. */ onPreviewChange?: (open: boolean) => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
+export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved, onPreviewChange }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly)، بعدد مقررات القسم التي لم تتّضح فلم تُحسب. */ onSaved?: (skipped: number) => void; /** يُبلَّغ به متى تُفتح مراجعة الكشف ومتى تُغلق، فلا تأخذ الشاشةُ الأم الـEscape من نافذتها الداخلية. */ onPreviewChange?: (open: boolean) => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -116,8 +116,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   /* شاشة الرفع المختصرة: ما إن يُحفظ الكشف المستورد حتى يُبلَّغ من فتحها لتعرض المقترح. */
   useEffect(() => { onPreviewChange?.(Boolean(preview)); }, [preview, onPreviewChange]);
   const notifiedEdits = useRef(0);
+  const skipped = useRef(0);
   useEffect(() => {
-    if (importOnly && saveState === "saved" && edits > 0 && notifiedEdits.current !== edits) { notifiedEdits.current = edits; onSaved?.(); }
+    if (importOnly && saveState === "saved" && edits > 0 && notifiedEdits.current !== edits) { notifiedEdits.current = edits; onSaved?.(skipped.current); }
   }, [importOnly, saveState, edits, onSaved]);
 
   useEffect(() => {
@@ -179,7 +180,11 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       if (!timer.current) return;
       window.clearTimeout(timer.current); timer.current = null;
       if (loadedScope.current !== `${collegeId}:${sectionId}:${termId}`) return;
-      try { void fetch("/api/registration-stats", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: body() }); } catch { /* the page is going away */ }
+      const scope = `${collegeId}:${sectionId}:${termId}`;
+      try {
+        void fetch("/api/registration-stats", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: body() })
+          .then(response => { if (response.ok) window.dispatchEvent(new CustomEvent(PLAN_SAVED_EVENT, { detail: { scope } })); }, () => {});
+      } catch { /* the page is going away */ }
     };
     window.addEventListener("pagehide", flush);
     return () => { window.removeEventListener("pagehide", flush); flush(); };
@@ -273,6 +278,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
     /* الشاغر من الكشف نفسه؛ والمصوَّر منه لما أكّده المستخدم وحده. */
     setVacant(vacantValues(preview, preview.source === "scan" ? confirmedScan : undefined));
     setSource({ fileName: preview.fileName, importedAt: new Date().toISOString(), column: "unregistered" });
+    skipped.current = nReview;
     setPreview(null);
     setEdits(n => n + 1);
   };

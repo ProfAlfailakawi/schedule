@@ -62,10 +62,12 @@ check(rendered.includes("تحتاج شعباً") && (rendered.match(/<li/g) || [
 check(renderToStaticMarkup(React.createElement(Result, { gap: { ...sample, planItems: [] }, onClose: () => {} })).includes("شعبك تكفي المتبقي"), "النتيجة: بلا نقص ← «شعبك تكفي المتبقي»");
 check(renderToStaticMarkup(React.createElement(Result, { gap: { ...sample, ready: false }, onClose: () => {} })).includes("يُحسب المقترح"), "النتيجة: قبل اكتمال الحسبة لا اقتراح مضلِّل");
 
-console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
-if (failed) process.exit(1);
 
 /* مسحُ الكشف من تخطيط الشعب يُحدِّث الأيقونة والشارات؛ والأيقونة لا تظهر لمن رفع. */
 const gapSrc = fs.readFileSync("src/components/SectionGapNote.tsx", "utf8");
 check(planning.includes("PLAN_SAVED_EVENT") && planning.includes("dispatchEvent") && gapSrc.includes("addEventListener(PLAN_SAVED_EVENT"), "حفظ تخطيط الشعب (ومنه المسح) يُحدِّث الشارات والأيقونة");
 check(bar.includes("gap.loaded && !gap.planImported"), "أيقونة الرفع تختفي متى رُفع كشف");
+check(planning.includes("skipped.current = nReview") && sheet.includes("لم تتّضح في الكشف فلم تُحسب") && sheet.includes("لا زيادة فيما قُرئ"), "قراءةٌ جزئية لا تُعرض نتيجةً كاملة");
+check(/keepalive[\s\S]{0,200}PLAN_SAVED_EVENT/.test(planning), "الحفظ عند الإغلاق يُحدِّث الأيقونة أيضاً");
+console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
+if (failed) process.exit(1);

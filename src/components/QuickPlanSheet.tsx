@@ -28,7 +28,7 @@ function Cells({ existing, required }: { existing: number; required: number }) {
   );
 }
 
-export function Result({ gap, onClose }: { gap: Gap; onClose: () => void }) {
+export function Result({ gap, onClose, skipped = 0 }: { gap: Gap; onClose: () => void; skipped?: number }) {
   if (!gap.ready) return <p className="gap-sheet-hint" role="status">يُحسب المقترح…</p>;
   /* من التخطيط وحده: «مساري» لا شأن له بنتيجة رفع الكشف. */
   const total = gap.planItems.length;
@@ -50,8 +50,10 @@ export function Result({ gap, onClose }: { gap: Gap; onClose: () => void }) {
           {total > TOP ? <small className="gap-result-more">و{countOf(total - TOP, AR.course)} أخرى</small> : null}
         </>
       ) : (
-        <p className="gap-sheet-ok"><CheckCircle2 aria-hidden="true" />شعبك تكفي المتبقي، لا زيادة مقترحة.</p>
+        <p className="gap-sheet-ok"><CheckCircle2 aria-hidden="true" />{skipped ? "لا زيادة فيما قُرئ من الكشف." : "شعبك تكفي المتبقي، لا زيادة مقترحة."}</p>
       )}
+      {/* قراءةٌ جزئية لا تُقدَّم نتيجةً كاملة: ما لم يتّضح لم يُحسب، ويُقال ذلك بسطرٍ خافت. */}
+      {skipped ? <small className="gap-result-more">{countOf(skipped, AR.course)} لم تتّضح في الكشف فلم تُحسب</small> : null}
       <footer>
         <small>{gap.source ? <><FileText aria-hidden="true" /><bdi dir="ltr">{gap.source}</bdi></> : null}</small>
         <button type="button" className="gap-result-done" onClick={onClose} data-guide-ignore="إغلاق شاشة النتيجة">تم</button>
@@ -65,6 +67,7 @@ export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onCl
   const [reviewing, setReviewing] = useState(false);
   useDialogDismiss(!reviewing, onClose);
   const [saved, setSaved] = useState(false);
+  const [skipped, setSkipped] = useState(0);
   const done = saved && gap.planImported;
   return createPortal(
     <div className="student-qr-backdrop no-print" onClick={onClose}>
@@ -75,11 +78,11 @@ export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onCl
           <button type="button" className="student-qr-close" aria-label="إغلاق" onClick={onClose} data-guide-ignore="إغلاق شاشة رفع الكشف"><X aria-hidden="true" /></button>
         </header>
         {done ? (
-          <Result gap={gap} onClose={onClose} />
+          <Result gap={gap} onClose={onClose} skipped={skipped} />
         ) : (
           <>
             <p className="gap-sheet-hint">ارفع كشف المتبقي من عمادة التسجيل (PDF أو صور)، فتظهر لك الشعب المقترح زيادتها.</p>
-            <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} importOnly onPreviewChange={setReviewing} onSaved={() => { setSaved(true); gap.reload(); }} />
+            <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} importOnly onPreviewChange={setReviewing} onSaved={n => { setSkipped(n); setSaved(true); gap.reload(); }} />
           </>
         )}
       </div>
