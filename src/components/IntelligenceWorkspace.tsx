@@ -1,5 +1,7 @@
+import TermSelect from "./TermSelect";
 import SearchableSelect from "./SearchableSelect";
 import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
+import { departmentFamily } from "../utils/sectionLabel";
 import PredictiveInsightPanel from "./PredictiveInsightPanel";
 import PlanSheetPublisher from "./PlanSheetPublisher";
 import { roleDefinition } from "../utils/academicRoles";
@@ -90,7 +92,7 @@ import { useScopedTerms } from "./useScopedTerms";
 import { AR, countOf, nounFor, oblique, studentNounsFor } from "../utils/arabicCount";
 import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer";
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
-import { hidesCollege, scopeShape } from "../utils/scopeShape";
+import { hidesCollege, hidesSection, scopeShape } from "../utils/scopeShape";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { sortByName, byRoom, byArabic } from "../utils/sorting";
 import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
@@ -473,7 +475,19 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     });
   const scopeOwner = Number(user?.SystemUserId || 0);
   const [analysisScope, setAnalysisScope] = useState<"college" | "department">("college");
-  const readingMode = tab === "twin" ? "college" : analysisScope;
+  const hasMultipleDepartmentColleges = useMemo(() => {
+    if (!collegeId || !sectionId) return false;
+    const scopeMode = roleDefinition((user as any)?.Role).scopeMode;
+    const family = departmentFamily(sections, collegeId, sectionId).filter(member =>
+      isPowerAdmin || scopeMode === "allColleges" || scopes.some(scope =>
+        Number(scope.AdCollegeId) === member.collegeId &&
+        (Number(scope.AdSectionId) === member.sectionId ||
+          (scopeMode === "college" && Number(scope.AdSectionId) === 0)),
+      ),
+    );
+    return new Set(family.map(member => member.collegeId)).size > 1;
+  }, [sections, collegeId, sectionId, scopes, isPowerAdmin, user?.Role]);
+  const readingMode = tab === "twin" || !hasMultipleDepartmentColleges ? "college" : analysisScope;
   const pendingReadingAction = useRef<any>(null);
   const [scopeReady, setScopeReady] = useState("");
   const [overview, setOverview] = useState<any>(null),
@@ -619,6 +633,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [policyDraft, setPolicyDraft] = useState<any>({ type: "day_off", day: "fwednesday", time: "17:00", building: "", growth: 10, scope: "department" });
   const [policyResult, setPolicyResult] = useState<any>(null);
   const [policyBusy, setPolicyBusy] = useState(false);
+  useEffect(() => {
+    if (hasMultipleDepartmentColleges) return;
+    setAnalysisScope("college");
+    setPolicyDraft((current: any) => current.scope === "family" ? { ...current, scope: "department" } : current);
+  }, [hasMultipleDepartmentColleges]);
   const [constraintDraft, setConstraintDraft] = useState<any>({
     type: "instructor_latest_end",
     AdInstructorId: 0,
@@ -1598,7 +1617,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   };
   /* قائمتا المقارنة: فصولٌ فيها بيانات في النطاق الذي تقرؤه المقارنة نفسه — وفي قراءة «القسم كله» تقرأ كل مواقعه، فيُسأل عن نطاق القارئ كله. */
   const compareFamily = readingMode === "department";
-  const compareTermOptions = useScopedTerms<AdTerm>(terms, compareFamily ? 0 : collegeId, compareFamily ? 0 : sectionId, 0);
+  const compareTermOptions = useScopedTerms<AdTerm>(terms, collegeId, sectionId, 0, undefined, compareFamily ? "department" : "college");
+  useEffect(() => {
+    if (compareTermOptions.length < 2) setApproveCard(current => current === "compare" ? null : current);
+  }, [compareTermOptions.length]);
   /* اختيارٌ خارج المرشَّح (افتراضيٌّ فارغ أو قديمٌ من نطاق سابق) يُستبدل حين يصل الجواب بدل أن يبقى في القائمة. */
   useEffect(() => {
     if (compareTermOptions.length < 1) return;
@@ -2121,7 +2143,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       online={online}
       hideCollege={hidesCollege(scopeShape(scopes, isPowerAdmin))}
       lockSection={singleDepartmentOf(scopes, collegeId, isPowerAdmin) !== null}
-      hideSection={!isPowerAdmin}
+      hideSection={hidesSection(scopeShape(scopes, isPowerAdmin))}
       onCollegeChange={(nextCollegeId, firstSectionId) => {
         pendingReadingAction.current = null;
         const nextSectionId = nextCollegeId ? (isPowerAdmin ? firstSectionId : (resolveScopeSelection(scopes, nextCollegeId, false).defaultSectionId || firstSectionId)) : 0;
@@ -2618,7 +2640,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         مركز الذكاء
       </PageTitle>
       {contextBar}
-      {collegeId && sectionId && termId ? <div className="intelligence-reading-toolbar no-print">
+      {collegeId && sectionId && termId && (tab === "twin" || hasMultipleDepartmentColleges) ? <div className="intelligence-reading-toolbar no-print">
         {tab === "twin" ? <span className="intelligence-working-scope">{ownScope.collegeName}</span>
           : <IntelligenceScopeSwitch value={analysisScope} onChange={value => {pendingReadingAction.current = null; setAnalysisScope(value);}} />}
       </div> : null}
@@ -4641,7 +4663,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {policyDraft.type==="close_building"?<Field label="المبنى"><BuildingPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={policyDraft.buildingId||""} onChange={building=>setPolicyDraft((p:any)=>({...p,buildingId:building?.id||"",building:building?.officialCode||""}))} /></Field>:null}
                   {policyDraft.type==="no_classes_after"?<Field label="آخر وقت"><TimeField value={policyDraft.time} onChange={e=>setPolicyDraft((p:any)=>({...p,time:e.target.value}))} /></Field>:null}
                   {policyDraft.type==="growth"?<Field label="النمو %"><input type="number" min="1" max="100" value={policyDraft.growth} onChange={e=>setPolicyDraft((p:any)=>({...p,growth:Number(e.target.value)||1}))} /></Field>:null}
-                  <Field label="النطاق"><select value={policyDraft.scope} onChange={e=>{setPolicyResult(null);setPolicyDraft((p:any)=>({...p,scope:e.target.value}));}}><option value="department">هذه الكلية</option><option value="family">كل كليات القسم</option>{isPowerAdmin?<option value="university">الجامعة</option>:null}</select></Field>
+                  <Field label="النطاق"><select value={policyDraft.scope} onChange={e=>{setPolicyResult(null);setPolicyDraft((p:any)=>({...p,scope:e.target.value}));}}><option value="department">هذه الكلية</option>{hasMultipleDepartmentColleges ? <option value="family">كل كليات القسم</option> : null}{isPowerAdmin?<option value="university">الجامعة</option>:null}</select></Field>
                   <PrimaryButton onClick={runPolicy} disabled={policyBusy||(policyDraft.type==="close_building"&&!policyDraft.building.trim())}>{policyBusy?<RefreshCw/>:<Play/>}{policyBusy?"أحاكي…":"اختبر"}</PrimaryButton>
                 </div>
                 {policyResult?<div className="policy-result">
@@ -5008,7 +5030,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             title="بطاقات الاعتماد"
             hint="كل بطاقة تفتح صفحتها وحدها — لا شيء تحت شيء."
             cards={[
-              ...(terms.length > 1 ? [{ value: "compare", label: "مقارنة الفصول", detail: "ما تغيّر بين فصل وفصل", icon: <ArrowLeftRight /> }] : []),
+              ...(compareTermOptions.length > 1 ? [{ value: "compare", label: "مقارنة الفصول", detail: "ما تغيّر بين فصل وفصل", icon: <ArrowLeftRight /> }] : []),
               { value: "drafts", label: "المسودات", detail: "ما لم يُنشر بعد", icon: <FileClock />,
                 metric: String(drafts.length || 0) },
               { value: "versions", label: "سجل النسخ", detail: "كل نشرة سابقة ومن نشرها", icon: <History /> },
@@ -5024,27 +5046,27 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <ArrowLeftRight />
             </div>
             <div className="compare-controls">
-              <select
+              <TermSelect
                 value={compareFrom || ""}
-                onChange={(e) => setCompareFrom(Number(e.target.value) || 0)}
+                onValueChange={(id) => setCompareFrom(id)}
               >
                 {compareTermOptions.map((t) => (
                   <option key={t.AdTermId} value={t.AdTermId}>
                     {t.AdTermName}
                   </option>
                 ))}
-              </select>
+              </TermSelect>
               <ArrowLeftRight />
-              <select
+              <TermSelect
                 value={compareTo || ""}
-                onChange={(e) => setCompareTo(Number(e.target.value) || 0)}
+                onValueChange={(id) => setCompareTo(id)}
               >
                 {compareTermOptions.map((t) => (
                   <option key={t.AdTermId} value={t.AdTermId}>
                     {t.AdTermName}
                   </option>
                 ))}
-              </select>
+              </TermSelect>
               <SecondaryButton onClick={compareTerms}>قارن</SecondaryButton>
             </div>
             {termCompare ? (

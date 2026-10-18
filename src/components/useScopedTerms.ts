@@ -11,30 +11,27 @@ function fetchScoped(url: string): Promise<any> {
   return pending;
 }
 
-/**
- * قائمةُ الفصل لا تُري القسمَ فصلاً لا بيانات له فيه — خاصةً الفصول السابقة — عدا أحدثَ فصلٍ فيبقى ولو فارغاً
- * (قد يريد القسم إنشاءه، فإن جاء بعده أحدثُ منه صار قديماً واختفى). القرارُ في الخادم (`/api/terms/scoped`) من صفوف نطاق القارئ نفسه؛ وهنا تُرشَّح القائمةُ بما
- * عاد. وقبل أن يعود الجواب تبقى القائمة كما هي فلا تومض. وإن كان الفصل المختار خارج ما ظهر انتقل إلى الحالي (`onInvalid`).
- */
+/** فصول نطاق القارئ ذات البيانات، والحالي دائمًا. لا تُعرض القائمة الخام قبل التحقق من النطاق. */
 export function useScopedTerms<T extends { AdTermId: number }>(
   terms: readonly T[] | null | undefined,
   collegeId: number,
   sectionId: number,
   termId = 0,
   onInvalid?: (fallbackTermId: number) => void,
+  analysisScope: "college" | "department" = "college",
 ): T[] {
   const list: readonly T[] = terms || [];
-  const scope = `${collegeId}:${sectionId}`;
+  const scope = `${collegeId}:${sectionId}:${analysisScope}`;
   const [loaded, setLoaded] = useState<{ scope: string; ids: number[]; current: number; newest: number } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchScoped(`/api/terms/scoped?collegeId=${collegeId || 0}&sectionId=${sectionId || 0}`)
+    fetchScoped(`/api/terms/scoped?collegeId=${collegeId || 0}&sectionId=${sectionId || 0}&analysisScope=${analysisScope}`)
       .then(body => { if (!cancelled && body && Array.isArray(body.termIds)) setLoaded({ scope, ids: body.termIds.map(Number), current: Number(body.currentTermId) || 0, newest: Number(body.newestTermId) || 0 }); })
-      .catch(() => { /* تبقى القائمة كاملة: إخفاءُ الفصول تحسينٌ لا شرط */ });
+      .catch(() => { /* لا تصبح الفصول غير المتحقق منها خيارات عند فشل القراءة. */ });
     return () => { cancelled = true; };
-  }, [collegeId, sectionId, scope, list.length]);
+  }, [collegeId, sectionId, scope, list.length, analysisScope]);
   const known = loaded && loaded.scope === scope ? loaded : null;
-  const visible = useMemo(() => (known ? list.filter(term => known.ids.includes(Number(term.AdTermId))) : [...list]), [list, known]);
+  const visible = useMemo(() => (known ? list.filter(term => known.ids.includes(Number(term.AdTermId))) : []), [list, known]);
   const invalid = useRef(onInvalid);
   invalid.current = onInvalid;
   useEffect(() => {

@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { hidesCollege, hidesSection, scopeShape } from "../utils/scopeShape";
+import { resolveScopeSelection, singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
 import { BookOpen, Building2, GraduationCap, Trash2 } from "lucide-react";
 import { sortByName, byArabic } from "../utils/sorting";
 import CurriculumPlans from "./CurriculumPlans";
@@ -45,7 +47,8 @@ type CurriculumTarget = {
 };
 
 /** `embedded` means the academic console already supplies the page identity. */
-export default function Courses({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
+export default function Courses({ embedded = false, actionSlot = null, scopes = [], isAdmin = true }: { embedded?: boolean; actionSlot?: HTMLElement | null; scopes?: ScopeAssignmentLike[]; isAdmin?: boolean }) {
+  const shape = scopeShape(scopes, isAdmin);
   const [items, setItems] = useState<any[]>([]),
     [colleges, setColleges] = useState<any[]>([]),
     [sections, setSections] = useState<any[]>([]),
@@ -168,8 +171,9 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
 
   const reset = () => {
       setEditId(null);
-      setCollegeId("");
-      setSectionId("");
+      const preset = resolveScopeSelection(scopes, 0, isAdmin);
+      setCollegeId(preset.defaultCollegeId ? String(preset.defaultCollegeId) : "");
+      setSectionId(preset.defaultSectionId ? String(preset.defaultSectionId) : "");
       setCode("");
       setName("");
       setCredit("");
@@ -413,12 +417,12 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
         </div>
         <form onSubmit={submit}>
           <div className="form-grid">
-            <Field label="الكلية" required>
+            {!hidesCollege(shape) ? <Field label="الكلية" required>
               <select
                 value={collegeId}
                 onChange={(e) => {
                   setCollegeId(e.target.value);
-                  setSectionId("");
+                  setSectionId(String(resolveScopeSelection(scopes, Number(e.target.value), isAdmin).defaultSectionId || ""));
                   setCurriculumTarget(null);
                 }}
                 aria-label="الكلية"
@@ -428,8 +432,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                 <option value="">اختر ...</option>
                 {colleges.map((c) => <option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}
               </select>
-            </Field>
-            <Field label="القسم العلمي" required>
+            </Field> : null}
+            {!hidesSection(shape) && singleDepartmentOf(scopes, Number(collegeId), isAdmin) === null ? <Field label="القسم العلمي" required>
               <select
                 value={sectionId}
                 onChange={(e) => {
@@ -443,7 +447,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                 <option value="">اختر ...</option>
                 {sectionOptions.map((s) => <option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}
               </select>
-            </Field>
+            </Field> : null}
 
             {mode === "create" && sectionId ? (
               <div style={{ gridColumn: "1 / -1" }}>
@@ -567,7 +571,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       <div className="catalog-workspace">
         <Surface className="catalog-master">
           <ListToolbar value={query} onChange={setQuery} count={filtered.length} placeholder="الرقم الأكاديمي، اسم المقرر، الكلية أو القسم">
-            <select
+            {!hidesCollege(shape) ? <select
               className="list-filter"
               value={listCollege}
               onChange={(e) => { setListCollege(Number(e.target.value)); setListSection(0); }}
@@ -575,8 +579,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             >
               <option value={0}>كل الكليات</option>
               {colleges.map((c) => <option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}
-            </select>
-            <select
+            </select> : null}
+            {!hidesSection(shape) ? <select
               className="list-filter"
               value={listSection}
               onChange={(e) => setListSection(Number(e.target.value))}
@@ -584,7 +588,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             >
               <option value={0}>كل الأقسام</option>
               {listSections.map((s) => <option key={s.AdSectionId} value={s.AdSectionId}>{listSectionLabel.get(s.AdSectionId) || s.AdSectionName}</option>)}
-            </select>
+            </select> : null}
             {hasPlans ? (
               <select
                 className="list-filter"

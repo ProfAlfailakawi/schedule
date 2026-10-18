@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sortByName } from "../utils/sorting";
 import LocationRegistryAdmin from "./LocationRegistryAdmin";
+import AccountInvitation from "./AccountInvitation";
 import { Activity, ArchiveRestore, Building2, Check, ChevronLeft, CopyPlus, DatabaseBackup, Download, Eraser, FileArchive, FileCheck2, KeyRound, Landmark, RefreshCw, Save, ScrollText, Search, ShieldCheck, Trash2, Upload, UserCog, UsersRound, X } from "lucide-react";
 import {
   AddButton,
@@ -1687,6 +1688,7 @@ export default function AdminUsers({
                     <b>{selected.SystemUserId}</b>
                   </article>
                 </div>
+                <AccountInvitation name={selected.Name} login={selected.SystemUserLogin} active={selected.IsActive && !selected.IsLocked} hasPassword={selected.HasPassword} />
                 {/* Note 26: the permission editor lives here now — pick a user on the
                     left and set exactly what they can reach, with no separate tab. */}
                 <section className="inspector-permissions" aria-label="صلاحيات المستخدم">

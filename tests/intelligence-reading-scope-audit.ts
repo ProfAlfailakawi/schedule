@@ -48,7 +48,7 @@ check('الأيام فوق الوقت في الحاوية المستخدمة ف�
 });
 check('المحاكاة محلية والإجراءات ترجع لمصدرها وتمنع الأجوبة القديمة',()=>{
  const ui=readFileSync('src/components/IntelligenceWorkspace.tsx','utf8');
- assert(ui.includes('tab === "twin" ? "college" : analysisScope')); assert(ui.includes('pending.termId !== termId')); assert(ui.includes('serial !== reloadSerial.current'));
+ assert(ui.includes('tab === "twin" || !hasMultipleDepartmentColleges ? "college" : analysisScope')); assert(ui.includes('pending.termId !== termId')); assert(ui.includes('serial !== reloadSerial.current'));
  for(const kind of ['draft','publish','restore','opening','repair','spatial','rule']) assert(ui.includes(`"${kind}"`));
  assert(ui.includes('policyDraft.scope === "family" ? "department" : "college"')); assert(ui.includes('value: "lab"'));
 });

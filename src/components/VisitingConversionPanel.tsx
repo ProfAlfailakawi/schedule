@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 import React, { useEffect, useState } from "react";
 import { describeConversionChange, ConversionChange } from "../utils/visitingConversion";
 import { ArrowLeftRight, History, TriangleAlert } from "lucide-react";
@@ -123,10 +124,10 @@ export default function VisitingConversionPanel({ instructorId, onChanged }: { i
             <option value="">— اختر الكلية والقسم —</option>
             {state.scopes.map(s => <option key={key(s)} value={key(s)}>{s.label}</option>)}
           </select>
-          <select aria-label="فصل الانتداب" value={termId || ""} onChange={e => setTermId(Number(e.target.value))}>
+          <TermSelect aria-label="فصل الانتداب" value={termId || ""} onValueChange={id => setTermId(id)}>
             <option value="">— اختر الفصل —</option>
             {state.terms.map(t => <option key={t.termId} value={t.termId}>{t.name}</option>)}
-          </select>
+          </TermSelect>
         </div>
       )}
       {preview && preview.length ? (

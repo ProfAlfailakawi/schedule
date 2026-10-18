@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 /**
  * ── شريط السؤال والنطاق ─────────────────────────────────────────────────────
  *
@@ -149,6 +150,18 @@ export default function ScopeAskBar({
              كذلك عند React. الغلافُ يُبقي الحدّ حيث هو. */
           <React.Fragment key={select.key}>
             <Field label={select.label}>
+              {select.key === "term" ? (
+              <TermSelect
+                value={select.value || ""}
+                disabled={select.disabled}
+                onValueChange={id => onSelect(select.key, String(id))}
+              >
+                <option value="">{select.placeholder}</option>
+                {select.options.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </TermSelect>
+              ) : (
               <select
                 value={select.value || ""}
                 disabled={select.disabled}
@@ -159,6 +172,7 @@ export default function ScopeAskBar({
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
+              )}
             </Field>
           </React.Fragment>
         ))}

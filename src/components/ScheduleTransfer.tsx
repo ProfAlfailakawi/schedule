@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, DoorClosed, Download, History, Layers, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton, useDialogDismiss, visualConfirm } from "./ui";
@@ -1659,12 +1660,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               </div>
 
               <div className="roster-copy roster-copy-rich">
-                <select value={copyFrom || ""} onChange={e => void loadCopyRoster(Number(e.target.value) || 0)}>
+                <TermSelect value={copyFrom || ""} onValueChange={id => void loadCopyRoster(id)}>
                   <option value="">انسخ من فصل…</option>
                   {copySourceTerms.filter(term => Number(term.AdTermId) !== termId).map(term => (
                     <option key={term.AdTermId} value={term.AdTermId}>{term.AdTermName}</option>
                   ))}
-                </select>
+                </TermSelect>
                 <SecondaryButton type="button" data-guide-ignore="نسخ منتدبي فصل بعد تحديدهم إجراء بيانات محلي داخل أداة المنتدبين" onClick={copyRoster} disabled={!copyFrom || !copySelected.length || busy}><Copy />انسخ المحدد</SecondaryButton>
               </div>
               {copyFrom ? <div className="roster-copy-picks">

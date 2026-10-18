@@ -50,7 +50,7 @@
     "test:rehearsal": "tsx tests/rehearsal-audit.ts",
     "test:deadlines-panel": "tsx tests/deadlines-panel-audit.ts",
     "test:single-department": "tsx tests/single-department-scope-audit.ts",
-    "test:fixed-scope-terms": "tsx tests/fixed-scope-terms-audit.ts",
+    "test:fixed-scope-terms": "tsx tests/fixed-scope-terms-audit.ts && tsx tests/scope-controls-audit.tsx",
     "test:role-scope": "tsx tests/role-scope-audit.ts",
     "test:department-heads": "tsx tests/department-head-accounts-audit.ts",
     "test:arabic-presentation": "tsx tests/arabic-presentation-audit.ts",
