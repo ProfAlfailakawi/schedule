@@ -45,6 +45,9 @@ try {
     /* بلا كشف: الحساب على الطلب وحده ولا يخترع نقصاً (طلبةُ التجربة قلّة). */
     const students = studentGaps(before.body.courses);
     check(students.every(item => item.basis === "students" && item.extra > 0), "بلا كشف: كل سطرٍ من طلب الطلبة وله نقصٌ حقيقي", students);
+    /* الديمو يُعرَض للجمهور: رغباتُ «مساري» المبذورة تُظهر مقرراتٍ يزيد طلبُها على شعبها (CS101 وCS220 قليلتا السعة، ومقرراتٌ مطلوبة بلا شعبة)،
+       فتظهر الشارةُ وعلاماتُ المقررات وجرسُ القسم بلا تعديلٍ يدويّ. */
+    check(students.length >= 3 && students.some(item => item.code === "CS101" && item.extra > 0) && students.some(item => item.existing === 0), "الديمو: طلبٌ يزيد على الشعب (مقررٌ قليل السعة ومقرراتٌ بلا شعبة)", students.map(item => `${item.code}:${item.existing}←${item.required}`));
 
     /* قسمٌ كتب «المختار» بيده ولم يرفع كشفاً: يصل المختار مع القراءة الخفيفة نفسها، ويغلب طلبَ الطلبة. */
     const first = before.body.courses.find((course: any) => course.code === "CS101");

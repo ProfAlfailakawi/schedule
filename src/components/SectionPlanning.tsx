@@ -46,11 +46,11 @@ type ImportReading = RemainingReading & {
 };
 type SaveState = "idle" | "saving" | "saved" | "error";
 /** رفضُ الكشف كما يردّه الخادم: النص الكامل، ونوعه، ومقارنة «في الكشف / المختار» إن كان لقسمٍ أو فرعٍ آخر. */
-type ImportRejection = { message: string; kind?: RejectKind | null; mismatch?: RejectMismatch | null };
+type ImportRejection = { message: string; kind?: RejectKind | null; mismatch?: RejectMismatch | null; termMismatch?: { sheet: string; chosen: string } | null };
 const rejection = (body: any, fallback: string, prefix = "") =>
-  Object.assign(new Error(`${prefix}${body?.error || fallback}`), { rejection: { message: `${prefix}${body?.error || fallback}`, kind: body?.rejectKind || null, mismatch: body?.mismatch || null } as ImportRejection });
+  Object.assign(new Error(`${prefix}${body?.error || fallback}`), { rejection: { message: `${prefix}${body?.error || fallback}`, kind: body?.rejectKind || null, mismatch: body?.mismatch || null, termMismatch: body?.termMismatch || null } as ImportRejection });
 /* كل رفضٍ أيقونةٌ وكلمتان وإرشادٌ قصير؛ والنص الكامل يبقى لقارئ الشاشة. */
-const REJECT_SHORT: Record<Exclude<RejectKind, "mismatch">, { icon: React.ComponentType<any>; title: string; hint: string }> = {
+const REJECT_SHORT: Record<Exclude<RejectKind, "mismatch" | "wrongTerm">, { icon: React.ComponentType<any>; title: string; hint: string }> = {
   noCode: { icon: Hash, title: "القسم بلا رمز في النظام", hint: "أضِف رمزه في «الأقسام»" },
   branchUnread: { icon: ScanLine, title: "الفرع غير مقروء في الترويسة", hint: "ارفع PDF من نظام العمادة" },
   departmentUnread: { icon: ScanLine, title: "رمز القسم غير مقروء في الترويسة", hint: "ارفع PDF من نظام العمادة" },
@@ -386,9 +386,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   const nNoSections = previewRead.filter(item => item.state === "noSections").length;
   const nMissing = preview?.missing.length || 0;
   /* شاشة الرفع المختصرة مقارنةٌ لا استيراد: كشفٌ نصّيّ بلا تحذير فصلٍ مخالف يُعبَّأ مباشرةً بما قُرئ بوضوح (planRemainingApply)،
-     وما لم يتّضح أو ليس من مقررات القسم يُترك بصمت ولا يُخمَّن. أما الممسوح والمصوَّر، أو كشفٌ لفصلٍ آخر، فتُعرض له المراجعة كي لا يُعبَّأ ما لم يُرَ. */
-  const autoApply = importOnly && Boolean(preview) && preview!.column != null && canApply && preview!.source !== "scan"
-    && !(preview!.warnings || []).length;
+     وما لم يتّضح أو ليس من مقررات القسم يُترك بصمت ولا يُخمَّن. وكشفُ فصلٍ آخر يرفضه الخادم قبل هذه النقطة؛ أما الممسوح والمصوَّر فتُعرض له المراجعة كي لا يُعبَّأ ما لم يُرَ. */
+  const autoApply = importOnly && Boolean(preview) && preview!.column != null && canApply && preview!.source !== "scan";
   /* أسطرُ الكشف التي ليست من مقررات القسم في النظام: تظهر في مكانها من الجدول
      بلونٍ خافت — موجودةٌ في الكشف فتُرى — ولا يُعبَّأ منها شيء. */
   const foreignRows = preview ? [...new Set<string>(preview.foreign.map(String))].map(printed => ({ printed })) : [];
@@ -440,7 +439,13 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
                   {importError.mismatch.fields.includes("branch") ? <b><Users /> {importError.mismatch.chosen.branch}</b> : null}
                 </div>
               </div>
-            ) : importError.kind && importError.kind !== "mismatch" ? (() => {
+            ) : importError.kind === "wrongTerm" && importError.termMismatch ? (
+              <div className="section-plan-reject-compare" aria-hidden="true">
+                <div className="is-sheet"><span className="section-plan-reject-side"><FileText /> في الكشف</span><b><History /> {importError.termMismatch.sheet}</b></div>
+                <span className="section-plan-reject-vs">≠</span>
+                <div className="is-chosen"><span className="section-plan-reject-side"><MousePointerClick /> المختار</span><b><History /> {importError.termMismatch.chosen}</b></div>
+              </div>
+            ) : importError.kind && importError.kind !== "mismatch" && importError.kind !== "wrongTerm" ? (() => {
               const short = REJECT_SHORT[importError.kind];
               const Icon = short.icon;
               return <p className="section-plan-reject-short" aria-hidden="true"><Icon /> <b>{short.title}</b> <span>· {short.hint}</span></p>;
