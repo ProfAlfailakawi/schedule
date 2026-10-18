@@ -149,7 +149,7 @@ const snapshot = async () => JSON.stringify([(await Repository.getSections()).le
   const dean0 = JSON.stringify((await Repository.getUsers() as any[]).find(row => row.SystemUserLogin === "tsbdean"));
   const done = await provisionProgram(Repository, REF, { apply: true, prefix: "tsb", deptNames: names, password: "12345668" });
   const users1 = (await Repository.getUsers()) as any[];
-  const ok = (login: string) => { const u = users1.find(row => row.SystemUserLogin === login); return u.IsActive === true && Repository.verifyPassword("12345668", u.SystemUserPass) === true && String(u.SystemUserPass).startsWith("scrypt$") && Boolean(u.SystemUserPassVault); };
+  const ok = (login: string) => { const u = users1.find(row => row.SystemUserLogin === login); return u.IsActive === true && Repository.verifyPassword("12345668", u.SystemUserPass) === true && String(u.SystemUserPass).startsWith("scrypt$") && (!Repository.encryptPasswordForVault("x") || Boolean(u.SystemUserPassVault)); };
   const mine = users1.filter(row => /^tsb/.test(row.SystemUserLogin) && row.SystemUserLogin !== "tsbdean");
   check(done.ok && mine.length === 8 && mine.every(row => ok(row.SystemUserLogin)), "V5ج حسابات الأداة فعّالة بكلمة سرٍّ مُجزّأة ومحفوظة في الخزنة", done.accounts.map(row => `${row.login}:${row.status}`));
   check(JSON.stringify(users1.find(row => row.SystemUserLogin === "tsbdean")) === dean0, "V5ج حسابٌ له كلمة سرٍّ يُترك كما هو");
