@@ -230,7 +230,7 @@ check(repo.includes("getRegistrationStats: async") && repo.includes("saveRegistr
 check(repo.includes("input.counts ?? previous?.counts") && repo.includes("remaining: Object.fromEntries(Object.entries(clean(input.remaining, 100000, -100000)).map(([key, value]) => [key, Math.max(0, value)]))")
   && (server.match(/Math\.max\(0, Number\(value\) \|\| 0\)/g) || []).length === 2, "لا متبقٍّ سالب: يُحفظ صفراً، وما حُفظ سالباً قبلُ يُعرض صفراً في الفصل وفي تاريخ الفصول السابقة؛ و«المسجّلين» القديم يبقى كما هو");
 check(repo.includes('input.remainingSource.column === "unregistered" || input.remainingSource.column === "seats"'), "وسم العمود يُحفظ كما أُرسل («unregistered»، و«seats» القديم يبقى قديماً)");
-check((server.match(/remainingSource\?\.column === "unregistered"/g) || []).length === 6 && !server.includes('remainingSource?.column === "seats"')
+check((server.match(/remainingSource\?\.column === "unregistered"/g) || []).length === 7 && !server.includes('remainingSource?.column === "seats"')
   && server.includes('legacyRemaining: stats?.remainingSource?.column !== "unregistered"'),
   "الخادم: «unregistered» وحده مدخل الاقتراح والمقارنة والتوقّع (والشاغر معه)، وما سواه (seats أو بلا وسم) «قديم» لا يُحسب");
 check(server.includes("vacant: req.body?.vacant || {}") && repo.includes("vacant: clean(input.vacant, 100000, -100000)"),
