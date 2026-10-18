@@ -147,6 +147,7 @@ export default function CampaignWizard({ data, initial, startStep = 1, onClose, 
                   <button data-guide-ignore="شاشةٌ لحساب الإدارة الرئيسي وحده؛ لا يحتاجها المرشد لأحد" key={s.id} type="button" role="radio" aria-checked={form.slot === s.id} disabled={slotLocked && form.slot !== s.id} title={s.where} className={`ad-slotcard${form.slot === s.id ? " on" : ""}${full ? " full" : ""}`} onClick={() => set("slot", s.id)}>
                     <span className="ad-slotart" style={{ aspectRatio: `${s.width}/${s.height}` }}><bdi dir="ltr">{s.width}×{s.height}</bdi></span>
                     <b>{s.label}</b>
+                    <small className="ad-slothint">{s.hint}</small>
                     <em><i aria-hidden="true" />{s.exclusive ? (full ? "محجوز" : "حصري · متاح") : `${fmt(s.live)}/${fmt(cap)} · ${full ? "ممتلئ" : "متاح"}`}</em>
                   </button>
                 );

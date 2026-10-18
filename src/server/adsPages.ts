@@ -348,6 +348,7 @@ const KIT_CSS = `
 .k-screen i.s{width:60%}
 .k-screen .ad{border-radius:6px;background:linear-gradient(135deg,var(--accent),#1f8f6a);box-shadow:0 4px 14px rgba(15,107,79,.35)}
 .k-slot b{font-size:15px}
+.k-hint{color:var(--muted);font-size:12px;line-height:1.6;margin-top:-6px}
 .k-tags{display:flex;gap:6px;flex-wrap:wrap}
 .k-tags span{font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
 .k-tags .ok{border-color:transparent;background:var(--soft);color:var(--accent);font-weight:700}
@@ -447,7 +448,7 @@ export function partnerKitPage(input: PartnerKitInput): string {
   const slots = activeSlots().map(slot => {
     const live = input.liveBySlot[slot.id] || 0;
     const free = slot.exclusive ? (live ? 0 : 1) : Math.max(0, slot.capacity - live);
-    return `<div class="k-slot" title="${esc(slot.where)}">${slotScreen(slot)}<b>${esc(slot.label)}</b>
+    return `<div class="k-slot" title="${esc(slot.where)}">${slotScreen(slot)}<b>${esc(slot.label)}</b><small class="k-hint">${esc(slot.hint)}</small>
 <div class="k-tags"><span><bdi dir="ltr">${slot.width}×${slot.height}</bdi></span>${slot.wholeUniversity ? `<span class="wide">كل الجامعة</span>` : ""}${slot.exclusive ? `<span>حصري</span>` : ""}<span class="${free ? "ok" : "full"}">${free ? "متاح" : "محجوز"}</span></div></div>`;
   }).join("");
 
@@ -469,7 +470,7 @@ ${banner}
     <label class="k-f"><span>${icon("mail")}البريد <small>(اختياري)</small></span><input name="email" type="email" dir="ltr" maxlength="120" autocomplete="email"></label>
   </div>
   <div class="k-f"><span>${icon("globe")}أين تريد ظهور إعلانك؟</span>
-    <div class="k-pick" role="group" aria-label="المواقع">${activeSlots().map(slot => `<label><input type="checkbox" name="slots" value="${esc(slot.id)}"><span>${esc(slot.label)}</span></label>`).join("")}</div></div>
+    <div class="k-pick" role="group" aria-label="المواقع">${activeSlots().map(slot => `<label title="${esc(slot.hint)}"><input type="checkbox" name="slots" value="${esc(slot.id)}"><span>${esc(slot.label)}</span></label>`).join("")}</div></div>
   <label class="k-f"><span>${icon("calendar")}متى؟</span><select name="season"><option value="">في أي وقت</option>${SEASONS.map(se => `<option value="${esc(se.id)}">${esc(se.label)}</option>`).join("")}</select></label>
   <label class="k-f"><span>${icon("send")}كلمة لنا <small>(اختياري)</small></span><input name="note" maxlength="300"></label>
   <div class="k-hp" aria-hidden="true"><label>لا تملأ هذا الحقل<input name="website" tabindex="-1" autocomplete="off"></label></div>
