@@ -184,7 +184,8 @@ body.km-lock{overflow:hidden}
 .kbar .kb-m{flex:1;display:grid;gap:4px;min-inline-size:0}.kbar b{font-size:14px;font-variant-numeric:tabular-nums}
 .kb-meter{position:relative;block-size:7px;border-radius:9px;background:rgba(255,255,255,.18);overflow:hidden}
 .kb-meter i{position:absolute;inset-block:0;inset-inline-start:0;border-radius:9px;background:#f0cf95;transition:inline-size .35s var(--ease)}
-.kb-meter span{position:absolute;inset-block:0;inset-inline-start:66.6%;inline-size:16.7%;background:rgba(255,255,255,.28)}
+.kb-meter span{position:absolute;inset-block:0;inset-inline-start:80%;inline-size:2px;background:rgba(255,255,255,.75)}
+.kb-meter.ok i{background:#8fdcae}.kb-meter.over i{background:#f2a37a}
 .kbar small{font-size:11.5px;opacity:.85}.kbar small.ok{color:#a7e3c3;opacity:1}
 .kbar .btn{inline-size:auto;min-inline-size:136px;min-block-size:46px;font-size:14.5px;border-radius:15px;background:#c79b5f;color:#1a1308;box-shadow:none}
 .km-conf{position:fixed;inset:0;z-index:90;pointer-events:none;overflow:hidden}
@@ -319,8 +320,9 @@ function kmRegHtml(){var X=KM.x,ids=kmNowIds(),a=KM.advice,isMain=function(id){v
 function kmBarUpdate(){var bar=document.getElementById("kbar");if(!bar)return;var ids=kmCartIds(),u=kmUnits(ids);
   var ap=document.querySelector(".app");if(!kmCanWish()||!ids.length||S.tab!=="plan"||S.view!=="home"){bar.hidden=true;if(ap)ap.classList.remove("km-bar");return}
   if(ap)ap.classList.add("km-bar");
-  bar.hidden=false;var pct=Math.min(100,u/18*100),msg=u<12?'ينقصك '+countOf(12-u,AR.unit)+' لتبلغ الحدّ الأدنى':(u>15?'فوق 15 وحدة — سيُعدّ حملُك 15':'ضمن الحدّ ✓');
-  bar.innerHTML='<div class="kb-m"><b>'+countOf(ids.length,AR.course)+' · '+countOf(u,AR.unit)+'</b><div class="kb-meter" aria-hidden="true"><i style="inline-size:'+pct+'%"></i><span></span></div><small class="'+(u>=12&&u<=15?'ok':'')+'">'+msg+'</small></div><button type="button" class="btn" id="kbsend">'+ic("heart")+' أضفها إلى رغباتي</button>';
+  bar.hidden=false;/* الحدّ من 12 إلى 15 وحدة: المقياس 0–15، والعلامة عند 12؛ من بلغ 12 فقد أتمّ الحدّ (ممتاز) ولا يُطلب منه المزيد. */
+  var pct=Math.min(100,u/15*100),st=u<12?'low':(u>15?'over':'ok'),msg=st==='low'?'ينقصك '+countOf(12-u,AR.unit)+' لتبلغ الحدّ الأدنى (12)':(st==='over'?'فوق 15 وحدة — سيُعدّ حملُك 15':'ممتاز ✓ ضمن الحدّ (12 إلى 15)');
+  bar.innerHTML='<div class="kb-m"><b>'+countOf(ids.length,AR.course)+' · '+countOf(u,AR.unit)+'</b><div class="kb-meter '+st+'" aria-hidden="true"><i style="inline-size:'+pct+'%"></i><span></span></div><small class="'+(st==='ok'?'ok':'')+'">'+msg+'</small></div><button type="button" class="btn" id="kbsend">'+ic("heart")+' أضفها إلى رغباتي</button>';
   document.getElementById("kbsend").addEventListener("click",kmSendWishes)}
 function kmSendWishes(){var b=document.getElementById("kbsend");if(!b||b.disabled)return;var ids=kmCartIds(),u=kmUnits(ids),w=S.state.profile.wishes&&S.state.term&&S.state.profile.wishes.termId===S.state.term.id?S.state.profile.wishes:null;
   b.disabled=true;
