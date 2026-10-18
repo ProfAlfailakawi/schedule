@@ -24,6 +24,8 @@ check(plan.includes("<SectionBuild") && plan.includes("buildReady") && fs.readFi
 const transferSrc = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");
 check(transferSrc.includes('className="tp-banner"') && transferSrc.includes("const goTab = ") && transferSrc.includes("fromPlanning ? null : (<>") && transferSrc.includes('transfer-import-commit-wrap${fromPlanning') && transferSrc.includes("نزّل ${countOf(planningMeta.added, AR.section)} في الجدول") && transferSrc.includes("نزّل الشعب (من تخطيط الشعب)"), "مراجعة التخطيط لها هويتها المستقلة عن استيراد الملف/PDF: شارة، بلا رفع ملف، زر «نزّل» ثابت، ومغادرتها تُفرغها");
 
+check(transferSrc.includes("const keepPending = ") && transferSrc.includes('origin === "existing" && !row.roomId') && !/locationStatus: "PENDING_ROOM" \} : row\)/.test(transferSrc), "القاعة إلزامية في مراجعة التخطيط: الشعبة المقترحة لا تُجعل «بانتظار التثبيت» تلقائياً (قرارٌ صريح من المستخدم وحده)");
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-section-build-"));
 let child: ReturnType<typeof spawn> | null = null;
 try {

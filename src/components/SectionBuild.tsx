@@ -159,7 +159,7 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
               <ClipboardPenLine aria-hidden="true" />
               <p>
                 افتح الشعب المقترحة (<b>{countOf(chosenCount + totals.pending, AR.section)}</b>) في المراجعة لتعدّلها ثم تنزّلها.
-                {totals.roomless > 0 ? <> <b>{countOf(totals.roomless, AR.section)}</b> منها تحتاج تثبيت قاعة.</> : null}
+                {totals.roomless > 0 ? <> <b>{countOf(totals.roomless, AR.section)}</b> منها بلا قاعة، تختارها هناك.</> : null}
               </p>
               <PrimaryButton type="button" disabled={busy} onClick={review} data-guide-ignore="فتح الشعب المقترحة مع مواعيد القسم الحالية في شاشة مراجعة الاستيراد للتعديل قبل النشر">راجع وعدّل</PrimaryButton>
             </div>
