@@ -2819,6 +2819,11 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   flex:none;font:600 var(--t-micro) var(--font-mono);font-style:normal;color:var(--muted);
   font-variant-numeric:tabular-nums;
 }
+.week-legend-chip>.week-legend-need{
+  flex:none;padding:0 6px;border-radius:var(--r-full);
+  background:var(--warning-soft);color:var(--warning);
+  font:700 var(--t-micro) var(--font-mono);font-variant-numeric:tabular-nums;
+}
 .week-legend-chip:hover{
   border-color:hsl(var(--hue,158) 56% 52%);
   background:color-mix(in srgb,hsl(var(--hue,158) 50% 52%) 8%,var(--surface));

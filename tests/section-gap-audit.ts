@@ -69,5 +69,18 @@ check(planning.includes("PLAN_SAVED_EVENT") && planning.includes("dispatchEvent"
 check(bar.includes("gap.loaded && !gap.planImported"), "أيقونة الرفع تختفي متى رُفع كشف");
 check(planning.includes("skipped.current = nReview") && sheet.includes("لم تتّضح في الكشف فلم تُحسب") && sheet.includes("لا زيادة فيما قُرئ"), "قراءةٌ جزئية لا تُعرض نتيجةً كاملة");
 check(/keepalive[\s\S]{0,200}PLAN_SAVED_EVENT/.test(planning), "الحفظ عند الإغلاق يُحدِّث الأيقونة أيضاً");
+/* ── علامةُ المقرر في مفتاح الألوان، وجرسُ «مساري»، وتلميحُ الأيقونة ── */
+import { buildMasariGapNotifications } from "../src/utils/featureNotifications";
+const bell = buildMasariGapNotifications([{ collegeId: 1, sectionId: 6, sectionName: "الدراسات الإسلامية", courses: 1 }, { collegeId: 1, sectionId: 2, sectionName: "علم البيانات", courses: 3 }, { collegeId: 1, sectionId: 9, sectionName: "الرياضيات", courses: 0 }], 2, "الفصل الثاني");
+check(bell.length === 2 && bell[0].title === "طلبة «مساري» يحتاجون شعباً في مقرر واحد" && bell[1].title === "طلبة «مساري» يحتاجون شعباً في 3 مقررات" && bell.every(item => item.view === "schedules" && item.tone === "action" && item.termId === 2), "جرس «مساري»: سطرٌ لكل قسمٍ له نقص، بعدّ عربيّ سليم، ولا سطر لقسمٍ بلا نقص", bell.map(item => item.title));
+check(bell[0].id !== buildMasariGapNotifications([{ collegeId: 1, sectionId: 6, sectionName: "x", courses: 2 }])[0].id, "تغيّر العدد يصير إشعاراً جديداً");
+const server = fs.readFileSync("server.ts", "utf8"), schedules = fs.readFileSync("src/components/Schedules.tsx", "utf8");
+check(server.includes("cachedSectionGap") && server.includes("buildMasariGapNotifications(found") && /\["standard", "committeeChair", "departmentHead"\]\.includes\(role\) && !isPowerUser\(req\)/.test(server), "الجرس لعاملي القسم وحدهم، وبقراءةٍ مخبّأةٍ دقيقة");
+check(schedules.includes("onStudentGaps={setStudentGaps}") && schedules.includes("week-legend-need") && schedules.includes('hueBy === "course"'), "علامة «+N» على شارة المقرر في مفتاح الألوان، للمقررات فقط");
+check(bar.includes('title="قارن شعبك بكشف المتبقي"'), "تلميح الأيقونة كلمتان لا فقرة");
+check((schedules.match(/\{needMark\(item\.key\)\}/g) || []).length === 3, "العلامة في مفاتيح الألوان الثلاثة: القائمة والأسبوع والقاعات");
+check(bar.includes("() => onStudentGaps?.([])"), "زوال الشريط يمحو علاماته");
+check(/slice\(0, 30\);\s*const found/.test(server) && !/slice\(0, 4\);\s*const found/.test(server), "يُفحص كل أقسام العامل ثم يُقتصر الناتج على أربعة");
+
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
