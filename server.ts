@@ -20970,7 +20970,7 @@ registerInsightRoutes(app, {
  *
  * لا يحمل قسماً ولا فصلاً ولا رمزاً: الطالبُ هو المفتاح، والفصلُ يُقرأ من
  * التواريخ (utils/termStudentPhases). فملصقٌ يُطبع مرةً يبقى صالحاً سنين. */
-/* «جرّب كطالبة»: صندوقٌ خاصّ لكل زائر يُنفَّذ فيه مساري ببياناتٍ افتراضية (src/server/studentShowcase.ts). */
+/* «جرّب كطالب»: صندوقٌ خاصّ لكل زائر يُنفَّذ فيه مساري ببياناتٍ افتراضية (src/server/studentShowcase.ts). */
 registerStudentShowcase(app, { identityKey: studentIdentityKey, sealIdentity: sealStudentIdentity, isProduction: () => process.env.NODE_ENV === "production" });
 registerStudentDoorRoutes(app, {
   surveyFingerprint,
