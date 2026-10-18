@@ -1437,6 +1437,9 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   const pickTerm = (id: number) => { sharedScope.pick({ termId: id }); setTermId(id); };
   /* قائمةُ الفصل في ركن العنوان (تقريرُ قسمٍ مفتوح): فصولُ ذلك القسم التي فيها بيانات، والحالي دائماً. */
   const openedTerms = useScopedTerms<AdTerm>(opened ? terms : null, opened?.collegeId || 0, opened?.sectionId || 0, opened ? termId : 0, pickTerm);
+  /* وحين لا يُفتح قسمٌ بعينه: فصولُ نطاق القارئ نفسه — القاعدةُ ذاتها (الفارغ القديم يختفي، والأحدثُ يبقى). */
+  const ownTerms = useScopedTerms<AdTerm>(opened ? null : terms, 0, 0, opened ? 0 : termId, pickTerm);
+  const shownTerms = opened ? openedTerms : ownTerms;
   useEffect(() => { setOpened(null); setInboxRows(null); }, [termId]);
   /* ── الإشعار يفتح على قسمه (N16) ─────────────────────────────────────
      يُؤخذ التركيز مرّةً بعد أن يُعرف الفصل: فصلُ الإشعار إن اختلف، ثم القسم.
@@ -1463,6 +1466,8 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   /* القسم يفتح على تقريره مباشرةً: لا وارد عنده يختار منه. */
   const single = scope && !role.canReview ? { ...scope } : null;
   const active = opened || single;
+  /* ومن بقي له فصلٌ واحد وقد فرّغ اختياره يبقى المنتقي، وإلا علق على «اختر الفصل». */
+  const showTermPicker = (shownTerms.length > 1 && (active || !termId)) || (!termId && shownTerms.length > 0);
   const deadlinesShown = Boolean(termId && !active && term && !termIsArchive(term, terms || []) && audience.deadlinesPanel);
 
   return (
@@ -1478,14 +1483,14 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
            يكون ثمّة فصلٌ مختار. والثانيةُ ليست حالةً نظرية: «اختر الفصل» خيارٌ
            يُنقر، ونقرُه كان يُفرّغ الفصلَ فيختفي الشريطُ الذي يحمل قائمته،
            فيبقى القارئ أمام شاشةٍ فارغةٍ لا مخرجَ منها إلا إعادة التحميل. */
-        action={onOpenDepartmentSchedule || ((opened ? openedTerms : terms).length > 1 && (active || !termId)) ? (
+        action={onOpenDepartmentSchedule || showTermPicker ? (
           <div className="changes-title-actions">
             {onOpenDepartmentSchedule ? <SecondaryButton onClick={onOpenDepartmentSchedule} data-guide-ignore="فتح جدول القسم للقراءة فقط"><CalendarDays size={16} /> جدول القسم</SecondaryButton> : null}
-            {(opened ? openedTerms : terms).length > 1 && (active || !termId) ? (
+            {showTermPicker ? (
               <label className="changes-term-picker">
                 <span>الفصل</span>
                 <select value={termId || ""} onChange={(e) => pickTerm(Number(e.target.value) || 0)}>
-                  {(opened ? openedTerms : terms).map(row => <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>)}
+                  {shownTerms.map(row => <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>)}
                 </select>
               </label>
             ) : null}
