@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { BookOpen, Building2, GraduationCap, Landmark, UsersRound } from "lucide-react";
 import { ConsoleRail } from "./ui";
+import type { ScopeAssignmentLike } from "../utils/scopeContext";
 
 /**
  * One console for the whole academic reference.
@@ -99,10 +100,14 @@ export default function AcademicConsole({
   tab,
   onTab,
   hasPerm,
+  scopes = [],
+  isAdmin = true,
 }: {
   tab: AcademicTab;
   onTab: (tab: AcademicTab) => void;
   hasPerm: (id: number) => boolean;
+  scopes?: ScopeAssignmentLike[];
+  isAdmin?: boolean;
 }) {
   const visible = useMemo(() => TABS.filter(spec => hasPerm(spec.perm)), [hasPerm]);
   const [counts, setCounts] = useState<Partial<Record<AcademicTab, number>>>({});
@@ -153,7 +158,7 @@ export default function AcademicConsole({
         {active === "colleges" ? <Colleges embedded actionSlot={actionSlot} /> : null}
         {active === "sections" ? <Sections embedded actionSlot={actionSlot} /> : null}
         {active === "instructors" ? <Instructors embedded actionSlot={actionSlot} /> : null}
-        {active === "courses" ? <Courses embedded actionSlot={actionSlot} /> : null}
+        {active === "courses" ? <Courses embedded actionSlot={actionSlot} scopes={scopes} isAdmin={isAdmin} /> : null}
       </Suspense>
     </div>
   );

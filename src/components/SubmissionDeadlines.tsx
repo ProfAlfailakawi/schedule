@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 import { byArabic } from "../utils/sorting";
 /**
  * ── مواعيد التسليم ──────────────────────────────────────────────────────────
@@ -468,12 +469,12 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
       <header className="sd-head">
         <div className="sd-title">
           <span className="sd-kicker"><CalendarClock aria-hidden="true" /> مواعيد التسليم</span>
-          {termOptions.length > 1 ? (
+          {termOptions.length > 0 ? (
             <label className="sd-term">
               <span className="sr-only">الفصل</span>
-              <select value={termId} onChange={e => onTermChange(Number(e.target.value))} aria-label="الفصل">
+              <TermSelect value={termId} onValueChange={id => onTermChange(id)} aria-label="الفصل">
                 {termOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select>
+              </TermSelect>
             </label>
           ) : <span className="sd-term-name">{term?.AdTermName}</span>}
         </div>

@@ -48,6 +48,20 @@ try {
       return { status: response.status, body: await response.json().catch(() => null) as any };
     };
     const week = async () => (await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[];
+    const freeSlot = async (teacherId: number, rooms: any[], duration = 75) => {
+      const everything = (await call("GET", "/api/schedules")).body as any[];
+      const mins = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+      const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+      for (const day of ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"]) {
+        for (let start = 8 * 60; start + duration <= 20 * 60; start += 15) {
+          const busy = everything.some(row => row[day] && mins(row.fstarttime) < start + duration && mins(row.fendtime) > start
+            && (Number(row.AdInstructorId) === Number(teacherId) || rooms.some(room =>
+              row.roomId && room.roomId ? row.roomId === room.roomId : row.AdRoomCode === room.AdRoomCode && row.AdRoomHall === room.AdRoomHall)));
+          if (!busy) return { day, start: clock(start), end: clock(start + duration) };
+        }
+      }
+      throw new Error("لا توجد خانة خالية لإعداد اختبار الاقتراح دون تعارض مع بيانات الديمو");
+    };
 
     const rows = await week();
     const base = rows[0];
@@ -107,7 +121,16 @@ try {
       return mate ? [row, mate] : null;
     }, null) as any[] | null;
     if (swapPair) {
-      const [x, y] = (await week()).filter(row => swapPair.some(item => item.id === row.id)).sort((l, r) => l.id - r.id);
+      let [x, y] = (await week()).filter(row => swapPair.some(item => item.id === row.id)).sort((l, r) => l.id - r.id);
+      // Seeded demo rooms may already contain deliberate clashes. Stage this pair
+      // in clear slots so this assertion tests the swap, not an unrelated booking.
+      for (const row of [x, y]) {
+        const to = await freeSlot(Number(row.AdInstructorId), [x, y]);
+        const staged = await call("POST", "/api/schedules/apply-proposal", { kind: "move", ...scope,
+          moves: [{ rowId: row.id, from: { day: dayOf(row), start: row.fstarttime, end: row.fendtime }, to }], origin });
+        if (staged.status !== 200) throw new Error(`تعذر إعداد اختبار التبديل: ${JSON.stringify(staged.body)}`);
+      }
+      [x, y] = (await week()).filter(row => swapPair.some(item => item.id === row.id)).sort((l, r) => l.id - r.id);
       const exchange = await call("POST", "/api/schedules/apply-proposal", { kind: "swap", ...scope, moves: [
         { rowId: x.id, from: { day: dayOf(x), start: x.fstarttime, end: x.fendtime }, to: { day: dayOf(y), start: y.fstarttime, end: y.fendtime } },
         { rowId: y.id, from: { day: dayOf(y), start: y.fstarttime, end: y.fendtime }, to: { day: dayOf(x), start: x.fstarttime, end: x.fendtime } },
@@ -135,7 +158,8 @@ try {
     const pending = (await registration()).flatMap(row => (row.courses || []).filter((c: any) => !c.settled && !c.readOnly).map((c: any) => ({ row, course: c })));
     const target1 = pending[0], target2 = pending[1];
     const teacherRow = (await week()).find(row => Number(row.AdCourseId) === Number(target1.course.id)) || base;
-    const slotFor = (extra: any = {}) => ({ day: "fwednesday", start: "13:00", end: "14:15", sectionCode: "01", instructorId: teacherRow.AdInstructorId,
+    const approvalSlot = await freeSlot(Number(teacherRow.AdInstructorId), [teacherRow]);
+    const slotFor = (extra: any = {}) => ({ ...approvalSlot, sectionCode: "01", instructorId: teacherRow.AdInstructorId,
       roomCode: teacherRow.AdRoomCode, roomHall: teacherRow.AdRoomHall, buildingId: teacherRow.buildingId, roomId: teacherRow.roomId, ...extra });
     const before = (await week()).length;
     const approve = await call("POST", `/api/student-registration/${target1.row.id}/course-state`, { courseId: target1.course.id, state: "awaiting-registration", openSection: slotFor() });

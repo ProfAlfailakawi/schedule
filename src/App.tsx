@@ -1765,6 +1765,8 @@ export default function App() {
             tab={activeView}
             onTab={(next) => go(next)}
             hasPerm={hasAcademicPerm}
+            scopes={scopes}
+            isAdmin={isPowerAdmin}
           />
         ) : (
           unauthorized()
@@ -2345,7 +2347,7 @@ export default function App() {
             </span>
             <span>
               <strong>SCHEDULE</strong>
-              <small>نظام القرار الأكاديمي</small>
+              <small>{scopeContext?.department || "نظام القرار الأكاديمي"}</small>
             </span>
           </button>
           <button

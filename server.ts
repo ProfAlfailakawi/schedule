@@ -3172,19 +3172,22 @@ app.get("/api/terms/scoped", requireAuth, async (req: AuthenticatedRequest, res:
   const collegeId = boundedInt(req.query.collegeId, 0, Number.MAX_SAFE_INTEGER) ?? 0;
   const sectionId = boundedInt(req.query.sectionId, 0, Number.MAX_SAFE_INTEGER) ?? 0;
   const scopeSig = req.user?.IsAdminUser ? "admin" : JSON.stringify((req.scopes || []).map(scope => [Number(scope.AdCollegeId), Number(scope.AdSectionId)]).sort());
-  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${req.user?.SystemUserId || 0}:${scopeSig}`);
+  const analysisScope = req.query.analysisScope === "department" && collegeId && sectionId ? "department" : "college";
+  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${analysisScope}:${req.user?.SystemUserId || 0}:${scopeSig}`);
   const hit = scopedTermsCache.get(key);
   if (hit && Date.now() - hit.at < 60_000) { res.json(hit.data); return; }
   const terms = sortTermsNewestServer(await Repository.getTerms());
   const current = Number(currentTermId(terms as any) || terms[0]?.AdTermId || 0);
+  const readScopes = analysisScope === "department" ? await intelligenceReadScopes(req, collegeId, sectionId) : [{ collegeId, sectionId }];
   const counts = new Map<number, number>();
   for (let at = 0; at < terms.length; at += 6) {
     await Promise.all(terms.slice(at, at + 6).map(async term => {
-      counts.set(Number(term.AdTermId), (await readLiveSchedulesForRequest(req, collegeId, sectionId, Number(term.AdTermId))).length);
+      const rows = await Promise.all(readScopes.map(scope => readLiveSchedulesForRequest(req, scope.collegeId, scope.sectionId, Number(term.AdTermId))));
+      counts.set(Number(term.AdTermId), rows.reduce((total, group) => total + group.length, 0));
     }));
   }
   const newest = Number(terms[0]?.AdTermId || 0);
-  const data = { termIds: visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, newest), currentTermId: current, newestTermId: newest };
+  const data = { termIds: visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, current), currentTermId: current, newestTermId: newest };
   if (scopedTermsCache.size > 200) scopedTermsCache.clear();
   scopedTermsCache.set(key, { at: Date.now(), data });
   res.json(data);

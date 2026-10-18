@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useScopedTerms } from "./useScopedTerms";
@@ -1092,9 +1093,9 @@ export default function LivingScheduleLayer({
                   <div className="genesis-controls">
                     <label>
                       <span>1 · الفصل المصدر</span>
-                      <select
+                      <TermSelect
                         value={sourceTerm}
-                        onChange={(e) => setSourceTerm(Number(e.target.value))}
+                        onValueChange={(id) => setSourceTerm(id)}
                         disabled={!sourceTerms.length}
                       >
                         {!sourceTerms.length ? <option value="">لا يوجد فصل سابق متاح</option> : null}
@@ -1103,7 +1104,7 @@ export default function LivingScheduleLayer({
                               {t.AdTermName}
                             </option>
                           ))}
-                      </select>
+                      </TermSelect>
                       {sourceTerm ? (
                         <output className="genesis-term-full" title={sourceTerms.find(t => t.AdTermId === sourceTerm)?.AdTermName || ""}>
                           {sourceTerms.find(t => t.AdTermId === sourceTerm)?.AdTermName || ""}

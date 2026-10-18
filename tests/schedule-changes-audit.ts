@@ -250,7 +250,7 @@ check(ask.includes("words.every(word => haystack.includes(word))"),
 /* «اختر الفصل» خيارٌ يُنقر، ونقرُه يُفرّغ الفصل فيختفي الشريطُ الذي يحمل
    قائمته. فلولا منتقي الفصل في ركن العنوان لبقي القارئ أمام شاشةٍ فارغةٍ لا
    مخرجَ منها إلا إعادة التحميل. */
-check(changes.includes("shownTerms.length > 1 && (active || !termId)) || (!termId && shownTerms.length > 0)"),
+check(changes.includes("shownTerms.length > 0 && Boolean(active || !termId)"),
   "ومنتقي الفصل يبقى مطروقاً حين لا فصلَ مختار، فلا تُغلق الشاشةُ على نفسها");
 
 /* ── ٩) الجدول كامل مع الملاحظات، لا الملاحظات وحدها ───────────────────────

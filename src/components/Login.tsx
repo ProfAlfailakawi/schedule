@@ -19,7 +19,7 @@ interface LoginProps {
   }) => void;
 }
 export default function Login({ onLoginSuccess }: LoginProps) {
-  const [username, setUsername] = useState(""),
+  const [username, setUsername] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("username")?.slice(0, 200) || ""),
     [password, setPassword] = useState(""),
     [loading, setLoading] = useState(false),
     [error, setError] = useState<string | null>(null),

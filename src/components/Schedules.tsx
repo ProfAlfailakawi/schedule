@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import RowHistory from "./RowHistory";
 import { TimeField } from "./TimeField";
@@ -8373,9 +8374,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 </select>
               </Field> : null}
               <Field label="الفصل المصدر" required>
-                <select
+                <TermSelect
                   value={copyFromTerm || ""}
-                  onChange={(e) => setCopyFromTerm(Number(e.target.value) || 0)}
+                  onValueChange={(id) => setCopyFromTerm(id)}
                   required
                 >
                   <option value="">اختر ...</option>
@@ -8384,13 +8385,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       {t.AdTermName}
                     </option>
                   ))}
-                </select>
+                </TermSelect>
               </Field>
               <Field label="الفصل الوجهة" required>
-                <select
+                <TermSelect
                   value={copyToTerm || ""}
-                  onChange={(e) => {
-                    const to = Number(e.target.value) || 0;
+                  onValueChange={(id) => {
+                    const to = id;
                     setCopyToTerm(to);
                     /* A new term is usually last year's same semester with light
                        edits, so an EMPTY source is worth filling in for the
@@ -8414,7 +8415,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       {t.AdTermName}
                     </option>
                   ))}
-                </select>
+                </TermSelect>
               </Field>
             </div>
             <div className="copy-preview">
@@ -8567,9 +8568,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   </select>
                 </Field> : null}
                 <Field label="الفصل الدراسي" required>
-                  <select
+                  <TermSelect
                     value={form.AdTermId || ""}
-                    onChange={(e) => setNumber("AdTermId", e.target.value)}
+                    onValueChange={(id) => setNumber("AdTermId", String(id))}
                     required
                   >
                     <option value="">اختر ...</option>
@@ -8578,7 +8579,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         {t.AdTermName}
                       </option>
                     ))}
-                  </select>
+                  </TermSelect>
                 </Field>
                   </div>
                 </section>
@@ -9991,10 +9992,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           {hidesCollege(scopeShape(scopes, isPowerAdmin)) ? null : <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>}
           {!hidesSection(scopeShape(scopes, isPowerAdmin)) && singleDepartmentOf(scopes, filterCollege, isPowerAdmin) === null ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
           <Field label="الفصل الدراسي">
-            <select
+            <TermSelect
               data-guide-target="schedule.filter.term"
               value={filterTerm || ""}
-              onChange={(e) => setFilterTerm(Number(e.target.value) || 0)}
+              onValueChange={(id) => setFilterTerm(id)}
             >
               <option value="">اختر الفصل</option>
               {scopedTerms.map((t) => (
@@ -10002,7 +10003,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   {t.AdTermName}
                 </option>
               ))}
-            </select>
+            </TermSelect>
           </Field>
           {rowsLoading ? <span className="filter-strip-busy" role="status"><MicroLoader size={16} label="يقرأ الجدول…" />يقرأ الجدول…</span> : null}
         </div>

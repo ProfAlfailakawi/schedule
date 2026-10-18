@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 import SearchableSelect from "./SearchableSelect";
 import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
@@ -2046,10 +2047,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             </Field>
           ) : null}
           <Field label="الفصل">
-            <select value={filters.termId || ""} onChange={event => pickScope({ termId: Number(event.target.value) || 0 })}>
+            <TermSelect value={filters.termId || ""} onValueChange={id => pickScope({ termId: id })}>
               <option value="">اختر الفصل</option>
               {termOptions.map(row => <option key={row.AdTermId} value={row.AdTermId}>{cleanOptionText(row.AdTermName)}</option>)}
-            </select>
+            </TermSelect>
           </Field>
           <GhostButton
             type="button"

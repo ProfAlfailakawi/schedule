@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 /**
  * ── رادارُ التسجيل ──────────────────────────────────────────────────────────
  *
@@ -146,6 +147,8 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const calm = rows.filter(c => !needsDecision(c));
   const shown = (all ? rows : decide).filter(c => !q.trim() || `${c.code} ${c.name}`.includes(q.trim()));
 
+  // Keep scoped-term hooks active during loading as well as after the summary arrives.
+  const scopedTerms = useScopedTerms<{ AdTermId: number; AdTermName: string }>(terms, 0, 0, termPick, pickTerm);
   if (!data && !error && !termPick) return <MicroLoader />;
   const r = data?.run;
   const wantedTotal = rows.reduce((s, c) => s + c.wanted, 0), seatedTotal = rows.reduce((s, c) => s + c.seated, 0);
@@ -159,7 +162,6 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
   const frozen = Boolean(data?.frozen);
   /* لا يُعرض في المحدِّد إلا ما يقبله الخادم: فصلُ الباب والفصولُ السابقة المجمَّدة. */
   /* فصولٌ فيها بيانات لنطاق القارئ، والحالي دائماً (useScopedTerms)؛ الباقي كما كان: فصلُ الباب والفصول المجمّدة. */
-  const scopedTerms = useScopedTerms<{ AdTermId: number; AdTermName: string }>(terms, 0, 0, termPick, pickTerm);
   /* فصلُ الباب يبقى دائماً (قد يكون قادماً بلا صفوفٍ بعد)، والمجمَّدةُ تُرشَّح بما فيه بيانات. */
   const termOptions = (terms || []).filter(t => Number(t.AdTermId) === (doorId || data?.term?.id)
     || (termIsFrozen(Number(t.AdTermId), terms as any) && scopedTerms.some(row => Number(row.AdTermId) === Number(t.AdTermId))));
@@ -175,12 +177,12 @@ export default function RegistrationRehearsal({ onNavigate, canSchedule = false 
             <MasariQrButton data-guide-ignore="زرُّ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation" />
           </div>
         )}>رادار يوم التسجيل</PageTitle>
-      {termOptions.length > 1 ? (
+      {termOptions.length > 0 ? (
         <div className="sm-termbar no-print">
           <Field label={<><History aria-hidden="true" /> الفصل</>}>
-            <select value={termPick || doorId || data?.term?.id || ""} onChange={event => pickTerm(Number(event.target.value) || 0)} aria-label="الفصل المعروض في الرادار">
+            <TermSelect value={termPick || doorId || data?.term?.id || ""} onValueChange={id => pickTerm(id)} aria-label="الفصل المعروض في الرادار">
               {termOptions.map(t => <option key={t.AdTermId} value={t.AdTermId}>{t.AdTermName}</option>)}
-            </select>
+            </TermSelect>
           </Field>
         </div>
       ) : null}

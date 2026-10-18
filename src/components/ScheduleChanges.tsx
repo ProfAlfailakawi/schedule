@@ -1,3 +1,4 @@
+import TermSelect from "./TermSelect";
 import { byArabic } from "../utils/sorting";
 /**
  * ── تغييرات الجدول ──────────────────────────────────────────────────────────
@@ -1467,7 +1468,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   const single = scope && !role.canReview ? { ...scope } : null;
   const active = opened || single;
   /* ومن بقي له فصلٌ واحد وقد فرّغ اختياره يبقى المنتقي، وإلا علق على «اختر الفصل». */
-  const showTermPicker = (shownTerms.length > 1 && (active || !termId)) || (!termId && shownTerms.length > 0);
+  const showTermPicker = shownTerms.length > 0 && Boolean(active || !termId);
   const deadlinesShown = Boolean(termId && !active && term && !termIsArchive(term, terms || []) && audience.deadlinesPanel);
 
   return (
@@ -1489,9 +1490,9 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
             {showTermPicker ? (
               <label className="changes-term-picker">
                 <span>الفصل</span>
-                <select value={termId || ""} onChange={(e) => pickTerm(Number(e.target.value) || 0)}>
+                <TermSelect value={termId || ""} onValueChange={(id) => pickTerm(id)}>
                   {shownTerms.map(row => <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>)}
-                </select>
+                </TermSelect>
               </label>
             ) : null}
           </div>
