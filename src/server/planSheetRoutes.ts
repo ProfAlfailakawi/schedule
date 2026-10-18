@@ -79,7 +79,12 @@ export async function buildSheetModel(plan: { id: string; AdCollegeId: number; A
 
   const visible = new Set<number>([...mapIds, ...grouped]);
   /* مقرراتُ الصحيفة التي لا تُرسم (أقسامٌ أخرى ومتطلباتٌ عامة) تبقى في مجموع وحدات التخرج. */
-  const otherUnits = [...new Set([...memberIds.filter(id => !isOwn(id)), ...(live.externals || []).map(Number)])].filter(id => id > 0 && !isOwn(id)).reduce((sum, id) => sum + creditOf(id), 0);
+  /* خياراتُ مجموعات الاختيار لا تُجمع كلُّها: يُحسب منها حدُّ المجموعة وحده (ما كان بين مقرراتها لقسمٍ آخر)، وإلا ظهر
+     مجموعُ التخرّج أكبر من المطبوع (112 بدل 75). مجموعةٌ لا مقرر لقسم الصحيفة فيها تدخل بحدّها الأدنى. */
+  const inGroup = new Set((live.groups || []).flatMap(group => group.courseIds));
+  const foreignIds = [...new Set([...memberIds.filter(id => !isOwn(id)), ...(live.externals || []).map(Number)])].filter(id => id > 0 && !isOwn(id));
+  const groupedForeign = (live.groups || []).filter(group => !group.courseIds.some(id => ownSet.has(id)) && group.courseIds.some(id => foreignIds.includes(id))).reduce((sum, group) => sum + (Number(group.minUnits) || 0), 0);
+  const otherUnits = foreignIds.filter(id => !inGroup.has(id)).reduce((sum, id) => sum + creditOf(id), 0) + groupedForeign;
   const edgeKeys = new Set<string>(), edges: Array<[string, string]> = [];
   const notes: string[] = [];
   const anyOf: Array<[string, string[]]> = [];

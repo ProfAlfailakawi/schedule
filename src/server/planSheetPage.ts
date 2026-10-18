@@ -234,8 +234,10 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts, emb
   const cx = W / 2;
   const title = model.title;
   out.push(`<rect width="${W}" height="@H@" fill="url(#bg)"/>`);
-  out.push(`<text x="${W - 42}" y="154" ${/[\u0600-\u06FF]/.test(model.planLabel) ? 'direction="rtl"' : 'direction="ltr" letter-spacing="1"'} text-anchor="end" font-size="${model.planLabel.length > 12 ? 24 : 30}" font-weight="300" fill="#0B2545">${esc(model.planLabel)}</text>`);
-  out.push(`<text x="${W - 42 - 168}" y="152" text-anchor="start" font-size="14" font-weight="500" fill="#64748B">الخطة الدراسية</text>`);
+  out.push(`<text x="${W - 42}" y="154" ${/[\u0600-\u06FF]/.test(model.planLabel) ? 'direction="rtl" text-anchor="start"' : 'direction="ltr" letter-spacing="1" text-anchor="end"'} font-size="${model.planLabel.length > 12 ? 24 : 30}" font-weight="300" fill="#0B2545">${esc(model.planLabel)}</text>`);
+  out.push(/[\u0600-\u06FF]/.test(model.planLabel)
+    ? `<text x="${W - 42}" y="118" text-anchor="start" font-size="14" font-weight="500" fill="#64748B">الخطة الدراسية</text>`
+    : `<text x="${W - 42 - 168}" y="152" text-anchor="start" font-size="14" font-weight="500" fill="#64748B">الخطة الدراسية</text>`);
   /* خريطةُ الطالب الخاصة لا تحمل رمزاً: رابطُها شخصيّ، والرجوعُ إلى «خريطتي» بدلَه. */
   if (!embed) {
     out.push(`<a href="${esc(model.url)}" aria-label="رمز QR للنسخة التفاعلية"><rect x="38" y="28" width="136" height="136" rx="16" fill="#fff" stroke="#CBD5E1" stroke-width="1"/><path d="${qrPath(model.url, 50, 40, 112)}" fill="#0B2545" shape-rendering="crispEdges"/></a>`);
