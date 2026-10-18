@@ -899,6 +899,10 @@ export interface StudentProfile {
    * مرحلة الرغبات وتُبنى منها تذكرتُه.
    */
   wishes?: StudentWishes;
+  /** طالبٌ محوَّل أُعادِلت له مقررات: يقول ذلك بنفسه، فيُسمح له بتعليم مقررٍ معادَلٍ بلا مسبقاته. */
+  transfer?: boolean;
+  /** المقررات المعادَلة (جزءٌ من المنجَز): لا تُسقَط بغياب مسبقاتها، وتُحتسب مسبقاً لما بعدها. */
+  equivalentCourseIds?: number[];
   /** جوابُه على «هل سجلت؟» في فصلٍ بعينه. */
   registration?: StudentRegistrationReport;
   /**

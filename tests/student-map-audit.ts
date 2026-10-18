@@ -185,6 +185,11 @@ function randomPlan() {
   check(run([2, 3]).kept.length === 0 && run([2, 3]).dropped.length === 2, "M5 غيابُ المسبق الأول يُسقط السلسلة كلها (ما بُني عليه)");
   check(run([4]).kept.length === 0 && run([1, 4]).kept.join() === "1,4", "M5 «أحد البدائل» لا يكفي بلا أي بديلٍ منجَز، ويكفي بواحد");
   check(run([5]).kept.length === 0 && run([1, 2, 3, 5]).kept.join() === "1,2,3,5", "M5 الحدُّ الأدنى للوحدات: يُشترط بلوغُه");
+  const eqRun = closePassed([3], id => rules[id], credit, new Set([2, 3]));
+  check(eqRun.kept.join() === "3" && eqRun.dropped.length === 0, "M5 المحوَّل: المقرر المعادَل يبقى بلا مسبقاته", eqRun);
+  const eqChain = closePassed([2, 3], id => rules[id], credit, new Set([2]));
+  check(eqChain.kept.join() === "2,3", "M5 المعادَل يُعدّ مسبقاً لما بعده (3 يبقى لأن 2 معادَل)", eqChain);
+  check(closePassed([3, 4], id => rules[id], credit, new Set([2])).kept.length === 0, "M5 الإعفاء لا يمتدّ لغير المعادَل");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

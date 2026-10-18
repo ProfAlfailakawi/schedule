@@ -232,7 +232,7 @@ async function summaryOf(profile: StudentProfile) {
   }
   return {
     setupDone, collegeId: profile.AdCollegeId || 0, sectionId: profile.AdSectionId, sectionName, planId: profile.curriculumPlanId || "", planName,
-    passedCourseIds: profile.passedCourseIds, passedUnits: profile.passedUnits,
+    passedCourseIds: profile.passedCourseIds, passedUnits: profile.passedUnits, transfer: profile.transfer === true, equivalentCourseIds: profile.equivalentCourseIds || [],
     progress, wishes: profile.wishes || null,
     createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason, hasIdentity: Boolean(profile.nameCipher && profile.civilCipher),
     identity: await identityOf(profile),
@@ -545,7 +545,11 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const candidate = sanitizePassed(req.body?.passedCourseIds, new Set(allowed));
     const ruleView = await planRules({ ...profile, AdSectionId: sectionId, curriculumPlanId: planId || undefined } as StudentProfile, catalog);
     const byCourse = new Map(ruleView.all.map(rule => [rule.courseId, rule.prereq]));
-    const { kept: passed, dropped } = closePassed(candidate, id => byCourse.get(id), credit);
+    /* المحوَّل المعادَلة له مقررات: ما أعلنه معادَلاً لا يُسقَط (ويُعدّ مسبقاً لما بعده)، وبغير إعلان «محوَّل» يُهمَل. */
+    const transfer = req.body?.transfer === true;
+    const equivalentAsked = transfer ? new Set(sanitizePassed(req.body?.equivalentCourseIds, new Set(candidate))) : new Set<number>();
+    const { kept: passed, dropped } = closePassed(candidate, id => byCourse.get(id), credit, equivalentAsked);
+    const equivalent = passed.filter(id => equivalentAsked.has(id));
     const passedSet = new Set(passed), passedUnits = unitsOf(passed, credit);
     const prereqOk = (id: number) => { const lack = unmetPrereq(byCourse.get(id), passedSet, passedUnits); return !lack.all.length && !lack.anyOf.length && !lack.unitsShort; };
     const progress = planProgress(allowed, passed, credit);
@@ -555,6 +559,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       const sameSection = current.AdSectionId === sectionId;
       const base = { ...current, AdCollegeId: Number(section.AdCollegeId), AdSectionId: sectionId, curriculumPlanId: planId || undefined,
         passedCourseIds: passed, passedUnits: unitsOf(passed, credit), updatedAt: now.toISOString(),
+        transfer: transfer || undefined, equivalentCourseIds: equivalent.length ? equivalent : undefined,
         expectedGraduationAt: expectedGraduation(progress.remainingUnits, now),
         /* الرغباتُ تُبقى ما دامت صالحةً للصحيفة الجديدة: القسمُ نفسُه والصحيفةُ نفسُها،
            وما أُنجز من مقرراتها المرغوبة يسقط منها. */

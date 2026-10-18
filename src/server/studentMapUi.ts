@@ -236,6 +236,7 @@ function kmFirstName(){var p=S.state.profile;return p&&p.identity&&p.identity.na
 
 function kmInit(model,advice){
   KM.m=model;KM.advice=advice||null;KM.x=kmCore(model,S.state.profile.passedCourseIds||[]);
+  KM.transfer=S.state.profile.transfer===true;KM.eq={};(S.state.profile.equivalentCourseIds||[]).forEach(function(i){KM.eq[i]=1});
   /* ما حُفظ سابقاً بغير ترتيب المسبقات يُصحَّح الآن ويُحفظ مصحَّحاً. */
   var healed=kmPrune();if(healed){S.state.profile.passedCourseIds=KM.x.passedList();KM.healed=healed}
   KM.picks={};((advice&&advice.picks)||[]).forEach(function(p,i){KM.picks[p.courseId]={why:p.why,rank:i}});
@@ -422,7 +423,7 @@ function kmChip(i){var X=KM.x,d=X.byId[i],s=X.status(i);return '<button type="bu
 function kmAncestors(id){var X=KM.x,out=[],seen={},walk=function(i){var r=KM.m.rules[i];if(!r)return;r.all.forEach(function(p){if(seen[p])return;seen[p]=1;if(!X.isPassed(p)){out.push(p);walk(p)}})};walk(id);return out}
 function kmSheetHtml(id,after){var X=KM.x,m=KM.m,c=X.byId[id],st=X.status(id),r=m.rules[id]||{all:[],anyOf:[],minUnits:0,coreq:[]},col=kmCol(c),off=kmOff(id),dep=X.dependents(id),un=X.unlocks(id).length,u=X.unmet(id);
   var banner,bc;
-  if(st==="ok"){banner=ic("check","")+' اجتزتَ هذا المقرر';bc="ok"}
+  if(st==="ok"){banner=ic("check","")+' اجتزتَ هذا المقرر'+(KM.eq[id]?' · معادَل':'');bc="ok"}
   else if(st==="now"){banner=ic("spark","")+' متاح لك الآن'+(off?' · مطروح '+countOf(off,AR.section):' · غير مطروح هذا الفصل');bc="now"}
   else if(st==="full"){banner=ic("check","")+' اكتملت مجموعتك الاختيارية';bc="ok"}
   else{var miss=u.all.map(function(i){return X.byId[i].name}).concat(u.anyOf.map(function(g){return"أحد: "+g.map(function(i){return X.byId[i].name}).join(" أو ")}));if(u.unitsShort)miss.push(countOf(u.unitsShort,AR.unit));banner=ic("lock","")+' ينقصك: '+esc(miss.join(" + "));bc="wait"}
@@ -439,7 +440,7 @@ function kmSheetHtml(id,after){var X=KM.x,m=KM.m,c=X.byId[id],st=X.status(id),r=
   if(r.coreq.length)h+='<div class="kd-s"><h4>يُسجَّل معه</h4><div class="kxl">'+r.coreq.map(kmChip).join("")+'</div></div>';
   /* لا تعليمَ قبل المسبقات: المقرر المقفول لا زرَّ اجتياز له، والمفتوح يُعلَّم، وإلغاءُ مسبقٍ يُلغي ما بُني عليه. */
   var canPass=X.unlocked(id);
-  h+='<div class="kd-a">'+(st==="ok"?'<button type="button" class="btn alt" data-do="unpass">'+ic("x")+' ألغِ علامة الاجتياز</button>':(canPass?'<button type="button" class="btn" data-do="pass">'+ic("check")+' علّمته مجتازاً</button>':'<p class="kxn kd-lockmsg">'+ic("lock","")+' لا يُعلَّم مجتازاً قبل اجتياز مسبقاته (أعلاه).</p>'));
+  h+='<div class="kd-a">'+(st==="ok"?'<button type="button" class="btn alt" data-do="unpass">'+ic("x")+' ألغِ علامة الاجتياز</button>':(canPass?'<button type="button" class="btn" data-do="pass">'+ic("check")+' علّمته مجتازاً</button>':(KM.transfer?'<p class="kxn kd-lockmsg">'+ic("lock","")+' مسبقاته غير مجتازة. إن كان معادَلاً لك فعلّمه:</p><button type="button" class="btn alt" data-do="pass">'+ic("check")+' علّمته معادَلاً</button>':'<p class="kxn kd-lockmsg">'+ic("lock","")+' لا يُعلَّم مجتازاً قبل اجتياز مسبقاته (أعلاه).</p><button type="button" class="link" data-do="transfer">طالب محوَّل ومعادَلة لك مقررات؟</button>')));
   if(kmCanWish()&&st!=="ok"&&off&&st!=="wait")h+='<button type="button" class="btn alt" data-do="cart">'+ic(KM.cart[id]?"check":"heart")+(KM.cart[id]?' في رغباتي — أزله':' أضفه إلى رغباتي')+'</button>';
   h+='</div>';
   return h}
@@ -455,13 +456,18 @@ function kmSheetClick(e){var t=e.target,go=t.closest("[data-go]");if(go){kmOpen(
   if(act==="close")kmClose();
   else if(act==="pass")kmMark(id,true);
   else if(act==="unpass")kmMark(id,false);
+  else if(act==="transfer"){if(window.confirm("سيُحفظ في ملفك أنك طالب محوَّل ومعادَلة لك مقررات، فيُسمح لك بتعليم المقرر المعادَل بلا مسبقاته. هل أنت كذلك؟")){KM.transfer=true;KM.dirty=true;kmSaveSoon();kmOpen(id)}}
   else if(act==="cart"){kmToggleCart(id);kmOpen(id)}
   }
 /* من أُزيل مسبقُه يسقط ما بُني عليه من المنجَز حتى يستقرّ: لا منجَزَ بلا مسبقاته. */
-function kmPrune(){var X=KM.x,n=0,ch=true;while(ch){ch=false;X.plan.forEach(function(i){if(X.isPassed(i)&&!X.unlocked(i)){X.set(i,false);n++;ch=true}})}return n}
+function kmPrune(){var X=KM.x,n=0,ch=true;while(ch){ch=false;X.plan.forEach(function(i){if(X.isPassed(i)&&!KM.eq[i]&&!X.unlocked(i)){X.set(i,false);n++;ch=true}})}return n}
 function kmMark(id,on){var X=KM.x,c=X.byId[id],before=X.passedList().length,lvDone=function(){var l=c.level,ids=X.plan.filter(function(i){return X.byId[i].level===l});return ids.length>0&&ids.every(function(i){return X.isPassed(i)})};
-  if(on&&!X.unlocked(id)){toast("يتطلب اجتياز مسبقاته أولاً",true);return}
-  var wasFull=lvDone();X.set(id,on);if(on)delete KM.cart[id];var cut=on?0:kmPrune();
+  var viaEq=on&&!X.unlocked(id);
+  if(viaEq&&!KM.transfer){toast("يتطلب اجتياز مسبقاته أولاً",true);return}
+  var wasFull=lvDone();X.set(id,on);if(on)delete KM.cart[id];
+  /* الطالب المحوَّل: مقررٌ بلا مسبقاته يُسجَّل «معادَلاً»، وإلغاؤه يُلغي علامته. */
+  if(viaEq){KM.eq[id]=1;toast("سُجّل معادَلاً")}else if(!on)delete KM.eq[id];
+  var cut=on?0:kmPrune();
   if(cut){toast("أُزيل أيضاً "+countOf(cut,AR.course)+" يعتمد عليه",true);var cs=KM.cart,keep={};Object.keys(cs).forEach(function(k){if(X.status(Number(k))==="now")keep[k]=1});KM.cart=keep}
   /* نسخةُ الملف المحلية تتبع التعليمَ فوراً: تبديلُ التاب لا يُعيد الخريطة من إنجازٍ قديم قبل أن يصل الحفظ. */
   if(S.state&&S.state.profile)S.state.profile.passedCourseIds=X.passedList();
@@ -469,10 +475,11 @@ function kmMark(id,on){var X=KM.x,c=X.byId[id],before=X.passedList().length,lvDo
 function kmAfterMark(id,n,anc){KM.dirty=true;kmRefresh(true);kmOpen(id,anc&&anc.length?anc:null);kmSaveSoon();if(n)toast("علّمتُ "+countOf(n,AR.course)+" مسبقاً")}
 function kmSaveSoon(){clearTimeout(KM.timer);KM.pending=true;KM.timer=setTimeout(kmSave,700)}
 /* مغادرةُ الصفحة (رابط الخريطة الكاملة، إغلاق، تحديث): ما لم يُحفظ يُرسَل الآن ولو والصفحةُ تُغلق. */
+function kmBody(p){var eq=[];KM.x.passedList().forEach(function(i){if(KM.eq[i])eq.push(i)});return{sectionId:p.sectionId,curriculumPlanId:p.planId,passedCourseIds:KM.x.passedList(),transfer:!!KM.transfer,equivalentCourseIds:eq}}
 function kmFlush(){if(!KM.pending||!KM.x)return;var p=S.state&&S.state.profile;if(!p||!p.sectionId)return;clearTimeout(KM.timer);KM.pending=false;
-  try{fetch("/api/public/me/profile",{method:"PUT",keepalive:true,credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({sectionId:p.sectionId,curriculumPlanId:p.planId,passedCourseIds:KM.x.passedList()})})}catch(e){}}
+  try{fetch("/api/public/me/profile",{method:"PUT",keepalive:true,credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(kmBody(p))})}catch(e){}}
 function kmSave(){var p=S.state.profile;if(!p||!p.sectionId||KM.saving){if(KM.saving)kmSaveSoon();return}KM.saving=true;KM.pending=false;
-  api("PUT","/api/public/me/profile",{sectionId:p.sectionId,curriculumPlanId:p.planId,passedCourseIds:KM.x.passedList()}).then(function(r){KM.saving=false;
+  api("PUT","/api/public/me/profile",kmBody(p)).then(function(r){KM.saving=false;
     if(!r.ok){toast(r.d.error||"تعذّر حفظ إنجازك",true);if(r.status===401){S.state.signedIn=false;setView("gate")}return}
     if(!KM.pending)S.state.profile=r.d;toast("حُفظ إنجازك")})}
 function kmConfetti(col,l){if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion:reduce)").matches){toast("أكملتَ المستوى "+kmLvName(l)+" 🎉");return}
