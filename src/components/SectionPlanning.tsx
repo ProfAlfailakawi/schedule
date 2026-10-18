@@ -10,6 +10,7 @@ import {
 import { manualRemainingValue, planRemainingApply, remainingOf, vacantValues, type RejectKind, type RejectMismatch, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 import SectionBuild from "./SectionBuild";
+import { PLAN_SAVED_EVENT } from "./SectionGapNote";
 
 /**
  * ── تخطيط الشعب: كشفُ المتبقي ← مدىً يرسيه التاريخ ← تقرير ─────────────────
@@ -77,7 +78,7 @@ function AutoApply({ run }: { run: () => void }) {
   return null;
 }
 
-export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved, onPreviewChange }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly). */ onSaved?: () => void; /** يُبلَّغ به متى تُفتح مراجعة الكشف ومتى تُغلق، فلا تأخذ الشاشةُ الأم الـEscape من نافذتها الداخلية. */ onPreviewChange?: (open: boolean) => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
+export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved, onPreviewChange }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly)، بعدد مقررات القسم التي لم تتّضح فلم تُحسب. */ onSaved?: (skipped: number) => void; /** يُبلَّغ به متى تُفتح مراجعة الكشف ومتى تُغلق، فلا تأخذ الشاشةُ الأم الـEscape من نافذتها الداخلية. */ onPreviewChange?: (open: boolean) => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -115,8 +116,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   /* شاشة الرفع المختصرة: ما إن يُحفظ الكشف المستورد حتى يُبلَّغ من فتحها لتعرض المقترح. */
   useEffect(() => { onPreviewChange?.(Boolean(preview)); }, [preview, onPreviewChange]);
   const notifiedEdits = useRef(0);
+  const skipped = useRef(0);
   useEffect(() => {
-    if (importOnly && saveState === "saved" && edits > 0 && notifiedEdits.current !== edits) { notifiedEdits.current = edits; onSaved?.(); }
+    if (importOnly && saveState === "saved" && edits > 0 && notifiedEdits.current !== edits) { notifiedEdits.current = edits; onSaved?.(skipped.current); }
   }, [importOnly, saveState, edits, onSaved]);
 
   useEffect(() => {
@@ -163,6 +165,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       if (!response.ok) throw new Error(saved?.error || "تعذّر الحفظ");
       setSavedAt(saved?.updatedAt || new Date().toISOString()); setSavedBy(saved?.updatedBy || "");
       setSaveState("saved");
+      window.dispatchEvent(new CustomEvent(PLAN_SAVED_EVENT, { detail: { scope: `${collegeId}:${sectionId}:${termId}` } }));
     } catch { setSaveState("error"); }
   }, [body, collegeId, sectionId, termId]);
   const persistRef = useRef(persist);
@@ -177,7 +180,11 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       if (!timer.current) return;
       window.clearTimeout(timer.current); timer.current = null;
       if (loadedScope.current !== `${collegeId}:${sectionId}:${termId}`) return;
-      try { void fetch("/api/registration-stats", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: body() }); } catch { /* the page is going away */ }
+      const scope = `${collegeId}:${sectionId}:${termId}`;
+      try {
+        void fetch("/api/registration-stats", { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: body() })
+          .then(response => { if (response.ok) window.dispatchEvent(new CustomEvent(PLAN_SAVED_EVENT, { detail: { scope } })); }, () => {});
+      } catch { /* the page is going away */ }
     };
     window.addEventListener("pagehide", flush);
     return () => { window.removeEventListener("pagehide", flush); flush(); };
@@ -271,6 +278,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
     /* الشاغر من الكشف نفسه؛ والمصوَّر منه لما أكّده المستخدم وحده. */
     setVacant(vacantValues(preview, preview.source === "scan" ? confirmedScan : undefined));
     setSource({ fileName: preview.fileName, importedAt: new Date().toISOString(), column: "unregistered" });
+    skipped.current = nReview;
     setPreview(null);
     setEdits(n => n + 1);
   };
@@ -376,10 +384,10 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   const nScan = previewRead.filter(item => item.scanAsk && !item.confirmed).length;
   const nNoSections = previewRead.filter(item => item.state === "noSections").length;
   const nMissing = preview?.missing.length || 0;
-  /* شاشة الرفع المختصرة: كشفٌ نصّيّ مقروءٌ كله بلا خانةٍ تحتاج نظراً ولا ملاحظةٍ ولا تحذير يُعبَّأ مباشرةً (كأنما ضغط «تعبئة» بعد المراجعة)؛
-     وأي شيءٍ غير ذلك — خانةٌ غير واضحة، كشفٌ ممسوح أو مصوَّر، ملاحظة — تُعرض له المراجعة الكاملة نفسها كي لا يُعبَّأ ما لم يُرَ. */
-  const autoApply = importOnly && Boolean(preview) && preview!.column != null && canApply && nReview === 0 && preview!.source !== "scan"
-    && !(preview!.assessment?.notes || []).length && !(preview!.warnings || []).length;
+  /* شاشة الرفع المختصرة مقارنةٌ لا استيراد: كشفٌ نصّيّ بلا تحذير فصلٍ مخالف يُعبَّأ مباشرةً بما قُرئ بوضوح (planRemainingApply)،
+     وما لم يتّضح أو ليس من مقررات القسم يُترك بصمت ولا يُخمَّن. أما الممسوح والمصوَّر، أو كشفٌ لفصلٍ آخر، فتُعرض له المراجعة كي لا يُعبَّأ ما لم يُرَ. */
+  const autoApply = importOnly && Boolean(preview) && preview!.column != null && canApply && preview!.source !== "scan"
+    && !(preview!.warnings || []).length;
   /* أسطرُ الكشف التي ليست من مقررات القسم في النظام: تظهر في مكانها من الجدول
      بلونٍ خافت — موجودةٌ في الكشف فتُرى — ولا يُعبَّأ منها شيء. */
   const foreignRows = preview ? [...new Set<string>(preview.foreign.map(String))].map(printed => ({ printed })) : [];

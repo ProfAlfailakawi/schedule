@@ -21,6 +21,8 @@ const num = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
  * القراءتان تُوسمان بنطاقهما: تبدّل القسم أو الفصل لا يُبقي أسماء القسم السابق ولا أرقامه لحظةً (الشريط نفسه يبقى مركّباً).
  * «المختار» يأتي مع القراءة الخفيفة (يتجدد مع كل تعديلٍ في الجدول)، أما التاريخ — وهو الثقيل — فيُجلب مرةً لكل كشفٍ مرفوع.
  */
+export const PLAN_SAVED_EVENT = "schedule:plan-saved";
+
 export function useSectionGap(collegeId: number, sectionId: number, termId: number, refreshSignal = 0) {
   const scope = `${collegeId}:${sectionId}:${termId}`;
   const [loaded, setLoaded] = useState<{ scope: string; payload: GapPayload } | null>(null);
@@ -35,6 +37,15 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
       .catch(() => { if (!cancelled) setLoaded(null); });
     return () => { cancelled = true; };
   }, [collegeId, sectionId, termId, refreshSignal, scope, bump]);
+  /* تخطيط الشعب يحفظ في السجلّ نفسه: مسحُ الكشف هناك (أو رفعُه) يُحدِّث الشارات والأيقونة هنا دون إعادة فتح الشاشة. */
+  useEffect(() => {
+    const onSaved = (event: Event) => {
+      const at = (event as CustomEvent<{ scope?: string }>).detail?.scope;
+      if (!at || at === scope) setBump(n => n + 1);
+    };
+    window.addEventListener(PLAN_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(PLAN_SAVED_EVENT, onSaved);
+  }, [scope]);
   const data = loaded && loaded.scope === scope ? loaded.payload : null;
   const stamp = data?.planImported ? String(data.planSource?.importedAt || "imported") : "";
   useEffect(() => {

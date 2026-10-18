@@ -52,7 +52,7 @@ check(bar.includes("setPlanSheet(true)") && bar.includes("<QuickPlanSheet") && !
 check(sheet.includes("<SectionPlanning") && sheet.includes("importOnly") && sheet.includes("gap.reload()") && sheet.includes("<Result"), "الشاشة: استيرادٌ بالمسار نفسه ثم عرض المقترح بعد الحفظ");
 check(planning.includes("importOnly ? null : buildReady") && (planning.match(/importOnly \? null : \(<>/g) || []).length === 2 && planning.includes("{!importOnly && legacy"), "وضع importOnly يُخفي الجدول والتقرير والبناء ويُبقي الرفع والمراجعة");
 /* الكشف النصّيّ المقروء كله يُعبَّأ مباشرةً في الشاشة المختصرة؛ وكل ما يحتاج نظراً (ممسوح، خانة غير واضحة، ملاحظة) يُعرض له الاستعراض الكامل نفسه. */
-check(planning.includes("const autoApply = importOnly") && planning.includes('preview!.source !== "scan"') && planning.includes("nReview === 0") && planning.includes("{preview && !autoApply ? createPortal("), "التعبئة المباشرة للمقروء كله فقط، وغيره يمرّ بالمراجعة");
+check(planning.includes("const autoApply = importOnly") && planning.includes('preview!.source !== "scan"') && !/const autoApply[^;]*nReview/.test(planning) && planning.includes("{preview && !autoApply ? createPortal("), "التعبئة المباشرة بما قُرئ بوضوح بلا نافذة مراجعة، والممسوح أو الفصل المخالف يمرّ بالمراجعة");
 check(planning.includes('importOnly && saveState === "error"') && planning.includes("أعد المحاولة"), "الشاشة المختصرة: تعذّر الحفظ يظهر معه زر إعادة المحاولة");
 check(sheet.includes("useDialogDismiss(!reviewing, onClose)") && sheet.includes("onPreviewChange={setReviewing}") && planning.includes("onPreviewChange?.(Boolean(preview))"), "الـEscape لنافذة المراجعة الداخلية وحدها ما دامت مفتوحة");
 import { Result } from "../src/components/QuickPlanSheet";
@@ -62,5 +62,12 @@ check(rendered.includes("تحتاج شعباً") && (rendered.match(/<li/g) || [
 check(renderToStaticMarkup(React.createElement(Result, { gap: { ...sample, planItems: [] }, onClose: () => {} })).includes("شعبك تكفي المتبقي"), "النتيجة: بلا نقص ← «شعبك تكفي المتبقي»");
 check(renderToStaticMarkup(React.createElement(Result, { gap: { ...sample, ready: false }, onClose: () => {} })).includes("يُحسب المقترح"), "النتيجة: قبل اكتمال الحسبة لا اقتراح مضلِّل");
 
+
+/* مسحُ الكشف من تخطيط الشعب يُحدِّث الأيقونة والشارات؛ والأيقونة لا تظهر لمن رفع. */
+const gapSrc = fs.readFileSync("src/components/SectionGapNote.tsx", "utf8");
+check(planning.includes("PLAN_SAVED_EVENT") && planning.includes("dispatchEvent") && gapSrc.includes("addEventListener(PLAN_SAVED_EVENT"), "حفظ تخطيط الشعب (ومنه المسح) يُحدِّث الشارات والأيقونة");
+check(bar.includes("gap.loaded && !gap.planImported"), "أيقونة الرفع تختفي متى رُفع كشف");
+check(planning.includes("skipped.current = nReview") && sheet.includes("لم تتّضح في الكشف فلم تُحسب") && sheet.includes("لا زيادة فيما قُرئ"), "قراءةٌ جزئية لا تُعرض نتيجةً كاملة");
+check(/keepalive[\s\S]{0,200}PLAN_SAVED_EVENT/.test(planning), "الحفظ عند الإغلاق يُحدِّث الأيقونة أيضاً");
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
