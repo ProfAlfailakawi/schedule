@@ -108,7 +108,6 @@ import { registerPlanSheetRoutes } from "./src/server/planSheetRoutes";
 import { buildFeatureNotifications, buildMasariGapNotifications } from "./src/utils/featureNotifications";
 import { studentGaps } from "./src/utils/sectionGap";
 import { seedDemoRadar, seedDemoMasariDemand } from "./src/server/demoRadarSeed";
-import { seedDemoTermStories } from "./src/server/demoPreviousTermSeed";
 import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instructorRequestItems";
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
 import { registerInsightRoutes } from "./src/server/insightRoutes";
@@ -2348,10 +2347,6 @@ async function seedDemoStories(): Promise<void> {
   // ── رادارُ التسجيل (f): صحائفُ وقواعد وطلبةٌ وتذاكرُ وأجوبة، بالأسماء الوهمية نفسها.
   await seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() }).catch(error => console.error("[demo] seeding radar failed:", error));
 
-  // ── الفصلان الثاني والصيفي (g): كشفُ تسجيل ورغباتُ أساتذة ومقترحاتٌ بحالاتها كلِّها.
-  const storyDeps = { sealIdentity: sealStudentIdentity, fingerprintOf: surveyFingerprint, requestItemFromRow, dayLetters: DAY_LETTERS, judge: (request: InstructorRequest) => judgeRequestItems(request) };
-  await seedDemoTermStories(storyDeps, 2).catch(error => console.error("[demo] seeding next-term stories failed:", error));
-  await seedDemoTermStories(storyDeps, 3).catch(error => console.error("[demo] seeding summer stories failed:", error));
   await seedDemoMasariDemand().catch(error => console.error("[demo] seeding Masari demand failed:", error));
 }
 

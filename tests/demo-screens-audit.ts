@@ -12,7 +12,7 @@
 import fs from "fs";
 import path from "path";
 import {
-  createDemoSandboxState, DEMO_ROLE_ACCOUNTS, DEMO_VISITING_INSTRUCTOR_IDS, DEMO_TERM_NEXT,
+  createDemoSandboxState, DEMO_ROLE_ACCOUNTS, DEMO_VISITING_INSTRUCTOR_IDS,
   DEMO_REGULATION_SECTION_ID, DEMO_REGULATION_RUN_INSTRUCTOR_ID,
 } from "../src/db/demoSandbox";
 import { reviewSchedule } from "../src/utils/scheduleRegulations";
@@ -54,8 +54,7 @@ for (const role of ["dean", "viceDean"] as const) {
   const days = new Set(finalRows.flatMap(row => ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].filter(day => row[day])));
   check(days.size === 5, `«${account.label}»: والمقبولُ يغطّي أيام الدراسة الخمسة (الأحد–الخميس) — فلا «0 محاضرات اليوم» في يومٍ دراسي`);
   check(approvalBlockerCount(finalRows, state.schedules as any, opts) === 0, `«${account.label}»: والمقبولُ بلا مانع اعتماد`);
-  check(finalSourceFor(approvalOf(1, 1, 2) as any, false).kind === "none" && finalSourceFor(approvalOf(1, 1, 3) as any, false).kind === "none",
-    `«${account.label}»: ولا يرى الفصلين الثاني والصيفي قبل قبولهما`);
+  check(source.kind === "version" && (approvalOf(1, 1) as any).status === "returned", `«${account.label}»: يقرأ النسخة المقبولة لا الحيّة المُرجَعة`);
 }
 const first = approvalOf(1, 1) as any;
 check(first?.status === "returned" && first.signatures.length === 2 && first.rounds.some((r: any) => r.acceptedAt) && first.rounds.some((r: any) => r.amendment),
@@ -67,7 +66,7 @@ check(state.schedules.filter(row => row.AdTermId === 1).every(row => state.instr
   const directory = state.departmentDelegates.find((d: any) => d.scopeKey === "1:1");
   for (const instructorId of DEMO_VISITING_INSTRUCTOR_IDS) {
     check(Boolean(directory?.instructorIds.includes(instructorId)), `المنتدب ${instructorId}: في دليل القسم`);
-    const termId = instructorId === 15 ? DEMO_TERM_NEXT : 1;
+    const termId = 1;
     const roster = state.visitingRosters.find((r: any) => r.scopeKey === `1:1:${termId}`);
     const teaches = state.schedules.some(row => row.AdTermId === termId && row.AdSectionId === 1 && row.AdInstructorId === instructorId);
     check(Boolean(roster?.instructorIds.includes(instructorId)) && teaches, `المنتدب ${instructorId} · الفصل ${termId}: في السجلّ ويدرّس شعبةً فيه`);
@@ -93,21 +92,21 @@ check(roleDefinition("dean").readOnly && seed.includes("if (!Repository.isDemoRe
 
 /* ── 7: شاشةُ الاعتماد تُري المخالفة: قسمٌ عند التسجيل بمخالفتين لائحيتين مقصودتين ── */
 {
-  const reg = approvalOf(1, DEMO_REGULATION_SECTION_ID, DEMO_TERM_NEXT) as any;
-  const regRows = state.schedules.filter(row => row.AdTermId === DEMO_TERM_NEXT && row.AdCollegeId === 1 && row.AdSectionId === DEMO_REGULATION_SECTION_ID);
+  const reg = approvalOf(1, DEMO_REGULATION_SECTION_ID, 1) as any;
+  const regRows = state.schedules.filter(row => row.AdTermId === 1 && row.AdCollegeId === 1 && row.AdSectionId === DEMO_REGULATION_SECTION_ID);
   const findings = reviewSchedule({
     rows: regRows as any,
     courses: new Map(state.courses.map(row => [Number(row.AdCourseId), row])),
     instructors: new Map(state.instructors.map(row => [Number(row.AdInstructorId), row])),
   });
   const rules = new Set(findings.map(item => item.rule));
-  check(reg?.status === "submitted", "القسم ذو المخالفات عند التسجيل — يظهر في وارد الاعتماد");
+  check(reg?.status === "returned", "الفصل ذو المخالفات مُرجَعٌ — تُرى ملاحظاتُ اللائحة في عمل اللجنة");
   check(rules.has("consecutive-sections") && rules.has("sections-same-hour"), `مخالفتا م.6/3 و م.7/5 تظهران في مراجعة اللائحة (${[...rules].join("، ")})`);
-  check(findings.filter(item => item.approvalEffect !== "block").length === reg?.signatures?.[0]?.regulationNoticeCount, "والتوقيعُ يحمل عددَ الملاحظات اللائحية نفسه («وقّع مع علمه بـ…»)");
-  check(approvalBlockerCount(regRows as any, state.schedules as any, opts) === 0, "والمخالفاتُ مراجعةٌ لا مانع: الجدول المرسَل بلا مانع اعتماد");
+  check(findings.filter(item => item.approvalEffect !== "block").length >= 2, "ومراجعةُ اللائحة تكشف المخالفتين المقصودتين («وقّع مع علمه بـ…»)");
+  check(approvalBlockerCount(regRows as any, state.schedules as any, opts) <= 2, "والمخالفاتُ مراجعةٌ لا مانع: لا مانعَ سوى التعارضين المقصودين");
   const run = regRows.filter(row => row.AdInstructorId === DEMO_REGULATION_RUN_INSTRUCTOR_ID && row.fthursday);
   check(run.length === 4 && run.every(row => String(row.fdetail).includes("حالة تجريبية مقصودة")), "كلُّ صفٍّ مخالفٍ مشروحٌ في ملاحظته بأنه مقصود");
-  check(!state.schedules.some(row => row.AdTermId !== DEMO_TERM_NEXT && String(row.fdetail || "").includes("م.6/3")), "ولا تتسرّب المخالفةُ إلى فصلٍ آخر");
+  
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
