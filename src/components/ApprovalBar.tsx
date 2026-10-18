@@ -661,7 +661,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
         <SectionGapBadge gap={gap} open={gapOpen} onToggle={() => setGapOpen(open => !open)} />
         {gap.loaded && !gap.planImported && (gap.items.length > 0 || canSignNow) ? (
-          <InfoTip {...tipProps("gap-plan")} label="لم يُرفع كشف المتبقي" tip={["لم يُرفع كشف المتبقي بعد، فالمقارنة من طلب الطلبة وحدهم."]} className="apb-badge apb-gap-ghost"
+          <InfoTip {...tipProps("gap-plan")} label="لم يُرفع كشف المتبقي" tip={[gap.items.some(item => item.basis === "plan") ? "لم يُرفع كشف المتبقي بعد." : "لم يُرفع كشف المتبقي بعد، فالمقارنة من طلب الطلبة وحدهم."]} className="apb-badge apb-gap-ghost"
             data-guide-ignore="أيقونة تنبيه خفيفة: كشف المتبقي لم يُرفع بعد — تلميحٌ لا فعل">
             <FileQuestion aria-hidden="true" />
           </InfoTip>
