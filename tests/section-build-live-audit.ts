@@ -49,6 +49,7 @@ try {
     const row3 = preview.body.rows.find((r: any) => r.courseId === 3);
     check(preview.status === 200 && row3.target === 6 && row3.existing === 4 && row3.remaining === 2, "المطلوب ٦ والموجود ٤ ⇒ باقٍ ٢", row3);
     check(row3.placements.length === 2 && preview.body.totals.placeable === 4, "الباقي يُبنى له موعدٌ وقاعةٌ وأستاذ", preview.body.totals);
+    check(preview.body.rows.flatMap((r: any) => r.placements).every((p: any) => /^[5-9]\d\d$/.test(String(p.sectionCode))), "أرقام الشعب المقترحة صالحةٌ للاستيراد (٣ خانات من 501) فلا تُحجب المراجعة بها", preview.body.rows.flatMap((r: any) => r.placements.map((p: any) => p.sectionCode)));
     check(((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).length === before.length, "المعاينة لا تكتب شيئاً");
     const unset = await call("POST", "/api/section-build/preview", { ...scope, targets: {} });
     check(unset.body.rows.every((r: any) => r.state === "unset" && r.placements.length === 0), "بلا اختيار لا يُبنى شيء");
