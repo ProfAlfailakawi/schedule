@@ -54,6 +54,8 @@ check(sheet.includes("<SectionPlanning") && sheet.includes("importOnly") && shee
 check(planning.includes("importOnly ? null : buildReady") && (planning.match(/importOnly \? null : \(<>/g) || []).length === 2 && planning.includes("{!importOnly && legacy"), "وضع importOnly يُخفي الجدول والتقرير والبناء ويُبقي الرفع والمراجعة");
 /* الكشف النصّيّ المقروء كله يُعبَّأ مباشرةً في الشاشة المختصرة؛ وكل ما يحتاج نظراً (ممسوح، خانة غير واضحة، ملاحظة) يُعرض له الاستعراض الكامل نفسه. */
 check(planning.includes("const autoApply = importOnly") && planning.includes('preview!.source !== "scan"') && planning.includes("nReview === 0") && planning.includes("{preview && !autoApply ? createPortal("), "التعبئة المباشرة للمقروء كله فقط، وغيره يمرّ بالمراجعة");
+check(planning.includes('importOnly && saveState === "error"') && planning.includes("أعد المحاولة"), "الشاشة المختصرة: تعذّر الحفظ يظهر معه زر إعادة المحاولة");
+check(sheet.includes("useDialogDismiss(!reviewing, onClose)") && sheet.includes("onPreviewChange={setReviewing}") && planning.includes("onPreviewChange?.(Boolean(preview))"), "الـEscape لنافذة المراجعة الداخلية وحدها ما دامت مفتوحة");
 import { Result } from "../src/components/QuickPlanSheet";
 const sample = { items: gap.items.slice(0, 6), planImported: true, loaded: true, ready: true, source: "المتبقي.pdf", reload: () => {} } as any;
 const rendered = renderToStaticMarkup(React.createElement(Result, { gap: sample, onClose: () => {} }));

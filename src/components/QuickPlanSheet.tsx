@@ -60,7 +60,9 @@ export function Result({ gap, onClose }: { gap: Gap; onClose: () => void }) {
 }
 
 export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onClose }: { collegeId: number; sectionId: number; termId: number; gap: Gap; onClose: () => void }) {
-  useDialogDismiss(true, onClose);
+  /* الـEscape لنافذة المراجعة الداخلية وحدها ما دامت مفتوحة، ولا تُغلق الشاشة كلها فيضيع الكشف المقروء. */
+  const [reviewing, setReviewing] = useState(false);
+  useDialogDismiss(!reviewing, onClose);
   const [saved, setSaved] = useState(false);
   const done = saved && gap.planImported;
   return createPortal(
@@ -76,7 +78,7 @@ export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onCl
         ) : (
           <>
             <p className="gap-sheet-hint">ارفع كشف المتبقي من عمادة التسجيل (PDF أو صور)، فتظهر لك الشعب المقترح زيادتها.</p>
-            <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} importOnly onSaved={() => { setSaved(true); gap.reload(); }} />
+            <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} importOnly onPreviewChange={setReviewing} onSaved={() => { setSaved(true); gap.reload(); }} />
           </>
         )}
       </div>

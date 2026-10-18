@@ -77,7 +77,7 @@ function AutoApply({ run }: { run: () => void }) {
   return null;
 }
 
-export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly). */ onSaved?: () => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
+export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved, onPreviewChange }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly). */ onSaved?: () => void; /** يُبلَّغ به متى تُفتح مراجعة الكشف ومتى تُغلق، فلا تأخذ الشاشةُ الأم الـEscape من نافذتها الداخلية. */ onPreviewChange?: (open: boolean) => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -113,6 +113,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   useDialogDismiss(report, () => setReport(false));
   useDialogDismiss(Boolean(preview), () => setPreview(null));
   /* شاشة الرفع المختصرة: ما إن يُحفظ الكشف المستورد حتى يُبلَّغ من فتحها لتعرض المقترح. */
+  useEffect(() => { onPreviewChange?.(Boolean(preview)); }, [preview, onPreviewChange]);
   const notifiedEdits = useRef(0);
   useEffect(() => {
     if (importOnly && saveState === "saved" && edits > 0 && notifiedEdits.current !== edits) { notifiedEdits.current = edits; onSaved?.(); }
@@ -439,6 +440,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
         ) : null}
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"
           onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
+        {importOnly && saveState === "error" ? (
+          <p className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> تعذّر حفظ الكشف. <button type="button" className="section-plan-retry" onClick={() => void persist()}><RotateCcw aria-hidden="true" /> أعد المحاولة</button></p>
+        ) : null}
         {importOnly ? null : <div className="section-plan-import-text">
           <strong>الخطة تُبنى على عمود «اعداد الذين لم يسجلوا» من كشف العمادة — المتبقي الإجمالي</strong>
           <span className="section-plan-source">
