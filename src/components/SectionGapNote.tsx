@@ -9,35 +9,49 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ChevronDown, FileUp, Layers, X } from "lucide-react";
 import { sectionGaps, type GapCourse, type GapPlan } from "../utils/sectionGap";
 
-interface GapPayload { respondents: number; planImported: boolean; planSource: { fileName: string; importedAt: string } | null; courses: GapCourse[] }
+interface GapPayload {
+  respondents: number; planImported: boolean; planSource: { fileName: string; importedAt: string } | null;
+  accepted: Record<string, number>; remaining: Record<string, number>; courses: GapCourse[];
+}
 const SHOWN = 5;
 const num = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
 
+/**
+ * القراءتان تُوسمان بنطاقهما: تبدّل القسم أو الفصل لا يُبقي أسماء القسم السابق ولا أرقامه لحظةً (الشريط نفسه يبقى مركّباً).
+ * «المختار» يأتي مع القراءة الخفيفة (يتجدد مع كل تعديلٍ في الجدول)، أما التاريخ — وهو الثقيل — فيُجلب مرةً لكل كشفٍ مرفوع.
+ */
 export function useSectionGap(collegeId: number, sectionId: number, termId: number, refreshSignal = 0) {
-  const [data, setData] = useState<GapPayload | null>(null);
-  const [plan, setPlan] = useState<GapPlan | null>(null);
+  const scope = `${collegeId}:${sectionId}:${termId}`;
+  const [loaded, setLoaded] = useState<{ scope: string; payload: GapPayload } | null>(null);
+  const [past, setPast] = useState<{ scope: string; stamp: string; history: GapPlan["history"] } | null>(null);
   useEffect(() => {
     if (!collegeId || !sectionId || !termId) return;
     let cancelled = false;
     fetch(`/api/schedules/section-gap?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`)
       .then(response => (response.ok ? response.json() : null))
-      .then((body: GapPayload | null) => { if (!cancelled) setData(body); })
-      .catch(() => { if (!cancelled) setData(null); });
+      .then((body: GapPayload | null) => { if (!cancelled) setLoaded(body ? { scope, payload: body } : null); })
+      .catch(() => { if (!cancelled) setLoaded(null); });
     return () => { cancelled = true; };
-  }, [collegeId, sectionId, termId, refreshSignal]);
-  const planImported = Boolean(data?.planImported);
+  }, [collegeId, sectionId, termId, refreshSignal, scope]);
+  const data = loaded && loaded.scope === scope ? loaded.payload : null;
+  const stamp = data?.planImported ? String(data.planSource?.importedAt || "imported") : "";
   useEffect(() => {
-    setPlan(null);
-    if (!planImported) return;
+    if (!stamp) return;
     let cancelled = false;
     fetch(`/api/registration-stats?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`)
       .then(response => (response.ok ? response.json() : null))
-      .then(body => { if (!cancelled && body) setPlan({ remaining: body.remaining || {}, accepted: body.accepted || {}, history: body.history || {} }); })
-      .catch(() => { if (!cancelled) setPlan(null); });
+      .then(body => { if (!cancelled && body) setPast({ scope, stamp, history: body.history || {} }); })
+      .catch(() => { if (!cancelled) setPast(null); });
     return () => { cancelled = true; };
-  }, [collegeId, sectionId, termId, planImported]);
-  const items = useMemo(() => (data ? sectionGaps(data.courses, plan) : []), [data, plan]);
-  return { items, planImported, loaded: data !== null };
+  }, [collegeId, sectionId, termId, stamp, scope]);
+  const historyReady = Boolean(stamp) && past?.scope === scope && past.stamp === stamp;
+  const items = useMemo(() => {
+    if (!data) return [];
+    /* المتبقي بلا تاريخه يقترح «شعبةً واحدة» فيُخفي النقص؛ فلا يُعتدّ به حتى يصل التاريخ. */
+    const plan: GapPlan = { accepted: data.accepted || {}, remaining: historyReady ? data.remaining || {} : {}, history: historyReady ? past!.history : {} };
+    return sectionGaps(data.courses, plan);
+  }, [data, historyReady, past]);
+  return { items, planImported: Boolean(data?.planImported), loaded: data !== null };
 }
 
 type Gap = ReturnType<typeof useSectionGap>;

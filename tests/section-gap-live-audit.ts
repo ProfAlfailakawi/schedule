@@ -46,6 +46,15 @@ try {
     const students = sectionGaps(before.body.courses, null);
     check(students.every(item => item.basis === "students" && item.extra > 0), "بلا كشف: كل سطرٍ من طلب الطلبة وله نقصٌ حقيقي", students);
 
+    /* قسمٌ كتب «المختار» بيده ولم يرفع كشفاً: يصل المختار مع القراءة الخفيفة نفسها، ويغلب طلبَ الطلبة. */
+    const first = before.body.courses.find((course: any) => course.code === "CS101");
+    const manual = await call("PUT", "/api/registration-stats", { collegeId: 1, sectionId: 1, termId: 1, accepted: { [first.id]: first.existing + 2 } });
+    check(manual.status === 200, "حفظ «المختار» وحده بلا كشف");
+    const manualRead = await call("GET", `/api/schedules/section-gap?${Q}`);
+    check(manualRead.body.planImported === false && manualRead.body.accepted[first.id] === first.existing + 2 && Object.keys(manualRead.body.remaining).length === 0, "بلا كشف: المختار يصل والمتبقي لا", manualRead.body);
+    const manualGaps = sectionGaps(manualRead.body.courses, { accepted: manualRead.body.accepted, remaining: manualRead.body.remaining, history: {} });
+    check(manualGaps.length === 1 && manualGaps[0].code === "CS101" && manualGaps[0].basis === "plan" && manualGaps[0].extra === 2, "المختار اليدوي يظهر بمصدر «تخطيطك» ولو لم يُرفع كشف", manualGaps);
+
     /* محاكاة قسمٍ رفع الكشف واختار: CS101 يملك 3 شعب ويُختار 6، CS315 يملك 4 ويُختار 6، CS220 يُختار 3 (مثل الموجود). */
     const byCode = (code: string) => before.body.courses.find((course: any) => course.code === code);
     const cs101 = byCode("CS101"), cs315 = byCode("CS315"), cs220 = byCode("CS220");

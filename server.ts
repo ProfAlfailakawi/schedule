@@ -16417,6 +16417,9 @@ app.get("/api/schedules/section-gap", requirePermission(7), async (req: Authenti
     respondents: reading.respondents,
     planImported: Boolean(stats?.remainingSource?.fileName),
     planSource: stats?.remainingSource ? { fileName: stats.remainingSource.fileName, importedAt: stats.remainingSource.importedAt } : null,
+    /* «المختار» يُكتب بيد القسم ولو لم يُرفع كشف؛ والمتبقي لا يُعتدّ به إلا من كشفٍ مرفوع (الحالُ القديم المحفوظ بعمودٍ آخر لا يُحسب). */
+    accepted: stats?.accepted || {},
+    remaining: stats?.remainingSource?.column === "unregistered" ? (stats?.remaining || {}) : {},
     courses: (courses as any[]).map(course => ({
       id: Number(course.AdCourseId), code: String(course.CourseCode || ""), name: String(course.CourseName || ""),
       capacity: Number(course.MaxStudent) || 0,
