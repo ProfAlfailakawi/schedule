@@ -27,6 +27,8 @@ export interface ProvisionOptions {
   collegeId?: number;
   /** تُنشأ الكلية بهذا الرمز والاسم إن لم توجد (لا تُنشأ بغير هذا الخيار الصريح، ولا إن وُجدت). */
   createCollege?: { code: string; name: string };
+  /** كلمة سرٍّ افتراضية: تُفعَّل بها حساباتُ هذه الأداة (الجديدة، أو المُنشأة سابقاً وما زالت بلا كلمة سر) ولا يُمسّ حسابٌ سواها. */
+  password?: string;
   /** نصٌّ يجب أن يرد في اسم الكلية؛ الافتراضي: الدراسات التكنولوجية. */
   collegeMatch?: string[];
   /** بادئة اسم الدخول: `tsb` ← tsbdean، tsbhead… */
@@ -48,7 +50,7 @@ export interface ProvisionReport {
   coursesExisting: number;
   planStatus: "exists" | "created" | "will-create";
   draftStatus: "kept" | "written" | "will-write";
-  accounts: Array<{ login: string; role: string; scope: string; status: "exists" | "created" | "completed" | "will-create" }>;
+  accounts: Array<{ login: string; role: string; scope: string; status: "exists" | "created" | "completed" | "activated" | "will-create" }>;
   wrote: boolean;
 }
 
@@ -206,11 +208,18 @@ export async function provisionProgram(Repository: any, ref: CurriculumReference
       if (!(await Repository.getSecurityByUser(userId)).length) { await Repository.saveSecurityByUser(userId, role.formIds); filled = true; }
       if (!(await Repository.getUserAssigns(userId)).length) { await Repository.saveUserAssigns(userId, [{ AdCollegeId: collegeId, AdSectionId: SECTION_ROLES.has(row.role) ? ownSectionId : 0 }]); filled = true; }
       if (filled) { row.status = "completed"; log(`~ أُكمل حساب ${row.login} (${role.label}) — كان ناقص الصلاحيات أو النطاق`); }
+      /* لا يُغيَّر إلا حسابٌ أنشأته هذه الأداة (موقوف وبلا كلمة سر ولا خزنة)؛ أيّ حسابٍ له كلمة سرٍّ يُترك كما هو. */
+      if (options.password && !found.IsActive && !String(found.SystemUserPass || "").trim() && !String(found.SystemUserPassVault || "").trim()) {
+        await Repository.updateUser(userId, { SystemUserPass: Repository.hashPassword(options.password), SystemUserPassVault: Repository.encryptPasswordForVault(options.password), IsActive: true });
+        row.status = "activated"; log(`~ فُعّل حساب ${row.login} (${role.label}) بكلمة السر الافتراضية`);
+      }
       continue;
     }
     const user = await Repository.createUser({
-      Name: `${role.label} — ${report.college.name}`, SystemUserLogin: row.login, SystemUserPass: "",
-      IsAdminUser: false, IsActive: false, IsLocked: false, IsDeleted: false, AdInstructorId: 0, Role: row.role,
+      Name: `${role.label} — ${report.college.name}`, SystemUserLogin: row.login,
+      SystemUserPass: options.password ? Repository.hashPassword(options.password) : "",
+      ...(options.password ? { SystemUserPassVault: Repository.encryptPasswordForVault(options.password) } : {}),
+      IsAdminUser: false, IsActive: Boolean(options.password), IsLocked: false, IsDeleted: false, AdInstructorId: 0, Role: row.role,
     } as any);
     await Repository.saveSecurityByUser(user.SystemUserId, role.formIds);
     await Repository.saveUserAssigns(user.SystemUserId, [{ AdCollegeId: collegeId, AdSectionId: SECTION_ROLES.has(row.role) ? ownSectionId : 0 }]);

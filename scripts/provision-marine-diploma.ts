@@ -11,6 +11,7 @@
  *   --college=<رقم>          إن التبس اسم الكلية أو أردت كليةً بعينها
  *   --create-college         تُنشأ الكلية إن لم توجد (اسمها «كلية الدراسات التكنولوجية - بنين» ورمزها 04)
  *   --college-name= / --college-code=   اسمٌ أو رمزٌ آخر للكلية المُنشأة
+ *   --password=<كلمة>        تُفعَّل بها الحسابات (وإلا بقيت موقوفة بلا كلمة سر)؛ لا يُمسّ حسابٌ قائمٌ له كلمة سر
  *   --prefix=tsb             بادئة أسماء الدخول (tsbdean، tsbhead…)
  *   --dept=30=اللغة الإنجليزية   اسم قسمٍ غائب عن الكلية (يتكرر لكل قسم)
  *
@@ -41,7 +42,7 @@ const report = await provisionProgram(Repository, MARINE_MECHANICAL_DIPLOMA, {
   apply, collegeId: arg("college") ? Number(arg("college")) : undefined,
   createCollege: process.argv.includes("--create-college")
     ? { code: arg("college-code") || MARINE_MECHANICAL_DIPLOMA.groups[0].courses[0].code.slice(0, 2), name: arg("college-name") || `${MARINE_MECHANICAL_DIPLOMA.college} - بنين` }
-    : undefined, prefix: arg("prefix") || "tsb", deptNames, log: line => console.log("  " + line),
+    : undefined, prefix: arg("prefix") || "tsb", deptNames, password: arg("password"), log: line => console.log("  " + line),
 });
 if (report.error) { console.log(`\n✗ ${report.error}`); process.exit(1); }
 console.log(`\nالكلية: ${report.college!.name}${report.collegeToCreate ? ` — ${apply ? "أُنشئت" : "ستُنشأ"} برمز ${report.collegeToCreate.code}` : ` (${report.college!.id})`}`);
@@ -51,6 +52,6 @@ console.log(`الصحيفة: ${report.planStatus} · القواعد: ${report.dr
 console.log("الحسابات:");
 for (const row of report.accounts) console.log(`  ${row.status === "exists" ? "=" : apply ? "+" : "·"} ${row.login.padEnd(18)} ${row.role.padEnd(15)} ${row.scope}`);
 console.log(apply
-  ? "\nتم. القواعد «قيد المراجعة»: يعتمدها رئيس لجنة الجدول من «مراجعة الصحيفة» ثم تُنشر الخريطة. الحسابات موقوفة: ضع كلمات السر وفعّلها من شاشة المستخدمين."
+  ? `\nتم. القواعد «قيد المراجعة»: يعتمدها رئيس لجنة الجدول من «مراجعة الصحيفة» ثم تُنشر الخريطة. ${arg("password") ? "الحسابات فعّالة بكلمة السر المعطاة." : "الحسابات موقوفة: ضع كلمات السر وفعّلها من شاشة المستخدمين."}`
   : "\nمعاينة فقط. أعد التشغيل مع --apply بعد مراجعة الملخص.");
 process.exit(0);
