@@ -34,6 +34,7 @@ import { verifiedUnresolvableStudentConflicts } from "../utils/studentCaseConfli
 import { remainingNeed, unmetPrereq } from "../utils/curriculumRules";
 import { adviseStudent } from "../utils/studentAdvice";
 import { buildStudentMap } from "../utils/studentMap";
+import { closePassed } from "../utils/passedClosure";
 import { isTechnologyEducation } from "../utils/curriculumReference";
 import { REFERENCE_CATEGORIES, referenceCategoryResolver } from "./planReviewRoutes";
 import { buildSheetModel } from "./planSheetRoutes";
@@ -135,13 +136,43 @@ async function sectionCatalog(sectionId: number): Promise<SectionCatalog> {
   });
 }
 
+/**
+ * قاعدةُ كل مقررٍ في صحيفة الطالب: قواعدُ صحيفته لمقررات قسمه، ولمقرر قسمٍ آخر (الإنجليزية، التربية الخاصة…) مسبقاتُه
+ * ومقرناتُه من صحيفة قسمه المالك المعتمدة. واحدةٌ لخريطتي وللمنجَز وللرغبات والتذكرة، فلا يختلف حدُّ «ما يحقّ لك».
+ */
+async function planRules(profile: StudentProfile, catalog: SectionCatalog): Promise<{ own: NonNullable<Awaited<ReturnType<typeof ruleSetOf>>>["rules"]; all: NonNullable<Awaited<ReturnType<typeof ruleSetOf>>>["rules"] }> {
+  const rules = profile.curriculumPlanId ? await ruleSetOf(profile.curriculumPlanId) : null;
+  const own = rules?.rules || [];
+  const planIds = allowedFor(catalog, profile.curriculumPlanId);
+  const covered = new Set(own.map(rule => rule.courseId));
+  const foreignIds = planIds.filter(id => !covered.has(id) && Number(catalog.courses.get(id)?.sectionId || 0) > 0 && Number(catalog.courses.get(id)!.sectionId) !== profile.AdSectionId);
+  const borrowed: typeof own = [];
+  if (foreignIds.length) {
+    const sets = (await allRuleSets()).filter(set => set.planId !== profile.curriculumPlanId);
+    for (const id of foreignIds) {
+      const owner = Number(catalog.courses.get(id)!.sectionId);
+      const rule = sets.filter(set => Number(set.AdSectionId) === owner).map(set => set.rules.find(row => row.courseId === id)).find(row => row && (row.prereq || row.coreq?.length));
+      if (rule) borrowed.push({ courseId: id, ...(rule.prereq ? { prereq: rule.prereq } : {}), ...(rule.coreq?.length ? { coreq: rule.coreq } : {}) });
+    }
+  }
+  /* المسبقاتُ تُحصر في مقررات صحيفة الطالب (كما تفعل خريطتي): مسبقٌ خارج صحيفته لا يُمكنه اجتيازُه فلا يُقفل به مقررٌ أبداً. */
+  const inPlan = new Set(planIds);
+  const restrict = (rule: (typeof own)[number]): (typeof own)[number] => {
+    if (!rule.prereq) return rule;
+    const prereq = { ...rule.prereq, all: rule.prereq.all.filter(id => inPlan.has(id)), anyOf: rule.prereq.anyOf.map(group => group.filter(id => inPlan.has(id))).filter(group => group.length) };
+    return { ...rule, prereq };
+  };
+  return { own, all: [...own, ...borrowed].map(restrict) };
+}
+
 /** ما ينقص الطالبَ من مسبقاتٍ قبل أن يأخذ كل مقرر (أسماءٌ جاهزة للعرض). واحدةٌ للمطروح وللتذكرة. */
 async function prereqNeeds(profile: StudentProfile, catalog: SectionCatalog): Promise<(id: number) => string[]> {
-  const ruleSet = profile.curriculumPlanId ? await Repository.getRuleSet(profile.curriculumPlanId) : undefined;
+  const { all } = await planRules(profile, catalog);
+  const byCourse = new Map(all.map(rule => [rule.courseId, rule]));
   const passedSet = new Set(profile.passedCourseIds);
   const nameOf = (id: number) => catalog.courses.get(id)?.name || `مقرر ${id}`;
   return (id: number): string[] => {
-    const rule = ruleSet?.rules.find(row => row.courseId === id);
+    const rule = byCourse.get(id);
     if (!rule?.prereq) return [];
     const lack = unmetPrereq(rule.prereq, passedSet, profile.passedUnits);
     return [...lack.all.map(nameOf), ...lack.anyOf.map(group => `(${group.map(nameOf).join(" أو ")})`), ...(lack.unitsShort ? [countOf(lack.unitsShort, AR.unit)] : [])];
@@ -437,10 +468,18 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const sections = await Repository.getSections();
     if (!sectionId || !(sections as any[]).some(row => Number(row.AdSectionId) === sectionId)) { fail(res, 400, "اختر قسماً صحيحاً.", "bad-section"); return; }
     const catalog = await sectionCatalog(sectionId);
-    const toCourse = (id: number) => ({ id, ...(catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 }) });
+    /* لكل مقررٍ مسبقاتُه (من صحيفة قسمه، ولمقررات الأقسام الأخرى من صحيفة قسمها): شاشةُ «ما أنجزتُه» لا تسمح بتعليم ما لم تُعلَّم مسبقاتُه. */
+    const withRules = async (planId: string, ids: number[]) => {
+      const { all } = await planRules({ AdSectionId: sectionId, curriculumPlanId: planId || undefined } as StudentProfile, catalog);
+      const byCourse = new Map(all.map(rule => [rule.courseId, rule.prereq]));
+      return ids.map(id => {
+        const prereq = byCourse.get(id), known = catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
+        return { id, ...known, ...(prereq && (prereq.all.length || prereq.anyOf.length || prereq.minUnits) ? { prereq: { all: prereq.all, anyOf: prereq.anyOf, minUnits: prereq.minUnits || 0 } } : {}) };
+      }).sort((a, b) => a.code.localeCompare(b.code, "en"));
+    };
     const lists = catalog.plans.length
-      ? catalog.plans.map(plan => ({ ...plan, courses: (catalog.byPlan.get(plan.id) || []).map(toCourse).sort((a, b) => a.code.localeCompare(b.code, "en")) }))
-      : [{ id: "", name: "مقررات القسم", status: "catalog", courses: catalog.catalog.map(toCourse).sort((a, b) => a.code.localeCompare(b.code, "en")) }];
+      ? await Promise.all(catalog.plans.map(async plan => ({ ...plan, courses: await withRules(plan.id, catalog.byPlan.get(plan.id) || []) })))
+      : [{ id: "", name: "مقررات القسم", status: "catalog", courses: await withRules("", catalog.catalog) }];
     noStore(res); res.json({ source: catalog.plans.length ? "plan" : "catalog", plans: lists });
   });
 
@@ -454,27 +493,13 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const planIds = allowedFor(catalog, profile.curriculumPlanId);
     if (!planIds.length) { res.json({ ready: false, reason: "no-plan" }); return; }
     const term = pickDoorTerm(terms as any);
-    const [index, rules] = await Promise.all([term ? offeringIndex(Number(term.AdTermId)) : Promise.resolve(null), profile.curriculumPlanId ? ruleSetOf(profile.curriculumPlanId) : Promise.resolve(null)]);
+    const [index, rules, planR] = await Promise.all([term ? offeringIndex(Number(term.AdTermId)) : Promise.resolve(null), profile.curriculumPlanId ? ruleSetOf(profile.curriculumPlanId) : Promise.resolve(null), planRules(profile, catalog)]);
     const nameOfSection = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
     const mine = nameOfSection.get(profile.AdSectionId) || "";
     const resolver = isTechnologyEducation(mine) ? referenceCategoryResolver(sections as any[]) : null;
     const known = new Map([...catalog.courses].map(([id, course]) => [id, { code: course.code, name: course.name, credit: course.credit, sectionId: Number(course.sectionId) || 0 }]));
-    /* مقررُ قسمٍ آخر في صحيفتي (الإنجليزية، التربية الخاصة…) لا قاعدةَ له في صحيفة قسمي: مسبقاتُه من صحيفة قسمه المالك،
-       ولا يُؤخذ منها نوعُه ولا مجموعتُه — فهو في صحيفتي إجباريٌّ ما لم تقل صحيفتي غير ذلك. */
-    const ownRules = rules?.rules || [];
-    const covered = new Set(ownRules.map(rule => rule.courseId));
-    const foreignIds = planIds.filter(id => !covered.has(id) && (known.get(id)?.sectionId || 0) > 0 && known.get(id)!.sectionId !== profile.AdSectionId);
-    const borrowed: typeof ownRules = [];
-    if (foreignIds.length) {
-      const sets = (await allRuleSets()).filter(set => set.planId !== profile.curriculumPlanId);
-      for (const id of foreignIds) {
-        const owner = known.get(id)!.sectionId;
-        const rule = sets.filter(set => Number(set.AdSectionId) === owner).map(set => set.rules.find(row => row.courseId === id)).find(row => row && (row.prereq || row.coreq?.length));
-        if (rule) borrowed.push({ courseId: id, ...(rule.prereq ? { prereq: rule.prereq } : {}), ...(rule.coreq?.length ? { coreq: rule.coreq } : {}) });
-      }
-    }
     const model = buildStudentMap({
-      planCourseIds: planIds, courses: known, rules: [...ownRules, ...borrowed], groups: rules?.groups || [], studentSectionId: profile.AdSectionId,
+      planCourseIds: planIds, courses: known, rules: planR.all, groups: rules?.groups || [], studentSectionId: profile.AdSectionId,
       sectionName: id => nameOfSection.get(id) || "", offered: index,
       categoryOf: resolver ? id => resolver(known.get(id)?.code || "", known.get(id)?.sectionId || 0) : undefined,
       categoryOrder: resolver ? REFERENCE_CATEGORIES.order : undefined,
@@ -505,7 +530,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
   });
 
   app.put("/api/public/me/profile", writeLimit, requireDoor, async (req: Request, res: Response) => {
-    const { fingerprint } = doorOf(res);
+    const { fingerprint, profile } = doorOf(res);
     const sectionId = Number(req.body?.sectionId || 0);
     const section = (await Repository.getSections() as any[]).find(row => Number(row.AdSectionId) === sectionId);
     if (!section) { fail(res, 400, "اختر قسمك العلمي.", "bad-section"); return; }
@@ -515,8 +540,14 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     if (catalog.plans.length >= 2 && !catalog.plans.some(plan => plan.id === planId)) { fail(res, 400, "اختر صحيفتك: السابقة أم الجديدة.", "bad-plan"); return; }
     if (!catalog.plans.length) planId = "";
     const allowed = allowedFor(catalog, planId);
-    const passed = sanitizePassed(req.body?.passedCourseIds, new Set(allowed));
     const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
+    /* المنجَزُ يتبع المسبقات بالضبط (في القسم وفي غيره): ما اختلّ شرطُه يُسقَط مع ما بُني عليه. */
+    const candidate = sanitizePassed(req.body?.passedCourseIds, new Set(allowed));
+    const ruleView = await planRules({ ...profile, AdSectionId: sectionId, curriculumPlanId: planId || undefined } as StudentProfile, catalog);
+    const byCourse = new Map(ruleView.all.map(rule => [rule.courseId, rule.prereq]));
+    const { kept: passed, dropped } = closePassed(candidate, id => byCourse.get(id), credit);
+    const passedSet = new Set(passed), passedUnits = unitsOf(passed, credit);
+    const prereqOk = (id: number) => { const lack = unmetPrereq(byCourse.get(id), passedSet, passedUnits); return !lack.all.length && !lack.anyOf.length && !lack.unitsShort; };
     const progress = planProgress(allowed, passed, credit);
     const now = new Date();
     const saved = await Repository.updateStudentProfile(fingerprint, current => {
@@ -528,12 +559,12 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         /* الرغباتُ تُبقى ما دامت صالحةً للصحيفة الجديدة: القسمُ نفسُه والصحيفةُ نفسُها،
            وما أُنجز من مقرراتها المرغوبة يسقط منها. */
         wishes: sameSection && (current.curriculumPlanId || "") === planId && current.wishes
-          ? { ...current.wishes, courseIds: current.wishes.courseIds.filter(id => allowed.includes(id) && !passed.includes(id)) }
+          ? { ...current.wishes, courseIds: current.wishes.courseIds.filter(id => allowed.includes(id) && !passed.includes(id) && prereqOk(id)) }
           : undefined };
       return { ...base, ...profileLifetime(base, now) };
     });
     if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
-    noStore(res); res.json(await summaryOf(saved));
+    noStore(res); res.json({ ...(await summaryOf(saved)), droppedPassed: dropped.length });
   });
 
   /* ── الرغبات: ما أريده هذا الفصل (مرحلة الرغبات وحدها) ──────────────────── */

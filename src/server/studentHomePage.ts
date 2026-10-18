@@ -147,6 +147,7 @@ button,input{font:inherit;color:inherit}
 .opt{display:flex;align-items:center;gap:12px;padding:12px 14px;min-block-size:56px;border-radius:16px;border:1.5px solid var(--line);background:var(--card);cursor:pointer;text-align:start;inline-size:100%;transition:border-color .15s,background .15s}
 .opt:hover{border-color:var(--line-strong)}
 .opt[aria-pressed="true"],.opt[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.opt.locked{opacity:.66;cursor:not-allowed}.opt.locked .box{background:transparent;border-style:dashed}.lk{color:#8A641C;font-weight:600}
 .opt .tx{flex:1;min-inline-size:0;display:grid;gap:2px}
 .opt .tx b{font-size:14.5px;font-weight:600;line-height:1.5}
 .opt .tx small{color:var(--muted);font-size:12px}
@@ -524,19 +525,28 @@ function setupPassed(){var d=S.draft,load=function(){
   var plan=currentPlan(),courses=plan.courses,total=0,units=0;courses.forEach(function(c){total+=c.credit});
   app.innerHTML=stepsBar(3,3)+'<button class="link" id="bk" style="padding-inline:0">'+ic("back")+' رجوع</button><h1 class="h2 fade">ما الذي أنجزته؟</h1><p class="muted">المس كل مقرر اجتزته.</p>'
    +'<div'+(courses.length>10?'':' hidden')+'><div class="srch" style="margin-block-start:12px">'+ic("search")+'<input class="inp" id="q" type="search" placeholder="ابحث باسم المقرر أو رمزه" aria-label="ابحث في المقررات" autocomplete="off"></div>'
-   +'<div class="row between" style="margin-block-start:10px"><div class="seg" role="group" aria-label="تصفية"><button type="button" data-f="all" aria-pressed="true">الكل</button><button type="button" data-f="done" aria-pressed="false">المنجَز</button><button type="button" data-f="todo" aria-pressed="false">الباقي</button></div><button class="link" id="all" style="padding-inline:0">علّم الكل</button><button class="link" id="none" hidden></button></div></div>'
+   +'<div class="row between" style="margin-block-start:10px"><div class="seg" role="group" aria-label="تصفية"><button type="button" data-f="all" aria-pressed="true">الكل</button><button type="button" data-f="done" aria-pressed="false">المنجَز</button><button type="button" data-f="todo" aria-pressed="false">الباقي</button></div><button class="link" id="none" hidden></button></div></div>'
    +'<div class="list" id="crs" style="margin-block-start:6px"></div>';
   dockEl.innerHTML='<div><div id="dr"></div><div class="meta"><b id="dc"></b><span id="du"></span></div><button class="btn" id="sv">احفظ ملفّي</button></div>';
   var lst=document.getElementById("crs"),q=document.getElementById("q"),set={};d.passed.forEach(function(i){set[i]=1});
+  /* المنجَزُ يتبع المسبقات بالضبط (في القسم وفي غيره): لا يُعلَّم مقررٌ قبل مسبقاته، وإزالةُ مسبقٍ تُزيل ما بُني عليه. */
+  var byId={};courses.forEach(function(c){byId[c.id]=c});
+  function nm(i){return byId[i]?byId[i].name:""}
+  function pUnits(){var u=0;courses.forEach(function(c){if(set[c.id])u+=c.credit});return u}
+  function lack(c){var r=c.prereq;if(!r)return[];var miss=[];r.all.forEach(function(i){if(!set[i])miss.push(nm(i))});r.anyOf.forEach(function(g){if(!g.some(function(i){return set[i]}))miss.push("أحد: "+g.map(nm).join(" أو "))});if(r.minUnits&&pUnits()<r.minUnits)miss.push(countOf(r.minUnits-pUnits(),AR.unit));return miss}
+  function prune(){var n=0,ch=true;while(ch){ch=false;courses.forEach(function(c){if(set[c.id]&&lack(c).length){delete set[c.id];n++;ch=true}})}return n}
+  prune();
   function counts(){var n=0,u=0;courses.forEach(function(c){if(set[c.id]){n++;u+=c.credit}});var pct=total?Math.round(u/total*100):0;document.getElementById("dr").innerHTML=ring(pct);animateRings();document.getElementById("dc").textContent=n?countOf(n,AR.course):"ابدأ بالتعليم";document.getElementById("du").textContent=n?countOf(u,AR.unit)+" من "+total:"لم تعلّم شيئاً بعد"}
   function visible(){var t=q.value.trim().toLowerCase();return courses.filter(function(c){if(d.filter==="done"&&!set[c.id])return false;if(d.filter==="todo"&&set[c.id])return false;return!t||(c.name+" "+c.code).toLowerCase().indexOf(t)>=0})}
-  function paint(){var h="";visible().forEach(function(c){h+='<div class="opt" role="checkbox" tabindex="0" aria-checked="'+(set[c.id]?"true":"false")+'" data-id="'+c.id+'"><span class="box">'+ic("check")+'</span><span class="tx"><b>'+esc(c.name)+'</b><small><span class="code">'+esc(c.code)+'</span> · '+countOf(c.credit,AR.unit)+'</small></span></div>'});lst.innerHTML=h||'<p class="muted">لا مقررات مطابقة.</p>';counts()}
-  function toggle(el){var id=Number(el.getAttribute("data-id"));if(set[id])delete set[id];else set[id]=1;el.setAttribute("aria-checked",set[id]?"true":"false");counts();if(d.filter!=="all")setTimeout(paint,160)}
+  function paint(){var h="";visible().forEach(function(c){var lk=set[c.id]?[]:lack(c);h+='<div class="opt'+(lk.length?' locked':'')+'" role="checkbox" tabindex="0" aria-checked="'+(set[c.id]?"true":"false")+'"'+(lk.length?' aria-disabled="true"':'')+' data-id="'+c.id+'"><span class="box">'+ic(lk.length?"lock":"check")+'</span><span class="tx"><b>'+esc(c.name)+'</b><small><span class="code">'+esc(c.code)+'</span> · '+countOf(c.credit,AR.unit)+'</small>'+(lk.length?'<small class="lk">يتطلب أولاً: '+esc(lk.join(" + "))+'</small>':'')+'</span></div>'});lst.innerHTML=h||'<p class="muted">لا مقررات مطابقة.</p>';counts()}
+  function toggle(el){var id=Number(el.getAttribute("data-id")),c=byId[id];if(!c)return;
+    if(set[id]){delete set[id];var n=prune();if(n)toast("أُزيل أيضاً "+countOf(n,AR.course)+" يعتمد عليه",true)}
+    else{var m=lack(c);if(m.length){toast("يتطلب أولاً: "+m.join(" + "),true);return}set[id]=1}
+    counts();paint()}
   lst.addEventListener("click",function(e){var el=e.target.closest(".opt");if(el)toggle(el)});
   lst.addEventListener("keydown",function(e){if(e.key===" "||e.key==="Enter"){var el=e.target.closest(".opt");if(el){e.preventDefault();toggle(el)}}});
   q.addEventListener("input",paint);
   document.querySelectorAll(".seg button").forEach(function(b){b.addEventListener("click",function(){d.filter=b.getAttribute("data-f");document.querySelectorAll(".seg button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false")});paint()})});
-  document.getElementById("all").addEventListener("click",function(){var v=visible(),full=v.every(function(c){return set[c.id]});v.forEach(function(c){if(full)delete set[c.id];else set[c.id]=1});this.textContent=full?"علّم الكل":"أزل التعليم";paint()});
   document.getElementById("none").addEventListener("click",function(){visible().forEach(function(c){delete set[c.id]});paint()});
   document.getElementById("bk").addEventListener("click",function(){dockEl.innerHTML="";d.passed=Object.keys(set).map(Number);d.step=S.plans&&S.plans.length>1?2:1;viewSetup()});
   document.getElementById("sv").addEventListener("click",function(){var b=this;b.disabled=true;b.textContent="يحفظ…";
