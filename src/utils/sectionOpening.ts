@@ -52,6 +52,23 @@ import { weeklyLoadOf } from "./instructorRequestVerdict";
  * a person opens it and saves it.
  */
 
+/** رمز الشعبة الذي يقبله استيراد الجدول: ثلاث خانات من 501 إلى 999. */
+export const SECTION_CODE_FIRST = 501;
+export const SECTION_CODE_LAST = 999;
+/**
+ * أرقامٌ تكمل ترقيم المقرر: بعد أكبر رمزٍ مستعمل ضمن المدى المقبول، فلا يُعاد رمزٌ استُعمل ولو سُحب.
+ * الرموز خارج المدى (01، 22، 1001) لا تُبنى عليها أرقامٌ جديدة فتخرج غير مقبولة في المراجعة. وإن امتلأ المدى
+ * أُخذ أول فراغٍ فيه.
+ */
+export function nextSectionCodes(used: readonly number[], count: number): number[] {
+  const taken = new Set(used.filter(code => Number.isInteger(code) && code >= SECTION_CODE_FIRST && code <= SECTION_CODE_LAST));
+  const out: number[] = [];
+  for (let code = Math.max(SECTION_CODE_FIRST - 1, ...taken) + 1; out.length < count && code <= SECTION_CODE_LAST; code += 1) out.push(code);
+  for (let code = SECTION_CODE_FIRST; out.length < count && code <= SECTION_CODE_LAST; code += 1) if (!taken.has(code) && !out.includes(code)) out.push(code);
+  while (out.length < count) out.push(SECTION_CODE_LAST);
+  return out;
+}
+
 export interface Placement {
   /** 1 for the first new section, 2 for the second … */
   index: number;
@@ -301,7 +318,8 @@ export function readSectionOpenings(
       .filter(row => Number(row.AdCourseId) === item.id)
       .map(row => Number(String(row.SCode).replace(/\D/g, "")))
       .filter(value => Number.isFinite(value) && value > 0);
-    const nextCode = (usedCodes.length ? Math.max(...usedCodes) : openSections) + 1;
+    /* رمزٌ صالحٌ للاستيراد دائماً (٣ خانات من 501، لا يتكرر)، لا «1» لمقررٍ بلا شعب ولا «22» لتاريخٍ برموزٍ صغيرة. */
+    const nextCodes = nextSectionCodes(usedCodes, needed);
 
     const placements: Placement[] = [];
     const courseHoursNow = Number(course.CourseHours || course.CourseCredit) || 0;
@@ -344,7 +362,7 @@ export function readSectionOpenings(
                 buildingId: room.buildingId, roomId: room.roomId, roomCode: room.code, roomHall: room.hall,
                 instructorId: teacherId,
                 instructorName: person?.AdInstructorName || "",
-                sectionCode: String(nextCode + slot - 1),
+                sectionCode: String(nextCodes[slot - 1]),
                 note: "",
               };
               break;

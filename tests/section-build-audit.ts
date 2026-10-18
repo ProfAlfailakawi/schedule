@@ -1,4 +1,4 @@
-import { readSectionOpenings } from "../src/utils/sectionOpening";
+import { nextSectionCodes, readSectionOpenings } from "../src/utils/sectionOpening";
 import { demandFromTargets, gapRows, hardestFirst, weekFingerprint } from "../src/utils/sectionBuild";
 import { findConflicts } from "../src/utils/scheduleIntelligence";
 import type { AdCourse, AdInstructor, FSchedule, MasterRoom } from "../src/types";
@@ -97,4 +97,12 @@ check(!(pend[0].start === "08:00" && pend[0].days.includes("fsunday")), "الق�
 check(new Set(pend.map(p => `${p.days.join()}${p.start}`)).size === 2, "لا شعبتان بالوقت نفسه");
 check(pend.map(p => p.sectionCode).join() === "7,8", "أرقام الشعب تكمل ترقيم المقرر");
 check(facultyPlaceholderOf([{ AdInstructorId: 5, AdInstructorName: "هيئة  تدريسية" }, { AdInstructorId: 6, AdInstructorName: "هيئة تدريسية" }], new Set([6]))?.AdInstructorId === 6, "سجلّ «هيئة تدريسية» من أساتذة القسم وحده");
+/* ترقيم الشعب المقترحة صالحٌ للاستيراد دائماً (٣ خانات من 501) */
+check(nextSectionCodes([], 3).join() === "501,502,503", "مقررٌ بلا رموز ⇒ 501، 502، 503 لا 1، 2، 3");
+check(nextSectionCodes([1, 2, 21, 22], 2).join() === "501,502", "تاريخٌ برموزٍ صغيرة (01، 22) لا تُبنى عليه الأرقام");
+check(nextSectionCodes([501, 502, 505], 2).join() === "506,507", "يكمل بعد أكبر رمزٍ مستعمل فلا يُعاد رمزٌ سُحب");
+check(nextSectionCodes([1001, 520], 1).join() === "521", "رمزٌ من أربع خانات خارج المدى لا يؤثر");
+check(nextSectionCodes([998, 999], 2).join() === "501,502", "إن امتلأ آخر المدى أُخذ أول فراغٍ فيه");
+check(nextSectionCodes([], 2).every(code => /^\d{3}$/.test(String(code)) && code >= 501), "كل رمزٍ مقترح ثلاث خانات ≥ 501");
+check(reading.proposals.length > 0 && reading.proposals.every(p => p.placements.every(pl => /^[5-9]\d\d$/.test(pl.sectionCode))), "شعب المحرّك المقترحة رموزها صالحة للاستيراد ولو كان التاريخ برموزٍ صغيرة (1…5)");
 console.log("section-build ✓");

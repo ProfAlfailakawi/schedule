@@ -117,7 +117,7 @@ import { readDemandRepairs } from "./src/utils/demandRepair";
 import { loadSimulationInput, rankDemandRepairsBySimulation, rankSectionOpeningsBySimulation } from "./src/server/simulationData";
 import { endForRequest, headlineReasonOf, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
-import { readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
+import { nextSectionCodes, readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
 import { demandFromTargets, gapRows, hardestFirst, weekFingerprint, type GapRow } from "./src/utils/sectionBuild";
 import { facultyPlaceholderOf, placePending, templatesFromHistory } from "./src/utils/sectionPending";
 import { courseLevelFromCode } from "./src/utils/curriculumRules";
@@ -14989,7 +14989,7 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
       const taken = [...codes, ...full.map(p => Number(p.sectionCode))];
       const lengths = courseRows.map(item => timeToMinutes(item.fendtime) - timeToMinutes(item.fstarttime)).filter(n => n > 0);
       const placed = placePending({
-        course: courseById.get(row.courseId)!, count: row.remaining - full.length, firstCode: (taken.length ? Math.max(...taken) : 500) + 1,
+        course: courseById.get(row.courseId)!, count: row.remaining - full.length, firstCode: nextSectionCodes(taken, 1)[0],
         templates: templatesFromHistory(past, termOrder), seed, working, pairs, doorway: style?.doorway || 0, rhythm: style?.reading || null, termId,
         instructorId: Number(placeholder?.AdInstructorId || 0), instructorName: placeholder?.AdInstructorName || "", fallbackLength: lengths[0] || 0, draftId: () => tempId--,
       });
