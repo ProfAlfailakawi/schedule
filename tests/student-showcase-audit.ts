@@ -84,6 +84,37 @@ check(cleared.includes(`${SHOWCASE_COOKIE}=;`) && cleared.includes("sh_session=;
 const ex = await fetch(base + "/api/public/me/exit", { method: "POST", headers: { cookie: a.jar } });
 check(ex.headers.getSetCookie().join("|").includes(`${SHOWCASE_COOKIE}=;`), "S4 الخروجُ يمسح كوكي الصندوق");
 
+/* S6: المنجَز يتبع المسبقات بالضبط — في القسم وفي غيره — والخادمُ لا يثق بالواجهة. */
+{
+  const put = async (jar: string, ids: number[]) => (await fetch(base + "/api/public/me/profile", { method: "PUT", headers: { "content-type": "application/json", cookie: jar }, body: JSON.stringify({ sectionId: st.profile.sectionId, curriculumPlanId: st.profile.planId, passedCourseIds: ids }) })).json() as Promise<any>;
+  const c = await open();
+  const rules: Record<string, any> = model.rules;
+  const byId = new Map<number, any>(model.courses.map((x: any) => [x.id, x]));
+  const locked = model.courses.filter((x: any) => rules[x.id]?.all?.length && x.own);
+  const advanced = locked.find((x: any) => x.level >= 300) || locked[0];
+  const r1 = await put(c.jar, [advanced.id]);
+  check(!r1.passedCourseIds.includes(advanced.id) && r1.droppedPassed >= 1, "S6 مستجدٌّ يعلّم مقرراً متقدماً بلا مسبقاته: يُسقِطه الخادم", { id: advanced.id, saved: r1.passedCourseIds, dropped: r1.droppedPassed });
+  const pair = locked.find((x: any) => rules[x.id].all.length === 1 && !rules[x.id].anyOf.length && !rules[x.id].minUnits && !rules[rules[x.id].all[0]]);
+  if (pair) {
+    const first = rules[pair.id].all[0];
+    const r2 = await put(c.jar, [first, pair.id]);
+    check(r2.passedCourseIds.includes(first) && r2.passedCourseIds.includes(pair.id) && r2.droppedPassed === 0, "S6 المسبقُ ثم ما بعده بالترتيب: يُقبلان", r2.passedCourseIds);
+    const r3 = await put(c.jar, [pair.id]);
+    check(!r3.passedCourseIds.includes(pair.id), "S6 ما بعده وحده: يُسقَط");
+  } else check(false, "S6 لا زوجَ مسبقٍ بسيطٌ في بيانات التجربة");
+  const foreign = model.courses.find((x: any) => !x.own && rules[x.id]?.all?.length);
+  if (foreign) {
+    const r4 = await put(c.jar, [foreign.id]);
+    check(!r4.passedCourseIds.includes(foreign.id), "S6 مقررُ قسمٍ آخر بمسبقه من قسمه: لا يُعلَّم قبل مسبقه", { id: foreign.id });
+  }
+  const planList = await (await get("/api/public/me/plan?sectionId=" + st.profile.sectionId, c.jar)).json() as any;
+  const withPrereq = planList.plans.flatMap((pl: any) => pl.courses).filter((x: any) => x.prereq);
+  check(withPrereq.length > 5, "S6 قائمةُ «ما أنجزتُه» تحمل مسبقاتِ كل مقرر ليمنعها المتصفح", withPrereq.length);
+  const wishRes = await fetch(base + "/api/public/me/wishes", { method: "PUT", headers: { "content-type": "application/json", cookie: c.jar }, body: JSON.stringify({ targetUnits: 15, courseIds: [advanced.id] }) });
+  const wishJson = await wishRes.json() as any;
+  check(wishRes.status !== 200 || !wishJson.wishes.courseIds.includes(advanced.id), "S6 الرغباتُ لا تقبل مقرراً لم تُجتز مسبقاته", wishJson);
+}
+
 /* S5 */
 let limited = 0;
 for (let i = 0; i < 40; i++) { const r = await fetch(base + "/me/demo", { redirect: "manual" }); if (r.status === 429) limited++; }

@@ -235,6 +235,8 @@ function kmFirstName(){var p=S.state.profile;return p&&p.identity&&p.identity.na
 
 function kmInit(model,advice){
   KM.m=model;KM.advice=advice||null;KM.x=kmCore(model,S.state.profile.passedCourseIds||[]);
+  /* ما حُفظ سابقاً بغير ترتيب المسبقات يُصحَّح الآن ويُحفظ مصحَّحاً. */
+  var healed=kmPrune();if(healed){S.state.profile.passedCourseIds=KM.x.passedList();KM.healed=healed}
   KM.picks={};((advice&&advice.picks)||[]).forEach(function(p,i){KM.picks[p.courseId]={why:p.why,rank:i}});
   KM.cart={};KM.pane=kmCanWish()?"reg":"jr";
   if(kmCanWish()){
@@ -328,6 +330,7 @@ function kmSendWishes(){var b=document.getElementById("kbsend");if(!b||b.disable
     if(!r.ok){toast(r.d.error||"تعذّر الحفظ",true);return}
     S.state.profile.wishes=r.d.wishes;S.wDraft=null;S.wCount=null;S.wEdit=false;toast("صارت رغباتك");if(typeof renderWishes==="function")renderWishes()})}
 function kmToggleCart(id){if(!kmCanWish())return;var c=KM.x.byId[id];if(!c||KM.x.isPassed(id)||!kmOff(id))return;
+  if(!KM.x.unlocked(id)){toast("يتطلب اجتياز مسبقاته أولاً",true);return}
   if(KM.cart[id])delete KM.cart[id];else if(kmCartIds().length>=12){toast("حتى 12 مقرراً",true);return}else KM.cart[id]=1;kmRefresh(true)}
 
 /* ── رحلتي في المستويات ── */
@@ -432,11 +435,11 @@ function kmSheetHtml(id,after){var X=KM.x,m=KM.m,c=X.byId[id],st=X.status(id),r=
    +'<div class="kd-s"><h4>يتطلب قبله</h4>'+req+'</div>'
    +'<div class="kd-s"><h4>يفتح بعده'+(dep.length?' <small>('+dep.length+')</small>':'')+'</h4>'+(dep.length?'<div class="kxl">'+dep.map(kmChip).join("")+'</div>':'<p class="kxn">لا يتطلبه مقرر آخر.</p>')+'</div>';
   if(r.coreq.length)h+='<div class="kd-s"><h4>يُسجَّل معه</h4><div class="kxl">'+r.coreq.map(kmChip).join("")+'</div></div>';
-  var anc=st==="ok"?[]:[];
-  h+='<div class="kd-a">'+(st==="ok"?'<button type="button" class="btn alt" data-do="unpass">'+ic("x")+' ألغِ علامة الاجتياز</button>':'<button type="button" class="btn" data-do="pass">'+ic("check")+' علّمته مجتازاً</button>');
+  /* لا تعليمَ قبل المسبقات: المقرر المقفول لا زرَّ اجتياز له، والمفتوح يُعلَّم، وإلغاءُ مسبقٍ يُلغي ما بُني عليه. */
+  var canPass=X.unlocked(id);
+  h+='<div class="kd-a">'+(st==="ok"?'<button type="button" class="btn alt" data-do="unpass">'+ic("x")+' ألغِ علامة الاجتياز</button>':(canPass?'<button type="button" class="btn" data-do="pass">'+ic("check")+' علّمته مجتازاً</button>':'<p class="kxn kd-lockmsg">'+ic("lock","")+' لا يُعلَّم مجتازاً قبل اجتياز مسبقاته (أعلاه).</p>'));
   if(kmCanWish()&&st!=="ok"&&off&&st!=="wait")h+='<button type="button" class="btn alt" data-do="cart">'+ic(KM.cart[id]?"check":"heart")+(KM.cart[id]?' في رغباتي — أزله':' أضفه إلى رغباتي')+'</button>';
   h+='</div>';
-  if(after&&after.length)h+='<div class="note kd-n">'+ic("info")+'<span>هذا المقرر يتطلب '+after.length+' لم تعلّمها مجتازة.</span><button type="button" class="link" data-do="anc" data-ids="'+after.join(",")+'">علّمها أيضاً</button></div>';
   return h}
 function kmOpen(id,after){if(!KM.x.byId[id])return;KM.focus=id;var el=kmEnsureSheet(),b=document.getElementById("kdb");KM.desk=!!(window.matchMedia&&window.matchMedia("(min-width:900px)").matches);
   el.innerHTML=kmSheetHtml(id,after);el.hidden=false;el.classList.toggle("desk",KM.desk);el.scrollTop=0;
@@ -451,13 +454,16 @@ function kmSheetClick(e){var t=e.target,go=t.closest("[data-go]");if(go){kmOpen(
   else if(act==="pass")kmMark(id,true);
   else if(act==="unpass")kmMark(id,false);
   else if(act==="cart"){kmToggleCart(id);kmOpen(id)}
-  else if(act==="anc"){var ids=String(d.getAttribute("data-ids")||"").split(",").map(Number);ids.forEach(function(i){KM.x.set(i,true);delete KM.cart[i]});kmAfterMark(id,ids.length)}}
+  }
+/* من أُزيل مسبقُه يسقط ما بُني عليه من المنجَز حتى يستقرّ: لا منجَزَ بلا مسبقاته. */
+function kmPrune(){var X=KM.x,n=0,ch=true;while(ch){ch=false;X.plan.forEach(function(i){if(X.isPassed(i)&&!X.unlocked(i)){X.set(i,false);n++;ch=true}})}return n}
 function kmMark(id,on){var X=KM.x,c=X.byId[id],before=X.passedList().length,lvDone=function(){var l=c.level,ids=X.plan.filter(function(i){return X.byId[i].level===l});return ids.length>0&&ids.every(function(i){return X.isPassed(i)})};
-  var wasFull=lvDone();X.set(id,on);if(on)delete KM.cart[id];
+  if(on&&!X.unlocked(id)){toast("يتطلب اجتياز مسبقاته أولاً",true);return}
+  var wasFull=lvDone();X.set(id,on);if(on)delete KM.cart[id];var cut=on?0:kmPrune();
+  if(cut){toast("أُزيل أيضاً "+countOf(cut,AR.course)+" يعتمد عليه",true);var cs=KM.cart,keep={};Object.keys(cs).forEach(function(k){if(X.status(Number(k))==="now")keep[k]=1});KM.cart=keep}
   /* نسخةُ الملف المحلية تتبع التعليمَ فوراً: تبديلُ التاب لا يُعيد الخريطة من إنجازٍ قديم قبل أن يصل الحفظ. */
   if(S.state&&S.state.profile)S.state.profile.passedCourseIds=X.passedList();
-  var anc=on?kmAncestors(id):[];
-  kmAfterMark(id,0,anc);if(on&&!wasFull&&lvDone())kmConfetti(kmCol(c),c.level)}
+  kmAfterMark(id,0,null);if(on&&!wasFull&&lvDone())kmConfetti(kmCol(c),c.level)}
 function kmAfterMark(id,n,anc){KM.dirty=true;kmRefresh(true);kmOpen(id,anc&&anc.length?anc:null);kmSaveSoon();if(n)toast("علّمتُ "+countOf(n,AR.course)+" مسبقاً")}
 function kmSaveSoon(){clearTimeout(KM.timer);KM.pending=true;KM.timer=setTimeout(kmSave,700)}
 /* مغادرةُ الصفحة (رابط الخريطة الكاملة، إغلاق، تحديث): ما لم يُحفظ يُرسَل الآن ولو والصفحةُ تُغلق. */
@@ -490,6 +496,7 @@ function kmListSheet(title,ids){var h='<h3>'+title+' <small class="muted">('+ids
 function kmMount(host){
   if(!document.getElementById("kbar")){var kb=document.createElement("div");kb.id="kbar";kb.className="kbar";kb.hidden=true;document.body.appendChild(kb)}
   host.innerHTML=kmShell();kmPaint();
+  if(KM.healed){toast("صُحّح إنجازك: أُزيل "+countOf(KM.healed,AR.course)+" بغير ترتيب المسبقات",true);KM.healed=0;kmSaveSoon()}
   host.addEventListener("click",function(e){var t=e.target;
     var add=t.closest("[data-add]");if(add){e.stopPropagation();if(!add.disabled)kmToggleCart(Number(add.getAttribute("data-add")));return}
     var el=t.closest("[data-id]");if(el){kmOpen(Number(el.getAttribute("data-id")));return}

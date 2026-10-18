@@ -174,5 +174,18 @@ function randomPlan() {
   check(!/=>|`|\$\{/.test(STUDENT_MAP_SCRIPT), "M4 سكربت الخريطة بصياغة ES5 (بلا أسهم ولا قوالب)");
 }
 
+/* M5: المنجَز يتبع المسبقات بالضبط (في القسم وفي غيره). */
+{
+  const { closePassed } = await import("../src/utils/passedClosure.ts");
+  const credit = new Map([[1, 3], [2, 3], [3, 3], [4, 3], [5, 3]]);
+  const rules: Record<number, any> = { 2: { all: [1], anyOf: [] }, 3: { all: [2], anyOf: [] }, 4: { all: [], anyOf: [[1, 9]] }, 5: { all: [], anyOf: [], minUnits: 9 } };
+  const run = (ids: number[]) => closePassed(ids, id => rules[id], credit);
+  check(run([3]).kept.length === 0, "M5 مستجدٌّ يعلّم مقرراً متقدماً بلا مسبقاته: يُسقَط", run([3]));
+  check(run([1, 2, 3]).kept.join() === "1,2,3" && run([1, 2, 3]).dropped.length === 0, "M5 سلسلةٌ مرتبة صحيحة: تبقى كلها");
+  check(run([2, 3]).kept.length === 0 && run([2, 3]).dropped.length === 2, "M5 غيابُ المسبق الأول يُسقط السلسلة كلها (ما بُني عليه)");
+  check(run([4]).kept.length === 0 && run([1, 4]).kept.join() === "1,4", "M5 «أحد البدائل» لا يكفي بلا أي بديلٍ منجَز، ويكفي بواحد");
+  check(run([5]).kept.length === 0 && run([1, 2, 3, 5]).kept.join() === "1,2,3,5", "M5 الحدُّ الأدنى للوحدات: يُشترط بلوغُه");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
