@@ -3201,6 +3201,7 @@ app.post("/api/terms", requirePermission(5), async (req: Request, res: Response)
   const newTerm = await Repository.createTerm(AdTermName,
     { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0,
       closed: typeof req.body.AdTermClosed === "boolean" ? req.body.AdTermClosed : undefined });
+  scopedTermsCache.clear();
   res.status(201).json(newTerm);
 });
 
@@ -3215,6 +3216,7 @@ app.put("/api/terms/:id", requirePermission(5), async (req: Request, res: Respon
     const updated = await Repository.updateTerm(id, AdTermName,
       { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0,
         closed: typeof req.body.AdTermClosed === "boolean" ? req.body.AdTermClosed : undefined });
+    scopedTermsCache.clear();
     res.json(updated);
   } catch (e: any) {
     res.status(404).json({ error: e.message });
@@ -3231,6 +3233,7 @@ app.delete("/api/terms/:id", requirePermission(5), async (req: Request, res: Res
     return;
   }
   await Repository.deleteTerm(id);
+  scopedTermsCache.clear();
   res.json({ success: true });
 });
 
