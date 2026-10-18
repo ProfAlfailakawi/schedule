@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Check, Copy, Download, ExternalLink, Link2, Printer, QrCode, RefreshCw, Workflow, X } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Printer, QrCode, RefreshCw, Workflow, X } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton, MicroLoader, EmptyState } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 
@@ -144,8 +144,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
               <span className="psh-focus-actions">
                 <SecondaryButton onClick={() => copy(focus.deptUrl)} data-guide-ignore="نسخ رابط صفحة القسم">{copied === focus.deptUrl ? <Check /> : <Copy />} انسخ الرابط</SecondaryButton>
                 <a className="psh-open" href={`${focus.deptUrl}?pdf=1`} target="_blank" rel="noopener noreferrer" data-guide-ignore="تحميل PDF لصحائف القسم: تفتح الصفحة العامة وتبدأ الطباعة A3"><Download /> PDF</a>
-                <a className="psh-open" href={focus.deptUrl} target="_blank" rel="noopener noreferrer" data-guide-ignore="فتح صفحة القسم العامة في تبويبٍ جديد"><ExternalLink /> افتح</a>
-                <SecondaryButton disabled={!focusQr} onClick={() => printPoster({ title: focus.sectionName, url: focus.deptUrl, svg: focusQr })} data-guide-ignore="طباعة ملصق A4 برمز QR لصفحة القسم"><Printer /> اطبع ملصقاً</SecondaryButton>
+                <SecondaryButton disabled={!focusQr} onClick={() => printPoster({ title: labelOf(focus), url: focus.deptUrl, svg: focusQr })} data-guide-ignore="طباعة ملصق A4 برمز QR لصفحة القسم"><Printer /> اطبع ملصقاً</SecondaryButton>
               </span>
             </> : <>
               <small>{focus.sheets.length ? "لم تُنشر صحيفة هذا القسم بعد. انشرها فيظهر رمز QR ورابطها هنا." : sibling
@@ -170,8 +169,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
               <small>{countOf(section.sheets.length, AR.sheet)}</small>
               <span className="psh-dept-actions">
                 {section.sheets.some(x => x.published) ? <>
-                  <button type="button" className="psh-link" onClick={() => showQr(section.sectionName, section.deptUrl)} data-guide-ignore="رمز QR لصفحة القسم التي تجمع كل صحائفه"><QrCode /> QR القسم</button>
-                  <button type="button" className="psh-link" onClick={() => copy(section.deptUrl)} data-guide-ignore="نسخ رابط صفحة القسم">{copied === section.deptUrl ? <Check /> : <Link2 />} رابط القسم</button>
+                  <button type="button" className="psh-link" onClick={() => showQr(labelOf(section), section.deptUrl)} data-guide-ignore="رابط صفحة القسم العامة ورمز QR وPDF في نافذةٍ واحدة"><QrCode /> الروابط</button>
                 </> : null}
                 {section.sheets.length > 1 ? <SecondaryButton disabled={!todo || Boolean(busy)} onClick={() => publish({ sectionId: section.sectionId }, `s${section.sectionId}`)} data-guide-ignore="نشر كل صحائف هذا القسم دفعةً واحدة">{busy === `s${section.sectionId}` ? "جارٍ النشر…" : "انشر كل صحائف القسم"}</SecondaryButton> : null}
               </span>
@@ -183,10 +181,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
                     <small>{sheet.published ? (sheet.stale ? "تغيّرت بعد النشر — أعد النشر" : `منشورة · ${dateOf(sheet.publishedAt)}`) : "غير منشورة"}</small></span>
                   <span className="psh-row-actions">
                     {sheet.published ? <>
-                      <button type="button" className="psh-ico" aria-label="رمز QR" title="رمز QR" data-guide-ignore="رمز QR لهذه الصحيفة المنشورة" onClick={() => showQr(`${section.sectionName} — ${sheet.name}`, sheet.url)}><QrCode /></button>
-                      <button type="button" className="psh-ico" aria-label="نسخ الرابط" title="نسخ الرابط" data-guide-ignore="نسخ رابط هذه الصحيفة المنشورة" onClick={() => copy(sheet.url)}>{copied === sheet.url ? <Check /> : <Copy />}</button>
-                      <a className="psh-ico" aria-label="تحميل PDF" title="تحميل PDF" data-guide-ignore="تحميل هذه الصحيفة PDF: تفتح الصفحة العامة وتبدأ الطباعة A3" href={`${sheet.url}?pdf=1`} target="_blank" rel="noopener noreferrer"><Download /></a>
-                      <a className="psh-ico" aria-label="فتح الصحيفة" title="فتح الصحيفة" data-guide-ignore="فتح الصفحة العامة للصحيفة في تبويبٍ جديد" href={sheet.url} target="_blank" rel="noopener noreferrer"><ExternalLink /></a>
+                      <button type="button" className="psh-ico" aria-label="الرابط وQR وPDF" title="الرابط وQR وPDF" data-guide-ignore="رابط هذه الصحيفة المنشورة ورمز QR وPDF في نافذةٍ واحدة" onClick={() => showQr(`${labelOf(section)} — ${sheet.name}`, sheet.url)}><QrCode /></button>
                     </> : null}
                     {!sheet.published || sheet.stale
                       ? <PrimaryButton disabled={Boolean(busy)} onClick={() => publish({ planId: sheet.planId, sectionId: section.sectionId }, `p${sheet.planId}`)} data-guide-ignore="نشر هذه الصحيفة للعامة">{busy === `p${sheet.planId}` ? <RefreshCw className="spin" /> : null}{sheet.stale ? "أعد النشر" : "انشر"}</PrimaryButton>
@@ -208,7 +203,9 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
             <input readOnly value={qr.url} dir="ltr" onFocus={event => event.currentTarget.select()} aria-label="الرابط" />
             <div className="psh-qr-actions">
               <SecondaryButton onClick={() => copy(qr.url)} data-guide-ignore="نسخ رابط الصحيفة من نافذة رمز QR">{copied === qr.url ? <Check /> : <Copy />} انسخ الرابط</SecondaryButton>
-              <SecondaryButton onClick={downloadQr} data-guide-ignore="تنزيل رمز QR صورةً"><Download /> تنزيل QR</SecondaryButton>
+              <a className="psh-open" href={`${qr.url}?pdf=1`} target="_blank" rel="noopener noreferrer" data-guide-ignore="تحميل PDF: تفتح الصفحة العامة وتبدأ الطباعة A3"><Download /> PDF</a>
+              <a className="psh-open" href={qr.url} target="_blank" rel="noopener noreferrer" data-guide-ignore="فتح الصفحة العامة في تبويبٍ جديد"><ExternalLink /> افتح</a>
+              <SecondaryButton onClick={downloadQr} data-guide-ignore="تنزيل رمز QR صورةً"><Download /> صورة QR</SecondaryButton>
               <SecondaryButton onClick={() => printPoster()} data-guide-ignore="طباعة ملصق A4 برمز QR للقسم أو الصحيفة"><Printer /> اطبع ملصقاً</SecondaryButton>
             </div>
           </div>
