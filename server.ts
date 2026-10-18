@@ -11773,7 +11773,7 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
     if (["standard", "committeeChair", "departmentHead"].includes(role) && !isPowerUser(req)) {
       const gapTerm = planning || termId;
-      const mine = ((await Repository.getSections()) as any[]).filter(sec => isScopeAllowed(req, Number(sec.AdCollegeId), Number(sec.AdSectionId))).slice(0, 4);
+      const mine = ((await Repository.getSections()) as any[]).filter(sec => isScopeAllowed(req, Number(sec.AdCollegeId), Number(sec.AdSectionId))).slice(0, 30);
       const found = [];
       for (const sec of mine) {
         const data = await cachedSectionGap(Number(sec.AdCollegeId), Number(sec.AdSectionId), gapTerm);

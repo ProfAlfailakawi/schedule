@@ -78,6 +78,9 @@ const server = fs.readFileSync("server.ts", "utf8"), schedules = fs.readFileSync
 check(server.includes("cachedSectionGap") && server.includes("buildMasariGapNotifications(found") && /\["standard", "committeeChair", "departmentHead"\]\.includes\(role\) && !isPowerUser\(req\)/.test(server), "الجرس لعاملي القسم وحدهم، وبقراءةٍ مخبّأةٍ دقيقة");
 check(schedules.includes("onStudentGaps={setStudentGaps}") && schedules.includes("week-legend-need") && schedules.includes('hueBy === "course"'), "علامة «+N» على شارة المقرر في مفتاح الألوان، للمقررات فقط");
 check(bar.includes('title="قارن شعبك بكشف المتبقي"'), "تلميح الأيقونة كلمتان لا فقرة");
+check((schedules.match(/\{needMark\(item\.key\)\}/g) || []).length === 3, "العلامة في مفاتيح الألوان الثلاثة: القائمة والأسبوع والقاعات");
+check(bar.includes("() => onStudentGaps?.([])"), "زوال الشريط يمحو علاماته");
+check(/slice\(0, 30\);\s*const found/.test(server) && !/slice\(0, 4\);\s*const found/.test(server), "يُفحص كل أقسام العامل ثم يُقتصر الناتج على أربعة");
 
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

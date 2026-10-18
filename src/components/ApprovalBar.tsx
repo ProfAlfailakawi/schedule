@@ -157,6 +157,8 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [planSheet, setPlanSheet] = useState(false);
   const gap = useSectionGap(collegeId, sectionId, termId, refreshSignal);
   useEffect(() => { onStudentGaps?.(gap.studentItems); }, [gap.studentItems, onStudentGaps]);
+  /* الشريط يزول (كل الأقسام، أو فصلٌ مؤرشف): تزول علاماتُه من مفتاح الألوان معه. */
+  useEffect(() => () => onStudentGaps?.([]), [onStudentGaps]);
   const [readinessAll, setReadinessAll] = useState(false);
   const revealTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(revealTimer.current), []);

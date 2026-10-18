@@ -847,6 +847,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   /* ما يطلبه طلبة «مساري» ولا تكفيه شعبه، بحسب رمز المقرر: علامةٌ صغيرة على شارة المقرر في مفتاح الألوان. */
   const [studentGaps, setStudentGaps] = useState<SectionGapItem[]>([]);
   const gapByCode = useMemo(() => new Map(studentGaps.map(item => [item.code, item])), [studentGaps]);
+  /* علامةُ «+N» لشارة المقرر في مفتاح الألوان (القائمة والأسبوع والقاعات): للمقررات وحدها، ولا شيء إن لم يكن نقص. */
+  const needMark = (key: string) => {
+    const need = key.startsWith("c:") ? gapByCode.get(key.slice(2).split("·")[0]) : undefined;
+    return need ? <b className="week-legend-need" title={`يطلبها طلبة «مساري»: الموجود ${need.existing.toLocaleString("ar-KW-u-nu-latn")} والمطلوب ${need.required.toLocaleString("ar-KW-u-nu-latn")}`}>+{need.extra.toLocaleString("ar-KW-u-nu-latn")}</b> : null;
+  };
   const [editor, setEditor] = useState<EditorMode>("index"),
     [editId, setEditId] = useState<number | null>(null),
     [form, setForm] = useState(blank()),
@@ -10302,10 +10307,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         onClick={() => toggleHueFocus(item.key)}
                       >
                         <i aria-hidden="true" /><span>{item.label}</span><em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
-                        {(() => {
-                          const need = hueBy === "course" ? gapByCode.get(item.key.slice(2).split("·")[0]) : undefined;
-                          return need ? <b className="week-legend-need" title={`يطلبها طلبة «مساري»: الموجود ${need.existing.toLocaleString("ar-KW-u-nu-latn")} والمطلوب ${need.required.toLocaleString("ar-KW-u-nu-latn")}`}>+{need.extra.toLocaleString("ar-KW-u-nu-latn")}</b> : null;
-                        })()}
+                        {needMark(item.key)}
                       </button>
                       <button
                         type="button"
@@ -10879,6 +10881,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                               onClick={() => toggleHueFocus(item.key)}
                             >
                               <i aria-hidden="true" /><span>{item.label}</span><em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
+                              {needMark(item.key)}
                             </button>
                             <button
                               type="button"
@@ -11275,6 +11278,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                           <i aria-hidden="true" />
                           <span>{item.label}</span>
                           <em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
+                          {needMark(item.key)}
                         </button>
                         {/* Folding, kept a separate press from hushing: one asks
                             «where are these?», the other «what is left without
