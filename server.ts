@@ -3164,10 +3164,10 @@ app.get("/api/terms", requireAuth, async (req: Request, res: Response) => {
 
 /* ── الفصول التي لها جدولٌ في النطاق ─────────────────────────────────────────
  *
- * قائمةُ الفصل في كل شاشةٍ لا تُري القسمَ فصلاً لا بيانات له فيه (خاصةً الفصول السابقة)، إلا الفصل الحالي فيبقى
- * ولو فارغاً لأن القسم قد يريد إنشاءه. تُقرأ من صفوف نطاق القارئ نفسه (readLiveSchedulesForRequest: حارسُ النطاق
+ * قائمةُ الفصل في كل شاشةٍ لا تُري القسمَ فصلاً لا بيانات له فيه (خاصةً الفصول السابقة)، إلا أحدثَ فصلٍ فيبقى
+ * ولو فارغاً لأن القسم قد يريد إنشاءه؛ فإن جاء بعده أحدثُ منه صار قديماً واختفى. تُقرأ من صفوف نطاق القارئ نفسه (readLiveSchedulesForRequest: حارسُ النطاق
  * يُطبَّق) فصلاً فصلاً — لا مسحَ بلا فصل — وتُحفظ دقيقةً بمفتاحٍ يشمل نطاقَ القارئ. */
-const scopedTermsCache = new Map<string, { at: number; data: { termIds: number[]; currentTermId: number } }>();
+const scopedTermsCache = new Map<string, { at: number; data: { termIds: number[]; currentTermId: number; newestTermId: number } }>();
 app.get("/api/terms/scoped", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = boundedInt(req.query.collegeId, 0, Number.MAX_SAFE_INTEGER) ?? 0;
   const sectionId = boundedInt(req.query.sectionId, 0, Number.MAX_SAFE_INTEGER) ?? 0;
@@ -3183,7 +3183,8 @@ app.get("/api/terms/scoped", requireAuth, async (req: AuthenticatedRequest, res:
       counts.set(Number(term.AdTermId), (await readLiveSchedulesForRequest(req, collegeId, sectionId, Number(term.AdTermId))).length);
     }));
   }
-  const data = { termIds: visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, current), currentTermId: current };
+  const newest = Number(terms[0]?.AdTermId || 0);
+  const data = { termIds: visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, newest), currentTermId: current, newestTermId: newest };
   if (scopedTermsCache.size > 200) scopedTermsCache.clear();
   scopedTermsCache.set(key, { at: Date.now(), data });
   res.json(data);
