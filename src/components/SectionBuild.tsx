@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { CalendarCheck, CircleAlert, CheckCircle2, ClipboardPenLine, DoorClosed, Layers, Undo2, UserRoundX } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
@@ -56,19 +56,32 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
   const [undone, setUndone] = useState(0);
 
   const base = { collegeId, sectionId, termId, targets };
+  /* من غادر التخطيط والطلب معلّق لا تُسحَب شاشته إلى المراجعة. */
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const openReview = async (data: Built, keep: Set<string>) => {
+    const pending = data.rows.flatMap(row => row.placements.filter(p => p.pending).map(p => `${row.courseId}:${p.sectionCode}`));
+    const rows = await call("/api/section-build/review-rows", { ...base, pick: [...keep, ...pending] });
+    if (!alive.current) return;
+    setBuilt(null);
+    onReview?.(rows.rows || [], { existing: Number(rows.existing) || 0, added: Number(rows.added) || 0, pending: Number(rows.pending) || 0, existingKeys: Array.isArray(rows.existingKeys) ? rows.existingKeys.map(String) : undefined });
+  };
+  /* لا شاشة معاينة وسيطة: من اختار وجهّز في الشاشة الأولى يفتح مراجعة الشعب مباشرة؛ وتبقى المعاينة لمن لا شيء يُبنى عنده أو بعضه لم يُبنَ (تشرح السبب قبل المراجعة). */
   const look = async () => {
     setBusy(true); setError(""); setAsking(false); setDone(null); setUndone(0); setImpact(null);
     try {
       const data: Built = await call("/api/section-build/preview", base);
-      setBuilt(data);
-      setPicked(new Set(data.rows.flatMap(row => row.placements.filter(p => !p.pending).map(p => `${row.courseId}:${p.sectionCode}`))));
+      const keep = new Set(data.rows.flatMap(row => row.placements.filter(p => !p.pending).map(p => `${row.courseId}:${p.sectionCode}`)));
+      if (onReview && data.totals.placeable > 0 && !data.rows.some(row => row.unplaced > 0)) { await openReview(data, keep); return; }
+      setBuilt(data); setPicked(keep);
       const items = data.rows.flatMap(row => row.placements.filter(p => !p.pending).map(p => ({ collegeId, sectionId, courseId: row.courseId, placement: p })));
       if (items.length) postWhatIf({ kind: "openings", termId, items }).then(setImpact).catch(() => setImpact(null));
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const review = async () => {
+    if (!built) return;
     setBusy(true); setError("");
-    try { const data = await call("/api/section-build/review-rows", { ...base, pick: [...picked, ...(built?.rows.flatMap(row => row.placements.filter(p => p.pending).map(p => `${row.courseId}:${p.sectionCode}`)) || [])] }); setBuilt(null); onReview?.(data.rows || [], { existing: Number(data.existing) || 0, added: Number(data.added) || 0, pending: Number(data.pending) || 0, existingKeys: Array.isArray(data.existingKeys) ? data.existingKeys.map(String) : undefined }); }
+    try { await openReview(built, picked); }
     catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const toggle = (key: string) => setPicked(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
@@ -97,7 +110,7 @@ export default function SectionBuild({ collegeId, sectionId, termId, targets, on
       <header className="sb-head">
         <span className="sb-ic" aria-hidden="true"><Layers /></span>
         <div><b>نزّل الشعب</b><small>يقارن اختيارك بالجدول، ويبني الباقي بلا تعارض، ثم يعرضه قبل أن يكتب.</small></div>
-        {!built && !done ? <PrimaryButton type="button" disabled={busy} onClick={look} data-guide-ignore="معاينة الشعب الباقية؛ لا يكتب شيئاً في الجدول">{busy ? "جارٍ البناء…" : "عاين ما سيُنزَّل"}</PrimaryButton> : null}
+        {!built && !done ? <PrimaryButton type="button" disabled={busy} onClick={look} data-guide-ignore="فتح الشعب الباقية في شاشة المراجعة؛ لا يكتب شيئاً في الجدول قبل النزول">{busy ? "جارٍ البناء…" : "راجع وعدّل"}</PrimaryButton> : null}
       </header>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
       {undone ? <Notice type="success" inline>تم التراجع: حُذفت {countOf(undone, AR.section)} من الجدول.</Notice> : null}
