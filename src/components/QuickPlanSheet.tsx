@@ -30,8 +30,9 @@ function Cells({ existing, required }: { existing: number; required: number }) {
 
 export function Result({ gap, onClose }: { gap: Gap; onClose: () => void }) {
   if (!gap.ready) return <p className="gap-sheet-hint" role="status">يُحسب المقترح…</p>;
-  const total = gap.items.length;
-  const top = gap.items.slice(0, TOP);
+  /* من التخطيط وحده: «مساري» لا شأن له بنتيجة رفع الكشف. */
+  const total = gap.planItems.length;
+  const top = gap.planItems.slice(0, TOP);
   return (
     <div className="gap-result" role="status">
       {total ? (
