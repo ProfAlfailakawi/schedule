@@ -2083,8 +2083,9 @@ export default function App() {
   // The academic console opens on the first catalogue this account can reach,
   // so a coordinator without "terms" still lands somewhere useful.
   const academicEntry = academicViews.find((view) => hasAcademicPerm(ACADEMIC_PERM[view]));
-  const canOpenAcademicCatalog = isPowerAdmin || ((sessionRole.id === "committeeChair" || sessionRole.id === "departmentHead")
-    && singleDepartmentOf(scopes, 0, false) !== null && (sessionRole.id !== "departmentHead" || hasPerm(ACADEMIC_PERM.courses)));
+  // «البيانات الأكاديمية» للإدارة الرئيسية وحدها. كانت تُفتح أيضاً لرئيس لجنة الجدول ولرئيس القسم
+  // ذي إذن المقررات، فتظهر في قائمة كل قسم دون حاجة؛ وقرار المالك ألا تُعرض إلا للإدارة.
+  const canOpenAcademicCatalog = isPowerAdmin;
   const viewLabels: Partial<Record<View, string>> = {
     dashboard: "لوحة العمل",
     schedules: "إدارة الجدول",
