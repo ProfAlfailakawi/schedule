@@ -13,7 +13,7 @@
  *     في القواعد (دورة، مجموعةٌ لا تتّسع لحدّها…)، أو تغيّرت المسوّدةُ بعد أن رآها.
  *   · كلُّ تعديلٍ في سجلّ التدقيق.
  */
-import { groupDeptTracks, TRACK_LABEL, type DeptTrack } from "../utils/collegeTrack";
+import { groupDeptTracks, trackLabels, type DeptTrack } from "../utils/collegeTrack";
 import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurricula";
 import { compareCurriculumReference, isTechnologyEducation, referenceCodeKey } from "../utils/curriculumReference";
 import { AR, countOf } from "../utils/arabicCount";
@@ -62,13 +62,14 @@ export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "i
   const sections = sectionLabels(sectionRows as any[], collegeRows as any[]);
   /* بناتُ القسم بمواقعهنّ (الجهراء والفحيحيل) صحيفةٌ واحدة: إشعارٌ واحد لا ثلاثة. */
   const trackOfSection = new Map<number, DeptTrack>();
-  for (const track of groupDeptTracks(sectionRows as any[], collegeRows as any[])) for (const section of [track.canonical, ...track.mirrors]) trackOfSection.set(Number(section.AdSectionId), track);
+  const allTracks = groupDeptTracks(sectionRows as any[], collegeRows as any[]), labels = trackLabels(allTracks);
+  for (const track of allTracks) for (const section of [track.canonical, ...track.mirrors]) trackOfSection.set(Number(section.AdSectionId), track);
   const out = [];
   for (const draft of visible) {
     const plan = (await Repository.getCurriculumPlans(draft.AdSectionId)).find(row => row.id === draft.planId);
     out.push({ planId: draft.planId, planName: plan?.name || "الصحيفة", sectionId: draft.AdSectionId, collegeId: draft.AdCollegeId, sectionName: sections.get(draft.AdSectionId) || "",
       groupKey: trackOfSection.get(draft.AdSectionId)?.key || `${draft.AdCollegeId}:${draft.AdSectionId}`,
-      groupLabel: (() => { const t = trackOfSection.get(draft.AdSectionId); return t ? `قسم ${t.deptName.replace(/^قسم\s+/, "")}${t.track ? ` · ${TRACK_LABEL[t.track]}${t.mirrors.length ? " (مع الجهراء والفحيحيل)" : ""}` : ` · ${t.collegeName}`}` : sections.get(draft.AdSectionId) || ""; })(),
+      groupLabel: (() => { const t = trackOfSection.get(draft.AdSectionId); return t ? `${labels.get(t.key) || t.deptName}${t.mirrors.length ? " (مع الجهراء والفحيحيل)" : ""}` : sections.get(draft.AdSectionId) || ""; })(),
       updatedAt: draft.updatedAt });
   }
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

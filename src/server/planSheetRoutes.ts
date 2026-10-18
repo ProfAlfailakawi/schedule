@@ -24,7 +24,7 @@ import { isTechnologyEducation, referenceCodeKey } from "../utils/curriculumRefe
 import { buildPlanSheet } from "./planSheetPage";
 import { REFERENCE_CATEGORIES } from "./planReviewRoutes";
 import { AR, countOf } from "../utils/arabicCount";
-import { groupDeptTracks, planMatchKey, trackOf, TRACK_LABEL, type DeptTrack } from "../utils/collegeTrack";
+import { familyOf, groupDeptTracks, planMatchKey, trackLabels, trackOf, TRACK_LABEL, type DeptTrack } from "../utils/collegeTrack";
 
 export interface PlanSheetDeps {
   requireAuth: RequestHandler;
@@ -204,6 +204,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
   app.get("/api/plan-sheets", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
     const [tracks, published] = await Promise.all([deptTracks(), Repository.listPublishedSheets()]);
+    const labels = trackLabels(tracks);
     const publishedById = new Map(published.map(sheet => [sheet.id, sheet]));
     const rows: any[] = [];
     /* القسمُ المختار في مركز الذكاء (أصلاً أو موقعاً فرعياً) يُعاد ولو بلا صحيفةٍ معتمدة، ليشرح الواجهةُ أنّ الاعتماد مطلوب لا أن تُخفي لوحتَه. */
@@ -221,7 +222,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
         sheets.push({ planId: plan.id, name: plan.name, ruleVersion: live.version, published: Boolean(pub), publishedAt: pub?.publishedAt || "", stale: Boolean(pub && pub.ruleVersion !== live.version), url: pub ? sheetUrl(sectionId, plan.id) : "" });
       }
       if (sheets.length || members.includes(focusId)) rows.push({
-        sectionId, sectionName: String(section.AdSectionName || ""), track: track.track, trackLabel: track.track ? TRACK_LABEL[track.track] : "", collegeName: track.collegeName,
+        sectionId, sectionName: String(section.AdSectionName || ""), label: labels.get(track.key) || String(section.AdSectionName || ""), family: track.family, track: track.track, trackLabel: track.track ? TRACK_LABEL[track.track] : "", collegeName: track.collegeName,
         members, campuses: track.mirrors.length, sheets, deptUrl: `${OFFICIAL_ORIGIN}/plans/s${sectionId}/`, indexUrl: `${OFFICIAL_ORIGIN}/plans/`,
       });
     }
@@ -290,11 +291,17 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
       const groups = byDept(published.filter(sheet => !sheet.mirrorOf));
       const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
       /* القسمُ نفسُه للبنات وللبنين: يُضاف المسارُ إلى العنوان ليتميّزا. */
-      const names = new Map<string, number>();
-      for (const [, list] of groups) names.set(list[0].sectionName, (names.get(list[0].sectionName) || 0) + 1);
+      const families = new Map<string, Set<string>>(), names = new Map<string, number>();
+      for (const [, list] of groups) {
+        const name = list[0].sectionName;
+        names.set(name, (names.get(name) || 0) + 1);
+        families.set(name, new Set([...(families.get(name) || []), familyOf(collegeName.get(list[0].AdCollegeId) || "")]));
+      }
+      /* القسمُ نفسُه في عائلة كلياتٍ أخرى (التمريض…) له صحيفتُه المستقلة: تُضاف الكلية والمسارُ ليتميّز. */
       const cardTitle = (list: PublishedPlanSheet[]) => {
-        const track = trackOf(collegeName.get(list[0].AdCollegeId) || "");
-        return deptTitle(list[0].sectionName) + ((names.get(list[0].sectionName) || 0) > 1 && track ? ` — ${TRACK_LABEL[track]}` : "");
+        const college = collegeName.get(list[0].AdCollegeId) || "", track = trackOf(college), name = list[0].sectionName;
+        const family = (families.get(name)?.size || 0) > 1 ? familyOf(college).replace(/^كلية\s+/, "") : "";
+        return [deptTitle(name), family, (names.get(name) || 0) > 1 && track ? TRACK_LABEL[track] : ""].filter(Boolean).join(" — ");
       };
       /* صفحةُ قسم تكنولوجيا التعليم الأولى ثابتةٌ: تبقى في الفهرس ما لم يُنشر القسمُ من البرنامج. */
       const hasTech = [...groups.values()].some(list => isTechnologyEducation(list[0].sectionName));
