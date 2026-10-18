@@ -417,6 +417,17 @@ async function main() {
     check(page.includes("تغيّر جدولك منذ زيارتك الأخيرة") && page.includes("جديد منذ زيارتك الأخيرة"), "D14 البطاقة تقول ما تغيّر منذ الزيارة الأخيرة");
   }
 
+  /* ── خريطة القسم في بطاقة الأستاذ: أيقونةٌ واحدة بلا نص، وتظهر فقط مع صحيفةٍ منشورة؛ ومؤشرُ التبويب بعدد الظاهر ── */
+  {
+    const cardPage = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(/<a id="planMap" class="pmap"[^>]*\bhidden\b[^>]*aria-label="خريطة خطة القسم"/.test(cardPage), "بطاقة الأستاذ: أيقونة الخريطة مخفية افتراضيًا وبوسمٍ لقارئ الشاشة");
+    check(!/id="planMap"[^>]*>[^<]*[\u0600-\u06FF]/.test(cardPage), "بطاقة الأستاذ: الأيقونة بلا نصٍّ ظاهر");
+    check(/if\(d\.planMapUrl\)/.test(cardPage), "بطاقة الأستاذ: تُظهرها الواجهة فقط إذا جاء رابطٌ من الخادم");
+    const post = server.slice(server.indexOf('app.post("/api/public/staff/:token", '), server.indexOf('app.post("/api/public/staff/:token", ') + 4500);
+    check(post.includes("listPublishedSheets()") && post.includes("planMapUrl") && post.includes(': "";'), "الخادم يرسل رابط الخريطة لقسمٍ له صحيفةٌ منشورة وإلا فارغًا");
+    check(cardPage.includes(".card-tabs:has(#tab-requests:not([hidden]))::before{width:calc((100% - 16px)/3)}") && cardPage.includes("width:calc((100% - 12px)/2)"), "مؤشر التبويب: نصف العرض لتبويبين وثلثه لثلاثة");
+  }
+
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }

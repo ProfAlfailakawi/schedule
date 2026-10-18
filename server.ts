@@ -17188,8 +17188,12 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
     void Repository.markShareLinkInstructor(resolved.link.id, cardInstructorId, { seenAt: new Date().toISOString(), seenFingerprint: cardFingerprint }).catch(() => undefined);
   }
   res.setHeader("Cache-Control", "no-store");
+  /* خريطةُ القسم التفاعلية: رابطٌ واحد يظهر في البطاقة إن كان لقسم الرابط صحيفةٌ منشورة، وإلا لا شيء. */
+  const mapSectionId = Number(resolved.link.AdSectionId || 0);
+  const planMapUrl = mapSectionId > 0 && (await Repository.listPublishedSheets().catch(() => [])).some(sheet => Number(sheet.AdSectionId) === mapSectionId) ? `/plans/s${mapSectionId}/` : "";
   res.json({
     ...visible,
+    planMapUrl,
     lastSeenAt: previousVisit?.seenAt || "",
     changedSinceLastVisit: Boolean(previousVisit?.seenFingerprint) && Number(card.termId) === Number(resolved.link.AdTermId)
       && previousVisit!.seenFingerprint !== cardFingerprint,
@@ -17341,6 +17345,10 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
   padding-bottom:18px;border-bottom:1px solid var(--line)}
 .head h1{margin:6px 0 0;font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:0;line-height:1.2}
 .head small{display:block;color:var(--dim);font-size:13px}
+.pmap{flex:none;display:inline-grid;place-items:center;width:40px;height:40px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--dim);text-decoration:none;transition:color .15s,border-color .15s}
+.pmap[hidden]{display:none}
+.pmap:hover,.pmap:focus-visible{color:var(--jade);border-color:var(--jade);outline:none}
+.pmap svg{width:20px;height:20px}
 .term-switch{display:flex;align-items:center;gap:10px;margin:0 0 20px;flex-wrap:wrap}
 .term-switch label{color:var(--dim);font-size:12px;font-weight:600}
 .term-switch select{flex:1;min-width:180px;min-height:44px;padding:0 14px;font-size:16px;
@@ -17477,7 +17485,8 @@ ${PROPOSAL_ALERT_CSS}
 @keyframes ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--jade) 32%,transparent)}70%,100%{box-shadow:0 0 0 14px transparent}}
 input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
 .card-tabs{position:relative;padding:4px;border:1px solid var(--line);border-radius:14px;background:var(--soft);gap:4px}
-.card-tabs::before{content:"";position:absolute;inset-block:4px;inset-inline-start:4px;width:calc((100% - 16px)/3);border-radius:10px;background:var(--jade);transition:transform .32s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+.card-tabs::before{content:"";position:absolute;inset-block:4px;inset-inline-start:4px;width:calc((100% - 12px)/2);border-radius:10px;background:var(--jade);transition:transform .32s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+.card-tabs:has(#tab-requests:not([hidden]))::before{width:calc((100% - 16px)/3)}
 .card-tabs:has(#tab-movement[aria-selected=true])::before{transform:translateX(calc(-100% - 4px))}
 .card-tabs:has(#tab-requests[aria-selected=true])::before{transform:translateX(calc(-200% - 8px))}
 .card-tab{position:relative;border-color:transparent;transition:color .25s}
@@ -17536,6 +17545,7 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
         <h1 id="name"></h1>
         <small id="scope"></small>
       </div>
+      <a id="planMap" class="pmap" href="#" target="_blank" rel="noopener" hidden aria-label="خريطة خطة القسم" title="خريطة خطة القسم"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6.5v13L9 17l6 3 6-2.5v-13L15 7 9 4z"/><path d="M9 4v13M15 7v13"/></svg></a>
     </div>
     <div class="term-switch">
       <label for="termPick">الفصل الدراسي</label>
@@ -17727,6 +17737,8 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
     var calendarOpen = phase !== "past";
     document.getElementById("name").textContent=d.name;
     document.getElementById("scope").textContent=d.college||"";
+    var planMap=document.getElementById("planMap");
+    if(planMap){if(d.planMapUrl){planMap.href=d.planMapUrl;planMap.hidden=false}else{planMap.hidden=true}}
     var termPick=document.getElementById("termPick");
     if(termPick&&d.availableTerms&&d.availableTerms.length){
       termPick.innerHTML=d.availableTerms.map(function(t){return '<option value="'+t.id+'"'+(t.id===d.termId?' selected':'')+'>'+esc(t.name)+'</option>'}).join("");
