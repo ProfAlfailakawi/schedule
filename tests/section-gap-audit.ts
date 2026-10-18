@@ -50,7 +50,16 @@ check(!short.includes("الكل ("), "قائمةٌ قصيرة بلا «الكل�
 import fs from "fs";
 const bar = fs.readFileSync("src/components/ApprovalBar.tsx", "utf8"), sheet = fs.readFileSync("src/components/QuickPlanSheet.tsx", "utf8"), planning = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
 check(bar.includes("setPlanSheet(true)") && bar.includes("<QuickPlanSheet") && !bar.includes("onOpenPlanning") && !bar.includes("initialTab"), "الأيقونة تفتح شاشة الرفع المختصرة ولا تنقل إلى تخطيط الشعب");
-check(sheet.includes("<SectionPlanning") && sheet.includes("importOnly") && sheet.includes("gap.reload()") && sheet.includes("SectionGapPanel"), "الشاشة: استيرادٌ بالمسار نفسه ثم عرض المقترح بعد الحفظ");
+check(sheet.includes("<SectionPlanning") && sheet.includes("importOnly") && sheet.includes("gap.reload()") && sheet.includes("<Result"), "الشاشة: استيرادٌ بالمسار نفسه ثم عرض المقترح بعد الحفظ");
 check(planning.includes("importOnly ? null : buildReady") && (planning.match(/importOnly \? null : \(<>/g) || []).length === 2 && planning.includes("{!importOnly && legacy"), "وضع importOnly يُخفي الجدول والتقرير والبناء ويُبقي الرفع والمراجعة");
+/* الكشف النصّيّ المقروء كله يُعبَّأ مباشرةً في الشاشة المختصرة؛ وكل ما يحتاج نظراً (ممسوح، خانة غير واضحة، ملاحظة) يُعرض له الاستعراض الكامل نفسه. */
+check(planning.includes("const autoApply = importOnly") && planning.includes('preview!.source !== "scan"') && planning.includes("nReview === 0") && planning.includes("{preview && !autoApply ? createPortal("), "التعبئة المباشرة للمقروء كله فقط، وغيره يمرّ بالمراجعة");
+import { Result } from "../src/components/QuickPlanSheet";
+const sample = { items: gap.items.slice(0, 6), planImported: true, loaded: true, ready: true, source: "المتبقي.pdf", reload: () => {} } as any;
+const rendered = renderToStaticMarkup(React.createElement(Result, { gap: sample, onClose: () => {} }));
+check(rendered.includes("تحتاج شعباً") && (rendered.match(/<li/g) || []).length === 4 && rendered.includes("أخرى") && rendered.includes("المتبقي.pdf") && rendered.includes("gap-cells"), "النتيجة: سطرٌ يعدّ المقررات، وأربعة أسطر، و«و… أخرى»، واسم الملف، ومربعاتٌ للموجود والمطلوب");
+check(renderToStaticMarkup(React.createElement(Result, { gap: { ...sample, items: [] }, onClose: () => {} })).includes("شعبك تكفي المتبقي"), "النتيجة: بلا نقص ← «شعبك تكفي المتبقي»");
+check(renderToStaticMarkup(React.createElement(Result, { gap: { ...sample, ready: false }, onClose: () => {} })).includes("يُحسب المقترح"), "النتيجة: قبل اكتمال الحسبة لا اقتراح مضلِّل");
+
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

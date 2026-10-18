@@ -7,10 +7,57 @@
  */
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, FileUp, X } from "lucide-react";
+import { CheckCircle2, FileText, FileUp, Layers, X } from "lucide-react";
 import SectionPlanning from "./SectionPlanning";
-import { SectionGapPanel, type Gap } from "./SectionGapNote";
+import { type Gap } from "./SectionGapNote";
+import { AR, countOf } from "../utils/arabicCount";
 import { useDialogDismiss } from "./ui";
+
+const num = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
+const TOP = 4;
+
+/** النتيجة: سطرٌ واحد يقول كم مقرراً ينقصه شعب، وأربعةُ أسطرٍ على الأكثر («الموجود» شريطاً و«+الزيادة»)، ثم «تم». */
+/** الموجود مربعاتٍ ممتلئة، والمطلوب زيادتُه مربعاتٍ مفرَّغة. فوق عشرة تُقسَم على النسبة فيبقى الرسم بحجمٍ واحد. */
+function Cells({ existing, required }: { existing: number; required: number }) {
+  const cells = Math.min(required, 10);
+  const filled = required > 10 ? Math.round((existing / required) * 10) : Math.min(existing, required);
+  return (
+    <span className="gap-cells" aria-hidden="true">
+      {Array.from({ length: cells }, (_, index) => <i key={index} className={index < filled ? "on" : undefined} />)}
+    </span>
+  );
+}
+
+export function Result({ gap, onClose }: { gap: Gap; onClose: () => void }) {
+  if (!gap.ready) return <p className="gap-sheet-hint" role="status">يُحسب المقترح…</p>;
+  const total = gap.items.length;
+  const top = gap.items.slice(0, TOP);
+  return (
+    <div className="gap-result" role="status">
+      {total ? (
+        <>
+          <p className="gap-result-head"><Layers aria-hidden="true" /><b>{countOf(total, AR.course)}</b> تحتاج شعباً</p>
+          <ul>
+            {top.map(item => (
+              <li key={item.id} title={`الموجود ${num(item.existing)} والمطلوب ${num(item.required)}`}>
+                <span className="gap-result-name"><b>{item.name}</b><small>{item.code}</small></span>
+                <Cells existing={item.existing} required={item.required} />
+                <span className="gap-result-plus">+{num(item.extra)}</span>
+              </li>
+            ))}
+          </ul>
+          {total > TOP ? <small className="gap-result-more">و{countOf(total - TOP, AR.course)} أخرى</small> : null}
+        </>
+      ) : (
+        <p className="gap-sheet-ok"><CheckCircle2 aria-hidden="true" />شعبك تكفي المتبقي، لا زيادة مقترحة.</p>
+      )}
+      <footer>
+        <small>{gap.source ? <><FileText aria-hidden="true" /><bdi dir="ltr">{gap.source}</bdi></> : null}</small>
+        <button type="button" className="gap-result-done" onClick={onClose} data-guide-ignore="إغلاق شاشة النتيجة">تم</button>
+      </footer>
+    </div>
+  );
+}
 
 export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onClose }: { collegeId: number; sectionId: number; termId: number; gap: Gap; onClose: () => void }) {
   useDialogDismiss(true, onClose);
@@ -25,8 +72,7 @@ export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onCl
           <button type="button" className="student-qr-close" aria-label="إغلاق" onClick={onClose} data-guide-ignore="إغلاق شاشة رفع الكشف"><X aria-hidden="true" /></button>
         </header>
         {done ? (
-          gap.items.length ? <SectionGapPanel gap={gap} onClose={onClose} />
-          : <p className="gap-sheet-ok"><CheckCircle2 aria-hidden="true" />شعبك تكفي المتبقي، لا زيادة مقترحة.</p>
+          <Result gap={gap} onClose={onClose} />
         ) : (
           <>
             <p className="gap-sheet-hint">ارفع كشف المتبقي من عمادة التسجيل (PDF أو صور)، فتظهر لك الشعب المقترح زيادتها.</p>

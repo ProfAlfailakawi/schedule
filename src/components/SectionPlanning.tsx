@@ -70,6 +70,13 @@ const fold = (value: string) => String(value || "").normalize("NFKC")
 const asText = (map: Record<string, number> | undefined) => Object.fromEntries(Object.entries(map || {}).map(([k, v]) => [k, String(v)]));
 const asNumbers = (map: Record<string, string>, min = 0) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).map(([k, v]) => [k, Math.max(min, Math.floor(Number(v)))]));
 
+/** يُنفّذ التعبئة مرةً عند تركيبه (وضع الرفع المختصر حين لا شيء يحتاج مراجعة). */
+function AutoApply({ run }: { run: () => void }) {
+  const done = useRef(false);
+  useEffect(() => { if (!done.current) { done.current = true; run(); } }, [run]);
+  return null;
+}
+
 export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly). */ onSaved?: () => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
@@ -368,6 +375,10 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   const nScan = previewRead.filter(item => item.scanAsk && !item.confirmed).length;
   const nNoSections = previewRead.filter(item => item.state === "noSections").length;
   const nMissing = preview?.missing.length || 0;
+  /* شاشة الرفع المختصرة: كشفٌ نصّيّ مقروءٌ كله بلا خانةٍ تحتاج نظراً ولا ملاحظةٍ ولا تحذير يُعبَّأ مباشرةً (كأنما ضغط «تعبئة» بعد المراجعة)؛
+     وأي شيءٍ غير ذلك — خانةٌ غير واضحة، كشفٌ ممسوح أو مصوَّر، ملاحظة — تُعرض له المراجعة الكاملة نفسها كي لا يُعبَّأ ما لم يُرَ. */
+  const autoApply = importOnly && Boolean(preview) && preview!.column != null && canApply && nReview === 0 && preview!.source !== "scan"
+    && !(preview!.assessment?.notes || []).length && !(preview!.warnings || []).length;
   /* أسطرُ الكشف التي ليست من مقررات القسم في النظام: تظهر في مكانها من الجدول
      بلونٍ خافت — موجودةٌ في الكشف فتُرى — ولا يُعبَّأ منها شيء. */
   const foreignRows = preview ? [...new Set<string>(preview.foreign.map(String))].map(printed => ({ printed })) : [];
@@ -529,7 +540,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       </p>
       </>)}
 
-      {preview ? createPortal(
+      {autoApply ? <AutoApply run={applyImport} /> : null}
+      {preview && !autoApply ? createPortal(
         <div className="student-qr-backdrop no-print" onClick={() => setPreview(null)}>
           <div className="section-plan-report section-plan-import-preview" role="dialog" aria-modal="true" aria-label="مراجعة كشف المتبقي (لم يسجلوا)" onClick={e => e.stopPropagation()}>
             <header>

@@ -54,7 +54,9 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
     return sectionGaps(data.courses, plan);
   }, [data, historyReady, past]);
   const reload = useCallback(() => setBump(value => value + 1), []);
-  return { items, planImported: Boolean(data?.planImported), loaded: data !== null, reload };
+  /* مع كشفٍ مرفوع لا تكتمل الحسبة قبل أن يصل تاريخ الفصول (وإلا اقترح «شعبةً واحدة» فأخفى النقص). */
+  const ready = data !== null && (!data.planImported || historyReady);
+  return { items, planImported: Boolean(data?.planImported), loaded: data !== null, ready, source: data?.planSource?.fileName || "", reload };
 }
 
 export type Gap = ReturnType<typeof useSectionGap>;
