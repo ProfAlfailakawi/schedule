@@ -70,7 +70,7 @@ const fold = (value: string) => String(value || "").normalize("NFKC")
 const asText = (map: Record<string, number> | undefined) => Object.fromEntries(Object.entries(map || {}).map(([k, v]) => [k, String(v)]));
 const asNumbers = (map: Record<string, string>, min = 0) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).map(([k, v]) => [k, Math.max(min, Math.floor(Number(v)))]));
 
-export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows }: { collegeId: number; sectionId: number; termId: number; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
+export default function SectionPlanning({ collegeId, sectionId, termId, onReviewRows, importOnly = false, onSaved }: { collegeId: number; sectionId: number; termId: number; /** شاشةُ «ارفع الكشف» المختصرة: زرُّ الرفع والمراجعة وحدهما بلا جدول التخطيط. */ importOnly?: boolean; /** يُستدعى بعد أن يُحفظ كشفٌ مستورد (في وضع importOnly). */ onSaved?: () => void; /** يفتح صفوف «نزّل الشعب» في شاشة مراجعة الاستيراد نفسها. */ onReviewRows?: (rows: any[], meta?: { existing: number; added: number; pending: number; existingKeys?: string[] }) => void }) {
   const [data, setData] = useState<Payload | null>(null);
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -105,6 +105,11 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
   const loadedScope = useRef("");
   useDialogDismiss(report, () => setReport(false));
   useDialogDismiss(Boolean(preview), () => setPreview(null));
+  /* شاشة الرفع المختصرة: ما إن يُحفظ الكشف المستورد حتى يُبلَّغ من فتحها لتعرض المقترح. */
+  const notifiedEdits = useRef(0);
+  useEffect(() => {
+    if (importOnly && saveState === "saved" && edits > 0 && notifiedEdits.current !== edits) { notifiedEdits.current = edits; onSaved?.(); }
+  }, [importOnly, saveState, edits, onSaved]);
 
   useEffect(() => {
     if (!collegeId || !sectionId || !termId) return;
@@ -380,7 +385,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
 
   return (
     <div className="section-plan">
-      {buildReady
+      {importOnly ? null : buildReady
         ? <SectionBuild collegeId={collegeId} sectionId={sectionId} termId={termId} targets={buildTargets} onReview={onReviewRows} />
         : <p className="sb-hint"><Layers aria-hidden="true" /> {importError ? "عالج رفض الكشف أولاً، فتظهر «نزّل الشعب»." : saveState === "error" ? "تعذّر حفظ الخطة؛ أعد المحاولة لتظهر «نزّل الشعب»." : "تظهر «نزّل الشعب» بعد استيراد كشف المتبقي وحفظ خطةٍ فيها شعب."}</p>}
       <div className="section-plan-import">
@@ -389,9 +394,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
         </PrimaryButton>
         {/* الزر ظاهرٌ دائماً في مكانه: معطّلٌ حين لا متبقٍّ محفوظ لهذا الفصل، فيُعرف أن لا شيء دخل لا أن الزر غائب. */}
         {/* لا تلميحٌ على الزر المعطّل (لا يُبلغ بالفأرة ولا بلوحة المفاتيح): عبارته المرئية هي الشرح. */}
-        <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport} disabled={!hasSaved || reading}>
+        {importOnly ? null : <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport} disabled={!hasSaved || reading}>
           <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : hasSaved ? "إزالة أرقام المتبقي" : "لا كشف مستورد لإزالته"}
-        </SecondaryButton>
+        </SecondaryButton>}
         {importError ? (
           <div ref={importErrorRef} className="section-plan-reject" role="alert" aria-label={importError.message}>
             <div className="section-plan-reject-head">
@@ -423,14 +428,14 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
         ) : null}
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"
           onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
-        <div className="section-plan-import-text">
+        {importOnly ? null : <div className="section-plan-import-text">
           <strong>الخطة تُبنى على عمود «اعداد الذين لم يسجلوا» من كشف العمادة — المتبقي الإجمالي</strong>
           <span className="section-plan-source">
             {reading ? "الكشف PDF من النظام يُقرأ في ثوانٍ؛ والممسوح أو صور الهاتف (أفقية) قرابة نصف دقيقة للصفحة." : <>{sourceLine}{source ? ` · في ${countOf(imported, oblique(AR.course))}` : ""}</>}
           </span>
-        </div>
+        </div>}
       </div>
-      {legacy ? (
+      {!importOnly && legacy ? (
         <div className="section-plan-warning section-plan-legacy" role="status">
           <AlertTriangle aria-hidden="true" />
           <div>
@@ -440,6 +445,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
           </div>
         </div>
       ) : null}
+      {importOnly ? null : (<>
       <div className="section-plan-summary" aria-label="ملخص الخطة">
         <div className="is-main"><Layers aria-hidden="true" /><span>مجموع الشعب المختارة</span><b>{total}</b></div>
         <div><CheckCircle2 aria-hidden="true" /><span>المقررات المخطّطة</span><b>{planned.length}<small> / {rows.length}</small></b></div>
@@ -521,6 +527,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
       <p className="section-plan-note">
         المدى المقترح يرسيه ما فتحه القسم فعلاً{data.similarTerms.length ? <> في الفصول المماثلة ({data.similarTerms.join("، ")})</> : null}، و«المتبقي» يميل به ويُذكر حين لا يوافقه. خانة «المختار» الفارغة تعني المقترح.
       </p>
+      </>)}
 
       {preview ? createPortal(
         <div className="student-qr-backdrop no-print" onClick={() => setPreview(null)}>
@@ -647,6 +654,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
         document.body,
       ) : null}
 
+      {importOnly ? null : (<>
       {report ? createPortal(
         <div className="student-qr-backdrop no-print" onClick={() => setReport(false)}>
           <div className="section-plan-report" role="dialog" aria-modal="true" aria-label="تقرير تخطيط الشعب" onClick={e => e.stopPropagation()}>
@@ -671,6 +679,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId, onReview
           {reportBody}
         </div>
       </PrintPortal>
+      </>)}
     </div>
   );
 }

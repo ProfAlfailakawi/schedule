@@ -39,12 +39,18 @@ check(sectionGaps([], null).length === 0 && sectionGaps([c(1, "101", 30, 9, 100)
 const many = Array.from({ length: 7 }, (_, i) => ({ id: 100 + i, code: `9${i}`, name: `مقرر ${i}`, existing: 1, required: 2 + i, extra: 1 + i, basis: "students" as const, demand: 50 }));
 const gap = { items: byStudents.concat(planned, many), planImported: false, loaded: true };
 const html = renderToStaticMarkup(React.createElement(SectionGapPanel, { gap, onClose: () => {} }));
-check(html.includes("شعبٌ يُفضَّل زيادتها") && html.includes("اختياري") && html.includes("طلبوه") && html.includes("تخطيطك"), "العرض: عنوانٌ واختياري، ومصدر كل سطر (طلبة أو تخطيطك)");
+check(html.includes("شعبٌ يُفضَّل زيادتها") && html.includes("اختياري") && html.includes("في «مساري»") && html.includes("تخطيطك"), "العرض: عنوانٌ واختياري، ومصدر كل سطر (طلبة أو تخطيطك)");
 check(!html.includes("<a ") && !html.includes("<input") && !html.includes("<form") && !html.includes("قارن") && !html.includes("كشف المتبقي"), "العرض: بلا رابطٍ ولا حقلٍ ولا دعوةٍ إلى شاشة التخطيط");
 const shownRows = (html.match(/<li/g) || []).length;
 check(shownRows === 5 && html.includes("الكل ("), "العرض: خمسة أسطر ثم «الكل»", { shownRows });
 const short = renderToStaticMarkup(React.createElement(SectionGapPanel, { gap: { ...gap, items: gap.items.slice(0, 2), planImported: true }, onClose: () => {} }));
 check(!short.includes("الكل ("), "قائمةٌ قصيرة بلا «الكل»");
 
+/* شاشة الرفع المختصرة: تُفتح من الأيقونة وتعيد استعمال استيراد «تخطيط الشعب» نفسه (وضع importOnly) فلا مسارَ ثانياً ولا جدولَ تخطيط. */
+import fs from "fs";
+const bar = fs.readFileSync("src/components/ApprovalBar.tsx", "utf8"), sheet = fs.readFileSync("src/components/QuickPlanSheet.tsx", "utf8"), planning = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
+check(bar.includes("setPlanSheet(true)") && bar.includes("<QuickPlanSheet") && !bar.includes("onOpenPlanning") && !bar.includes("initialTab"), "الأيقونة تفتح شاشة الرفع المختصرة ولا تنقل إلى تخطيط الشعب");
+check(sheet.includes("<SectionPlanning") && sheet.includes("importOnly") && sheet.includes("gap.reload()") && sheet.includes("SectionGapPanel"), "الشاشة: استيرادٌ بالمسار نفسه ثم عرض المقترح بعد الحفظ");
+check(planning.includes("importOnly ? null : buildReady") && (planning.match(/importOnly \? null : \(<>/g) || []).length === 2 && planning.includes("{!importOnly && legacy"), "وضع importOnly يُخفي الجدول والتقرير والبناء ويُبقي الرفع والمراجعة");
 console.log(`\nSection gap audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

@@ -5,7 +5,7 @@
  * تفتح قائمةً قصيرة («٥ ← ٧») وفي ذيلها دعوةٌ لرفع كشف المتبقي لمقارنةٍ أدق. لا تمنع توقيعاً ولا تكتب شيئاً.
  * الحساب في utils/sectionGap.ts؛ المصدران: /api/schedules/section-gap و/api/registration-stats.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ClipboardList, Layers, Users, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
 import { sectionGaps, type GapCourse, type GapPlan } from "../utils/sectionGap";
@@ -25,6 +25,7 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
   const scope = `${collegeId}:${sectionId}:${termId}`;
   const [loaded, setLoaded] = useState<{ scope: string; payload: GapPayload } | null>(null);
   const [past, setPast] = useState<{ scope: string; stamp: string; history: GapPlan["history"] } | null>(null);
+  const [bump, setBump] = useState(0);
   useEffect(() => {
     if (!collegeId || !sectionId || !termId) return;
     let cancelled = false;
@@ -33,7 +34,7 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
       .then((body: GapPayload | null) => { if (!cancelled) setLoaded(body ? { scope, payload: body } : null); })
       .catch(() => { if (!cancelled) setLoaded(null); });
     return () => { cancelled = true; };
-  }, [collegeId, sectionId, termId, refreshSignal, scope]);
+  }, [collegeId, sectionId, termId, refreshSignal, scope, bump]);
   const data = loaded && loaded.scope === scope ? loaded.payload : null;
   const stamp = data?.planImported ? String(data.planSource?.importedAt || "imported") : "";
   useEffect(() => {
@@ -52,17 +53,18 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
     const plan: GapPlan = { accepted: data.accepted || {}, remaining: historyReady ? data.remaining || {} : {}, history: historyReady ? past!.history : {} };
     return sectionGaps(data.courses, plan);
   }, [data, historyReady, past]);
-  return { items, planImported: Boolean(data?.planImported), loaded: data !== null };
+  const reload = useCallback(() => setBump(value => value + 1), []);
+  return { items, planImported: Boolean(data?.planImported), loaded: data !== null, reload };
 }
 
-type Gap = ReturnType<typeof useSectionGap>;
+export type Gap = ReturnType<typeof useSectionGap>;
 
 /** الشارة: عددُ المقررات التي تنقصها شعب. */
 export function SectionGapBadge({ gap, open, onToggle }: { gap: Gap; open: boolean; onToggle: () => void }) {
   if (!gap.items.length) return null;
   return (
     <button type="button" className="apb-badge apb-data-btn" data-tone="info" aria-expanded={open} onClick={onToggle}
-      title="شعبٌ يُفضَّل زيادتها · اختياري ولا يمنع التوقيع"
+      title="شعبٌ يُفضَّل زيادتها بحسب رغبات الطلبة في «مساري» أو تخطيطك · اختياري ولا يمنع التوقيع"
       data-guide-ignore="قائمة الشعب المقترح زيادتها — اختيارية، تعرض مقرراتٍ ينقصها شعب">
       <Layers aria-hidden="true" /><span>شعب</span><b>{num(gap.items.length)}</b><ChevronDown aria-hidden="true" className="apb-data-chev" />
     </button>
@@ -87,7 +89,7 @@ export function SectionGapPanel({ gap, onClose }: { gap: Gap; onClose: () => voi
             <span className="apb-gap-name"><b>{item.name}</b><small>{item.code}</small></span>
             {item.basis === "plan"
               ? <span className="apb-gap-why"><ClipboardList aria-hidden="true" />تخطيطك</span>
-              : <span className="apb-gap-why"><Users aria-hidden="true" />{countOf(item.demand, AR.student)} طلبوه</span>}
+              : <span className="apb-gap-why"><Users aria-hidden="true" />{countOf(item.demand, AR.student)} في «مساري»</span>}
             <span className="apb-gap-pill" title={`الموجود ${num(item.existing)} والمطلوب ${num(item.required)}`}>
               <i>{num(item.existing)}</i><em aria-hidden="true">←</em><b>{num(item.required)}</b>
             </span>

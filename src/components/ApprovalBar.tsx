@@ -18,12 +18,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, Check, ChevronDown, CornerUpLeft, DoorOpen, FilePenLine, Flag, History,
   Hourglass, Users, Landmark, ListChecks, ListPlus, Lock, MessageSquareText, PenLine, Quote, Send, ShieldCheck, Undo2, X,
-  Clock, Layers, Pencil, FileQuestion,
+  Clock, Layers, Pencil, FileUp,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import { SectionGapBadge, SectionGapPanel, useSectionGap } from "./SectionGapNote";
+import QuickPlanSheet from "./QuickPlanSheet";
 import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
 } from "../utils/approvalWorkflow";
@@ -150,6 +151,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   /* قائمة البيانات الناقصة تُفتح من عنصرها هي، لا من طيّ تفاصيل الاعتماد. */
   const [readinessOpen, setReadinessOpen] = useState(false);
   const [gapOpen, setGapOpen] = useState(false);
+  const [planSheet, setPlanSheet] = useState(false);
   const gap = useSectionGap(collegeId, sectionId, termId, refreshSignal);
   const [readinessAll, setReadinessAll] = useState(false);
   const revealTimer = useRef(0);
@@ -661,11 +663,13 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
         <SectionGapBadge gap={gap} open={gapOpen} onToggle={() => setGapOpen(open => !open)} />
         {gap.loaded && !gap.planImported && (gap.items.length > 0 || canSignNow) ? (
-          <InfoTip {...tipProps("gap-plan")} label="لم يُرفع كشف المتبقي" tip={[gap.items.some(item => item.basis === "plan") ? "لم يُرفع كشف المتبقي بعد." : "لم يُرفع كشف المتبقي بعد، فالمقارنة من طلب الطلبة وحدهم."]} className="apb-badge apb-gap-ghost"
-            data-guide-ignore="أيقونة تنبيه خفيفة: كشف المتبقي لم يُرفع بعد — تلميحٌ لا فعل">
-            <FileQuestion aria-hidden="true" />
-          </InfoTip>
+          <button type="button" className="apb-badge apb-gap-ghost" onClick={() => setPlanSheet(true)} aria-haspopup="dialog"
+            title="لم يُرفع كشف المتبقي. اضغط لترفعه فتظهر لك الشعب المقترحة." aria-label="ارفع كشف المتبقي لتظهر لك الشعب المقترحة"
+            data-guide-ignore="أيقونة اختيارية: تفتح شاشةً مختصرة لرفع كشف المتبقي">
+            <FileUp aria-hidden="true" />
+          </button>
         ) : null}
+        {planSheet ? <QuickPlanSheet collegeId={collegeId} sectionId={sectionId} termId={termId} gap={gap} onClose={() => setPlanSheet(false)} /> : null}
         {canSignNow && blockingConflicts === 0 ? (
           <span className="apb-badge apb-ready" data-tone="success" data-guide-ignore="شارة جاهزية التوقيع — عرضٌ لا فعل">
             <ShieldCheck aria-hidden="true" /><span>جاهز للتوقيع</span>
