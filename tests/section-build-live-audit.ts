@@ -88,6 +88,18 @@ try {
     const widePick = widePreview.body.rows.flatMap((r: any) => r.placements.map((p: any) => `${r.courseId}:${p.sectionCode}`));
     const wideApply = await call("POST", "/api/section-build/apply", { ...wide, fingerprint: widePreview.body.fingerprint, pick: widePick });
     check(wideApply.status === 409 && wideApply.body?.code === "needs-review" && ((await call("GET", "/api/schedules?collegeId=1&sectionId=1&termId=1")).body as any[]).length === before.length, "والمعلّق لا يُكتب مباشرةً ولو في فصلٍ فيه مواعيد", wideApply.body);
+    /* قاعاتُ القسم «الحالية»: قاعةٌ من تاريخه صارت في السجلّ لقسمٍ آخر لا تُختار، فلا يبقى إلا المشترك بين تاريخه وما هو له الآن. */
+    const registryRooms = ((await call("GET", "/api/location-registry")).body.rooms || []) as any[];
+    const keepRoom = "room_901A01_101";
+    const movedOut = [] as string[];
+    for (const room of registryRooms) if (room.id !== keepRoom && (room.sectionIds || []).includes(1)) { const moved = await call("PUT", `/api/admin/location-registry/rooms/${room.id}`, { sectionIds: [2], primarySectionIds: [] }); if (moved.status === 200) movedOut.push(room.id); }
+    const currentOnly = await call("POST", "/api/section-build/preview", wide);
+    const usedRooms = currentOnly.body.rows.flatMap((r: any) => r.placements.map((p: any) => p.roomId)).filter(Boolean);
+    check(movedOut.length > 0 && usedRooms.length > 0 && usedRooms.every((id: string) => id === keepRoom), "الاختيار من قاعات القسم الحالية فقط: قاعةٌ من تاريخه صارت لقسمٍ آخر لا تُختار", { movedOut: movedOut.length, usedRooms });
+    check(currentOnly.body.totals.roomless + usedRooms.length === currentOnly.body.totals.pending, "وما لم تُوجد له قاعةٌ حالية يبقى بلا قاعة (لا تخمين) ويُعدّ", currentOnly.body.totals);
+    await call("PUT", `/api/admin/location-registry/rooms/${keepRoom}`, { sectionIds: [2], primarySectionIds: [] });
+    const noCurrent = await call("POST", "/api/section-build/preview", wide);
+    check(noCurrent.body.rows.flatMap((r: any) => r.placements).every((p: any) => p.roomId), "وإن لم تكن أيُّ قاعةٍ من تاريخه مسجّلةً له الآن (لا بيانات للمقارنة) بقي التاريخ وحده", noCurrent.body.totals);
     const onlyPicked = await call("POST", "/api/section-build/review-rows", { ...base, pick: [pick[0]] });
     check(onlyPicked.status === 200 && onlyPicked.body.added === 1, "المحدَّد في المعاينة وحده يُضاف", onlyPicked.body?.added);
     for (const row of before) await call("DELETE", `/api/schedules/${row.id}`);
