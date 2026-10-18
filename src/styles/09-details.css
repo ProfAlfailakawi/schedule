@@ -2176,3 +2176,10 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 
 /* Status badges beside each other (role, read-only, active) breathe: they used to touch. */
 .inspector-status{display:flex;flex-wrap:wrap;gap:6px}
+
+/* ── نطاقٌ ثابت: كليةٌ أو قسمٌ وحيد لا خيارَ فيه — نصٌّ بهيئة الحقل بلا سهم ولا قائمة. */
+.fixed-scope-value{
+  display:flex;align-items:center;min-height:44px;padding:0 var(--s4);width:100%;box-sizing:border-box;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-3);color:var(--ink);
+  font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}

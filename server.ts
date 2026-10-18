@@ -20,6 +20,7 @@ import { byRoom, byArabic, sortByName } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
+import { visibleTermIds } from "./src/utils/scopedTerms";
 import { currentTermId, planningTermCandidates, termHasEnded, termIsArchive } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { AdCourse, FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
@@ -3159,6 +3160,33 @@ app.delete("/api/sections/:id", requirePermission(4), async (req: AuthenticatedR
 app.get("/api/terms", requireAuth, async (req: Request, res: Response) => {
   const terms = await Repository.getTerms();
   res.json(sortTermsNewestServer(terms));
+});
+
+/* ── الفصول التي لها جدولٌ في النطاق ─────────────────────────────────────────
+ *
+ * قائمةُ الفصل في كل شاشةٍ لا تُري القسمَ فصلاً لا بيانات له فيه (خاصةً الفصول السابقة)، إلا الفصل الحالي فيبقى
+ * ولو فارغاً لأن القسم قد يريد إنشاءه. تُقرأ من صفوف نطاق القارئ نفسه (readLiveSchedulesForRequest: حارسُ النطاق
+ * يُطبَّق) فصلاً فصلاً — لا مسحَ بلا فصل — وتُحفظ دقيقةً بمفتاحٍ يشمل نطاقَ القارئ. */
+const scopedTermsCache = new Map<string, { at: number; data: { termIds: number[]; currentTermId: number } }>();
+app.get("/api/terms/scoped", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = boundedInt(req.query.collegeId, 0, Number.MAX_SAFE_INTEGER) ?? 0;
+  const sectionId = boundedInt(req.query.sectionId, 0, Number.MAX_SAFE_INTEGER) ?? 0;
+  const scopeSig = req.user?.IsAdminUser ? "admin" : JSON.stringify((req.scopes || []).map(scope => [Number(scope.AdCollegeId), Number(scope.AdSectionId)]).sort());
+  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${req.user?.SystemUserId || 0}:${scopeSig}`);
+  const hit = scopedTermsCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) { res.json(hit.data); return; }
+  const terms = sortTermsNewestServer(await Repository.getTerms());
+  const current = Number(currentTermId(terms as any) || terms[0]?.AdTermId || 0);
+  const counts = new Map<number, number>();
+  for (let at = 0; at < terms.length; at += 6) {
+    await Promise.all(terms.slice(at, at + 6).map(async term => {
+      counts.set(Number(term.AdTermId), (await readLiveSchedulesForRequest(req, collegeId, sectionId, Number(term.AdTermId))).length);
+    }));
+  }
+  const data = { termIds: visibleTermIds(terms.map(term => Number(term.AdTermId)), counts, current), currentTermId: current };
+  if (scopedTermsCache.size > 200) scopedTermsCache.clear();
+  scopedTermsCache.set(key, { at: Date.now(), data });
+  res.json(data);
 });
 
 app.post("/api/terms", requirePermission(5), async (req: Request, res: Response) => {

@@ -2108,7 +2108,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       online={online}
       lockCollege={scopedContext.lockCollege}
       lockSection={singleDepartmentOf(scopes, collegeId, isPowerAdmin) !== null}
-      hideSection={!isPowerAdmin}
+      hideSection={!isPowerAdmin && singleDepartmentOf(scopes, collegeId, isPowerAdmin) === null}
       onCollegeChange={(nextCollegeId, firstSectionId) => {
         pendingReadingAction.current = null;
         const nextSectionId = nextCollegeId ? (isPowerAdmin ? firstSectionId : (resolveScopeSelection(scopes, nextCollegeId, false).defaultSectionId || firstSectionId)) : 0;

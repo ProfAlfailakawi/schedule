@@ -13,7 +13,9 @@ import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
 import type { ScheduleApprovalStatus } from "../types";
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
-import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf, soleCollegeOf } from "../utils/scopeContext";
+import { FixedScopeValue } from "./ScopeAskBar";
+import { useScopedTerms } from "./useScopedTerms";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { safeStorage } from "../utils/safeStorage";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
@@ -1012,10 +1014,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
     );
   }, [courses, filters.sectionId, filters.building, filters.hall, filters.courseId, courseIdentityKey, rowsForFacet]);
+  /* الفصول التي فيها بيانات للنطاق المختار، والحالي دائماً (useScopedTerms). */
+  const scopedTerms = useScopedTerms<AdTerm>(terms, filters.collegeId, filters.sectionId, filters.termId, id => pickScope({ termId: id }));
   const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
-    terms,
+    scopedTerms,
     row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
-  ), [terms, filters.termId]);
+  ), [scopedTerms, filters.termId]);
   const instructorOptions = useMemo(() => {
     const allowed=new Set(rowsForFacet("instructor").map(row=>Number(row.AdInstructorId)).filter(Boolean));
     const source=instructors.filter(person=>allowed.has(Number(person.AdInstructorId))||Number(person.AdInstructorId)===Number(filters.instructorId));
@@ -2020,9 +2024,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         </form>
         {askNote ? <p className="query-ask-note" id="query-ask-note" role="status">{askNote}</p> : null}
 
-        <div className="query-scope query-primary-filters" data-count={soleDepartment === null ? 3 : 2} aria-label="المرشحات الأساسية">
+        <div className="query-scope query-primary-filters" data-count={3} aria-label="المرشحات الأساسية">
           <Field label="الكلية">
-            <select
+            {soleCollegeOf(scopes, isPowerAdmin) ? <FixedScopeValue>{cleanOptionText(collegeOptions.find(row => Number(row.AdCollegeId) === soleCollegeOf(scopes, isPowerAdmin))?.AdCollegeName || "")}</FixedScopeValue> : <select
               value={filters.collegeId || ""}
               onChange={event => {
                 const id = Number(event.target.value) || 0;
@@ -2031,8 +2035,13 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             >
               <option value="">اختر الكلية</option>
               {collegeOptions.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{cleanOptionText(row.AdCollegeName)}</option>)}
-            </select>
+            </select>}
           </Field>
+          {soleDepartment !== null ? (
+            <Field label="القسم">
+              <FixedScopeValue>{cleanOptionText(sectionOptions.find(row => Number(row.AdSectionId) === soleDepartment)?.AdSectionName || "")}</FixedScopeValue>
+            </Field>
+          ) : null}
           {soleDepartment === null ? (
             <Field label="القسم">
               <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => pickScope({ sectionId: Number(event.target.value) || 0 })}>
