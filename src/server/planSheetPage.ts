@@ -234,7 +234,7 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts, emb
   const cx = W / 2;
   const title = model.title;
   out.push(`<rect width="${W}" height="@H@" fill="url(#bg)"/>`);
-  out.push(`<text x="${W - 42}" y="154" direction="ltr" text-anchor="end" font-size="${model.planLabel.length > 12 ? 24 : 30}" font-weight="300" fill="#0B2545" letter-spacing="1">${esc(model.planLabel)}</text>`);
+  out.push(`<text x="${W - 42}" y="154" ${/[\u0600-\u06FF]/.test(model.planLabel) ? 'direction="rtl"' : 'direction="ltr" letter-spacing="1"'} text-anchor="end" font-size="${model.planLabel.length > 12 ? 24 : 30}" font-weight="300" fill="#0B2545">${esc(model.planLabel)}</text>`);
   out.push(`<text x="${W - 42 - 168}" y="152" text-anchor="start" font-size="14" font-weight="500" fill="#64748B">الخطة الدراسية</text>`);
   /* خريطةُ الطالب الخاصة لا تحمل رمزاً: رابطُها شخصيّ، والرجوعُ إلى «خريطتي» بدلَه. */
   if (!embed) {
