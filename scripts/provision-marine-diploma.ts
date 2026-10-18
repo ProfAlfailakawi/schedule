@@ -11,6 +11,7 @@
  *   --college=<رقم>          إن التبس اسم الكلية أو أردت كليةً بعينها
  *   --create-college         تُنشأ الكلية إن لم توجد (اسمها «كلية الدراسات التكنولوجية - بنين» ورمزها 04)
  *   --college-name= / --college-code=   اسمٌ أو رمزٌ آخر للكلية المُنشأة
+ *   --approve                تُعتمد قواعد الصحيفة فوراً (وإلا بقيت قيد المراجعة لرئيس اللجنة)
  *   --password=<كلمة>        تُفعَّل بها الحسابات (وإلا بقيت موقوفة بلا كلمة سر)؛ لا يُمسّ حسابٌ قائمٌ له كلمة سر
  *   --prefix=tsb             بادئة أسماء الدخول (tsbdean، tsbhead…)
  *   --dept=30=اللغة الإنجليزية   اسم قسمٍ غائب عن الكلية (يتكرر لكل قسم)
@@ -42,16 +43,17 @@ const report = await provisionProgram(Repository, MARINE_MECHANICAL_DIPLOMA, {
   apply, collegeId: arg("college") ? Number(arg("college")) : undefined,
   createCollege: process.argv.includes("--create-college")
     ? { code: arg("college-code") || MARINE_MECHANICAL_DIPLOMA.groups[0].courses[0].code.slice(0, 2), name: arg("college-name") || `${MARINE_MECHANICAL_DIPLOMA.college} - بنين` }
-    : undefined, prefix: arg("prefix") || "tsb", deptNames, password: arg("password"), log: line => console.log("  " + line),
+    : undefined, prefix: arg("prefix") || "tsb", deptNames, password: arg("password"), approve: process.argv.includes("--approve"), log: line => console.log("  " + line),
 });
 if (report.error) { console.log(`\n✗ ${report.error}`); process.exit(1); }
 console.log(`\nالكلية: ${report.college!.name}${report.collegeToCreate ? ` — ${apply ? "أُنشئت" : "ستُنشأ"} برمز ${report.collegeToCreate.code}` : ` (${report.college!.id})`}`);
 if (report.sectionsToCreate.length) console.log(`أقسام ستُنشأ: ${report.sectionsToCreate.map(row => `${row.name} [${row.code}]`).join("، ")}`);
 console.log(`المقررات: ${report.coursesExisting} موجودة، ${report.coursesToCreate} ${apply ? "أُنشئت" : "ستُنشأ"}`);
 console.log(`الصحيفة: ${report.planStatus} · القواعد: ${report.draftStatus}`);
+if (report.approveBlocked) console.log(`⚠ ${report.approveBlocked}`);
 console.log("الحسابات:");
 for (const row of report.accounts) console.log(`  ${row.status === "exists" ? "=" : apply ? "+" : "·"} ${row.login.padEnd(18)} ${row.role.padEnd(15)} ${row.scope}`);
 console.log(apply
-  ? `\nتم. القواعد «قيد المراجعة»: يعتمدها رئيس لجنة الجدول من «مراجعة الصحيفة» ثم تُنشر الخريطة. ${arg("password") ? "الحسابات فعّالة بكلمة السر المعطاة." : "الحسابات موقوفة: ضع كلمات السر وفعّلها من شاشة المستخدمين."}`
+  ? `\nتم. ${report.draftStatus === "approved" ? "القواعد معتمدة." : "القواعد «قيد المراجعة»: يعتمدها رئيس لجنة الجدول من «مراجعة الصحيفة» ثم تُنشر الخريطة."} ${arg("password") ? "الحسابات فعّالة بكلمة السر المعطاة." : "الحسابات موقوفة: ضع كلمات السر وفعّلها من شاشة المستخدمين."}`
   : "\nمعاينة فقط. أعد التشغيل مع --apply بعد مراجعة الملخص.");
 process.exit(0);
