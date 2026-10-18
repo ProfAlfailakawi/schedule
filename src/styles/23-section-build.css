@@ -42,3 +42,8 @@
 .transfer-import-commit.is-planning button:disabled{opacity:.55}
 .tp-blocked{display:flex;align-items:center;gap:8px;margin:0;font-size:.84rem;color:var(--warning)}.tp-blocked svg{flex:none;inline-size:18px;block-size:18px}
 .tp-banner .tp-removed{color:var(--danger);font-weight:700}
+/* شعبٌ لم يجد لها النظام قاعةً خالية: رسالةٌ هادئة بعددها وأسمائها، لا خطأ. */
+.tp-rooms{display:flex;align-items:flex-start;gap:12px;margin-block:-4px 14px;padding:11px 14px;border:1px dashed color-mix(in srgb,var(--warning) 55%,var(--line));border-radius:14px;background:var(--warning-soft)}
+.tp-rooms>div{display:grid;gap:3px;flex:1;min-inline-size:0}.tp-rooms strong{font-size:.95rem}.tp-rooms small{color:var(--muted);font-size:.78rem;line-height:1.7}
+.tp-rooms-mark{display:grid;place-items:center;flex:none;inline-size:34px;block-size:34px;border-radius:11px;background:color-mix(in srgb,var(--warning) 18%,var(--surface));color:var(--warning)}.tp-rooms-mark svg{inline-size:18px;block-size:18px}
+.tp-rooms-chips{display:flex;flex-wrap:wrap;gap:6px;margin-block-start:3px}.tp-rooms-chips i{font-style:normal;padding:1px 9px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:.72rem;color:var(--text)}

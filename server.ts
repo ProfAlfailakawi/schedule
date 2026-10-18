@@ -119,7 +119,7 @@ import { endForRequest, headlineReasonOf, judgeRequest, requestFullySettled, row
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { nextSectionCodes, readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
 import { demandFromTargets, gapRows, hardestFirst, weekFingerprint, type GapRow } from "./src/utils/sectionBuild";
-import { facultyPlaceholderOf, placePending, templatesFromHistory } from "./src/utils/sectionPending";
+import { facultyPlaceholderOf, placePending, templatesFromHistory, type PendingRoom } from "./src/utils/sectionPending";
 import { courseLevelFromCode } from "./src/utils/curriculumRules";
 import { reasonForMove } from "./src/utils/appointmentStory";
 import { buildCalendar, calendarSpanForTerm, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
@@ -14980,6 +14980,18 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
     const working: FSchedule[] = [...termWeek];
     for (const proposal of reading.proposals) working.push(...asRows(proposal.courseId, proposal.placements as any));
     const pairs = cohortPairs(demand);
+    /* قاعات القسم من تاريخه (موثّقة وفعّالة)، الأكثر استعمالاً أولاً؛ وللمقرر قاعاتُه هو قبلها. فيختار النظام القاعة ولا يُترك التثبيت إلا لما لم تُوجد له. */
+    const activeRoomIds = new Set((registry.rooms as any[]).filter(room => room.active && room.confidence === "CONFIRMED").map(room => String(room.id)));
+    const capacityOf = new Map((registry.rooms as any[]).map(room => [String(room.id), Number(room.capacity) || 0] as const));
+    const roomsByUse = (rows: FSchedule[]): PendingRoom[] => {
+      const use = new Map<string, { n: number; row: FSchedule }>();
+      for (const item of rows) {
+        if (item.locationStatus !== "VERIFIED" || !item.roomId || !item.buildingId || !activeRoomIds.has(String(item.roomId))) continue;
+        use.set(String(item.roomId), { n: (use.get(String(item.roomId))?.n || 0) + 1, row: item });
+      }
+      return [...use.values()].sort((a, b) => b.n - a.n).map(({ row }) => ({ roomId: String(row.roomId), buildingId: String(row.buildingId), code: String(row.AdRoomCode || ""), hall: String(row.AdRoomHall || ""), capacity: capacityOf.get(String(row.roomId)) || 0 }));
+    };
+    const departmentRooms = roomsByUse(history);
     for (const row of needsPending) {
       const full = byCourse.get(row.courseId)?.placements || [];
       const past = history.filter(item => Number(item.AdCourseId) === row.courseId);
@@ -14992,6 +15004,8 @@ async function readSectionBuild(collegeId: number, sectionId: number, termId: nu
         course: courseById.get(row.courseId)!, count: row.remaining - full.length, firstCode: nextSectionCodes(taken, 1)[0],
         templates: templatesFromHistory(past, termOrder), seed, working, pairs, doorway: style?.doorway || 0, rhythm: style?.reading || null, termId,
         instructorId: Number(placeholder?.AdInstructorId || 0), instructorName: placeholder?.AdInstructorName || "", fallbackLength: lengths[0] || 0, draftId: () => tempId--,
+        rooms: (() => { const own = roomsByUse(past); const seen = new Set(own.map(room => room.roomId)); return [...own, ...departmentRooms.filter(room => !seen.has(room.roomId))]; })(),
+        seatsNeeded: Number(courseById.get(row.courseId)?.MaxStudent) || 0,
       });
       if (placed.length) pendingBy.set(row.courseId, placed);
     }
@@ -15020,7 +15034,8 @@ app.post("/api/section-build/preview", requirePermission(7), async (req: Authent
     target: sum.target + (row.target ?? 0), existing: sum.existing + (row.target === null ? 0 : Math.min(row.existing, row.target)),
     remaining: sum.remaining + row.remaining, placeable: sum.placeable + row.placements.length,
     pending: sum.pending + row.placements.filter(p => (p as any).pending).length,
-  }), { target: 0, existing: 0, remaining: 0, placeable: 0, pending: 0 });
+    roomless: sum.roomless + row.placements.filter(p => (p as any).pending && !p.roomId).length,
+  }), { target: 0, existing: 0, remaining: 0, placeable: 0, pending: 0, roomless: 0 });
   res.json({ ...built, totals });
 });
 
@@ -15116,7 +15131,7 @@ app.post("/api/section-build/review-rows", requirePermission(7), async (req: Aut
   res.json({ rows: [...existingRows, ...newRows], count: existingRows.length + newRows.length, existing: existingRows.length, added: newRows.length,
     /* مفتاح كل موعدٍ حالي (مقرر|شعبة): تعرف الواجهة به أصل كل صف إن سقط ترتيبها بعد المعاينة. */
     existingKeys: (occupied as any[]).map(row => `${Number(row.AdCourseId)}|${String(row.SCode)}`),
-    pending: added.filter(({ p }) => (p as any).pending).length });
+    pending: added.filter(({ p }) => (p as any).pending).length, roomless: added.filter(({ p }) => !p.roomId).length });
 });
 
 /* التراجع: يحذف الصفوف التي أنشأتها دفعةٌ بعينها، ولا يلمس صفّاً تغيّر بعد إنشائه (رقم الإصدار) أو حُجز للتسجيل. */
