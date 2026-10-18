@@ -86,7 +86,29 @@ const snapshot = async () => JSON.stringify([(await Repository.getSections()).le
   const liveRules = await Repository.getRuleSet(newPlan.id);
   check(made.draftStatus === "approved" && liveRules?.rules?.length === 32 && liveRules.version === 1, "V2ب --approve: القواعد معتمدة (32 قاعدة، نسخة 1)", [made.draftStatus, liveRules?.rules?.length]);
   const again = await provisionProgram(Repository, REF, { ...opts, apply: true, approve: true });
+  check(again.draftStatus === "approved" && !again.approveBlocked, "V2ب الإعادة تُبلغ أن القواعد معتمدة (لا «قيد المراجعة»)", again.draftStatus);
   check(again.ok && !again.collegeToCreate && ((await Repository.getColleges()) as any[]).length === colleges + 1 && again.coursesToCreate === 0, "V2ب الإعادة لا تكرر الكلية");
+}
+
+/* V2ج: --approve لا يعتمد قواعد فيها مانع، ولا يمسّ تعديلاً لاحقاً على صحيفةٍ معتمدة سابقاً. */
+{
+  const blockedNames = Object.fromEntries([...new Set(REF.groups.flatMap(group => group.courses.map(course => course.code.slice(2, 4))))].map(code => [code, `قسم ${code}`]));
+  const o = { prefix: "tsq", collegeMatch: ["كلية الاختبار ج"], deptNames: blockedNames, createCollege: { code: "78", name: "كلية الاختبار ج - بنين" } };
+  const first = await provisionProgram(Repository, REF, { ...o, apply: true });
+  const sec = ((await Repository.getSections()) as any[]).find(row => Number(row.AdCollegeId) === first.college!.id && String(row.AdSectionCode) === "51");
+  const plan = ((await Repository.getCurriculumPlans(Number(sec.AdSectionId))) as any[]).find(row => row.code === "DP-0405-2023");
+  const draft = await Repository.getRuleDraft(plan.id);
+  const broken = draft.rules.map((rule: any, index: number) => index === 0 ? { ...rule, prereq: { all: [rule.courseId], anyOf: [] } } : rule);
+  await Repository.updateRuleDraft(plan.id, (current: any) => ({ ...current, rules: broken, updatedAt: new Date().toISOString() }));
+  const blocked = await provisionProgram(Repository, REF, { ...o, apply: true, approve: true });
+  check(Boolean(blocked.approveBlocked) && !(await Repository.getRuleSet(plan.id)) && blocked.draftStatus !== "approved", "V2ج مانعٌ في القواعد: لا اعتماد وتبقى قيد المراجعة", blocked.approveBlocked);
+  await Repository.updateRuleDraft(plan.id, (current: any) => ({ ...current, rules: draft.rules, updatedAt: new Date().toISOString() }));
+  const ok = await provisionProgram(Repository, REF, { ...o, apply: true, approve: true });
+  check(ok.draftStatus === "approved" && (await Repository.getRuleSet(plan.id))?.version === 1, "V2ج بعد زوال المانع: تُعتمد", ok.approveBlocked);
+  const liveBefore = JSON.stringify(await Repository.getRuleSet(plan.id));
+  await Repository.updateRuleDraft(plan.id, (current: any) => ({ ...current, status: "review", rules: current.rules, updatedAt: new Date().toISOString() }));
+  await provisionProgram(Repository, REF, { ...o, apply: true, approve: true });
+  check(JSON.stringify(await Repository.getRuleSet(plan.id)) === liveBefore && (await Repository.getRuleDraft(plan.id))?.status === "review", "V2ج تعديلٌ لاحقٌ على صحيفةٍ معتمدة يبقى لرئيس اللجنة");
 }
 
 /* V3 + V4 */

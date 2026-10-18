@@ -50,6 +50,7 @@ console.log(`\nالكلية: ${report.college!.name}${report.collegeToCreate ? `
 if (report.sectionsToCreate.length) console.log(`أقسام ستُنشأ: ${report.sectionsToCreate.map(row => `${row.name} [${row.code}]`).join("، ")}`);
 console.log(`المقررات: ${report.coursesExisting} موجودة، ${report.coursesToCreate} ${apply ? "أُنشئت" : "ستُنشأ"}`);
 console.log(`الصحيفة: ${report.planStatus} · القواعد: ${report.draftStatus}`);
+if (report.approveBlocked) console.log(`⚠ ${report.approveBlocked}`);
 console.log("الحسابات:");
 for (const row of report.accounts) console.log(`  ${row.status === "exists" ? "=" : apply ? "+" : "·"} ${row.login.padEnd(18)} ${row.role.padEnd(15)} ${row.scope}`);
 console.log(apply

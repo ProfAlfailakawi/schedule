@@ -20,6 +20,7 @@ import type { CurriculumReference } from "../../src/data/technologyEducationCurr
 import { ACADEMIC_ROLES } from "../../src/utils/academicRoles";
 import { buildReferenceRules } from "../../src/utils/referenceApply";
 import { referenceCodeKey } from "../../src/utils/curriculumReference";
+import { checkRuleSet } from "../../src/utils/curriculumRules";
 
 export interface ProvisionOptions {
   apply: boolean;
@@ -46,6 +47,8 @@ export interface ProvisionReport {
   error?: string;
   college?: { id: number; name: string };
   collegeToCreate?: { code: string; name: string };
+  /** سببُ ترك القواعد قيد المراجعة رغم --approve (مانعٌ في القواعد). */
+  approveBlocked?: string;
   sectionsToCreate: Array<{ code: string; name: string }>;
   sectionsMissingName: string[];
   coursesToCreate: number;
@@ -197,14 +200,31 @@ export async function provisionProgram(Repository: any, ref: CurriculumReference
     log(`+ قواعد الصحيفة (${built.rules.length} مقرراً، ${groups.length} مجموعتا اختيار) قيد المراجعة`);
   }
 
+  /* الاعتماد بتفويض المالك، وعلى القواعد نفسها التي تُطبَّق في شاشة المراجعة: لا يُعتمد ما فيه مانع،
+     ولا يُمسّ ما سبق اعتماده (تعديلٌ لاحق قيد المراجعة يبقى لرئيس اللجنة، فلا تتخلّف الصفحة العامة عن نسخةٍ معتمدة). */
   if (options.approve) {
     const pending = await Repository.getRuleDraft(plan.id);
-    if (pending?.status === "review") {
-      await Repository.approveRuleDraft(plan.id, pending.updatedAt, actor);
-      report.draftStatus = "approved";
-      log("+ اعتُمدت قواعد الصحيفة (تظهر للطلبة في «مساري»)");
+    const live = await Repository.getRuleSet(plan.id);
+    if (pending?.status === "review" && live) {
+      log("= للصحيفة نسخةٌ معتمدة سابقاً وتعديلٌ قيد المراجعة — يُترك لرئيس اللجنة");
+    } else if (pending?.status === "review") {
+      const planIds = [...new Set([...memberOwn.values(), ...(pending.externals || []).map(Number)])];
+      const blockers = checkRuleSet(pending, {
+        planCourseIds: planIds, knownCourseIds: new Set(known.map(row => Number(row.AdCourseId))),
+        credit: new Map(known.map(row => [Number(row.AdCourseId), Number(row.CourseCredit) || 0] as const)),
+        name: id => String(known.find(row => Number(row.AdCourseId) === id)?.CourseName || `مقرر ${id}`),
+      }).filter(issue => issue.severity === "block");
+      if (blockers.length) {
+        report.approveBlocked = `لم تُعتمد القواعد وفيها ${blockers.length} مانع: ${blockers[0].text} — تبقى قيد المراجعة.`;
+        log(`✗ ${report.approveBlocked}`);
+      } else {
+        await Repository.approveRuleDraft(plan.id, pending.updatedAt, actor);
+        log("+ اعتُمدت قواعد الصحيفة (تظهر للطلبة في «مساري»)");
+      }
     }
   }
+  const settled = await Repository.getRuleDraft(plan.id);
+  if (settled?.status !== "review" && (await Repository.getRuleSet(plan.id))) report.draftStatus = "approved";
 
   /* الحسابات: موقوفة وبلا كلمة سر ما لم تُعطَ --password، على هذه الكلية وحدها. */
   const { roleDefinition } = await import("../../src/utils/academicRoles");
