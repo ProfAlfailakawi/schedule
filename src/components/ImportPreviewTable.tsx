@@ -1,3 +1,4 @@
+import SearchableSelect from "./SearchableSelect";
 import React, { useEffect, useMemo, useState } from "react";
 import { TimeField } from "./TimeField";
 import { AlertTriangle, Building2, Check, Clock3, MapPin, Pencil, Trash2, UsersRound } from "lucide-react";
@@ -382,12 +383,11 @@ export default function ImportPreviewTable({
                   <td className={`import-cell-course ${cellClass("course",missing.course(row))}`} title={cellTitle("course")}>
                     <div className="import-locked-course" aria-label={coursePickable(row) ? "المقرر يُختار من مقررات القسم في النظام" : "المقرر مثبت من النظام ولا يتغير من معاينة الاستيراد"}>
                       <span className="import-course-title-line">{open && coursePickable(row) ? (
-                        <select className="import-course-picker" aria-label="اختر المقرر من مقررات القسم" value={Number(row.AdCourseId) || ""}
-                          data-guide-ignore="اختيار مقرر صف داخل معاينة الاستيراد قبل أي حفظ"
-                          onChange={event => { const picked = courseById.get(Number(event.target.value)); if (picked) patchManual(index, "course", { AdCourseId: Number(picked.AdCourseId), AdCourseName: String(picked.CourseName || "") }); }}>
-                          <option value="" disabled>اختر المقرر…</option>
-                          {departmentCourseOptions.map(item => <option key={item.AdCourseId} value={item.AdCourseId}>{item.CourseCode} — {item.CourseName}</option>)}
-                        </select>
+                        <SearchableSelect fixed className="import-course-picker ss-compact" ariaLabel="اختر المقرر من مقررات القسم" value={Number(row.AdCourseId) || ""}
+                          guideIgnore="اختيار مقرر صف داخل معاينة الاستيراد قبل أي حفظ"
+                          onChange={value => { const picked = courseById.get(Number(value)); if (picked) patchManual(index, "course", { AdCourseId: Number(picked.AdCourseId), AdCourseName: String(picked.CourseName || "") }); }}
+                          options={departmentCourseOptions.map(item => ({ value: item.AdCourseId, label: item.CourseName, hint: item.CourseCode, keywords: String(item.CourseCode || "") }))}
+                          placeholder="اختر المقرر…" searchPlaceholder="اكتب اسم المقرر أو رمزه" />
                       ) : course?.CourseName ? <strong>{course.CourseName}</strong> : <span className="import-unlinked-head"><small>رقم المقرر غير واضح</small><em className="import-unlinked-why">اضغط التعديل واختر المقرر</em></span>}{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
                       {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                     </div>

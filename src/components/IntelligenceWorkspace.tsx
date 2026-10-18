@@ -1,3 +1,4 @@
+import SearchableSelect from "./SearchableSelect";
 import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
 import PredictiveInsightPanel from "./PredictiveInsightPanel";
 import PlanSheetPublisher from "./PlanSheetPublisher";
@@ -4282,22 +4283,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     </Field>
                     {constraintDraft.type === "course_room" ? (
                       <Field label="المقرر">
-                        <select
+                        <SearchableSelect
                           value={constraintDraft.AdCourseId || ""}
-                          onChange={(e) =>
+                          onChange={(picked) =>
                             setConstraintDraft((p: any) => ({
                               ...p,
-                              AdCourseId: Number(e.target.value) || 0,
+                              AdCourseId: Number(picked) || 0,
                             }))
                           }
-                        >
-                          <option value="">اختر المقرر...</option>
-                          {scopedCourses.map((c) => (
-                            <option key={c.AdCourseId} value={c.AdCourseId}>
-                              {c.CourseCode} — {c.CourseName}
-                            </option>
-                          ))}
-                        </select>
+                          options={scopedCourses.map((c) => ({ value: c.AdCourseId, label: c.CourseName, hint: c.CourseCode, keywords: String(c.CourseCode || "") }))}
+                          placeholder="اختر المقرر..."
+                          searchPlaceholder="اكتب اسم المقرر أو رمزه"
+                        />
                       </Field>
                     ) : constraintDraft.type === "department_day_off" ? (
                       <div className="constraint-rule-note">

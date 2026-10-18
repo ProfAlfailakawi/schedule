@@ -137,6 +137,7 @@ import {
   type ScheduleViewDraft,
 } from "../utils/scheduleViews";
 import ScheduleTransfer from "./ScheduleTransfer";
+import SearchableSelect from "./SearchableSelect";
 import type { GapItem as SectionGapItem } from "../utils/sectionGap";
 import VisitingBadge from "./VisitingBadge";
 import { usePageAwake } from "../utils/pageAwake";
@@ -8579,31 +8580,27 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <header><span>2</span><div><strong>بيانات المقرر</strong><small>المقرر والرمز والشعبة</small></div></header>
                   <div className="form-grid">
                 <Field label="المقرر الدراسي" required>
-                  <select
-                    data-guide-editor-field="course-name"
+                  <SearchableSelect
+                    guideField="course-name"
                     value={courseName}
                     disabled={!form.AdSectionId}
-                    onChange={(e) => {
-                      setCourseName(e.target.value);
+                    onChange={(name) => {
+                      setCourseName(String(name));
                       setForm((p) => ({ ...p, AdCourseId: 0 }));
                     }}
+                    options={courseNames.map((name) => ({ value: name, label: name }))}
+                    searchPlaceholder="اكتب اسم المقرر"
                     required
-                  >
-                    <option value="">اختر ...</option>
-                    {courseNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   {!courseNames.length && form.AdSectionId ? <small className="field-inline-hint">لا تظهر مقررات لهذا القسم بعد. جرّبتُ الآن الجلب المباشر للقسم الحالي؛ إن استمرت القائمة فارغة فراجع بيانات المقررات في القسم نفسه.</small> : null}
                 </Field>
                 <Field label="رمز المقرر الدراسي" required>
-                  <select
+                  <SearchableSelect
                     value={form.AdCourseId || ""}
                     disabled={!courseName}
-                    onChange={(e) => {
-                      const courseId = Number(e.target.value) || 0;
+                    autoSingle
+                    onChange={(picked) => {
+                      const courseId = Number(picked) || 0;
                       setForm((p) => {
                         const previousCourseId = Number(p.AdCourseId) || 0;
                         const next = { ...p, AdCourseId: courseId };
@@ -8619,15 +8616,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         return next;
                       });
                     }}
+                    options={courseCodes.map((c) => ({ value: c.AdCourseId, label: String(c.CourseCode) }))}
+                    searchPlaceholder="اكتب الرمز"
                     required
-                  >
-                    <option value="">اختر ...</option>
-                    {courseCodes.map((c) => (
-                      <option key={c.AdCourseId} value={c.AdCourseId}>
-                        {c.CourseCode}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </Field>
                 <Field
                   label={<span className="field-label-line"><span className="field-label-required-inline">الشعبة <span className="required" aria-hidden="true">*</span></span>{sectionHint ? <small className="field-inline-hint">{sectionHint}</small> : null}</span>}

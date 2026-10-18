@@ -1,3 +1,4 @@
+import SearchableSelect from "./SearchableSelect";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
@@ -443,15 +444,23 @@ export default function CurriculumPlans({
     <>
       <p className="plan-muted">اختياري. اربط مقرراً قديماً بمقابله في الصحيفة الجديدة إن كان له مقابل، ليعرف من يقرأ السجل أنهما متقابلان. المقرر الجديد كلياً لا يحتاج ربطاً.</p>
       <div className="plan-map-form">
-        <select value={fromCourseId} onChange={e => setFromCourseId(Number(e.target.value))} aria-label="المقرر في الصحيفة السابقة">
-          <option value={0}>من الصحيفة السابقة…</option>
-          {previousCourses.filter(course => !activeIds.has(Number(course.AdCourseId))).map(course => <option key={course.AdCourseId} value={course.AdCourseId}>{courseLine(course)}</option>)}
-        </select>
+        <SearchableSelect
+          value={fromCourseId || ""}
+          onChange={picked => setFromCourseId(Number(picked) || 0)}
+          ariaLabel="المقرر في الصحيفة السابقة"
+          options={previousCourses.filter(course => !activeIds.has(Number(course.AdCourseId))).map(course => ({ value: course.AdCourseId, label: course.CourseName, hint: course.CourseCode, keywords: String(course.CourseCode || "") }))}
+          placeholder="من الصحيفة السابقة…"
+          searchPlaceholder="اكتب اسم المقرر أو رمزه"
+        />
         <ArrowLeftRight aria-hidden="true" />
-        <select value={toCourseId} onChange={e => setToCourseId(Number(e.target.value))} aria-label="مقابله في الصحيفة الجديدة">
-          <option value={0}>مقابله في الجديدة…</option>
-          {activeCourses.map(course => <option key={course.AdCourseId} value={course.AdCourseId}>{courseLine(course)}</option>)}
-        </select>
+        <SearchableSelect
+          value={toCourseId || ""}
+          onChange={picked => setToCourseId(Number(picked) || 0)}
+          ariaLabel="مقابله في الصحيفة الجديدة"
+          options={activeCourses.map(course => ({ value: course.AdCourseId, label: course.CourseName, hint: course.CourseCode, keywords: String(course.CourseCode || "") }))}
+          placeholder="مقابله في الجديدة…"
+          searchPlaceholder="اكتب اسم المقرر أو رمزه"
+        />
         <PrimaryButton data-guide-ignore="حفظ ربط مقرر قديم بمقابله الجديد" onClick={saveTransition} disabled={busy || !fromCourseId || !toCourseId}><Link2 /> ربط</PrimaryButton>
       </div>
       <div className="plan-course-list">
