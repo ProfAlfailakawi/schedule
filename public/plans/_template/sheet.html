@@ -45,7 +45,10 @@ html.fit #plan{min-width:0}
 #tag.side-l::after,#tag.side-r::after{bottom:auto;top:var(--ty,50%)}
 #tag.side-l::after{left:auto;right:-8px;transform:translateY(-50%) rotate(-45deg)}
 #tag.side-r::after{left:-8px;transform:translateY(-50%) rotate(135deg)}
-@media (min-width:1200px){#tag{display:none}}
+/* الاسمُ يظهر في البطاقة المضيئة وفي عنوان اللوحة؛ ثالثٌ فوقها تكرار. */
+#tag{display:none!important}
+/* اللوحةُ المفتوحة تغطي أسفل الشاشة: لا أزرارَ ثابتة ولا شريطَ فوقها. */
+html.sheet-open #stbar,html.sheet-open #fitbtn,html.sheet-open #pdfbtn,html.sheet-open #stbtn,html.sheet-open #hint{display:none!important}
 @keyframes pop{0%{transform:scale(1)}60%{transform:scale(calc(var(--pop) * 1.08))}100%{transform:scale(var(--pop))}}
 .edge{transition:opacity .2s}
 .dim{opacity:.12}
@@ -98,6 +101,12 @@ html.student #plan .edge{opacity:.25}
 #backlink svg{width:16px;height:16px}
 html.me #stbtn{display:none}
 html.me #stbar small,html.me #stbar #streset{display:none}
+/* خريطة الطالب: أربعةُ عناصر ثابتة كانت تتراكب أسفل الجوال. التلميحُ يُخفى، والشريطُ سطرٌ واحد في الأسفل، والزرّان فوقه بلا تداخل. */
+html.me #hint{display:none}
+html.me body{padding-top:calc(58px + env(safe-area-inset-top,0))}
+html.me #stbar{bottom:calc(14px + env(safe-area-inset-bottom,0));flex-wrap:nowrap;gap:12px;padding:7px 16px;font-size:13px;white-space:nowrap}
+html.me #stbar b{font-size:15px}
+html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0));padding:8px 12px;font-size:13px}
 @page{size:420mm 297mm;margin:0}
 @media print{
  html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -139,7 +148,7 @@ function render(){
  paint(sel??hov);
  plan.querySelectorAll('.card.pick').forEach(g=>g.classList.remove('pick'));
  if(sel!=null){const g=plan.querySelector(`.card[data-c="${sel}"]`);if(g){const f=document.activeElement===g;g.parentNode.appendChild(g);if(f)g.focus({preventScroll:true});placePop(g);g.classList.add('pick')}}
- if(sel==null){sh.classList.remove('open');return}
+ if(sel==null){sh.classList.remove('open');document.documentElement.classList.remove('sheet-open');return}
  hint.classList.add('gone');
  const pre=E.filter(e=>e[1]==sel).map(e=>e[0]),nx=E.filter(e=>e[0]==sel).map(e=>e[1]);
  const ors=(D.OR||[]).filter(g=>g[0]==sel).map(g=>g[1]),inOr=new Set(ors.flat().map(String)),req=pre.filter(c=>!inOr.has(String(c))),minU=(D.U||{})[sel];
@@ -153,7 +162,7 @@ function render(){
  <div class="hd"><span class="num">${sel}</span><div><h3>${name(sel)}</h3><div class="sub">${where(sel)}${window.__st&&D.ME?' · <b>'+window.__st(sel)+'</b>':''}</div></div></div>
  <div class="cols"><div><div class="l"><i>←</i>يتطلب قبله</div>${req.map(chip).join('')}${ors.map(g=>'<div class="l far">أحد المقررات</div>'+g.map(chip).join('')).join('')}${minU?`<div class="none">واجتياز وحدات لا تقل عن ${minU}</div>`:''}${far.length?'<div class="l far">وقبلها في السلسلة</div><div class="pills">'+far.map(c=>chip(c).replace('class="chip"','class="chip sm"')).join('')+'</div>':''}${pre.length||minU?'':'<div class="none">لا يتطلب مقررًا سابقًا — يمكن تسجيله مباشرة</div>'}</div>
  <div><div class="l"><i>→</i>يفتح بعده</div>${nx.map(chip).join('')||'<div class="none">لا يفتح مقررات أخرى</div>'}</div></div>`;
- sh.classList.add('open');
+ sh.classList.add('open');document.documentElement.classList.add('sheet-open');
 }
 // On phones the plan does its own pinch-zoom (Safari won't let a page zoom itself back out),
 // so choosing a course can zoom to its chain above the sheet; closing restores the previous view.
@@ -305,7 +314,7 @@ if(/[?&]pdf=1(&|$)/.test(location.search))addEventListener('load',()=>setTimeout
    const c=String(g.dataset.c),ok=passed.has(c),av=!ok&&open(c);if(av)can++;
    g.classList.toggle('ok',on&&ok);g.classList.toggle('can',on&&av);g.classList.toggle('no',on&&!ok&&!av);
   });
-  bar.innerHTML=`<span>الوحدات المجتازة: <b>${units}</b></span><span>المتاح لك الآن: <b>${can}</b></span><small>اضغط المقرر الذي اجتزته</small>${passed.size?'<button type="button" id="streset">ابدأ من جديد</button>':''}`;
+  bar.innerHTML=ME?`<span>مجتازة <b>${units}</b> وحدة</span><span>متاح الآن <b>${can}</b></span>`:`<span>الوحدات المجتازة: <b>${units}</b></span><span>المتاح لك الآن: <b>${can}</b></span><small>اضغط المقرر الذي اجتزته</small>${passed.size?'<button type="button" id="streset">ابدأ من جديد</button>':''}`;
   btn.setAttribute('aria-pressed',on?'true':'false');
  }
  btn.addEventListener('click',()=>{document.documentElement.classList.toggle('student');pick(null);hov=null;paint(null);hint.classList.add('gone');draw()});
