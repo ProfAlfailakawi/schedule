@@ -210,11 +210,13 @@ async function downloadPlanPdf(){
   const original=document.getElementById('plan'),clone=original.cloneNode(true);
   clone.removeAttribute('id');clone.removeAttribute('class');clone.querySelectorAll('.card,.edge').forEach(node=>{node.removeAttribute('class');node.removeAttribute('style')});
   const style=document.createElementNS('http://www.w3.org/2000/svg','style');
-  style.textContent=await embeddedPlanFonts();clone.insertBefore(style,clone.firstChild);
+  style.textContent=(await embeddedPlanFonts())+'text{font-family:Cairo,sans-serif}';clone.insertBefore(style,clone.firstChild);
   clone.setAttribute('width',original.viewBox.baseVal.width);clone.setAttribute('height',original.viewBox.baseVal.height);
   const svg=new Blob([new XMLSerializer().serializeToString(clone)],{type:'image/svg+xml'}),svgUrl=URL.createObjectURL(svg);
   const picture=new Image();
-  try{picture.src=svgUrl;await picture.decode()}finally{URL.revokeObjectURL(svgUrl)}
+  // SVG decoding can finish before its embedded font faces are painted.
+  // Drawing immediately drops the lighter course labels from the PDF.
+  try{picture.src=svgUrl;await picture.decode();await new Promise(resolve=>setTimeout(resolve,500))}finally{URL.revokeObjectURL(svgUrl)}
   const dpi=260,pxPerMm=dpi/25.4,canvas=document.createElement('canvas');
   canvas.width=Math.round(297*pxPerMm);canvas.height=Math.round(210*pxPerMm);
   const context=canvas.getContext('2d',{alpha:false});if(!context)throw Error('canvas');

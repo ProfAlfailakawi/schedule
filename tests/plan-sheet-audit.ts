@@ -50,6 +50,8 @@ const model: SheetModel = {
     && html.includes("@page{size:A4 landscape;margin:0}")
     && html.includes('html[data-print-rotate="1"] #plan')
     && html.includes("function pdfFromJpeg(jpeg,width,height)")
+    && html.includes("(await embeddedPlanFonts())+'text{font-family:Cairo,sans-serif}'")
+    && html.includes('await picture.decode();await new Promise(resolve=>setTimeout(resolve,500))')
     && html.includes("/MediaBox [0 0 841.89 595.28]")
     && html.includes("/Count 1")
     && html.includes("navigator.share({files:[file],title:document.title})")
