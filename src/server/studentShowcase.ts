@@ -197,7 +197,8 @@ export function registerStudentShowcase(app: Express, deps: ShowcaseDeps): void 
       const token = signDoorSession(await deps.identityKey(), { fingerprint, exp: Date.now() + TTL_MS, cv: codeVersion(codeHash) });
       res.setHeader("Set-Cookie", [cookie(id, TTL_MS / 1000), doorCookie(token, { remember: true, maxAgeSeconds: TTL_MS / 1000, secure })]);
       res.setHeader("Cache-Control", "no-store");
-      res.redirect(302, "/me?track=girls#plan");
+      /* يفتح الديمو مثل مساري الحقيقي على تبويب «الآن» افتراضياً. */
+      res.redirect(302, "/me?track=girls#now");
     } catch (error) {
       console.error("[student-showcase]", error instanceof Error ? error.message : error);
       res.status(500).type("text/plain; charset=utf-8").send("تعذّر فتح التجربة الآن. أعد المحاولة بعد قليل.");

@@ -49,7 +49,7 @@ const get = (p: string, jar: string) => fetch(base + p, { headers: { cookie: jar
 
 /* S1 */
 const a = await open();
-check(a.r.status === 302 && a.r.headers.get("location") === "/me?track=girls#plan", "S1 /me/demo يحوّل إلى مساري", a.r.status);
+check(a.r.status === 302 && a.r.headers.get("location") === "/me?track=girls#now", "S1 /me/demo يبدأ بصفحة الآن وليس خطتي", a.r.status);
 check(a.jar.includes(SHOWCASE_COOKIE + "=demo_stu_") && a.jar.includes("sh_session="), "S1 كوكيّان: الصندوق وجلسةُ الباب");
 const st = await (await get("/api/public/me/state", a.jar)).json() as any;
 check(st.signedIn === true && st.demo === true && st.profile?.setupDone === true && st.profile.sectionName === "قسم تكنولوجيا التعليم", "S1 الباب يعرف الطالبة: داخلةٌ، تجريبية، بقسمها", st.profile);
