@@ -24,7 +24,7 @@ async function call(url: string, body?: unknown) {
   return json;
 }
 
-export default function PlanSheetPublisher({ onChanged, focusSectionId = 0, readOnly = false }: { onChanged?: () => void; focusSectionId?: number; readOnly?: boolean }) {
+export default function PlanSheetPublisher({ onChanged, focusSectionId = 0, isAdmin = false }: { onChanged?: () => void; focusSectionId?: number; isAdmin?: boolean }) {
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -114,46 +114,6 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
   };
 
   if (!state) return <MicroLoader />;
-  /* رئيس لجنة الجدول: خريطة قسمه فقط، دون أي أزرار لنشر الصحائف أو إيقافها.
-     لا نضع رابطاً لصحيفة غير منشورة، ولا نعرض أقساماً خارج النطاق المختار. */
-  if (readOnly) {
-    const published = focus?.sheets.filter(sheet => sheet.published) || [];
-    return (
-      <div className="psh" dir="rtl">
-        <header className="psh-head">
-          <span className="psh-ic" aria-hidden="true"><Workflow /></span>
-          <div><strong>خريطة القسم</strong><small>مقررات القسم ومسبقاتها في الصحائف التفاعلية المنشورة</small></div>
-        </header>
-        {error ? <Notice type="error">{error}</Notice> : null}
-        {focus && published.length ? (
-          <>
-            <section className="psh-focus" aria-label={`خريطة ${labelOf(focus)}`}>
-              {focusQr ? <div className="psh-focus-qr" role="img" aria-label="رمز QR لخريطة القسم" dangerouslySetInnerHTML={{ __html: focusQr }} /> : <div className="psh-focus-qr empty" aria-hidden="true"><QrCode /></div>}
-              <div className="psh-focus-body">
-                <strong>{labelOf(focus)}</strong>
-                <small>افتح الصحيفة التفاعلية؛ الأسهم تشرح المسبقات والمقررات التي تفتحها.</small>
-                <span className="psh-focus-actions">
-                  <a className="psh-open" href={focus.deptUrl} target="_blank" rel="noopener noreferrer" data-guide-ignore="فتح صحائف القسم المنشورة فقط"><ExternalLink /> افتح خريطة القسم</a>
-                </span>
-              </div>
-            </section>
-            <section className="psh-dept" aria-label="الصحائف المنشورة">
-              <ul className="psh-list">
-                {published.map(sheet => (
-                  <li key={sheet.planId} className="live">
-                    <span className="psh-name"><b>{sheet.name || "الخطة الدراسية"}</b><small>منشورة · {dateOf(sheet.publishedAt)}</small></span>
-                    <span className="psh-row-actions">
-                      <a className="psh-open" href={sheet.url} target="_blank" rel="noopener noreferrer" data-guide-ignore="فتح الصحيفة المنشورة فقط"><ExternalLink /> افتح</a>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          </>
-        ) : <EmptyState title="لا صحيفة منشورة لهذا القسم" detail="بعد اعتماد ونشر الصحيفة من إدارة النظام ستظهر خريطة قسمك هنا تلقائيًا." />}
-      </div>
-    );
-  }
   if (!state.sections.length) return <EmptyState title="لا صحيفةَ معتمدة بعد" detail="اعتمد قواعد صحيفة القسم من «مراجعة الصحيفة» في القائمة، فتظهر هنا مع رمز QR ورابطها العام." />;
   const pending = state.sections.reduce((n, s) => n + s.sheets.filter(x => !x.published || x.stale).length, 0);
   const total = state.sections.reduce((n, s) => n + s.sheets.length, 0);
@@ -167,7 +127,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
         <div><strong>انشر الصحيفة للجميع</strong><small>رابطٌ تفاعلي وQR وPDF بلا حساب · {publishedCount} من {total} منشورة</small></div>
         <div className="psh-head-actions">
           <PrimaryButton disabled={!pending || Boolean(busy)} onClick={() => publish({}, "all")} data-guide-ignore="نشر كل ما يملكه الحساب من صحائف معتمدة دفعةً واحدة">{busy === "all" ? "جارٍ النشر…" : `انشر كل صحائفي${pending ? ` (${pending})` : ""}`}</PrimaryButton>
-          <SecondaryButton onClick={() => showQr("كل الأقسام", indexUrl)} data-guide-ignore="رمز QR لفهرس الخطط الدراسية العام"><QrCode /> QR كل الأقسام</SecondaryButton>
+          {isAdmin ? <SecondaryButton onClick={() => showQr("كل الأقسام", indexUrl)} data-guide-ignore="رمز QR لفهرس الخطط الدراسية العام"><QrCode /> QR كل الأقسام</SecondaryButton> : null}
         </div>
       </header>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
