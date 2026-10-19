@@ -183,6 +183,7 @@ body.km-lock{overflow:hidden}
 .kd-n{margin:0}
 .kbar{position:fixed;z-index:30;inset-inline:0;inset-block-end:calc(84px + env(safe-area-inset-bottom));margin:0 auto;inline-size:min(calc(100% - 24px),496px);display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:22px;background:var(--ink);color:#fff;box-shadow:0 18px 38px -16px rgba(10,24,17,.7);animation:up .25s var(--ease)}
 .kbar .kb-m{flex:1;display:grid;gap:4px;min-inline-size:0}.kbar b{font-size:14px;font-variant-numeric:tabular-nums}
+.kbar .kb-m small.goal{color:#f0cf95;opacity:1}
 .kb-meter{position:relative;block-size:7px;border-radius:9px;background:rgba(255,255,255,.18);overflow:hidden}
 .kb-meter i{position:absolute;inset-block:0;inset-inline-start:0;border-radius:9px;background:#f0cf95;transition:inline-size .35s var(--ease)}
 .kb-meter span{position:absolute;inset-block:0;inset-inline-start:80%;inline-size:2px;background:rgba(255,255,255,.75)}
@@ -197,6 +198,28 @@ body.km-lock{overflow:hidden}
 .km [data-id].foc{box-shadow:0 0 0 3px var(--h,#c79b5f),0 12px 26px -12px rgba(19,24,23,.5);transform:scale(1.04);position:relative;z-index:1}
 .km [data-id].rel{box-shadow:0 0 0 2.5px var(--h,#c79b5f)}
 @media (max-width:899px){
+.app.km-on{padding-block-end:calc(194px + env(safe-area-inset-bottom))}
+.km-hero{gap:10px;padding:14px 14px 12px;border-radius:24px}
+.km-hrow{gap:10px}
+.km-ring{inline-size:88px;block-size:88px}
+.km-ring b{font-size:25px}
+.km-ring span{font-size:10px;margin-block-start:3px}
+.km-who h1{font-size:20px}
+.km-who p{font-size:12.5px;line-height:1.45}
+.km-who span{font-size:11.5px;line-height:1.4}
+.km-leg{gap:5px}
+.km-lg{padding:3px 9px;font-size:11px}
+.km-stats{gap:6px}
+.km-stats button{padding:7px 3px;border-radius:13px}
+.km-stats b{font-size:19px}
+.km-stats small{font-size:10.5px;line-height:1.35}
+.km-chips{gap:5px}
+.km-chip{padding:3px 9px;font-size:11.5px}
+.kbar{gap:8px;padding:8px 9px;border-radius:18px}
+.kbar .kb-m{gap:3px}
+.kbar b{font-size:12px}
+.kbar small{font-size:10px;line-height:1.35}
+.kbar .btn{min-inline-size:112px;min-block-size:42px;padding:7px 9px;font-size:12px;gap:5px}
 .km-seg{position:sticky;top:0;z-index:30;display:flex;gap:6px;margin-inline:-4px;padding:8px 4px;background:color-mix(in srgb,var(--bg,#F4F6F3) 92%,transparent);backdrop-filter:blur(10px)}
 .km-seg button{flex:1 1 0;min-block-size:40px;padding:6px 4px;border:1px solid #DCE3DE;border-radius:999px;background:#fff;color:#5B6962;font:inherit;font-size:13.5px;font-weight:800;cursor:pointer;transition:background .18s,color .18s,border-color .18s}
 .km-seg button[aria-pressed="true"]{background:#0F5E4A;border-color:#0F5E4A;color:#fff;box-shadow:0 4px 14px rgba(15,94,74,.28)}
@@ -215,7 +238,7 @@ body.km-lock{overflow:hidden}
   .krq{grid-template-columns:repeat(2,minmax(0,1fr))}
   .kd.desk{inset-inline:auto;inset-inline-end:16px;inset-block:16px;inline-size:400px;max-block-size:none;border-radius:26px;border:1px solid var(--line);box-shadow:0 28px 60px -24px rgba(10,24,17,.55);animation:kslide .28s var(--ease)}
   .kd.desk::before{display:none}
-  .kbar{inset-block-end:92px}
+  .kbar{inset-block-end:calc(92px + env(safe-area-inset-bottom))}
 }
 @keyframes kslide{from{transform:translateX(-24px);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.km-ring path,.kc,.kdot,.kd,.kbar,.km-conf i,.kl-h i u{transition:none;animation:none}}
@@ -325,12 +348,13 @@ function kmBarUpdate(){var bar=document.getElementById("kbar");if(!bar)return;va
   var ap=document.querySelector(".app");if(!kmCanWish()||!ids.length||S.tab!=="plan"||S.view!=="home"){bar.hidden=true;if(ap)ap.classList.remove("km-bar");return}
   if(ap)ap.classList.add("km-bar");
   bar.hidden=false;/* الحدّ من 12 إلى 15 وحدة: المقياس 0–15، والعلامة عند 12؛ من بلغ 12 فقد أتمّ الحدّ (ممتاز) ولا يُطلب منه المزيد. */
+  var wish=S.state.profile.wishes&&S.state.term&&S.state.profile.wishes.termId===S.state.term.id?S.state.profile.wishes:null,target=wish?wish.targetUnits:15;
   var pct=Math.min(100,u/15*100),st=u<12?'low':(u>15?'over':'ok'),msg=st==='low'?'ينقصك '+countOf(12-u,AR.unit)+' لتبلغ الحدّ الأدنى (12)':(st==='over'?'فوق 15 وحدة — سيُعدّ حملُك 15':'ممتاز ✓ ضمن الحدّ (12 إلى 15)');
-  bar.innerHTML='<div class="kb-m"><b>'+countOf(ids.length,AR.course)+' · '+countOf(u,AR.unit)+'</b><div class="kb-meter '+st+'" aria-hidden="true"><i style="inline-size:'+pct+'%"></i><span></span></div><small class="'+(st==='ok'?'ok':'')+'">'+msg+'</small></div><button type="button" class="btn" id="kbsend">'+ic("heart")+' أضفها إلى رغباتي</button>';
+  bar.innerHTML='<div class="kb-m"><b>اختيارك للتخطيط · '+countOf(ids.length,AR.course)+' · '+countOf(u,AR.unit)+'</b><div class="kb-meter '+st+'" aria-hidden="true"><i style="inline-size:'+pct+'%"></i><span></span></div><small class="'+(st==='ok'?'ok':'')+'">'+msg+'</small><small class="goal">هدف رغباتك: '+countOf(target,AR.unit)+' · لا يُحفظ الاختيار إلا عند الضغط</small></div><button type="button" class="btn" id="kbsend">'+ic("heart")+' أضفها إلى رغباتي</button>';
   document.getElementById("kbsend").addEventListener("click",kmSendWishes)}
-function kmSendWishes(){var b=document.getElementById("kbsend");if(!b||b.disabled)return;var ids=kmCartIds(),u=kmUnits(ids),w=S.state.profile.wishes&&S.state.term&&S.state.profile.wishes.termId===S.state.term.id?S.state.profile.wishes:null;
+function kmSendWishes(){var b=document.getElementById("kbsend");if(!b||b.disabled)return;var ids=kmCartIds(),w=S.state.profile.wishes&&S.state.term&&S.state.profile.wishes.termId===S.state.term.id?S.state.profile.wishes:null;
   b.disabled=true;
-  api("PUT","/api/public/me/wishes",{targetUnits:Math.max(12,Math.min(15,u||15)),courseIds:ids.slice(0,12),constraints:w?w.constraints:{}}).then(function(r){b.disabled=false;
+  api("PUT","/api/public/me/wishes",{targetUnits:w?w.targetUnits:15,courseIds:ids.slice(0,12),constraints:w?w.constraints:{}}).then(function(r){b.disabled=false;
     if(!r.ok){toast(r.d.error||"تعذّر الحفظ",true);return}
     S.state.profile.wishes=r.d.wishes;S.wDraft=null;S.wCount=null;S.wEdit=false;toast("صارت رغباتك");if(typeof renderWishes==="function")renderWishes()})}
 function kmToggleCart(id){if(!kmCanWish())return;var c=KM.x.byId[id];if(!c||KM.x.isPassed(id)||!kmOff(id))return;
@@ -441,8 +465,8 @@ function kmSheetHtml(id,after){var X=KM.x,m=KM.m,c=X.byId[id],st=X.status(id),r=
   if(r.coreq.length)h+='<div class="kd-s"><h4>يُسجَّل معه</h4><div class="kxl">'+r.coreq.map(kmChip).join("")+'</div></div>';
   /* لا تعليمَ قبل المسبقات: المقرر المقفول لا زرَّ اجتياز له، والمفتوح يُعلَّم، وإلغاءُ مسبقٍ يُلغي ما بُني عليه. */
   var canPass=X.unlocked(id);
-  h+='<div class="kd-a">'+(st==="ok"?'<button type="button" class="btn alt" data-do="unpass">'+ic("x")+' ألغِ علامة الاجتياز</button>':(canPass?'<button type="button" class="btn" data-do="pass">'+ic("check")+' علّمته مجتازاً</button>':(KM.transfer?'<p class="kxn kd-lockmsg">'+ic("lock","")+' مسبقاته غير مجتازة. إن كان معادَلاً لك فعلّمه:</p><button type="button" class="btn alt" data-do="pass">'+ic("check")+' علّمته معادَلاً</button>':'<p class="kxn kd-lockmsg">'+ic("lock","")+' لا يُعلَّم مجتازاً قبل اجتياز مسبقاته (أعلاه).</p><button type="button" class="link" data-do="transfer">طالب محوَّل ومعادَلة لك مقررات؟</button>')));
-  if(kmCanWish()&&st!=="ok"&&off&&st!=="wait")h+='<button type="button" class="btn alt" data-do="cart">'+ic(KM.cart[id]?"check":"heart")+(KM.cart[id]?' في رغباتي — أزله':' أضفه إلى رغباتي')+'</button>';
+  h+='<div class="kd-a">'+(st==="ok"?'<button type="button" class="btn alt small" data-do="unpass">'+ic("x")+' ألغِ علامة الاجتياز</button>':(canPass?'<button type="button" class="btn alt small" data-do="pass">'+ic("check")+' علّمته مجتازاً</button>':(KM.transfer?'<p class="kxn kd-lockmsg">'+ic("lock","")+' مسبقاته غير مجتازة. إن كان معادَلاً لك فعلّمه:</p><button type="button" class="btn alt small" data-do="pass">'+ic("check")+' علّمته معادَلاً</button>':'<p class="kxn kd-lockmsg">'+ic("lock","")+' لا يُعلَّم مجتازاً قبل اجتياز مسبقاته (أعلاه).</p><button type="button" class="link" data-do="transfer">طالب محوَّل ومعادَلة لك مقررات؟</button>')));
+  if(kmCanWish()&&st!=="ok"&&off&&st!=="wait")h+='<button type="button" class="btn" data-do="cart">'+ic(KM.cart[id]?"check":"heart")+(KM.cart[id]?' أزله من التخطيط':' أضفه إلى خطة هذا الفصل')+'</button>';
   h+='</div>';
   return h}
 function kmOpen(id,after){if(!KM.x.byId[id])return;KM.focus=id;var el=kmEnsureSheet(),b=document.getElementById("kdb");KM.desk=!!(window.matchMedia&&window.matchMedia("(min-width:900px)").matches);

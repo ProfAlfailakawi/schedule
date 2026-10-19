@@ -214,7 +214,8 @@ button,input{font:inherit;color:inherit}
 .tk .ln .tx,.adv .ln .tx{flex:1;min-inline-size:0;display:grid;gap:2px}
 .tk .ln .tx b,.adv .ln .tx b{font-size:14px;font-weight:600;line-height:1.5}
 .tk .ln .tx small,.adv .ln .tx small{color:var(--muted);font-size:12px;line-height:1.6}
-.tk .ln .code,.adv .ln .code{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);direction:ltr;unicode-bidi:isolate}
+.tk .ln .code,.adv .ln .code{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);direction:ltr;unicode-bidi:isolate;white-space:nowrap;flex:none}
+.tk .plan-context{margin:0;padding:10px 12px;border-radius:13px;background:var(--accent-soft);color:var(--dim);font-size:12px;line-height:1.7}
 .tk .tt{display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
 .tk .u{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
 .tk .bar{block-size:8px;border-radius:99px;background:var(--soft);overflow:hidden}
@@ -253,7 +254,7 @@ button,input{font:inherit;color:inherit}
 .tk .ticket-alt{display:grid;gap:5px;margin-inline-start:46px;margin-block-start:-7px}
 .tk .ticket-alt label{font-size:11px;color:var(--muted)}
 .tk .ticket-alt .inp{min-block-size:40px;padding:8px 11px;font-size:12px}
-@media(max-width:580px){.tk .ticket-alt{margin-inline-start:0}.tk .ln,.adv .ln{gap:8px;padding:9px}}
+@media(max-width:580px){.tk .ticket-alt{margin-inline-start:0}.tk .ln,.adv .ln{gap:8px;padding:9px}.tk .ln{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:start;column-gap:9px;row-gap:5px}.tk .ln .ic{grid-column:1;grid-row:1/4}.tk .ln .tx{grid-column:2;grid-row:1}.tk .ln .tx b,.tk .ln .tx small{overflow-wrap:anywhere}.tk .ln .chip.warn{grid-column:2;justify-self:start}.tk .ln .code{grid-column:2;justify-self:end}}
 
 
 /* ── شريط سفلي لاصق ── */
@@ -441,7 +442,7 @@ function viewGate(){
   app.innerHTML='<section class="hero fade"><span class="disc">'+ic("cap")+'</span><h1>مساري</h1><p>جدولك المتوقع قبل التسجيل، في مكانٍ واحد.</p>'+phaseChip()+'</section>'
    +'<section class="card fade"><div class="field"><label for="civil">الرقم المدني</label><input class="inp civil" id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="اكتب رقمك المدني" dir="ltr" aria-describedby="chint"><p class="hint" id="chint"></p></div>'
    +errBox("gerr")+'<button class="btn" id="go" disabled>تابع '+ic("fwd")+'</button>'
-   +'<p class="priv">'+ic("shield")+'نحفظ بصمةً مشفّرة وأرقام مقرراتك فقط — لا اسم ولا رقم مدني.</p></section>';
+   +'<p class="priv">'+ic("shield")+'الاسم والرقم المدني محفوظان مشفّرين، ويُستخدم الرقم للتعرّف على ملفك. لا نعرض رقمك كاملاً.</p></section>';
   var inp=document.getElementById("civil"),hint=document.getElementById("chint"),go=document.getElementById("go");
   function paint(){inp.value=digits(inp.value).slice(0,12);var v=inp.value;go.disabled=true;hint.className="hint";
     if(!v.length){hint.textContent="";return}
@@ -750,7 +751,7 @@ function tkPoolSheet(cur,replaceId){
       options:p.offerings.map(function(o){return{offeringId:o.offeringId,section:o.section,slots:o.slots,tight:false}})})}
     S.tkSel=p.courseId;S.tkErr="";closeSheet();paintTicket(document.getElementById("ticket"))})})}
 function tkSaveWishes(cur,btn){var items=tkItems(cur),w=S.state.profile.wishes&&S.state.term&&S.state.profile.wishes.termId===S.state.term.id?S.state.profile.wishes:null;
-  var units=Math.max(12,Math.min(15,tkUnits(items)||15));btn.disabled=true;
+  var units=w?w.targetUnits:15;btn.disabled=true;
   api("PUT","/api/public/me/wishes",{targetUnits:units,courseIds:items.map(function(i){return Number(i.courseId)}).slice(0,12),constraints:w?w.constraints:{}}).then(function(r){btn.disabled=false;
     if(!r.ok){toast(r.d.error||"تعذّر الحفظ",true);return}S.state.profile.wishes=r.d.wishes;S.wDraft=null;S.wCount=null;toast("سُجّلت رغباتك — تتحدّث تذكرتك في التحديث القادم");renderWishes()})}
 function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||{};S.tkRemoved=S.tkRemoved||{};S.tkAdded=S.tkAdded||{};
@@ -764,7 +765,8 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
   if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد آخر حساب — ستتحدّث تذكرتك في التحديث القادم</div>';
   if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
   h+='<div class="seg fit" role="group" aria-label="الخطة" data-seg="plan">'+t.plans.map(function(p){return '<button type="button" data-l="'+p.label+'" aria-pressed="'+(p.label===cur.label?"true":"false")+'">'+({A:"الخطة أ",B:"الخطة ب",C:"الخطة ج"})[p.label]+'</button>'}).join("")+'</div>';
-  h+='<div class="row between"><span class="muted">'+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(units,AR.unit)+(units<12&&items.length?' <span class="chip warn">أقل من 12</span>':'')+'</span></div>';
+  h+='<p class="plan-context">هذه خطة تسجيل مقترحة بحسب الشعب والتعارضات المتاحة الآن. هدفك الدراسي محفوظ في «احتياجي»، واختيار الخريطة تخطيطٌ شخصي؛ لذلك قد تختلف أرقامها.</p>';
+  h+='<div class="row between"><span class="muted">إجمالي الخطة المقترحة · '+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(units,AR.unit)+(units<12&&items.length?' <span class="chip warn">أقل من 12</span>':'')+'</span></div>';
   if(anyTimes)h+='<div class="seg fit sm2" role="group" aria-label="العرض" data-seg="view"><button type="button" data-v="grid" aria-pressed="'+(view==="grid")+'">أسبوعي</button><button type="button" data-v="list" aria-pressed="'+(view==="list")+'">قائمة</button></div>';
   if(visibleTimes)h+='<p class="fine">'+countOf(Object.keys(daySet).length,AR.day)+' حضور · '+(gapMinutes?('فراغات بين المحاضرات نحو '+countOf(Math.round(gapMinutes/6)/10,AR.hour)):'بلا فراغات طويلة')+' · التعديل معاينة شخصية لا تغيّر جدول القسم.</p>';
   if(!items.length)h+='<p class="lead">لا مقرراتٍ تُناسب هذه الخطة الآن.</p>';
@@ -877,7 +879,7 @@ function wishChips(w){var h='<span class="chip ok">'+countOf(w.targetUnits,AR.un
   if(w.courseIds&&w.courseIds.length)h+='<span class="chip">'+countOf(w.courseIds.length,AR.course)+' بعينها</span>';
   return h}
 function wishesDone(host,w,edit){var ph=S.state.phase;
-  host.innerHTML='<section class="card fade"><h2><span class="b">'+ic("heart")+'</span>احتياجي لهذا الفصل'+(edit?'<span class="chip ok">'+ic("check","")+' وصلت</span>':'<span class="chip">للقراءة</span>')+'</h2><div class="tags">'+wishChips({targetUnits:w.targetUnits,constraints:w.constraints||{},courseIds:w.courseIds||[]})+'</div><p class="muted" id="wcnt"></p>'
+  host.innerHTML='<section class="card fade"><h2><span class="b">'+ic("heart")+'</span>احتياجي لهذا الفصل'+(edit?'<span class="chip ok">'+ic("check","")+' وصلت</span>':'<span class="chip">للقراءة</span>')+'</h2><div class="tags">'+wishChips({targetUnits:w.targetUnits,constraints:w.constraints||{},courseIds:w.courseIds||[]})+'</div><p class="muted">الوحدات هنا هدفك لهذا الفصل. تذكرتك تعرض خطةً يقترحها الرادار حسب الشعب المتاحة، وخريطتك تعرض مقرراتٍ تختارها للتخطيط؛ لا تتغير الرغبات إلا عند حفظها.</p><p class="muted" id="wcnt"></p>'
     +(edit?'<button class="btn alt small" id="wed" style="inline-size:auto">'+ic("edit")+'عدّل رغباتي</button><p class="hint">'+(ph.nextAt?"تعدّلها حتى "+esc(fmtShort(ph.nextAt)):"تعدّلها متى شئت")+'</p>':'')+'</section>';
   var ed=document.getElementById("wed");if(ed)ed.addEventListener("click",function(){S.wEdit=true;S.wStep=0;renderWishes()});
   if(edit){var put=function(c){var el=document.getElementById("wcnt");if(el)el.innerHTML=c}
