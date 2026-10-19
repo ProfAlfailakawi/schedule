@@ -276,7 +276,7 @@ button,input{font:inherit;color:inherit}
 .sheet h3{margin:0;font-size:19px}
 /* تبقى نافذة إضافة مقرر أقصر من الشاشة: حيزٌ واضح للمس خارجها. */
 .sheet.pool-sheet{max-block-size:calc(100vh - 64px);max-block-size:calc(100dvh - 64px);overscroll-behavior:contain}
-.pool-sheet-head{position:sticky;inset-block-start:-10px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;min-block-size:52px;margin-block-start:-10px;padding:10px 0 6px;background:var(--card)}
+.pool-sheet-head{position:sticky;inset-block-start:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;min-block-size:52px;margin-block-start:-10px;padding:10px 0 6px;background:var(--card)}
 .pool-sheet-head h3{min-inline-size:0;flex:1}
 .pool-sheet-close{display:grid;place-items:center;flex:none;inline-size:44px;block-size:44px;border-radius:14px;border:1px solid var(--line-strong);background:var(--card2);color:var(--ink);font-size:27px;line-height:1;cursor:pointer}
 @keyframes up{from{transform:translateY(40px);opacity:.5}to{transform:none;opacity:1}}
