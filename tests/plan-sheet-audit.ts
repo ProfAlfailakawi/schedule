@@ -47,14 +47,17 @@ const model: SheetModel = {
   check(html.includes("{{") === false && html.includes("const D=") && html.includes('"LV"'), "S1 القالبُ مملوءٌ بلا علاماتٍ متروكة، وبيانات التفاعل مضمّنة");
   check(html.includes('id="stbtn"') && html.includes("planPassed:") && html.includes("المتاح لك الآن") && html.includes("@media print") && /#stbtn,#stbar/.test(html), "S1 وضعُ الطالب: يعلّم ما اجتازه على جهازه ويضيء المتاح، ولا يُطبع");
   check(html.includes("تحميل PDF") && html.includes("window.print()")
-    && html.includes("@page{size:A3 landscape;margin:6mm}")
+    && html.includes("@page{size:A4 landscape;margin:0}")
+    && html.includes('html[data-print-rotate="1"] #plan')
+    && html.includes("rotate(90deg) scale(.86)")
+    && html.includes("function printPlan()")
     && html.includes('#dview,.scroll{display:block!important;width:100%!important;height:100%!important')
     && html.includes('#plan{display:block!important;width:100%!important;height:100%!important;min-width:0!important')
     && html.includes('#plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}')
     && html.includes('html.me body{padding:0!important}')
     && html.includes('Promise.race([ready,new Promise(resolve=>setTimeout(resolve,3000))])')
     && html.includes('document.fonts?.ready'),
-    "S1 زر PDF: صفحة A3 بالعرض وهامش أمان وتناسب كامل وبدون عناصر متحركة أو هوامش الهاتف");
+    "S1 زر PDF: صفحة A4 بالعرض وتدوير Safari مع احتواء كامل وبدون عناصر متحركة أو هوامش الهاتف");
   check(html.includes('prefers-reduced-motion:reduce'), "S1 خريطة الصحيفة لا تفقد تفضيل تقليل الحركة عند العرض");
   const arabicLabel = buildPlanSheet({ ...model, planLabel: "الصحيفة السابقة" }, { template });
   const labelTag = arabicLabel.match(/<text[^>]*>الصحيفة السابقة<\/text>/)?.[0] || "";
