@@ -4,6 +4,7 @@
  * والتوسّع المفاجئ إلى 1180px بعد اكتمال طلب الخريطة.
  */
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 import { STUDENT_HOME_CSS, STUDENT_HOME_SCRIPT, studentHomePage } from "../src/server/studentHomePage";
 import { STUDENT_MAP_CSS } from "../src/server/studentMapUi";
 
@@ -30,4 +31,54 @@ assert.match(STUDENT_HOME_SCRIPT, /el\.addEventListener\("pointerdown",function\
 assert.match(STUDENT_HOME_SCRIPT, /class="pool-sheet-close" aria-label="إغلاق النافذة"/);
 assert.match(STUDENT_HOME_SCRIPT, /el\.querySelector\("\.sheet"\)\.classList\.add\("pool-sheet"\)/);
 assert.match(STUDENT_HOME_SCRIPT, /document\.getElementById\("pc"\)\.addEventListener\("click",closeSheet\)/);
-console.log("✓ مساري: العرض ثابت، النصوص غير مضغوطة، ونمط الهاتف يعمل على الحاسوب");
+/* بطاقات أ/ب/ج تُبقى في أماكن ثابتة، وتحتسب تعديلات كل خطة حتى عندما لا تكون مختارة. */
+assert.match(STUDENT_HOME_SCRIPT, /function tkPlanCompare\(plans,current\)\{/);
+assert.match(STUDENT_HOME_SCRIPT, /"ABC"\.indexOf\(a\.label\)-"ABC"\.indexOf\(b\.label\)/);
+assert.match(STUDENT_HOME_SCRIPT, /t\.plans\.map\(function\(p\)\{return\{label:p\.label,items:tkItems\(p\)\}\}\)/);
+assert.match(STUDENT_HOME_SCRIPT, /var next=b\.getAttribute\("data-l"\);if\(next===S\.tkPlan\)return/);
+assert.match(STUDENT_HOME_SCRIPT, /'<section class="card tk"><div class="hd">/);
+
+const jsFn = (name: string, next: string) => {
+  const begin = STUDENT_HOME_SCRIPT.indexOf("function " + name + "(");
+  const end = STUDENT_HOME_SCRIPT.indexOf("function " + next + "(", begin + 1);
+  assert.ok(begin >= 0 && end > begin, "تستخرج دالة " + name + " من سكربت الطالب");
+  return STUDENT_HOME_SCRIPT.slice(begin, end);
+};
+const ctx: Record<string, any> = {
+  S: {
+    tkRemoved: { "A:5": true, "B:15": true },
+    tkAdded: {}, tkOverrides: {},
+    state: { profile: { wishes: { termId: 1, targetUnits: 15, constraints: {} } }, term: { id: 1 } },
+  },
+  countOf: (n: number, unit: string) => n + " " + unit,
+  ic: () => "", esc: (v: unknown) => String(v),
+  AR: { day: "day", hour: "hour", unit: "unit", section: "section" },
+};
+runInNewContext([
+  jsFn("tkItems", "tkOptions"),
+  jsFn("tkPlanFit", "tkPlanCompare"),
+  jsFn("tkPlanCompare", "tkGrid"),
+].join("\n"), ctx);
+const mkItems = (start: number, count: number) => Array.from({ length: count }, (_, i) => ({
+  courseId: start + i, name: "Course", code: "C", credit: 3, tight: false,
+  timesVisible: true, slots: [{ day: i % 5, start: 600, end: 660 }],
+}));
+const rawPlans = [
+  { label: "C", items: mkItems(21, 4) },
+  { label: "B", items: mkItems(11, 5) },
+  { label: "A", items: mkItems(1, 5) },
+]; // ورود الخطط بعكس ترتيبها لا يجوز أن يغيّر ترتيبها المرئي
+const results = ["A", "B", "C"].map((current) => {
+  const html = ctx.tkPlanCompare(rawPlans.map((p) => ({ label: p.label, items: ctx.tkItems(p) })), current) as string;
+  const choices = [...html.matchAll(/data-l="([ABC])" aria-pressed="(true|false)" style="--score:(\d+)%"/g)];
+  assert.equal(choices.map((m) => m[1]).join(","), "A,B,C", "أماكن أ وب وج ثابتة في كل اختيار");
+  assert.deepEqual(choices.filter((m) => m[2] === "true").map((m) => m[1]), [current], "فقط الخطة التي لمسها الطالب نشطة");
+  for (const label of ["A", "B", "C"]) {
+    assert.ok(html.includes("الخطة " + ({ A: "أ", B: "ب", C: "ج" } as Record<string, string>)[label] + " · 12 unit"),
+      "بيانات " + label + " تراعي حذف المقرر سواء كانت مختارة أم لا");
+  }
+  return choices.map((m) => m[1] + ":" + m[3]).join(",");
+});
+assert.equal(new Set(results).size, 1, "النقاط ومواقع البطاقات لا تقفز عند التنقل بين أ وب وج");
+
+console.log("✓ مساري: العرض ثابت، النصوص غير مضغوطة، والخطط أ/ب/ج تتبدّل بثبات على الهاتف والحاسوب");

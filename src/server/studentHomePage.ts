@@ -730,7 +730,9 @@ function tkPlanFit(plan){var items=plan.items||[],units=items.reduce(function(n,
   var tight=items.filter(function(i){return i.tight}).length,score=Math.round(allTimes?unitFit*.45+scheduleFit*.45+Math.max(0,100-tight*14)*.1:unitFit);
   var why=allTimes?(violations?'يراعي قيودك وأيام حضورك':(constraints.freeDay?'أيام حضور أقل':'أيام وفراغات أقل')):'الأقرب لهدف الوحدات';
   return{label:plan.label,units:units,score:score,allTimes:allTimes,days:daysN,gap:gap,tight:tight,why:why}}
-function tkPlanCompare(plans,current){var fits=plans.map(tkPlanFit).sort(function(a,b){return b.score-a.score||(a.units-b.units)}),best=fits[0],labels={A:'الخطة أ',B:'الخطة ب',C:'الخطة ج'},hasTimes=fits.every(function(f){return f.allTimes});
+function tkPlanCompare(plans,current){/* لا تعِد ترتيب البطاقات حسب النقاط: يُغيّر ذلك موضعها تحت إصبع الطالب عند الاختيار. */
+  var fits=plans.map(tkPlanFit).sort(function(a,b){return "ABC".indexOf(a.label)-"ABC".indexOf(b.label)}),
+    best=fits.reduce(function(a,b){return !a||b.score>a.score||(b.score===a.score&&b.units<a.units)?b:a},null),labels={A:'الخطة أ',B:'الخطة ب',C:'الخطة ج'},hasTimes=fits.every(function(f){return f.allTimes});
   return '<div class="tk-compare"><div class="tk-compare-title">'+ic('spark','')+' أفضل جدول بالنسبة لك</div><div class="tk-plans" role="group" aria-label="قارن خطط التسجيل">'+fits.map(function(f){var selected=f.label===current?'true':'false',dayText=f.allTimes?countOf(f.days,AR.day)+' حضور':'مواعيد غير معتمدة',gapText=f.allTimes?(f.gap?('فراغات '+countOf(Math.round(f.gap/6)/10,AR.hour)):'فراغات أقل'):'',bestText=f.label===best.label?'<span class="tk-best">'+(f.allTimes?'الأنسب لك':'الأقرب لهدفك')+'</span>':'';
     return '<button type="button" class="tk-plan" data-l="'+f.label+'" aria-pressed="'+selected+'" style="--score:'+f.score+'%"><span class="tk-score"><b>'+f.score+'<small>٪</small></b></span><strong>'+labels[f.label]+' · '+countOf(f.units,AR.unit)+'</strong><small>'+dayText+(gapText?' · '+gapText:'')+'<br>'+f.why+(f.tight?' · '+countOf(f.tight,AR.section)+' قليلة المقاعد':'')+'</small>'+bestText+'</button>'}).join('')+'</div><p class="tk-compare-note">'+(hasTimes?'المؤشر يوازن هدف الوحدات وقيودك وأيام الحضور والفراغات.':'المواعيد لم تعتمد بعد؛ المؤشر يقارن الوحدات بهدفك فقط.')+' التقدير لا يحجز مقعداً.</p></div>'}
 function tkGrid(items,sel,ghosts){
@@ -782,10 +784,11 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
   var anyTimes=items.some(function(i){return i.timesVisible});var view=S.tkView||(anyTimes?"grid":"list");if(view==="grid"&&!anyTimes)view="list";
   var w=t.window,when=w.name?(w.name+(w.start?" · "+fmtShort(w.start)+(w.end?" → "+fmtShort(w.end):""):"")):"يحدّد موعدَها صاحبُ القرار";
   var sel=items.filter(function(x){return Number(x.courseId)===Number(S.tkSel)})[0];if(!sel)S.tkSel=0;
-  var h='<section class="card tk fade"><div class="hd"><span class="win"><b>'+w.n+'</b><small>من '+w.of+'</small></span><div class="tx"><b>تذكرتي · نافذتي '+w.n+'</b><span class="muted">'+esc(when)+'</span></div></div><div class="perf"></div><div class="bd">';
+  var h='<section class="card tk"><div class="hd"><span class="win"><b>'+w.n+'</b><small>من '+w.of+'</small></span><div class="tx"><b>تذكرتي · نافذتي '+w.n+'</b><span class="muted">'+esc(when)+'</span></div></div><div class="perf"></div><div class="bd">';
   if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد آخر حساب — ستتحدّث تذكرتك في التحديث القادم</div>';
   if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
-  h+=tkPlanCompare(t.plans.map(function(p){return p.label===cur.label?{label:p.label,items:items}:p}),cur.label);
+  /* كل خطة تُقيَّم بنسختها المعدّلة حتى لا تتبدّل وحداتها/نقاطها عند الانتقال عنها وإليها. */
+  h+=tkPlanCompare(t.plans.map(function(p){return{label:p.label,items:tkItems(p)}}),cur.label);
   if(S.state&&S.state.demo)h+='<div class="demo-plan-guide" role="note"><b>شرح تفاعلي للخطط الثلاث</b><span>أ: الأقرب لرغبات الطالبة · ب: شعب ومواعيد بديلة · ج: خطة احتياطية بالحد الأدنى. اختر أي خطة ثم المس مقرراً لعرض شعبته ومواعيده، أو جرّب تبديل شعبة. جميع البيانات تجريبية.</span></div>';
   h+='<p class="plan-context">هذه خطة تسجيل مقترحة بحسب الشعب والتعارضات المتاحة الآن. هدفك الدراسي محفوظ في «احتياجي»، واختيار الخريطة تخطيطٌ شخصي؛ لذلك قد تختلف أرقامها.</p>';
   h+='<div class="row between"><span class="muted">إجمالي الخطة المقترحة · '+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(units,AR.unit)+(units<12&&items.length?' <span class="chip warn">أقل من 12</span>':'')+'</span></div>';
@@ -817,7 +820,7 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
   host.innerHTML=h;
   /* محطة الاستراحة: أطولُ فراغٍ في أسبوعه يُعرض فيه إعلانٌ إن وُجدت حملةٌ للموقع (السكربت العام يحمّله من الخادم ويحتسب ظهوره). */
   if(brk)adxMountLater("adx-break-box","break",{college:(S.state.profile&&S.state.profile.collegeId)||0,intro:'عندك فراغٌ يوم '+DAYN[brk.day]+' من '+tkClock(brk.from)+' إلى '+tkClock(brk.to)+' (نحو '+countOf(Math.round(brk.min/6)/10,AR.hour)+'). استراحتك برعاية:'});
-  host.querySelectorAll(".tk-plan").forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");S.tkSel=0;S.tkErr="";paintTicket(host)})});
+  host.querySelectorAll(".tk-plan").forEach(function(b){b.addEventListener("click",function(){var next=b.getAttribute("data-l");if(next===S.tkPlan)return;S.tkPlan=next;S.tkSel=0;S.tkErr="";paintTicket(host)})});
   host.querySelectorAll('[data-seg="view"] button').forEach(function(b){b.addEventListener("click",function(){S.tkView=b.getAttribute("data-v");paintTicket(host)})});
   host.querySelectorAll(".wk-b[data-c]").forEach(function(b){b.addEventListener("click",function(){var id=Number(b.getAttribute("data-c"));S.tkSel=Number(S.tkSel)===id?0:id;S.tkErr="";paintTicket(host)})});
   host.querySelectorAll(".wk-b.ghost,.chp[data-o]").forEach(function(b){b.addEventListener("click",function(){if(sel){tkSet(cur,sel.courseId,b.getAttribute("data-o"));paintTicket(host)}})});
