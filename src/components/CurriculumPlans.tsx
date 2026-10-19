@@ -214,7 +214,7 @@ export default function CurriculumPlans({
   const startRule = (plan: CurriculumPlan) => {
     const current = ruleOf(plan.id).rule;
     const seed = current || ruleOf(livePlans.find(row => row.id !== plan.id)?.id).rule;
-    setRuleDraft({ planId: plan.id, values: Object.fromEntries(RULE_FIELDS.map(([key]) => [key, seed && !(key === "fieldTrainingRequired" && seed[key] === 0) ? String(seed[key]) : ""])) });
+    setRuleDraft({ planId: plan.id, values: Object.fromEntries(RULE_FIELDS.map(([key]) => [key, key === "fieldTrainingRequired" ? (current?.fieldTrainingRequired ? String(current.fieldTrainingRequired) : "") : (seed ? String(seed[key]) : "")])) });
   };
   const saveRule = async () => {
     if (!ruleDraft) return;
