@@ -1287,6 +1287,14 @@ export default function App() {
         : health === "database-down" ? "الخدمة غير متاحة · متوقفة مؤقتاً"
           : "لا يوجد اتصال بالإنترنت";
   useEffect(() => {
+    /* A credential invite is an intentional sign-in handoff, even when this
+       browser still has another account's session. Let Login consume the
+       fragment before restoring that session; the fragment never reaches the
+       server and Login removes it from the address bar after reading it. */
+    if (window.location.hash.startsWith("#invite&")) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const res = await fetch("/api/auth/me"),
