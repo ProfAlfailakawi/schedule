@@ -214,7 +214,7 @@ const model: SheetModel = {
 {
   const work = read("src/components/IntelligenceWorkspace.tsx"), pub = read("src/components/PlanSheetPublisher.tsx"), server = read("server.ts");
   check(work.includes('"sheet"') && work.includes("canPublishSheets") && work.includes("<Workflow />") && work.includes("<PlanSheetPublisher"), "S4 بطاقة «الصحيفة» في مركز الذكاء بأيقونةٍ جديدة");
-  check(/canPublishSheets = isPowerAdmin/.test(work) && /isPowerAdmin && activeInsightKey === "sheet"/.test(work), "S4 ناشر الصحائف في مركز الذكاء لإدارة النظام وحدها");
+  check(/canPublishSheets = isPowerAdmin \|\| roleDefinition\(\(user as any\)\?\.Role\)\.id === "committeeChair"/.test(work) && /canPublishSheets && activeInsightKey === "sheet"/.test(work), "S4 بطاقة الصحيفة تظهر لرئيس لجنة الجدول ومدير النظام، ولو لم تُنشر صحيفة بعد");
   const buttons = pub.match(/<(?:PrimaryButton|SecondaryButton|button)\b(?:=>|[^>])*>/g) || [];
   const undocumented = buttons.filter(tag => !/data-guide-ignore|aria-label|className="psh-link"/.test(tag) || (/psh-link/.test(tag) && !/data-guide-ignore/.test(tag)));
   check(undocumented.length === 0, "S4 كلُّ زرٍّ في لوحة النشر موثَّقٌ للمرشد أو معنون", undocumented.slice(0, 3));
