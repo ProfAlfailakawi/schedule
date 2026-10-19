@@ -216,6 +216,7 @@ button,input{font:inherit;color:inherit}
 .tk .ln .tx small,.adv .ln .tx small{color:var(--muted);font-size:12px;line-height:1.6}
 .tk .ln .code,.adv .ln .code{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);direction:ltr;unicode-bidi:isolate;white-space:nowrap;flex:none}
 .tk .plan-context{margin:0;padding:10px 12px;border-radius:13px;background:var(--accent-soft);color:var(--dim);font-size:12px;line-height:1.7}
+.tk .demo-plan-guide{display:grid;gap:4px;padding:12px 13px;border:1px solid var(--line);border-radius:14px;background:var(--card2);font-size:12px;line-height:1.7;color:var(--dim)}.tk .demo-plan-guide b{font-size:13px;color:var(--accent)}
 .tk .seg[data-seg="plan"] button{white-space:nowrap;font-size:13px}
 .tk .tt{display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
 .tk .u{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
@@ -775,6 +776,7 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
   if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد آخر حساب — ستتحدّث تذكرتك في التحديث القادم</div>';
   if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
   h+=tkPlanCompare(t.plans.map(function(p){return p.label===cur.label?{label:p.label,items:items}:p}),cur.label);
+  if(S.state&&S.state.demo)h+='<div class="demo-plan-guide" role="note"><b>شرح تفاعلي للخطط الثلاث</b><span>أ: الأقرب لرغبات الطالبة · ب: شعب ومواعيد بديلة · ج: خطة احتياطية بالحد الأدنى. اختر أي خطة ثم المس مقرراً لعرض شعبته ومواعيده، أو جرّب تبديل شعبة. جميع البيانات تجريبية.</span></div>';
   h+='<p class="plan-context">هذه خطة تسجيل مقترحة بحسب الشعب والتعارضات المتاحة الآن. هدفك الدراسي محفوظ في «احتياجي»، واختيار الخريطة تخطيطٌ شخصي؛ لذلك قد تختلف أرقامها.</p>';
   h+='<div class="row between"><span class="muted">إجمالي الخطة المقترحة · '+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(units,AR.unit)+(units<12&&items.length?' <span class="chip warn">أقل من 12</span>':'')+'</span></div>';
   if(anyTimes)h+='<div class="seg fit sm2" role="group" aria-label="العرض" data-seg="view"><button type="button" data-v="grid" aria-pressed="'+(view==="grid")+'">أسبوعي</button><button type="button" data-v="list" aria-pressed="'+(view==="list")+'">قائمة</button></div>';
