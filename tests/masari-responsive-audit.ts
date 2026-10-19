@@ -4,7 +4,7 @@
  * والتوسّع المفاجئ إلى 1180px بعد اكتمال طلب الخريطة.
  */
 import assert from "node:assert/strict";
-import { STUDENT_HOME_CSS, studentHomePage } from "../src/server/studentHomePage";
+import { STUDENT_HOME_CSS, STUDENT_HOME_SCRIPT, studentHomePage } from "../src/server/studentHomePage";
 import { STUDENT_MAP_CSS } from "../src/server/studentMapUi";
 
 assert.match(STUDENT_HOME_CSS, /\.app\{max-inline-size:520px/);
@@ -19,4 +19,8 @@ const html = studentHomePage("audit-nonce", "girls");
 assert.match(html, /name="viewport" content="width=device-width,initial-scale=1/);
 assert.match(html, /class="app"/);
 assert.match(html, /audit-nonce/);
+// الحقيقي والديمو يبدآن بصفحة «الآن»؛ الرابط الصريح #plan فقط يفتح «خطتي».
+assert.match(STUDENT_HOME_SCRIPT, /S\.tab="now";/);
+assert.match(STUDENT_HOME_SCRIPT, /data-tab="now" aria-selected="true"/);
+assert.match(STUDENT_HOME_SCRIPT, /location\.hash==="#plan"\?"plan":""/);
 console.log("✓ مساري: العرض ثابت، النصوص غير مضغوطة، ونمط الهاتف يعمل على الحاسوب");
