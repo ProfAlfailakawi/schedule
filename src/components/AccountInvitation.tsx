@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Check, Copy, Download, KeyRound, Link, Send, X } from "lucide-react";
 import BrandMark from "./BrandMark";
 import "./account-invitation.css";
+import { invitationHref } from "../utils/invitationLink";
 
 type Props = { name: string; login: string; active: boolean; hasPassword?: boolean };
 const SITE = "https://schedule-kw.com/";
@@ -16,8 +17,7 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
     setTemporaryPassword("12345678");
     setStatus("");
   }, [login]);
-  const invite = new URLSearchParams({ username: login, password: temporaryPassword });
-  const url = `${SITE}#invite&${invite.toString()}`;
+  const url = invitationHref(SITE, login, temporaryPassword);
   const message = `أهلًا بـ${name}\n\nبيانات دخولكم إلى *SCHEDULE*\nنظام القرار الأكاديمي\n\nرابط الدخول:\n${url}\n\nاسم المستخدم:\n${login}\n\nكلمة المرور المؤقتة:\n${temporaryPassword}\n\nاحتفظوا ببيانات الدخول لدى المسؤول عن الحساب.`;
   const ready = active && hasPassword !== false && Boolean(temporaryPassword.trim());
 
@@ -38,8 +38,8 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
       const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 1440;
       const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("canvas");
       ctx.fillStyle = "#f4f2eb";
-      ctx.beginPath(); ctx.roundRect(0, 0, 1200, 900, 28); ctx.fill();
-      ctx.save(); ctx.beginPath(); ctx.roundRect(0, 0, 1200, 900, 28); ctx.clip();
+      ctx.beginPath(); ctx.roundRect(0, 0, 1200, 1440, 28); ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.roundRect(0, 0, 1200, 1440, 28); ctx.clip();
       ctx.fillStyle = "#123e35"; ctx.fillRect(0, 0, 1200, 350);
       const markSource = document.querySelector<SVGSVGElement>(".invitation-card header svg");
       if (markSource) {
@@ -79,8 +79,8 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         ctx.fillStyle = "#123e35"; ctx.fillText(value, 600, y + 145);
       };
       credential("اسم المستخدم", login, 620); credential("كلمة المرور المؤقتة", temporaryPassword, 855);
-      ctx.textAlign = "center"; ctx.direction = "ltr"; ctx.font = '600 30px "Plex Arabic", sans-serif'; ctx.fillStyle = "#123e35"; ctx.fillText("schedule-kw.com", 600, 1165);
-      ctx.direction = "rtl"; ctx.font = '400 24px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText("رابط الدخول القابل للنقر في الرسالة المرفقة", 600, 1230);
+      ctx.textAlign = "center"; ctx.direction = "ltr"; ctx.font = '700 38px "Plex Arabic", sans-serif'; ctx.fillStyle = "#123e35"; ctx.fillText("schedule-kw.com", 600, 1170);
+      ctx.direction = "rtl"; ctx.font = '400 26px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText("افتح رابط الدخول المرفق في رسالة واتساب", 600, 1240);
       ctx.fillStyle = "#d5bd84"; ctx.fillRect(520, 1310, 160, 3);
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("export")), "image/png"));
       const objectUrl = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = objectUrl; a.download = `SCHEDULE-${login.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);

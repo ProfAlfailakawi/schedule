@@ -11,6 +11,7 @@ import { Field, Notice, PrimaryButton } from "./ui";
 import InstallApp from "./InstallApp";
 import ScheduleJourney from "./ScheduleJourney";
 import BrandMark from "./BrandMark";
+import { parseInvitationHash } from "../utils/invitationLink";
 interface LoginProps {
   onLoginSuccess: (data: {
     user: any;
@@ -57,12 +58,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
   useEffect(() => {
     const hash = window.location.hash;
-    if (hash.startsWith("#invite&")) {
-      const invite = new URLSearchParams(hash.slice("#invite&".length));
-      const invitedUsername = invite.get("username")?.slice(0, 200);
-      const invitedPassword = invite.get("password")?.slice(0, 128);
-      if (invitedUsername) setUsername(invitedUsername);
-      if (invitedPassword) setPassword(invitedPassword);
+    const invite = parseInvitationHash(hash);
+    if (invite) {
+      setUsername(invite.username);
+      setPassword(invite.password);
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
   }, []);
