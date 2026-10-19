@@ -109,34 +109,34 @@ html.me body{padding-top:calc(58px + env(safe-area-inset-top,0))}
 html.me #stbar{bottom:calc(14px + env(safe-area-inset-bottom,0));flex-wrap:nowrap;gap:12px;padding:7px 16px;font-size:13px;white-space:nowrap}
 html.me #stbar b{font-size:15px}
 html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0));padding:8px 12px;font-size:13px}
-/* A4 landscape: fit the complete variable-height curriculum SVG onto one AirPrint page. */
+/* The PDF button produces the one-page document directly. These rules also keep
+   the browser's own Print command within one A4 sheet. */
 @page{size:A4 landscape;margin:0}
 @media print{
  html,body{background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;margin:0!important;padding:0!important;width:297mm!important;height:210mm!important;overflow:hidden!important}
  html.me body{padding:0!important}
  #sheet,#hint,#fitbtn,#pdfbtn,#stbtn,#stbar,#backlink,#tag{display:none!important}
  #dview,.scroll{display:block!important;position:static!important;width:297mm!important;height:210mm!important;min-height:0!important;max-height:210mm!important;margin:0!important;padding:0!important;overflow:hidden!important;box-shadow:none!important}
- #plan{display:block!important;width:297mm!important;height:210mm!important;min-width:0!important;max-width:none!important;max-height:none!important;margin:0 auto!important;break-inside:avoid!important;page-break-inside:avoid!important}
+ #plan{display:block!important;width:var(--print-plan-width,289mm)!important;height:var(--print-plan-height,202mm)!important;min-width:0!important;max-width:none!important;max-height:none!important;margin:var(--print-plan-top,4mm) auto 0!important;break-inside:avoid!important;page-break-inside:avoid!important}
  #plan [filter]{filter:none!important}
  #plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}
  #plan .card rect{filter:none!important}
  #plan .edge path{animation:none!important}
- /* iOS Safari/AirPrint ignores @page landscape: paint the 297×210 sheet
-    rotated inside ONE portrait A4 physical page, as in report printing. */
+ /* iOS Safari may ignore landscape. The same fitted drawing is rotated into
+    the centre of one portrait sheet, with its own measured safe margins. */
  html[data-print-rotate="1"],html[data-print-rotate="1"] body{
-  width:210mm!important;height:260mm!important;max-height:260mm!important;
+  width:210mm!important;height:297mm!important;max-height:297mm!important;
   overflow:hidden!important;direction:ltr!important
  }
  html[data-print-rotate="1"] #dview,
  html[data-print-rotate="1"] .scroll{
-  width:210mm!important;height:260mm!important;max-height:260mm!important;
-  overflow:visible!important;direction:ltr!important
+  width:210mm!important;height:297mm!important;max-height:297mm!important;
+  overflow:hidden!important;direction:ltr!important
  }
  html[data-print-rotate="1"] #plan{
-  width:297mm!important;height:210mm!important;
+  width:var(--print-plan-width,289mm)!important;height:var(--print-plan-height,202mm)!important;
   transform-origin:0 0!important;
-  /* Modest increase from .82 while preserving AirPrint edge clearance; verify on iPhone. */
-  transform:translate(194.25mm,23.76mm) rotate(90deg) scale(.84)!important;
+  transform:translate(var(--print-ios-x,206mm),var(--print-ios-y,4mm)) rotate(90deg)!important;
   margin:0!important;direction:rtl!important
  }
 }
@@ -146,33 +146,98 @@ html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0)
 <section id="dview"><div class="scroll">{{SVG}}</div></section>
 <div id="sheet" role="dialog" aria-live="polite"></div>
 <button id="fitbtn" type="button"></button>
-<button id="pdfbtn" type="button" onclick="printPlan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>تحميل PDF</button>
+<button id="pdfbtn" type="button" onclick="void downloadPlanPdf()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>تحميل PDF</button>
 <button id="stbtn" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>وضع الطالب</button>
 <div id="stbar" role="status" aria-live="polite"></div>
 <div id="hint">اضغط على أي مقرر لترى ما يتطلبه وما يفتحه</div>
 <script>
 const D={{DATA}};
 const isIOSPrint=/iPad|iPhone|iPod/i.test(navigator.userAgent||'');
-const isStandalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
-function printPlan(){
- if(isStandalone&&isIOSPrint){
-  // A new tab from an installed iOS PWA may display a blank screen.
-  // Use the native share sheet instead; it can pass the public URL to
-  // Safari for printing, without leaving the user on a blank page.
-  const url=new URL(location.href);url.searchParams.delete('pdf');
-  if(navigator.share){
-   navigator.share({title:document.title,url:url.href}).catch(()=>{});
-   return;
-  }
-  // Fallback for older embedded browsers with no Web Share API.
-  alert('افتح رابط الصحيفة في Safari ثم اختر مشاركة ← طباعة.');
-  return;
- }
- if(isIOSPrint)document.documentElement.dataset.printRotate='1';
- window.print();
+function planSize(){
+ const box=document.getElementById('plan').viewBox.baseVal;
+ const fit=Math.min(289/box.width,202/box.height);
+ return {width:box.width*fit,height:box.height*fit};
 }
-if(isStandalone&&isIOSPrint)document.getElementById('pdfbtn').lastChild.textContent='مشاركة / طباعة';
+function preparePlanPrint(){
+ const size=planSize(),root=document.documentElement;
+ root.style.setProperty('--print-plan-width',size.width+'mm');
+ root.style.setProperty('--print-plan-height',size.height+'mm');
+ root.style.setProperty('--print-plan-top',(210-size.height)/2+'mm');
+ root.style.setProperty('--print-ios-x',(210+size.height)/2+'mm');
+ root.style.setProperty('--print-ios-y',(297-size.width)/2+'mm');
+ if(isIOSPrint)root.dataset.printRotate='1';
+}
+addEventListener('beforeprint',preparePlanPrint);
 addEventListener('afterprint',()=>{delete document.documentElement.dataset.printRotate});
+
+/* A real PDF avoids Safari's rotated print preview, URL/date footers and extra
+   pages. The SVG is painted at print resolution with its own embedded Cairo
+   fonts, then placed at the largest safe size on one A4 landscape page. */
+let planFonts;
+async function embeddedPlanFonts(){
+ if(!planFonts)planFonts=Promise.all([300,500,700,900].flatMap(weight=>['arabic','latin'].map(async subset=>{
+  const response=await fetch('/plans/fonts/cairo-'+subset+'-'+weight+'-normal.woff2');
+  if(!response.ok)throw Error('font');
+  const bytes=new Uint8Array(await response.arrayBuffer());
+  let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  const range=subset==='arabic'?'U+0600-06FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE80-FEFC':'U+0000-00FF,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD';
+  return '@font-face{font-family:Cairo;font-style:normal;font-weight:'+weight+';src:url(data:font/woff2;base64,'+btoa(binary)+') format("woff2");unicode-range:'+range+'}';
+ }))).then(parts=>parts.join(''));
+ return planFonts;
+}
+function pdfFromJpeg(jpeg,width,height){
+ const enc=new TextEncoder(),parts=[],offsets=[0];let count=0;
+ const push=bytes=>{parts.push(bytes);count+=bytes.length};
+ const ascii=text=>push(enc.encode(text));
+ const object=(id,body)=>{offsets[id]=count;ascii(id+' 0 obj\n'+body+'\nendobj\n')};
+ ascii('%PDF-1.4\n');
+ object(1,'<< /Type /Catalog /Pages 2 0 R >>');
+ object(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+ object(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 841.89 595.28] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
+ offsets[4]=count;ascii('4 0 obj\n<< /Type /XObject /Subtype /Image /Width '+width+' /Height '+height+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpeg.length+' >>\nstream\n');push(jpeg);ascii('\nendstream\nendobj\n');
+ const drawing='q\n841.89 0 0 595.28 0 0 cm\n/Im0 Do\nQ\n';
+ offsets[5]=count;ascii('5 0 obj\n<< /Length '+enc.encode(drawing).length+' >>\nstream\n'+drawing+'endstream\nendobj\n');
+ const xref=count;ascii('xref\n0 6\n0000000000 65535 f \n');
+ for(let id=1;id<=5;id++)ascii(String(offsets[id]).padStart(10,'0')+' 00000 n \n');
+ ascii('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF');
+ return new Blob(parts,{type:'application/pdf'});
+}
+async function downloadPlanPdf(){
+ const button=document.getElementById('pdfbtn'),old=button.lastChild.textContent;
+ button.disabled=true;button.lastChild.textContent='يجهز PDF…';
+ try{
+  await document.fonts.ready;
+  const original=document.getElementById('plan'),clone=original.cloneNode(true);
+  clone.removeAttribute('id');clone.removeAttribute('class');clone.querySelectorAll('.card,.edge').forEach(node=>{node.removeAttribute('class');node.removeAttribute('style')});
+  const style=document.createElementNS('http://www.w3.org/2000/svg','style');
+  style.textContent=await embeddedPlanFonts();clone.insertBefore(style,clone.firstChild);
+  clone.setAttribute('width',original.viewBox.baseVal.width);clone.setAttribute('height',original.viewBox.baseVal.height);
+  const svg=new Blob([new XMLSerializer().serializeToString(clone)],{type:'image/svg+xml'}),svgUrl=URL.createObjectURL(svg);
+  const picture=new Image();
+  try{picture.src=svgUrl;await picture.decode()}finally{URL.revokeObjectURL(svgUrl)}
+  const dpi=260,pxPerMm=dpi/25.4,canvas=document.createElement('canvas');
+  canvas.width=Math.round(297*pxPerMm);canvas.height=Math.round(210*pxPerMm);
+  const context=canvas.getContext('2d',{alpha:false});if(!context)throw Error('canvas');
+  context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+  const size=planSize(),left=(297-size.width)/2,top=(210-size.height)/2;
+  context.drawImage(picture,left*pxPerMm,top*pxPerMm,size.width*pxPerMm,size.height*pxPerMm);
+  const encoded=canvas.toDataURL('image/jpeg',.94).split(',')[1];
+  const raw=atob(encoded),jpeg=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)jpeg[i]=raw.charCodeAt(i);
+  const pdf=pdfFromJpeg(jpeg,canvas.width,canvas.height),file=new File([pdf],'صحيفة-'+document.title.replace(/[\\/:*?"<>|]/g,'-')+'.pdf',{type:'application/pdf'});
+  let shared=false;
+  if(isIOSPrint&&navigator.canShare&&navigator.canShare({files:[file]})){
+   try{await navigator.share({files:[file],title:document.title});shared=true}
+   catch(error){if(error&&error.name==='AbortError')return}
+  }
+  if(!shared){
+   const link=document.createElement('a'),url=URL.createObjectURL(pdf);
+   link.href=url;link.download=file.name;document.body.appendChild(link);link.click();link.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }
+ }catch(error){if(error&&error.name==='AbortError')return;alert('تعذّر إعداد ملف PDF. يمكنك استخدام أمر الطباعة في المتصفح.');}
+ finally{button.disabled=false;button.lastChild.textContent=old}
+}
 const C=D.C,EL=D.EL,E=D.E,H=D.H;
 let sel=null;
 const name=c=>C[c]?C[c][1]:EL[c]?EL[c][0]:'';
@@ -340,8 +405,8 @@ window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
 if(/[?&]pdf=1(&|$)/.test(location.search))addEventListener('load',()=>{
  const ready=document.fonts?.ready||Promise.resolve();
  Promise.race([ready,new Promise(resolve=>setTimeout(resolve,3000))])
-   .then(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>printPlan())))
-   .catch(()=>printPlan());
+   .then(()=>downloadPlanPdf())
+   .catch(()=>downloadPlanPdf());
 });
 // Student mode: tap the courses you passed; what is open to you now lights up. Kept on this device only.
 (function(){
