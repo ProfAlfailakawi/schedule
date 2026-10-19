@@ -31,16 +31,16 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
     try {
       await Promise.all([
         document.fonts.load('400 28px "Plex Arabic"', "دعوة إلى مساحة عملكم"),
-        document.fonts.load('700 64px "Plex Arabic"', "SCHEDULE"),
-        document.fonts.load('600 46px "Plex Mono"', login),
+        document.fonts.load('700 80px "Plex Arabic"', "SCHEDULE"),
+        document.fonts.load('600 56px "Plex Mono"', login),
       ]);
       await document.fonts.ready;
-      const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 900;
+      const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 1440;
       const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("canvas");
       ctx.fillStyle = "#f4f2eb";
       ctx.beginPath(); ctx.roundRect(0, 0, 1200, 900, 28); ctx.fill();
       ctx.save(); ctx.beginPath(); ctx.roundRect(0, 0, 1200, 900, 28); ctx.clip();
-      ctx.fillStyle = "#123e35"; ctx.fillRect(0, 0, 1200, 220);
+      ctx.fillStyle = "#123e35"; ctx.fillRect(0, 0, 1200, 350);
       const markSource = document.querySelector<SVGSVGElement>(".invitation-card header svg");
       if (markSource) {
         const mark = markSource.cloneNode(true) as SVGSVGElement;
@@ -58,30 +58,30 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         const image = new Image();
         image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         await image.decode();
-        ctx.drawImage(image, 38, 50, 52, 52);
+        ctx.drawImage(image, 52, 52, 64, 64);
       }
       ctx.textAlign = "right"; ctx.direction = "rtl";
-      ctx.font = '500 21px "Plex Arabic", sans-serif'; ctx.fillStyle = "#d5bd84"; ctx.fillText("دعوة إلى مساحة عملكم", 1150, 65);
-      ctx.font = '700 40px "Plex Arabic", sans-serif'; ctx.fillStyle = "#ffffff"; ctx.fillText("SCHEDULE", 1150, 115);
-      ctx.font = '400 21px "Plex Arabic", sans-serif'; ctx.fillStyle = "#e2e8e0"; ctx.fillText("نظام القرار الأكاديمي", 1150, 170);
+      ctx.font = '500 28px "Plex Arabic", sans-serif'; ctx.fillStyle = "#d5bd84"; ctx.fillText("دعوة إلى مساحة عملكم", 1090, 130);
+      ctx.font = '700 68px "Plex Arabic", sans-serif'; ctx.fillStyle = "#ffffff"; ctx.fillText("SCHEDULE", 1090, 225);
+      ctx.font = '400 28px "Plex Arabic", sans-serif'; ctx.fillStyle = "#e2e8e0"; ctx.fillText("نظام القرار الأكاديمي", 1090, 285);
       ctx.restore();
       ctx.textAlign = "right"; ctx.direction = "rtl";
-      ctx.fillStyle = "#171b19"; ctx.font = '700 29px "Plex Arabic", sans-serif';
+      ctx.fillStyle = "#123e35"; ctx.font = '700 38px "Plex Arabic", sans-serif';
       // Fit long department names without truncating the recipient's identity.
-      let size = 29; while (ctx.measureText(name).width > 1060 && size > 18) { ctx.font = `700 ${--size}px "Plex Arabic", sans-serif`; }
-      ctx.fillText(name, 1150, 290);
-      ctx.font = '400 19px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText("أهلًا بكم، هنا تبدأ خطوتكم القادمة", 1150, 340);
+      let size = 38; while (ctx.measureText(name).width > 1060 && size > 24) { ctx.font = `700 ${--size}px "Plex Arabic", sans-serif`; }
+      ctx.fillText(name, 1090, 470);
+      ctx.font = '400 26px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText("أهلًا بكم، هنا تبدأ خطوتكم القادمة", 1090, 530);
       const credential = (label: string, value: string, y: number) => {
-        ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(35, y, 1130, 132, 18); ctx.fill();
-        ctx.textAlign = "right"; ctx.direction = "rtl"; ctx.font = '400 17px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText(label, 1120, y + 42);
-        ctx.textAlign = "center"; ctx.direction = "ltr"; let fontSize = 25; ctx.font = `600 ${fontSize}px "Plex Mono", monospace`;
-        while (ctx.measureText(value).width > 1050 && fontSize > 12) ctx.font = `600 ${--fontSize}px "Plex Mono", monospace`;
-        ctx.fillStyle = "#123e35"; ctx.fillText(value, 600, y + 91);
+        ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(100, y, 1000, 205, 26); ctx.fill();
+        ctx.textAlign = "right"; ctx.direction = "rtl"; ctx.font = '400 25px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText(label, 1050, y + 68);
+        ctx.textAlign = "center"; ctx.direction = "ltr"; let fontSize = 42; ctx.font = `600 ${fontSize}px "Plex Mono", monospace`;
+        while (ctx.measureText(value).width > 900 && fontSize > 18) ctx.font = `600 ${--fontSize}px "Plex Mono", monospace`;
+        ctx.fillStyle = "#123e35"; ctx.fillText(value, 600, y + 145);
       };
-      credential("اسم المستخدم", login, 385); credential("كلمة المرور المؤقتة", temporaryPassword, 535);
-      ctx.textAlign = "center"; ctx.direction = "ltr"; ctx.font = '600 22px "Plex Arabic", sans-serif'; ctx.fillStyle = "#123e35"; ctx.fillText("schedule-kw.com", 600, 755);
-      ctx.direction = "rtl"; ctx.font = '400 17px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText("رابط الدخول القابل للنقر في الرسالة المرفقة", 600, 795);
-      ctx.fillStyle = "#d5bd84"; ctx.fillRect(555, 845, 90, 2);
+      credential("اسم المستخدم", login, 620); credential("كلمة المرور المؤقتة", temporaryPassword, 855);
+      ctx.textAlign = "center"; ctx.direction = "ltr"; ctx.font = '600 30px "Plex Arabic", sans-serif'; ctx.fillStyle = "#123e35"; ctx.fillText("schedule-kw.com", 600, 1165);
+      ctx.direction = "rtl"; ctx.font = '400 24px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText("رابط الدخول القابل للنقر في الرسالة المرفقة", 600, 1230);
+      ctx.fillStyle = "#d5bd84"; ctx.fillRect(520, 1310, 160, 3);
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("export")), "image/png"));
       const objectUrl = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = objectUrl; a.download = `SCHEDULE-${login.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
       setStatus("حُفظت البطاقة. أرفق معها الرسالة ليتمكن المستلم من نسخ البيانات وفتح الرابط.");
