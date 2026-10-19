@@ -46,20 +46,21 @@ const model: SheetModel = {
   check(!html.includes('data-c="150"') && !html.includes('data-s="150"'), "S1 المقررُ الخارجي لا بطاقةَ له ولا سهم");
   check(html.includes("{{") === false && html.includes("const D=") && html.includes('"LV"'), "S1 القالبُ مملوءٌ بلا علاماتٍ متروكة، وبيانات التفاعل مضمّنة");
   check(html.includes('id="stbtn"') && html.includes("planPassed:") && html.includes("المتاح لك الآن") && html.includes("@media print") && /#stbtn,#stbar/.test(html), "S1 وضعُ الطالب: يعلّم ما اجتازه على جهازه ويضيء المتاح، ولا يُطبع");
-  check(html.includes("تحميل PDF") && html.includes("window.print()")
+  check(html.includes("تحميل PDF") && html.includes("function downloadPlanPdf()")
     && html.includes("@page{size:A4 landscape;margin:0}")
     && html.includes('html[data-print-rotate="1"] #plan')
-    && html.includes("rotate(90deg) scale(.84)")
-    && html.includes("function printPlan()")
-    && html.includes("isStandalone&&isIOSPrint")
-    && html.includes("navigator.share({title:document.title,url:url.href})")
-    && html.includes("height:260mm!important;max-height:260mm!important")
+    && html.includes("function pdfFromJpeg(jpeg,width,height)")
+    && html.includes("/MediaBox [0 0 841.89 595.28]")
+    && html.includes("/Count 1")
+    && html.includes("navigator.share({files:[file],title:document.title})")
+    && html.includes("const fit=Math.min(289/box.width,202/box.height)")
     && html.includes('#dview,.scroll{display:block!important;position:static!important;width:297mm!important;height:210mm!important')
-    && html.includes('#plan{display:block!important;width:297mm!important;height:210mm!important;min-width:0!important')
+    && html.includes('#plan{display:block!important;width:var(--print-plan-width,289mm)!important')
     && html.includes('#plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}')
     && html.includes('html.me body{padding:0!important}')
     && html.includes('Promise.race([ready,new Promise(resolve=>setTimeout(resolve,3000))])')
-    && html.includes('document.fonts?.ready'),
+    && html.includes('document.fonts?.ready')
+    && !html.includes('window.print()'),
     "S1 زر PDF: صفحة A4 بالعرض مع مخطط كامل بصفحة واحدة وبدون عناصر متحركة أو هوامش الهاتف");
   check(html.includes('prefers-reduced-motion:reduce'), "S1 خريطة الصحيفة لا تفقد تفضيل تقليل الحركة عند العرض");
   const arabicLabel = buildPlanSheet({ ...model, planLabel: "الصحيفة السابقة" }, { template });
