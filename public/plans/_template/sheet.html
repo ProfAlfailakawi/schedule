@@ -218,8 +218,13 @@ async function downloadPlanPdf(){
   const dpi=260,pxPerMm=dpi/25.4,canvas=document.createElement('canvas');
   canvas.width=Math.round(297*pxPerMm);canvas.height=Math.round(210*pxPerMm);
   const context=canvas.getContext('2d',{alpha:false});if(!context)throw Error('canvas');
-  context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
-  const size=planSize(),left=(297-size.width)/2,top=(210-size.height)/2;
+  // Extend the sheet's own background to the paper edges; keep every course
+  // visible when the SVG's proportions differ from A4.
+  const background=context.createLinearGradient(0,0,0,canvas.height);
+  background.addColorStop(0,'#EEF4FF');background.addColorStop(1,'#F8FAFC');
+  context.fillStyle=background;context.fillRect(0,0,canvas.width,canvas.height);
+  const box=original.viewBox.baseVal,fit=Math.min(297/box.width,210/box.height);
+  const size={width:box.width*fit,height:box.height*fit},left=(297-size.width)/2,top=(210-size.height)/2;
   context.drawImage(picture,left*pxPerMm,top*pxPerMm,size.width*pxPerMm,size.height*pxPerMm);
   const encoded=canvas.toDataURL('image/jpeg',.94).split(',')[1];
   const raw=atob(encoded),jpeg=new Uint8Array(raw.length);
