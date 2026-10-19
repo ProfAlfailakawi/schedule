@@ -49,7 +49,7 @@ const model: SheetModel = {
   check(html.includes("تحميل PDF") && html.includes("window.print()")
     && html.includes("@page{size:A4 landscape;margin:0}")
     && html.includes('html[data-print-rotate="1"] #plan')
-    && html.includes("rotate(90deg) scale(.87)")
+    && html.includes("rotate(90deg) scale(.82)")
     && html.includes("function printPlan()")
     && html.includes("isStandalone&&isIOSPrint")
     && html.includes("navigator.share({title:document.title,url:url.href})")
