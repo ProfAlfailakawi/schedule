@@ -32,7 +32,23 @@ const MAX_SANDBOXES = 150;
 
 const DEPT: Record<string, string> = { "01": "الدراسات الإسلامية", "02": "اللغة العربية", "03": "الاجتماعيات", "05": "الرياضيات", "06": "العلوم", "07": "التربية البدنية", "08": "التربية الفنية", "09": "تكنولوجيا التعليم", "10": "التربية الموسيقية", "11": "علم النفس", "12": "المكتبات", "13": "الحاسوب", "14": "أصول التربية", "15": "التربية الخاصة", "16": "الإدارة التربوية", "19": "التربية الخاصة", "20": "المناهج", "21": "المناهج وطرق التدريس", "24": "الهندسة", "30": "اللغة الإنجليزية", "65": "علوم أخرى" };
 /** الشعبُ المطروحة هذا الفصل: بعضُ المقررات فقط، فيظهر الفرقُ بين «مطروح» و«غير مطروح». */
-const OFFERED = new Set(["0109220", "0109221", "0109224", "0109233", "0109122", "0109123", "0130164", "0102115", "0119150", "0109321", "0109322", "0109226", "0109315", "0101102", "0103116", "0109105"]);
+/** مقررات الصحيفة المرجعية موجودة كلّها في الخلفية؛ المطروح فقط له شعب. */
+const SHOWCASE_WISH_CODES = ["0109224", "0109233", "0110102", "0115113", "0120101", "0119150", "0120209", "0121284"];
+const OFFERED = new Set([
+  ...SHOWCASE_WISH_CODES,
+  "0109220", "0109221", "0109122", "0109123", "0130164", "0102115",
+  "0109321", "0109322", "0109226", "0109315", "0101102", "0103116", "0109105",
+  "0115152", "0121205", "0105104", "0115108", "0107103",
+  "0120220", "0109401", "0109323", "0109347", "0121384", "0114304"
+]);
+/** توقيتاتٌ افتراضية متنوعة: ٥ أيام، أوقات صباحية وبعد الظهر، وشعب بديلة. */
+const DEMO_MEETINGS: ReadonlyArray<readonly [number, number, string, string]> = [
+  [0, 2, "08:30", "10:00"], [1, 3, "08:30", "10:00"],
+  [0, 2, "10:30", "12:00"], [1, 3, "10:30", "12:00"],
+  [0, 2, "12:30", "14:00"], [1, 3, "12:30", "14:00"],
+  [0, 2, "14:30", "16:00"], [1, 3, "14:30", "16:00"],
+  [4, 4, "08:30", "11:30"], [4, 4, "12:00", "15:00"],
+];
 /** ما أنجزته الطالبةُ الافتراضية: المستوى الأول تقريباً وبعضُ الثاني والعامة. */
 const PASSED = ["0109105", "0109108", "0109121", "0109122", "0109123", "0102114", "0102115", "0101102", "0103105", "0103116", "0130099", "0130161", "0102101", "0106101", "0109220", "0109221"];
 export const SHOWCASE_STUDENT_NAME = "سارة محمد العتيبي";
@@ -61,8 +77,24 @@ export function buildShowcaseSeed(todayISO: string) {
   const own = courses.filter(c => c.AdSectionId === tech);
   const schedules: any[] = [];
   let row = 1;
-  for (const c of courses) if (OFFERED.has(c.CourseCode)) for (const code of ["01", "02", "03"].slice(0, 1 + (row % 3))) {
-    schedules.push({ id: row++, AdCollegeId: 1, AdSectionId: c.AdSectionId, AdTermId: 1, AdCourseId: c.AdCourseId, AdCourseName: c.CourseName, SCode: code, AdInstructorId: 1, fsunday: true, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false, fstarttime: "09:00", fendtime: "10:30", AdRoomCode: "", AdRoomHall: "" });
+  const offeredCourses = courses.filter(c => OFFERED.has(c.CourseCode));
+  for (const [index, c] of offeredCourses.entries()) {
+    const wanted = SHOWCASE_WISH_CODES.indexOf(String(c.CourseCode));
+    const position = wanted >= 0 ? wanted : index + SHOWCASE_WISH_CODES.length;
+    for (let variant = 0; variant < 2; variant++) {
+      const [firstDay, secondDay, start, end] = DEMO_MEETINGS[(position + variant * 4) % DEMO_MEETINGS.length];
+      schedules.push({
+        id: row++, AdCollegeId: 1, AdSectionId: c.AdSectionId, AdTermId: 1,
+        AdCourseId: c.AdCourseId, AdCourseName: c.CourseName, SCode: String(variant + 1).padStart(2, "0"),
+        AdInstructorId: 1, AdRoomCode: "", AdRoomHall: "",
+        fsunday: firstDay === 0 || secondDay === 0,
+        fmonday: firstDay === 1 || secondDay === 1,
+        ftuesday: firstDay === 2 || secondDay === 2,
+        fwednesday: firstDay === 3 || secondDay === 3,
+        fthursday: firstDay === 4 || secondDay === 4,
+        fstarttime: start, fendtime: end,
+      });
+    }
   }
   const stamp = new Date(`${todayISO}T00:00:00Z`).toISOString();
   const approved = (planId: string, sectionId: number, built: { rules: any; groups: any }, externals?: number[]) =>
@@ -85,6 +117,13 @@ export function buildShowcaseSeed(todayISO: string) {
       colleges: [{ AdCollegeId: 1, AdCollegeCode: "01", AdCollegeName: "كلية التربية الأساسية" }], sections,
       instructors: [{ AdInstructorId: 1, AdInstructorName: "د. أحمد", AdInstructorCivil: "", AdInstructorMobile: "" }],
       courses, schedules,
+      /* اعتمادٌ افتراضي داخل صندوق الزيارة فقط: يتيح عرض الأوقات والشعب للتوضيح.
+         لا يكتب توقيعاً حقيقياً ولا يغيّر حالة جدول قسمٍ في النظام. */
+      scheduleApprovals: [...new Set(schedules.map(row => Number(row.AdSectionId)))].map(sectionId => ({
+        id: `1:${sectionId}:1`, scopeKey: `1:${sectionId}:1`,
+        AdCollegeId: 1, AdSectionId: sectionId, AdTermId: 1, status: "head",
+        signatures: [], rounds: [], currentRound: 1, pendingAdditions: [], updatedAt: stamp,
+      })),
       curriculumPlans: [{ id: planId, AdCollegeId: 1, AdSectionId: tech, name: "خطة 2026/2027", status: "active", createdAt: "2026-02-01" }],
       curriculumPlanCourses: own.map(c => ({ id: `l${c.AdCourseId}`, planId, AdCollegeId: 1, AdSectionId: tech, AdCourseId: c.AdCourseId, createdAt: "2026-01-01" })),
       curriculumRuleSets: ruleSets,
@@ -140,12 +179,11 @@ export function registerStudentShowcase(app: Express, deps: ShowcaseDeps): void 
       const codeHash = randomUUID();
       const nameCipher = await deps.sealIdentity(SHOWCASE_STUDENT_NAME), civilCipher = await deps.sealIdentity("000000000000");
       await Repository.withDemoSandbox(id, async () => {
-        const sampleWishes = state.courses
-          .filter(course => Number(course.AdSectionId) === profile.AdSectionId
-            && OFFERED.has(String(course.CourseCode))
-            && !profile.passedCourseIds.includes(Number(course.AdCourseId)))
-          .slice(0, 8)
-          .map(course => Number(course.AdCourseId));
+        /* ٨ رغباتٍ متنوعة من الصحيفة الفعلية (التخصص + المتطلبات المهنية).
+           الباقي — بما فيه السلاسل المتقدمة — موجود بالخلفية ويظهر عند الاستكشاف. */
+        const sampleWishes = SHOWCASE_WISH_CODES.map(code =>
+          state.courses.find(course => String(course.CourseCode) === code)?.AdCourseId
+        ).filter((id): id is number => Number.isFinite(Number(id))).map(Number);
         await Repository.updateStudentProfile(fingerprint, () => ({
           id: fingerprint, fingerprint, ...profile,
           /* رغباتٌ تجريبية كي تظهر تذكرةٌ حقيقية البنية بخططها الثلاث في «مساري»،
