@@ -109,14 +109,18 @@ html.me body{padding-top:calc(58px + env(safe-area-inset-top,0))}
 html.me #stbar{bottom:calc(14px + env(safe-area-inset-bottom,0));flex-wrap:nowrap;gap:12px;padding:7px 16px;font-size:13px;white-space:nowrap}
 html.me #stbar b{font-size:15px}
 html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0));padding:8px 12px;font-size:13px}
-@page{size:420mm 297mm;margin:0}
+/* A3 landscape: reserve a true safe margin so printer/PDF boundaries never clip the map. */
+@page{size:A3 landscape;margin:6mm}
 @media print{
- html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ html,body{background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;margin:0!important;padding:0!important;width:100%!important;height:100%!important;overflow:hidden!important}
+ html.me body{padding:0!important}
  #sheet,#hint,#fitbtn,#pdfbtn,#stbtn,#stbar,#backlink,#tag{display:none!important}
- .scroll{overflow:visible;padding:0}
- #plan [filter]{filter:none}
- .card,.edge{opacity:1!important}
- #plan{width:420mm;height:297mm;min-width:0;max-width:none}
+ #dview,.scroll{display:block!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;overflow:hidden!important}
+ #plan{display:block!important;width:100%!important;height:100%!important;min-width:0!important;max-width:none!important;max-height:none!important;margin:0 auto!important;overflow:visible!important}
+ #plan [filter]{filter:none!important}
+ #plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}
+ #plan .card rect{filter:none!important}
+ #plan .edge path{animation:none!important}
 }
 </style>
 </head>
