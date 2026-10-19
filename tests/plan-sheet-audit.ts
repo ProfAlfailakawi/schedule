@@ -51,7 +51,9 @@ const model: SheetModel = {
     && html.includes('#dview,.scroll{display:block!important;width:100%!important;height:100%!important')
     && html.includes('#plan{display:block!important;width:100%!important;height:100%!important;min-width:0!important')
     && html.includes('#plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}')
-    && html.includes('html.me body{padding:0!important}'),
+    && html.includes('html.me body{padding:0!important}')
+    && html.includes('Promise.race([ready,new Promise(resolve=>setTimeout(resolve,3000))])')
+    && html.includes('document.fonts?.ready'),
     "S1 زر PDF: صفحة A3 بالعرض وهامش أمان وتناسب كامل وبدون عناصر متحركة أو هوامش الهاتف");
   check(html.includes('prefers-reduced-motion:reduce'), "S1 خريطة الصحيفة لا تفقد تفضيل تقليل الحركة عند العرض");
   const arabicLabel = buildPlanSheet({ ...model, planLabel: "الصحيفة السابقة" }, { template });
