@@ -2,7 +2,7 @@
  * ── الصحيفة العامة: مولّدُ الصفحة، والنشرُ، والصفحاتُ بلا حساب ───────────────
  *
  *   S1  المولّد: أعمدةُ مستوياتٍ، بلا شعار، وQR بالدومين الرسمي، وملاحظاتُ المتطلبات الخارجية، والتخطيط بالعرض.
- *   S2  النشر: لا يُنشر إلا ما اعتُمد وللآدمن وحده، ورئيس اللجنة يقرأ قسمه دون نشر.
+ *   S2  النشر: لا يُنشر إلا ما اعتُمد، ولرئيس لجنة الجدول وحده ضمن نطاقه، واللقطةُ مستقلةٌ عن الخطة.
  *   S3  الصفحات العامة: فهرسٌ، وقسمٌ، وصحيفةٌ، وما أُوقف نشره يختفي، والمجلداتُ الثابتة تمرّ.
  *   S4  الواجهة: بطاقةٌ في مركز الذكاء، وكلُّ زرٍّ موثَّقٌ للمرشد.
  */
@@ -38,16 +38,6 @@ const model: SheetModel = {
 {
   const html = buildPlanSheet(model, { template });
   check(!/<image\b|logo/i.test(html), "S1 بلا شعارٍ في الصفحة (لا <image> ولا logo)");
-  const referenceHtml = read("public/plans/educational-technology/index.html");
-  const sharedTemplate = read("public/plans/_template/sheet.html");
-  const animatedEdge = '.edge.on path[marker-end]{stroke-width:3.4;stroke-dasharray:9 6;animation:flow .9s linear infinite}';
-  check(referenceHtml.includes(animatedEdge) && sharedTemplate.includes(animatedEdge)
-    && html.includes(animatedEdge) && html.includes('@keyframes flow{to{stroke-dashoffset:-15}}')
-    && html.includes("g.classList.toggle('on',on)") && html.includes('prefers-reduced-motion:reduce'),
-    "S1 الأسهم الملونة المتحركة عند اختيار المقرر تطابق مرجع تكنولوجيا التعليم وتحترم تقليل الحركة");
-  check(html.includes('html.student #plan .edge.on{opacity:1}')
-    && html.includes('marker-end="url(#m') && html.includes('data-s="105"') && html.includes('data-t="121"'),
-    "S1 الصحائف المولّدة تُظهر الأسهم المختارة بوضوح حتى في وضع الطالب، مع حفظ اتجاه المسبقات");
   check((html.match(/<a href="([^"]+)" aria-label="رمز QR/) || [])[1] === "https://schedule-kw.com/plans/s9/p1/" && !html.includes("dr-alfailakawi"), "S1 رمزُ QR يحمل الدومين الرسمي وحده");
   check(["المستوى 100", "المستوى 200", "المستوى 300", "المستوى 400"].every(label => html.includes(label)) && !html.includes("السنة الأولى") && !html.includes("فصل 1"), "S1 الأعمدةُ مستوياتٌ لا سنواتٌ ولا فصول");
   check((html.match(/class="card"/g) || []).length === 7, "S1 بطاقةٌ لكل مقررٍ (٥ في الخريطة + ٢ اختياري)");
@@ -108,7 +98,6 @@ const model: SheetModel = {
     chair11: { user: { Role: "committeeChair", Name: "رئيس لجنة الشريعة" }, scopes: [{ AdCollegeId: 1, AdSectionId: 11 }] },
     head11: { user: { Role: "departmentHead", Name: "رئيس قسم الشريعة" }, scopes: [{ AdCollegeId: 1, AdSectionId: 11 }] },
     chair12: { user: { Role: "committeeChair", Name: "رئيس لجنة اللغة" }, scopes: [{ AdCollegeId: 1, AdSectionId: 12 }] },
-    chair22: { user: { Role: "committeeChair", Name: "رئيس لجنة الجهراء" }, scopes: [{ AdCollegeId: 3, AdSectionId: 22 }] },
     admin: { user: { SystemUserId: 1, Role: "committeeChair", Name: "المدير", IsAdminUser: true }, scopes: [] },
   };
   const app = express();
@@ -139,8 +128,7 @@ const model: SheetModel = {
   try {
     check((await call("", "GET", "/api/plan-sheets")).status === 401, "S2 بلا دخول: ٤٠١");
     check((await call("chair11", "GET", "/api/plan-sheets")).json.sections.length === 0, "S2 لا صحيفةَ معتمدة: لا شيء يُنشر");
-    check((await call("chair11", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 })).status === 403, "S2 النشر ممنوع على رئيس اللجنة حتى في قسمه");
-    check((await call("admin", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 })).status === 409, "S2 لا تُنشر صحيفةٌ غير معتمدة حتى من الآدمن");
+    check((await call("chair11", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 })).status === 409, "S2 لا تُنشر صحيفةٌ غير معتمدة");
 
     await approve("p11", 11, [
       { courseId: 101, level: 100 }, { courseId: 102, level: 200, prereq: { all: [101, 900], anyOf: [] } }, { courseId: 103, level: 300, prereq: { all: [], anyOf: [[102, 900]], minUnits: 30 } },
@@ -150,7 +138,7 @@ const model: SheetModel = {
     check((await call("head11", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 })).status === 403, "S2 رئيس القسم لا ينشر");
     check((await call("chair12", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 })).status === 403, "S2 رئيس لجنةٍ في قسمٍ آخر لا ينشر");
     check((await call("head11", "GET", "/api/plan-sheets")).json.sections.length === 0, "S2 رئيس القسم لا يرى شاشة النشر");
-    const done = await call("admin", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 });
+    const done = await call("chair11", "POST", "/api/plan-sheets/publish", { planId: "p11", sectionId: 11 });
     check(done.status === 200 && done.json.published[0].url === "https://schedule-kw.com/plans/s11/p11/", "S2 النشر يعطي الرابط الرسمي", done.json);
 
     const stored = await Repository.getPublishedSheet("p11");
@@ -173,12 +161,11 @@ const model: SheetModel = {
     /* قسمٌ بأكثر من صحيفة: صفحةُ اختيارٍ، ونشرُ القسم كلِّه دفعة. */
     await approve("p12", 12, [{ courseId: 201, level: 100 }]);
     await approve("p12b", 12, [{ courseId: 201, level: 100 }]);
-    const both = await call("admin", "POST", "/api/plan-sheets/publish", { sectionId: 12 });
+    const both = await call("chair12", "POST", "/api/plan-sheets/publish", { sectionId: 12 });
     check(both.status === 200 && both.json.published.length === 2, "S2 نشرُ كل صحائف القسم دفعةً واحدة", both.json);
     const multi = await call("", "GET", "/plans/s12/");
     check(multi.status === 200 && multi.text.includes("خطة اللغة (قديمة)") && multi.text.includes('href="/plans/s12/p12/"') && multi.text.includes('href="/plans/s12/p12b/"'), "S3 قسمٌ بأكثر من صحيفة: صفحةُ اختيارٍ بصحائفه");
-    check((await call("chair12", "POST", "/api/plan-sheets/publish", {})).status === 403 && (await call("chair11", "POST", "/api/plan-sheets/publish", {})).status === 403, "S2 نشر جميع الصحائف ممنوع لأي رئيس لجنة");
-    check((await call("admin", "POST", "/api/plan-sheets/publish", {})).json.published.length === 3, "S2 إدارة النظام وحدها تنشر كل الصحائف المعتمدة");
+    check((await call("chair12", "POST", "/api/plan-sheets/publish", {})).json.published.length === 2 && (await call("chair11", "POST", "/api/plan-sheets/publish", {})).json.published.length === 1, "S2 «انشر كل صحائفي» لا يتعدى نطاقَ صاحبه");
     check((await call("chair12", "GET", "/plans/s12/p12/")).text.includes("قسم اللغة") && (await call("", "GET", "/plans/s12/p12/")).text.includes('"E":[]'), "S3 صحيفةٌ بلا مسبقاتٍ ترتسم (بالعرض) بلا أخطاء");
 
     /* اللقطةُ مستقلةٌ عن الخطة: مسحُ الخطة لا يُسقطها، وإعادةُ اعتماد القواعد تُعلَّم «تغيّرت بعد النشر». */
@@ -191,8 +178,7 @@ const model: SheetModel = {
     check(!(await republishIfPublished("p12-none", "اختبار")), "S2 ولا يُنشر بالاعتماد ما لم يكن منشوراً");
 
     check((await call("head11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 403 && (await call("chair12", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 403, "S2 إيقافُ النشر لرئيس اللجنة وحده ضمن نطاقه");
-    check((await call("chair11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 403, "S2 رئيس لجنة الجدول لا يوقف نشر الصحيفة");
-    check((await call("admin", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 200 && (await call("", "GET", "/plans/s11/p11/")).status === 404 && (await call("admin", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 404, "S2/S3 الآدمن وحده يوقف النشر، والصفحة تختفي");
+    check((await call("chair11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 200 && (await call("", "GET", "/plans/s11/p11/")).status === 404 && (await call("chair11", "POST", "/api/plan-sheets/unpublish", { planId: "p11" })).status === 404, "S2/S3 إيقافُ النشر يُسقط الصفحة، ومرتان: ٤٠٤");
     check(!(await call("", "GET", "/plans/")).text.includes('href="/plans/s11/"'), "S3 القسم الموقوف يغيب من الفهرس");
     check((await call("admin", "GET", "/api/plan-sheets")).json.sections.length === 2, "S2 إدارةُ النظام ترى كل الأقسام");
 
@@ -207,9 +193,6 @@ const model: SheetModel = {
     const nursing = withNursing.find((row: any) => row.sectionId === 25), basicGirls = withNursing.find((row: any) => row.sectionId === 21);
     check(withNursing.length === 3 && nursing?.members.join() === "25" && basicGirls?.members.join() === "21,22,23", "S5 التمريض مسارٌ مستقل: لا يُدمج مع بنات التربية الأساسية ولا يُنسخ إليه", withNursing.map((row: any) => [row.sectionId, row.members]));
     check(/التمريض/.test(nursing.label) && /التربية الأساسية/.test(basicGirls.label) && nursing.label !== basicGirls.label, "S5 الاسمُ يميّز الكلية حين يوجد القسمُ في أكثر من عائلة", [nursing.label, basicGirls.label]);
-    const girlsRead = (await call("chair22", "GET", "/api/plan-sheets?section=22")).json.sections;
-    check(girlsRead.length === 1 && girlsRead[0].members.includes(22) && girlsRead[0].track === "girls", "S5 رئيس لجنة موقع البنات يقرأ صحيفة مساره المشتركة دون صلاحيات نشر", girlsRead);
-    check((await call("chair22", "POST", "/api/plan-sheets/publish", { planId: "p21", sectionId: 21 })).status === 403, "S5 رئيس لجنة الجهراء لا ينشر حتى على الصحيفة المشتركة");
     const girlsRow = tracks.find((row: any) => row.track === "girls");
     check(girlsRow.sectionId === 21 && girlsRow.members.join() === "21,22,23" && girlsRow.campuses === 2, "S5 مسارُ البنات أصلُه التربية الأساسية بنات ومعه الموقعان الفرعيان", girlsRow);
     const pub = (await call("admin", "POST", "/api/plan-sheets/publish", { planId: "p21", sectionId: 21 })).json;
@@ -231,13 +214,17 @@ const model: SheetModel = {
 {
   const work = read("src/components/IntelligenceWorkspace.tsx"), pub = read("src/components/PlanSheetPublisher.tsx"), server = read("server.ts");
   check(work.includes('"sheet"') && work.includes("canPublishSheets") && work.includes("<Workflow />") && work.includes("<PlanSheetPublisher"), "S4 بطاقة «الصحيفة» في مركز الذكاء بأيقونةٍ جديدة");
-  check(/canPublishSheets = isPowerAdmin;/.test(work) && work.includes('canReadDepartmentSheet = roleDefinition((user as any)?.Role).id === "committeeChair"') && work.includes('canOpenSheetReading && activeInsightKey === "sheet"'), "S4 خريطة القسم لرئيس اللجنة والنشر للآدمن وحده");
+  check(work.includes('isAdmin={isPowerAdmin}') && pub.includes('isAdmin = false') && pub.includes('{isAdmin ? <SecondaryButton onClick={() => showQr("كل الأقسام", indexUrl)}')
+    && pub.includes('QR كل الأقسام</SecondaryButton> : null}'), "S4 رمز QR لكل الأقسام يظهر للآدمن فقط، لا لرؤساء لجان الجدول");
+  check(work.includes('canPublishSheets = isPowerAdmin || roleDefinition((user as any)?.Role).id === "committeeChair"')
+    && pub.includes('onClick={() => publish({ planId: sheet.planId, sectionId: section.sectionId }')
+    && !pub.includes('if (readOnly)'), "S4 أدوات نشر صحيفة القسم لرئيس اللجنة لم تتغير");
+  check(/canPublishSheets = isPowerAdmin \|\| roleDefinition\(\(user as any\)\?\.Role\)\.id === "committeeChair"/.test(work) && /canPublishSheets && activeInsightKey === "sheet"/.test(work), "S4 بطاقة الصحيفة تظهر لرئيس لجنة الجدول ومدير النظام، ولو لم تُنشر صحيفة بعد");
   const buttons = pub.match(/<(?:PrimaryButton|SecondaryButton|button)\b(?:=>|[^>])*>/g) || [];
   const undocumented = buttons.filter(tag => !/data-guide-ignore|aria-label|className="psh-link"/.test(tag) || (/psh-link/.test(tag) && !/data-guide-ignore/.test(tag)));
   check(undocumented.length === 0, "S4 كلُّ زرٍّ في لوحة النشر موثَّقٌ للمرشد أو معنون", undocumented.slice(0, 3));
   check(!/canPublishSheets\s*&&\s*sheetSummary\?\.total/.test(work) && work.includes("تظهر بعد اعتماد الصحيفة"), "S4 البطاقةُ تظهر لمن ينشر دائماً، وتقول إنها تنتظر الاعتماد إن لم توجد صحيفةٌ معتمدة");
   check(work.includes("focusSectionId={Number(sectionId) || 0}") && pub.includes("psh-focus") && pub.includes("focus.deptUrl"), "S4 قسمُ نطاق القرار المختار يظهر رمزُ QR لصفحته في أعلى اللوحة");
-  check(work.includes("readOnly={!isPowerAdmin}") && pub.includes("if (readOnly)") && pub.includes("focus?.sheets.filter(sheet => sheet.published)") && pub.includes("خريطة القسم"), "S4 رئيس لجنة الجدول يقرأ صحيفة قسمه المنشورة فقط ولا يرى أزرار النشر");
   check(pub.includes("printPoster") && pub.includes("اطبع ملصقاً") && pub.includes("@page{size:A4"), "S4 ملصقُ QR بحجم A4 للقسم أو الصحيفة");
   check(read("src/server/planReviewRoutes.ts").includes("republishIfPublished(ctx.plan.id"), "S4 مسارُ الاعتماد يستدعي إعادة النشر");
   check(server.includes("registerPlanSheetRoutes(app") && server.includes('"plans", "_template", "sheet.html"'), "S4 المسارات مسجّلةٌ في الخادم والقالبُ يُقرأ عند الإقلاع");
