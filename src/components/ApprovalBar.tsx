@@ -23,7 +23,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
-import { SectionGapBadge, SectionGapPanel, useSectionGap, type GapKind } from "./SectionGapNote";
+import { SectionGapBadge, SectionGapPanel, showQuickCompareBadge, useSectionGap, type GapKind } from "./SectionGapNote";
 import type { GapItem } from "../utils/sectionGap";
 import QuickPlanSheet from "./QuickPlanSheet";
 import {
@@ -671,7 +671,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
         <SectionGapBadge items={gap.planItems} kind="plan" open={gapOpen === "plan"} onToggle={() => setGapOpen(open => open === "plan" ? null : "plan")} />
         <SectionGapBadge items={gap.studentItems} kind="students" open={gapOpen === "students"} onToggle={() => setGapOpen(open => open === "students" ? null : "students")} />
-        {gap.loaded && !gap.planImported ? (
+        {showQuickCompareBadge(gap) ? (
           <button type="button" className="apb-badge apb-gap-ghost" onClick={() => setPlanSheet(true)} aria-haspopup="dialog"
             title="قارن شعبك بكشف المتبقي" aria-label="ارفع كشف المتبقي لتظهر لك الشعب المقترحة"
             data-guide-ignore="أيقونة اختيارية: تفتح شاشةً مختصرة لرفع كشف المتبقي">

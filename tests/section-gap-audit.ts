@@ -2,7 +2,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { planGaps, studentGaps, type GapCourse, type GapPlan } from "../src/utils/sectionGap";
-import { SectionGapPanel } from "../src/components/SectionGapNote";
+import { SectionGapPanel, showQuickCompareBadge } from "../src/components/SectionGapNote";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string, extra?: unknown) => {
@@ -66,7 +66,15 @@ check(renderToStaticMarkup(React.createElement(Result, { gap: { ...sample, ready
 /* مسحُ الكشف من تخطيط الشعب يُحدِّث الأيقونة والشارات؛ والأيقونة لا تظهر لمن رفع. */
 const gapSrc = fs.readFileSync("src/components/SectionGapNote.tsx", "utf8");
 check(planning.includes("PLAN_SAVED_EVENT") && planning.includes("dispatchEvent") && gapSrc.includes("addEventListener(PLAN_SAVED_EVENT"), "حفظ تخطيط الشعب (ومنه المسح) يُحدِّث الشارات والأيقونة");
-check(bar.includes("gap.loaded && !gap.planImported"), "أيقونة الرفع تختفي متى رُفع كشف");
+check(bar.includes("showQuickCompareBadge(gap)"), "الجدول يستعمل نفس شرط المقارنة الذي يحجبها حين تظهر شارة التخطيط");
+check(showQuickCompareBadge({ loaded: true, planImported: false, planItems: [] }),
+  "بلا كشف ولا شارة تخطيط: تبقى أيقونة قارن شعبك متاحة");
+check(!showQuickCompareBadge({ loaded: true, planImported: false, planItems: planned }),
+  "إذا ظهرت شارة التخطيط حتى بدون كشف: تختفي أيقونة قارن شعبك الصغيرة");
+check(!showQuickCompareBadge({ loaded: true, planImported: true, planItems: [] }),
+  "كشف مرفوع: أيقونة المقارنة الصغيرة لا تظهر");
+check(!showQuickCompareBadge({ loaded: false, planImported: false, planItems: [] }),
+  "أثناء التحميل: لا تظهر أيقونة المقارنة قبل تحقق النطاق");
 check(planning.includes("skipped.current = nReview") && sheet.includes("لم تتّضح في الكشف فلم تُحسب") && sheet.includes("لا زيادة فيما قُرئ"), "قراءةٌ جزئية لا تُعرض نتيجةً كاملة");
 check(/keepalive[\s\S]{0,200}PLAN_SAVED_EVENT/.test(planning), "الحفظ عند الإغلاق يُحدِّث الأيقونة أيضاً");
 /* ── علامةُ المقرر في مفتاح الألوان، وجرسُ «مساري»، وتلميحُ الأيقونة ── */

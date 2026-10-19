@@ -74,6 +74,13 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
 
 export type Gap = ReturnType<typeof useSectionGap>;
 
+/** The quick comparison duplicates planning's entry point whenever its badge is shown.
+ * Keep the decision tied to the very same planItems used by SectionGapBadge,
+ * not only to whether a remaining-students file has been uploaded. */
+export function showQuickCompareBadge(gap: Pick<Gap, "loaded" | "planImported" | "planItems">): boolean {
+  return gap.loaded && !gap.planImported && gap.planItems.length === 0;
+}
+
 export type GapKind = "plan" | "students";
 const KIND = {
   plan: { Icon: ClipboardList, word: "التخطيط", title: "شعبٌ يُفضَّل زيادتها بحسب تخطيطك", hint: "من تخطيط الشعب: المختار أو كشف المتبقي · اختياري ولا يمنع التوقيع" },
