@@ -1,4 +1,10 @@
 export type InvitationCredentials = { username: string; password: string };
+export const DEFAULT_INVITATION_PASSWORD = "12345678";
+
+/** Short enough to be recognised as a link in a shared invitation image. */
+export function photoInvitationHref(site: string, username: string, password: string): string | null {
+  return password === DEFAULT_INVITATION_PASSWORD ? `${site}i/${encodeURIComponent(username)}` : null;
+}
 
 /** Keep credentials in the URL fragment, which browsers never send to the server. */
 export function invitationHref(site: string, username: string, password: string): string {

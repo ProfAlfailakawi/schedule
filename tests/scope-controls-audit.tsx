@@ -7,7 +7,7 @@ import Courses from "../src/components/Courses";
 import ScopeAskBar, { trimScopeSelects, type ScopeAskSelect } from "../src/components/ScopeAskBar";
 import { visibleTermIds } from "../src/utils/scopedTerms";
 import { currentTermId } from "../src/utils/termSequence";
-import { invitationHref, isInvitationHash, parseInvitationHash } from "../src/utils/invitationLink";
+import { invitationHref, isInvitationHash, parseInvitationHash, photoInvitationHref } from "../src/utils/invitationLink";
 
 let passed = 0;
 function check(label: string, run: () => void) { run(); console.log(`✓ ${label}`); passed++; }
@@ -51,6 +51,8 @@ check("رابط الدعوة يملأ حقلي الدخول ويمسح بيان�
   assert(isInvitationHash(hash));
   assert.deepEqual(parseInvitationHash(hash), { username: "tsbdept+one", password: "1234&5678" });
   assert.deepEqual(parseInvitationHash("#invite&username=tsbdept&password=12345678"), { username: "tsbdept", password: "12345678" });
+  assert.equal(photoInvitationHref("https://schedule-kw.com/", "tsbdept", "12345678"), "https://schedule-kw.com/i/tsbdept");
+  assert.equal(photoInvitationHref("https://schedule-kw.com/", "tsbdept", "different"), null);
   assert(login.includes("parseInvitationHash(hash)") && login.includes("setUsername(invite.username)") && login.includes("setPassword(invite.password)"));
   assert(login.includes('window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)') && invitation.includes("invitationHref(SITE, login, temporaryPassword)"));
 });
