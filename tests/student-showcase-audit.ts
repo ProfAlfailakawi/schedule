@@ -61,6 +61,17 @@ const model = map.model;
 check(map.ready === true && map.hasRules === true && model?.courses?.length > 40, "S2 خريطتي جاهزة بقواعد ومقررات", { ready: map.ready, n: model?.courses?.length });
 check(new Set(model.courses.map((c: any) => c.owner)).size >= 6 && model.courses.some((c: any) => !c.own), "S2 مقرراتٌ من أقسامٍ أخرى وسمُها قسمُها");
 check(model.groups.length > 0 && Object.keys(model.rules).length > 0, "S2 مجموعاتُ اختيار وقواعدُ مسبقات");
+const ticket = await (await get("/api/public/me/ticket", a.jar)).json() as any;
+check(ticket.ready === true && ticket.plans?.map((p: any) => p.label).join(",") === "A,B,C",
+  "S2 تذكرةُ الديمو تولّد فعلياً الخطط الثلاث أ/ب/ج", ticket);
+check(ticket.plans?.[0]?.units >= 12 && ticket.plans[0].items.length >= 4,
+  "S2 الخطة أ تحتوي موادَّ موزّعةً ومجموعَ وحدات مناسباً للشرح", ticket.plans?.[0]);
+check(ticket.plans?.[0]?.items.every((item: any) => item.timesVisible && item.slots?.length),
+  "S2 مواعيد جميع شعب الخطة أ ظاهرةٌ لاعتمادها الافتراضي داخل الصندوق", ticket.plans?.[0]?.items);
+check(ticket.pool?.some((course: any) => course.offerings?.length >= 2),
+  "S2 بدائلُ شعبٍ متعددةٌ موجودة لتجربة التبديل", ticket.pool?.length);
+check(model.courses.length >= 60 && st.demo === true,
+  "S2 عشراتُ مقررات الصحيفة المرجعية بالبيانات الخلفية، من غير تحميل الشاشة كلَّها", model.courses.length);
 
 /* S3 */
 const b = await open();
