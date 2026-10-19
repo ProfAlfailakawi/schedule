@@ -60,7 +60,7 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         const image = new Image();
         image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         await image.decode();
-        ctx.drawImage(image, 52, 52, 64, 64);
+        ctx.drawImage(image, 48, 48, 100, 100);
       }
       ctx.textAlign = "right"; ctx.direction = "rtl";
       ctx.font = '500 28px "Plex Arabic", sans-serif'; ctx.fillStyle = "#d5bd84"; ctx.fillText("دعوة إلى مساحة عملكم", 1090, 130);
