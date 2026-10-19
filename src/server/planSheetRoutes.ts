@@ -219,7 +219,8 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
     for (const track of tracks) {
       const section = track.canonical, sectionId = Number(section.AdSectionId), collegeId = Number(section.AdCollegeId);
       const members = [section, ...track.mirrors].map(row => Number(row.AdSectionId));
-      if (!canViewSheets(req, collegeId, sectionId)) continue;
+      /* In a girls track, a chair scoped to Jahra/Fahaheel can read the same canonical sheet. */
+      if (![section, ...track.mirrors].some(member => canViewSheets(req, Number(member.AdCollegeId), Number(member.AdSectionId)))) continue;
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => !plan.virtual && plan.status !== "archived");
       const sheets: any[] = [];
       for (const plan of plans) {
