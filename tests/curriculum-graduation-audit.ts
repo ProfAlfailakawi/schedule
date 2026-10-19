@@ -156,6 +156,7 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
   check(ok(noTraining) && (noTraining as any).rule.fieldTrainingRequired === 0, "صحيفة لا تحتوي تدريبًا ميدانيًا تحفظ استثناء التدريب بصفر صريح، دون تخمين رقم");
   const plansScreen = fs.readFileSync(path.join(process.cwd(), "src/components/CurriculumPlans.tsx"), "utf8");
   check(plansScreen.includes('key !== "fieldTrainingRequired" && !editing.values[key]?.trim()')
+    && plansScreen.includes('current?.fieldTrainingRequired ? String(current.fieldTrainingRequired) : ""')
     && plansScreen.includes('Number(ruleDraft.values[key] || 0)')
     && plansScreen.includes('rule[key] === 0 ? "لا ينطبق"'),
     "حقل التدريب اختياري في الصحيفة، والفراغ يُحفظ بلا شرط ويظهر لا ينطبق");
