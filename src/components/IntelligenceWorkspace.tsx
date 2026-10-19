@@ -441,17 +441,19 @@ function metricBadge(metric: unknown) {
 
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
-  /* نشرُ الصحائف للعامة: رئيس لجنة الجدول وإدارة النظام وحدهما (والخادمُ يتحقق ثانيةً). */
-  const canPublishSheets = isPowerAdmin || roleDefinition((user as any)?.Role).id === "committeeChair";
+  /* لوحة النشر الشاملة للإدارة وحدها؛ رئيس لجنة الجدول يفتح خريطة قسمه للقراءة فقط. */
+  const canPublishSheets = isPowerAdmin;
+  const canReadDepartmentSheet = roleDefinition((user as any)?.Role).id === "committeeChair";
+  const canOpenSheetReading = canPublishSheets || canReadDepartmentSheet;
   const [sheetSummary, setSheetSummary] = useState<{ published: number; total: number } | null>(null);
   const loadSheetSummary = useCallback(() => {
-    if (!canPublishSheets) return;
+    if (!canOpenSheetReading) return;
     fetch("/api/plan-sheets").then(res => (res.ok ? res.json() : null)).then(body => {
       if (!body?.sections) return;
       const sheets = body.sections.flatMap((section: any) => section.sheets);
       setSheetSummary({ published: sheets.filter((sheet: any) => sheet.published).length, total: sheets.length });
     }).catch(() => undefined);
-  }, [canPublishSheets]);
+  }, [canOpenSheetReading]);
   useEffect(() => { loadSheetSummary(); }, [loadSheetSummary]);
   const [colleges, setColleges] = useState<AdCollege[]>([]),
     [sections, setSections] = useState<AdSection[]>([]),
@@ -2435,13 +2437,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               },
             ]
           : []),
-        /* البطاقةُ تظهر لمن ينشر دائماً، لا بعد أن توجد صحيفةٌ معتمدة فقط: وإلا بحث رئيسُ اللجنة عنها فلم يجدها
-           ولم يعرف أنها تنتظر اعتماد الصحيفة. */
-        ...(canPublishSheets
+        /* أيقونة Workflow الأصلية للقسم؛ لوحة «انشر الصحيفة للجميع» تبقى للآدمن وحده. */
+        ...(canOpenSheetReading
           ? [{
               value: "sheet" as const,
-              label: "الصحيفة",
-              detail: sheetSummary?.total ? "رابطٌ تفاعلي وQR وPDF للجميع" : "تظهر بعد اعتماد الصحيفة",
+              label: isPowerAdmin ? "الصحيفة" : "خريطة القسم",
+              detail: isPowerAdmin ? (sheetSummary?.total ? "رابطٌ تفاعلي وQR وPDF للجميع" : "تظهر بعد اعتماد الصحيفة") : "صحائف قسمك التفاعلية ومسبقاتها",
               metric: sheetSummary?.total ? `${sheetSummary.published}/${sheetSummary.total}` : "—",
               icon: <Workflow />,
             }]
@@ -3883,9 +3884,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </Surface>
             </div>
           ) : null}
-          {canPublishSheets && activeInsightKey === "sheet" ? (
+          {canOpenSheetReading && activeInsightKey === "sheet" ? (
             <div className="content-stack insight-scene-panel" id="insight-panel-sheet" role="tabpanel" aria-labelledby="insight-tab-sheet" tabIndex={0}>
-              <PlanSheetPublisher onChanged={loadSheetSummary} focusSectionId={Number(sectionId) || 0} />
+              <PlanSheetPublisher onChanged={loadSheetSummary} focusSectionId={Number(sectionId) || 0} readOnly={!isPowerAdmin} />
             </div>
           ) : null}
           {activeInsightKey === "predict" ? (
