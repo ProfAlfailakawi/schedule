@@ -216,6 +216,7 @@ button,input{font:inherit;color:inherit}
 .tk .ln .tx small,.adv .ln .tx small{color:var(--muted);font-size:12px;line-height:1.6}
 .tk .ln .code,.adv .ln .code{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);direction:ltr;unicode-bidi:isolate;white-space:nowrap;flex:none}
 .tk .plan-context{margin:0;padding:10px 12px;border-radius:13px;background:var(--accent-soft);color:var(--dim);font-size:12px;line-height:1.7}
+.tk .seg[data-seg="plan"] button{white-space:nowrap;font-size:13px}
 .tk .tt{display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
 .tk .u{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
 .tk .bar{block-size:8px;border-radius:99px;background:var(--soft);overflow:hidden}
@@ -575,7 +576,7 @@ function viewHome(){
   /* ── الواجهة: بطاقةٌ واحدة تقول «أين أنا» — حلقةٌ ورقمان — والباقي في ثلاثة ألسنة. ── */
   var h='<section class="hero me fade"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div class="who"><small>'+(first?"أهلاً، "+esc(first):"مساري")+'</small><h1>'+esc(p.sectionName)+'</h1><span>'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة</span></div><button class="ghost" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div>'
    +'<div class="kpis"><div><b>'+(pr.remainingUnits||0)+'</b><small>الوحدات المتبقية</small></div><div><b id="kt">'+(terms||"✓")+'</b><small id="kts">'+(terms?"فصول للتخرّج":"أكملت الصحيفة")+'</small></div><div><b class="w">'+esc(ph.label)+'</b><small>'+(ph.nextAt?esc(fmtShort(ph.nextAt)):"المرحلة الآن")+'</small></div></div></section>';
-  h+='<div class="pane" data-pane="now"><div id="notices"></div><div id="cases"></div><div id="ticket"></div><div id="report"></div><div id="wishes"></div>'
+  h+='<div class="pane" data-pane="now"><div id="visitChanges"></div><div id="notices"></div><div id="cases"></div><div id="ticket"></div><div id="report"></div><div id="wishes"></div>'
    +'<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'</section><div id="caseRequest"></div><div id="adx-me-box"></div></div>';
   h+='<div class="pane" data-pane="plan" hidden><div id="advice"></div>'
    +'<details class="more how fade"><summary>'+ic("info")+' كيف قدّرنا التخرج؟</summary><p class="muted">'+(pr.remainingUnits?'نحو '+countOf(terms,AR.term)+' بحسب المتبقي ومعدل 15 وحدة في الفصل.':'أكملت وحدات الصحيفة بحسب المقررات التي علّمتها.')+' تقدير يتغير مع تحديث إنجازك والقواعد المعتمدة، وليس موعداً رسمياً.</p></details></div>';
@@ -713,6 +714,15 @@ function tkLongestGap(items){var by={},best=null;
   Object.keys(by).forEach(function(d){var a=by[d].sort(function(x,y){return x.start-y.start});
     for(var n=1;n<a.length;n++){var g=a[n].start-a[n-1].end;if(g>=60&&(!best||g>best.min))best={day:Number(d),from:a[n-1].end,to:a[n].start,min:g}}});
   return best}
+function tkPlanFit(plan){var items=plan.items||[],units=items.reduce(function(n,i){return n+(Number(i.credit)||0)},0),w=S.state&&S.state.profile&&S.state.profile.wishes;if(w&&S.state.term&&w.termId!==S.state.term.id)w=null;var target=w?Number(w.targetUnits)||15:15,allTimes=items.length>0&&items.every(function(i){return i.timesVisible}),days={},early=0,late=0,gap=0;
+  if(allTimes){items.forEach(function(i){(i.slots||[]).forEach(function(s){days[s.day]=true;if(s.start<540)early++;if(s.start>=780)late++})});var by={};items.forEach(function(i){(i.slots||[]).forEach(function(s){(by[s.day]||(by[s.day]=[])).push(s)})});Object.keys(by).forEach(function(d){var a=by[d].sort(function(x,y){return x.start-y.start});for(var j=1;j<a.length;j++)gap+=Math.max(0,a[j].start-a[j-1].end)})}
+  var constraints=w&&w.constraints||{},unitFit=Math.max(0,100-Math.abs(units-target)*12),violations=(constraints.noMorning?early:0)+(constraints.noAfternoon?late:0),daysN=Object.keys(days).length,scheduleFit=allTimes?Math.max(0,100-violations*22-(constraints.freeDay?Math.max(0,daysN-1)*9:Math.max(0,daysN-3)*3)-Math.floor(gap/60)*5):unitFit;
+  var tight=items.filter(function(i){return i.tight}).length,score=Math.round(allTimes?unitFit*.45+scheduleFit*.45+Math.max(0,100-tight*14)*.1:unitFit);
+  var why=allTimes?(violations?'يراعي قيودك وأيام حضورك':(constraints.freeDay?'أيام حضور أقل':'أيام وفراغات أقل')):'الأقرب لهدف الوحدات';
+  return{label:plan.label,units:units,score:score,allTimes:allTimes,days:daysN,gap:gap,tight:tight,why:why}}
+function tkPlanCompare(plans,current){var fits=plans.map(tkPlanFit).sort(function(a,b){return b.score-a.score||(a.units-b.units)}),best=fits[0],labels={A:'الخطة أ',B:'الخطة ب',C:'الخطة ج'},hasTimes=fits.every(function(f){return f.allTimes});
+  return '<div class="tk-compare"><div class="tk-compare-title">'+ic('spark','')+' أفضل جدول بالنسبة لك</div><div class="tk-plans" role="group" aria-label="قارن خطط التسجيل">'+fits.map(function(f){var selected=f.label===current?'true':'false',dayText=f.allTimes?countOf(f.days,AR.day)+' حضور':'مواعيد غير معتمدة',gapText=f.allTimes?(f.gap?('فراغات '+countOf(Math.round(f.gap/6)/10,AR.hour)):'فراغات أقل'):'',bestText=f.label===best.label?'<span class="tk-best">'+(f.allTimes?'الأنسب لك':'الأقرب لهدفك')+'</span>':'';
+    return '<button type="button" class="tk-plan" data-l="'+f.label+'" aria-pressed="'+selected+'" style="--score:'+f.score+'%"><span class="tk-score"><b>'+f.score+'<small>٪</small></b></span><strong>'+labels[f.label]+' · '+countOf(f.units,AR.unit)+'</strong><small>'+dayText+(gapText?' · '+gapText:'')+'<br>'+f.why+(f.tight?' · '+countOf(f.tight,AR.section)+' قليلة المقاعد':'')+'</small>'+bestText+'</button>'}).join('')+'</div><p class="tk-compare-note">'+(hasTimes?'المؤشر يوازن هدف الوحدات وقيودك وأيام الحضور والفراغات.':'المواعيد لم تعتمد بعد؛ المؤشر يقارن الوحدات بهدفك فقط.')+' التقدير لا يحجز مقعداً.</p></div>'}
 function tkGrid(items,sel,ghosts){
   var lo=1440,hi=0;
   items.forEach(function(it){if(it.timesVisible)(it.slots||[]).forEach(function(s){lo=Math.min(lo,s.start);hi=Math.max(hi,s.end)})});
@@ -764,7 +774,7 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
   var h='<section class="card tk fade"><div class="hd"><span class="win"><b>'+w.n+'</b><small>من '+w.of+'</small></span><div class="tx"><b>تذكرتي · نافذتي '+w.n+'</b><span class="muted">'+esc(when)+'</span></div></div><div class="perf"></div><div class="bd">';
   if(t.stale)h+='<div class="chip warn">'+ic("info")+' عدّلت ملفّك بعد آخر حساب — ستتحدّث تذكرتك في التحديث القادم</div>';
   if(t.defaulted)h+='<div class="chip">'+ic("info")+' بُنيت على افتراضٍ (١٥ وحدة). اكتب رغباتك لتُناسبك</div>';
-  h+='<div class="seg fit" role="group" aria-label="الخطة" data-seg="plan">'+t.plans.map(function(p){return '<button type="button" style="white-space:nowrap;font-size:13px" data-l="'+p.label+'" aria-pressed="'+(p.label===cur.label?"true":"false")+'">'+({A:"الخطة أ",B:"الخطة ب",C:"الخطة ج"})[p.label]+'</button>'}).join("")+'</div>';
+  h+=tkPlanCompare(t.plans.map(function(p){return p.label===cur.label?{label:p.label,items:items}:p}),cur.label);
   h+='<p class="plan-context">هذه خطة تسجيل مقترحة بحسب الشعب والتعارضات المتاحة الآن. هدفك الدراسي محفوظ في «احتياجي»، واختيار الخريطة تخطيطٌ شخصي؛ لذلك قد تختلف أرقامها.</p>';
   h+='<div class="row between"><span class="muted">إجمالي الخطة المقترحة · '+({A:"الأقرب لرغباتك",B:"شعبٌ بديلة إن امتلأت أ",C:"الحدّ الأدنى الآمن"})[cur.label]+'</span><span class="u">'+countOf(units,AR.unit)+(units<12&&items.length?' <span class="chip warn">أقل من 12</span>':'')+'</span></div>';
   if(anyTimes)h+='<div class="seg fit sm2" role="group" aria-label="العرض" data-seg="view"><button type="button" data-v="grid" aria-pressed="'+(view==="grid")+'">أسبوعي</button><button type="button" data-v="list" aria-pressed="'+(view==="list")+'">قائمة</button></div>';
@@ -795,7 +805,7 @@ function paintTicket(host){var t=S.ticket,cur=null;S.tkOverrides=S.tkOverrides||
   host.innerHTML=h;
   /* محطة الاستراحة: أطولُ فراغٍ في أسبوعه يُعرض فيه إعلانٌ إن وُجدت حملةٌ للموقع (السكربت العام يحمّله من الخادم ويحتسب ظهوره). */
   if(brk)adxMountLater("adx-break-box","break",{college:(S.state.profile&&S.state.profile.collegeId)||0,intro:'عندك فراغٌ يوم '+DAYN[brk.day]+' من '+tkClock(brk.from)+' إلى '+tkClock(brk.to)+' (نحو '+countOf(Math.round(brk.min/6)/10,AR.hour)+'). استراحتك برعاية:'});
-  host.querySelectorAll('[data-seg="plan"] button').forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");S.tkSel=0;S.tkErr="";paintTicket(host)})});
+  host.querySelectorAll(".tk-plan").forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");S.tkSel=0;S.tkErr="";paintTicket(host)})});
   host.querySelectorAll('[data-seg="view"] button').forEach(function(b){b.addEventListener("click",function(){S.tkView=b.getAttribute("data-v");paintTicket(host)})});
   host.querySelectorAll(".wk-b[data-c]").forEach(function(b){b.addEventListener("click",function(){var id=Number(b.getAttribute("data-c"));S.tkSel=Number(S.tkSel)===id?0:id;S.tkErr="";paintTicket(host)})});
   host.querySelectorAll(".wk-b.ghost,.chp[data-o]").forEach(function(b){b.addEventListener("click",function(){if(sel){tkSet(cur,sel.courseId,b.getAttribute("data-o"));paintTicket(host)}})});
@@ -859,7 +869,7 @@ function loadPlan(){var host=document.getElementById("advice");if(!host)return;
   host.innerHTML='<div class="skel"></div>';
   Promise.all([api("GET","/api/public/me/advice"),api("GET","/api/public/me/offered"),api("GET","/api/public/me/map")]).then(function(rs){
     var a=rs[0].ok&&rs[0].d.ready?rs[0].d:null,o=rs[1].ok&&rs[1].d.ready?rs[1].d:null,mp=rs[2].ok&&rs[2].d.ready?rs[2].d:null;S.offered=o;
-    if(mp){KM.hasRules=!!mp.hasRules;kmInit(mp.model,a);kmMount(host);var ap=document.querySelector(".app");if(ap)ap.classList.toggle("km-on",S.tab==="plan")}
+    if(mp){KM.hasRules=!!mp.hasRules;kmInit(mp.model,a,rs[2].d.changes||null);kmMount(host);var ap=document.querySelector(".app");if(ap)ap.classList.toggle("km-on",S.tab==="plan")}
     else if(!a&&!o){host.innerHTML=""}else{host.innerHTML=planCard(a,o);animateRings();markOverflow()}
     var kt=document.getElementById("kt"),ks=document.getElementById("kts");
     if(a&&kt){var n=a.done?0:(a.termsAfter===null?null:a.termsAfter+(a.picks.length?1:0));kt.textContent=n===null?"؟":(n===0?"✓":n);ks.textContent=n===0?"أكملت الصحيفة":(n===null?"راجع مرشدك":"فصول للتخرّج")}

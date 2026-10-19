@@ -884,6 +884,8 @@ export interface StudentProfile {
   updatedAt: string;
   /** آخرُ دخول (يُحدَّث مرةً في اليوم على الأكثر). */
   lastSeenAt: string;
+  /** لقطةُ خفيفة للتغيير بين الزيارات: معرّفات مقررات فقط، وتُحدَّث مرةً في اليوم. */
+  visitSnapshot?: { termId: number; day: string; passedIds: number[]; offeredIds: number[]; availableIds: number[] };
   /** متى يُحذف هذا الملف، وسببه. */
   deleteAt: string;
   deleteReason: "initial" | "graduation" | "inactive" | "reset";
