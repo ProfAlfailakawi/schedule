@@ -108,6 +108,7 @@ const model: SheetModel = {
     chair11: { user: { Role: "committeeChair", Name: "رئيس لجنة الشريعة" }, scopes: [{ AdCollegeId: 1, AdSectionId: 11 }] },
     head11: { user: { Role: "departmentHead", Name: "رئيس قسم الشريعة" }, scopes: [{ AdCollegeId: 1, AdSectionId: 11 }] },
     chair12: { user: { Role: "committeeChair", Name: "رئيس لجنة اللغة" }, scopes: [{ AdCollegeId: 1, AdSectionId: 12 }] },
+    chair22: { user: { Role: "committeeChair", Name: "رئيس لجنة الجهراء" }, scopes: [{ AdCollegeId: 3, AdSectionId: 22 }] },
     admin: { user: { SystemUserId: 1, Role: "committeeChair", Name: "المدير", IsAdminUser: true }, scopes: [] },
   };
   const app = express();
@@ -206,6 +207,9 @@ const model: SheetModel = {
     const nursing = withNursing.find((row: any) => row.sectionId === 25), basicGirls = withNursing.find((row: any) => row.sectionId === 21);
     check(withNursing.length === 3 && nursing?.members.join() === "25" && basicGirls?.members.join() === "21,22,23", "S5 التمريض مسارٌ مستقل: لا يُدمج مع بنات التربية الأساسية ولا يُنسخ إليه", withNursing.map((row: any) => [row.sectionId, row.members]));
     check(/التمريض/.test(nursing.label) && /التربية الأساسية/.test(basicGirls.label) && nursing.label !== basicGirls.label, "S5 الاسمُ يميّز الكلية حين يوجد القسمُ في أكثر من عائلة", [nursing.label, basicGirls.label]);
+    const girlsRead = (await call("chair22", "GET", "/api/plan-sheets?section=22")).json.sections;
+    check(girlsRead.length === 1 && girlsRead[0].members.includes(22) && girlsRead[0].track === "girls", "S5 رئيس لجنة موقع البنات يقرأ صحيفة مساره المشتركة دون صلاحيات نشر", girlsRead);
+    check((await call("chair22", "POST", "/api/plan-sheets/publish", { planId: "p21", sectionId: 21 })).status === 403, "S5 رئيس لجنة الجهراء لا ينشر حتى على الصحيفة المشتركة");
     const girlsRow = tracks.find((row: any) => row.track === "girls");
     check(girlsRow.sectionId === 21 && girlsRow.members.join() === "21,22,23" && girlsRow.campuses === 2, "S5 مسارُ البنات أصلُه التربية الأساسية بنات ومعه الموقعان الفرعيان", girlsRow);
     const pub = (await call("admin", "POST", "/api/plan-sheets/publish", { planId: "p21", sectionId: 21 })).json;
