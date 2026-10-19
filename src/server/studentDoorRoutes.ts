@@ -16,7 +16,7 @@
  */
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { randomUUID } from "crypto";
+import { createHmac, randomUUID } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 import { Repository } from "../db/repository";
 import type { AdCourse, StudentNeed, StudentProfile, StudentWishes } from "../types";
@@ -319,6 +319,8 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       },
       timeline: studentTimeline(term?.AdTermStudentPhases, term?.AdTermSubmissionDeadline, today),
       signedIn: Boolean(door),
+      /* مفتاحٌ مشتقٌ لا يكشف بصمة الطالب، لتخزين ملخص الزيارة على جهازه فقط. */
+      visitKey: door ? createHmac("sha256", await deps.identityKey()).update(`masari-visit:${door.fingerprint}`).digest("hex").slice(0, 32) : "",
       profile: door ? await summaryOf(door.profile) : null,
       limits: { codeLength: CODE_LENGTH, wishUnitsMin: WISH_UNITS_MIN, wishUnitsMax: WISH_UNITS_MAX, afterGraduationDays: AFTER_GRADUATION_DAYS },
     });
