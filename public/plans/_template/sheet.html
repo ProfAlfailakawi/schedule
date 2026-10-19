@@ -124,18 +124,18 @@ html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0)
  /* iOS Safari/AirPrint ignores @page landscape: paint the 297×210 sheet
     rotated inside ONE portrait A4 physical page, as in report printing. */
  html[data-print-rotate="1"],html[data-print-rotate="1"] body{
-  width:210mm!important;height:260mm!important;max-height:260mm!important;
+  width:210mm!important;height:265mm!important;max-height:265mm!important;
   overflow:hidden!important;direction:ltr!important
  }
  html[data-print-rotate="1"] #dview,
  html[data-print-rotate="1"] .scroll{
-  width:210mm!important;height:260mm!important;max-height:260mm!important;
+  width:210mm!important;height:265mm!important;max-height:265mm!important;
   overflow:visible!important;direction:ltr!important
  }
  html[data-print-rotate="1"] #plan{
   width:297mm!important;height:210mm!important;
   transform-origin:0 0!important;
-  transform:translate(196.35mm,19.305mm) rotate(90deg) scale(.87)!important;
+  transform:translate(204.75mm,15.345mm) rotate(90deg) scale(.91)!important;
   margin:0!important;direction:rtl!important
  }
 }
