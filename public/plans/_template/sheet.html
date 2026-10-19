@@ -117,6 +117,9 @@ html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0)
  #plan [filter]{filter:none}
  .card,.edge{opacity:1!important}
  #plan{display:block!important;width:297mm!important;height:210mm!important;min-width:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;break-inside:avoid!important;page-break-inside:avoid!important}
+ html[data-print-rotate="1"],html[data-print-rotate="1"] body{width:210mm!important;height:297mm!important;max-width:210mm!important;max-height:297mm!important;overflow:hidden!important;direction:ltr!important}
+ html[data-print-rotate="1"] #dview,html[data-print-rotate="1"] .scroll{width:210mm!important;height:297mm!important;max-width:210mm!important;max-height:297mm!important;overflow:visible!important;direction:ltr!important}
+ html[data-print-rotate="1"] #plan{width:297mm!important;height:210mm!important;max-width:none!important;transform:translate(180.6mm,20.79mm) rotate(90deg) scale(.86)!important;transform-origin:0 0!important;direction:rtl!important}
 }
 </style>
 </head>
@@ -124,11 +127,15 @@ html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0)
 <section id="dview"><div class="scroll">{{SVG}}</div></section>
 <div id="sheet" role="dialog" aria-live="polite"></div>
 <button id="fitbtn" type="button"></button>
-<button id="pdfbtn" type="button" onclick="window.print()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>تحميل PDF</button>
+<button id="pdfbtn" type="button" onclick="printPlan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>تحميل PDF</button>
 <button id="stbtn" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>وضع الطالب</button>
 <div id="stbar" role="status" aria-live="polite"></div>
 <div id="hint">اضغط على أي مقرر لترى ما يتطلبه وما يفتحه</div>
 <script>
+/* Isolated iOS print rotation, adapted from the comprehensive report. */
+const isIOSWebKitPrint=/iPhone|iPad|iPod/i.test(navigator.userAgent||'');
+function printPlan(){if(isIOSWebKitPrint)document.documentElement.dataset.printRotate='1';window.print()}
+window.addEventListener('afterprint',()=>{delete document.documentElement.dataset.printRotate});
 const D={{DATA}};
 const C=D.C,EL=D.EL,E=D.E,H=D.H;
 let sel=null;
