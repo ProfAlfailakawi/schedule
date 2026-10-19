@@ -86,7 +86,7 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
       while (ctx.measureText(displayUrl).width > 1020 && siteSize > 19) ctx.font = `700 ${--siteSize}px "Plex Arabic", sans-serif`;
       ctx.fillStyle = "#123e35"; ctx.fillText(displayUrl, 600, 1170);
       ctx.direction = "rtl"; ctx.font = '400 26px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e";
-      ctx.fillText(photoUrl ? "رابط الدخول الخاص بكم — افتحوه من الصورة أو الرسالة" : "افتحوا رابط الدخول المرفق في رسالة واتساب", 600, 1240);
+      ctx.fillText(photoUrl ? "رابط الدخول الخاص بكم — اضغط ضغطة مطوّلة على الرابط" : "رابط الدخول الخاص بكم — اضغط ضغطة مطوّلة على الرابط في رسالة واتساب", 600, 1240);
       ctx.fillStyle = "#d5bd84"; ctx.fillRect(520, 1310, 160, 3);
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("export")), "image/png"));
       const objectUrl = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = objectUrl; a.download = `SCHEDULE-${login.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
@@ -104,11 +104,11 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
     </button>
     {open && <div className="invitation-body">
       <div className="invitation-card" dir="rtl">
-        <header><BrandMark /><div><small>دعوة إلى مساحة عملكم</small><b>SCHEDULE</b><span>نظام القرار الأكاديمي</span></div></header>
+        <header><BrandMark variant="tile" /><div><small>دعوة إلى مساحة عملكم</small><b>SCHEDULE</b><span>نظام القرار الأكاديمي</span></div></header>
         <div className="invitation-card-content"><h3>{name}</h3><p>أهلًا بكم، هنا تبدأ خطوتكم القادمة</p>
           <div className="invitation-credential"><small>اسم المستخدم</small><bdi dir="ltr">{login}</bdi></div>
           <div className="invitation-credential"><small>كلمة المرور المؤقتة</small><bdi dir="ltr">{temporaryPassword || "—"}</bdi></div>
-          <footer><strong dir="ltr">{displayUrl}</strong><small>{photoUrl ? "رابط الدخول الخاص بكم" : "رابط الدخول المعبّأ موجود في رسالة واتساب"}</small></footer>
+          <footer><strong dir="ltr">{displayUrl}</strong><small>{photoUrl ? "رابط الدخول الخاص بكم — اضغط ضغطة مطوّلة على الرابط" : "رابط الدخول الخاص بكم — اضغط ضغطة مطوّلة على الرابط في رسالة واتساب"}</small></footer>
         </div>
       </div>
       <label className="invitation-password"><span><KeyRound aria-hidden="true" /> كلمة المرور التي ستُرسل</span><input dir="ltr" value={temporaryPassword} onChange={e => { setTemporaryPassword(e.target.value); setStatus(""); }} autoComplete="off" maxLength={128} /><small>القيمة الافتراضية 12345678. راجع مطابقتها لكلمة الحساب الحالية؛ إعداد البطاقة لا يغيّر كلمة المرور.</small></label>
