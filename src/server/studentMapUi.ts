@@ -50,6 +50,18 @@ export const STUDENT_MAP_CSS = `
 .km-chip.gold{background:rgba(240,207,149,.2);color:#f0cf95}
 .km-chip .i{inline-size:14px;block-size:14px}
 .km-sec{display:grid;gap:12px}
+.km-progress-stack{display:grid;gap:18px}
+.km-pre-icon{inline-size:36px;block-size:36px;flex:none;display:grid;place-items:center;border-radius:12px;background:var(--gold-soft);color:var(--gold)}
+.km-pre-icon .i{inline-size:18px;block-size:18px}
+.km-pre-details{overflow:hidden;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow)}
+.km-pre-details>summary{display:flex;align-items:center;gap:10px;min-block-size:58px;padding:10px 14px;cursor:pointer;list-style:none}
+.km-pre-details>summary::-webkit-details-marker{display:none}
+.km-pre-details>summary>span:nth-child(2){flex:1;display:grid;gap:2px}
+.km-pre-details>summary b{font-size:14px}
+.km-pre-details>summary small{font-size:11.5px;color:var(--muted)}
+.km-pre-details>summary>.i{color:var(--muted);transition:transform .18s}
+.km-pre-details[open]>summary>.i{transform:rotate(180deg)}
+.km-pre-details>.km-sec{padding:0 12px 12px}
 .km-sh{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .km-sh h2{margin:0;font-size:19px;font-weight:700;line-height:1.4}
 .km-tag{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted);font-weight:600}
@@ -242,7 +254,7 @@ body.km-lock{overflow:hidden}
 .km-seg button{flex:1 1 0;min-block-size:40px;padding:6px 4px;border:1px solid #DCE3DE;border-radius:999px;background:#fff;color:#5B6962;font:inherit;font-size:13.5px;font-weight:800;cursor:pointer;transition:background .18s,color .18s,border-color .18s}
 .km-seg button[aria-pressed="true"]{background:#0F5E4A;border-color:#0F5E4A;color:#fff;box-shadow:0 4px 14px rgba(15,94,74,.28)}
 .km-seg button:focus-visible{outline:2px solid #0F5E4A;outline-offset:2px}
-.km[data-pane="reg"] [data-pane]:not([data-pane="reg"]),.km[data-pane="jr"] [data-pane]:not([data-pane="jr"]),.km[data-pane="ch"] [data-pane]:not([data-pane="ch"]),.km[data-pane="rq"] [data-pane]:not([data-pane="rq"]){display:none}
+.km[data-pane="reg"] [data-pane]:not([data-pane="reg"]),.km[data-pane="progress"] [data-pane]:not([data-pane="progress"]){display:none}
 }
 @media (min-width:900px){
   .app.km-on{max-inline-size:1180px}
@@ -288,7 +300,7 @@ function kmInit(model,advice,changes){
   /* ما حُفظ سابقاً بغير ترتيب المسبقات يُصحَّح الآن ويُحفظ مصحَّحاً. */
   var healed=kmPrune();if(healed){S.state.profile.passedCourseIds=KM.x.passedList();KM.healed=healed}
   KM.picks={};((advice&&advice.picks)||[]).forEach(function(p,i){KM.picks[p.courseId]={why:p.why,rank:i}});
-  KM.cart={};KM.pane=kmCanWish()?"reg":"jr";
+  KM.cart={};KM.pane=kmCanWish()?"reg":"progress";
   if(kmCanWish()){
     var w=S.state.profile.wishes,cur=w&&S.state.term&&w.termId===S.state.term.id?w:null;
     var ids=cur?cur.courseIds:Object.keys(KM.picks).map(Number);
@@ -359,7 +371,7 @@ function kmGroupName(g){var i=g.name.indexOf("·");return(i>0?g.name.slice(i+1):
 function kmRegHtml(){var X=KM.x,ids=kmNowIds(),a=KM.advice,isMain=function(id){var c=X.byId[id];return KM.picks[id]||(!c.group&&c.kind!=="elective")};
   var main=ids.filter(isMain),cap=KM.desk?9:8,shown=KM.regAll?main:main.slice(0,cap),more=main.length-shown.length,skip={};main.forEach(function(id){skip[id]=1});
   var groups=kmGroupsNow(skip);
-  var h='<section class="km-sec fade" id="kmRegSec"><div class="km-sh"><h2>سجّل هذا الفصل</h2>'+(KM.m.termName?'<span class="km-tag">'+ic("cal","")+esc(KM.m.termName)+'</span>':'')+'</div>';
+  var h='<section class="km-sec fade" id="kmRegSec"><div class="km-sh"><h2>خطة هذا الفصل</h2>'+(KM.m.termName?'<span class="km-tag">'+ic("cal","")+esc(KM.m.termName)+'</span>':'')+'</div>';
   if(!ids.length)return h+'<div class="km-empty">'+ic("check","")+'<b>'+(X.need().remainingUnits?'لا مقرر متاحاً الآن':'أكملت الصحيفة')+'</b><small>'+(X.need().remainingUnits?'ينتظر ما بقي مسبقاً لم تُنجزه بعد.':'مبارك!')+'</small></div></section>';
   if(a&&a.line)h+='<p class="km-lead">'+esc(a.line)+'</p>';
   if(shown.length)h+='<div class="kc-grid">'+shown.map(kmCard).join("")+'</div>';
@@ -409,20 +421,20 @@ function kmJrHtml(){var X=KM.x,m=KM.m,chips='';
     rows+=kmRowHtml("g"+g.id,esc(kmGroupName(g)),p.done?'مكتمل ✓':'اختر '+(need||g.minCourses||1)+' · '+p.passedCourses+' مجتازة',KMGOLD,"#F3EAD9",g.courseIds,true)});
   if(looseIds.length)rows+=kmRowHtml("loose","اختيارية أخرى","",KMGOLD,"#F3EAD9",looseIds,true);
   if(!rows)rows='<div class="km-empty"><b>لا مقررات بهذا الفلتر</b><small>جرّب «الكل».</small></div>';
-  return '<section class="km-sec fade" id="kmJrSec"><div class="km-sh"><h2>رحلتي في المستويات</h2><span class="km-tag">اضغط أي مقرر</span></div><div class="km-fs">'+chips+'</div>'+(cats?'<div class="km-fs cats">'+cats+'</div>':'')+rows
+  return '<section class="km-sec fade" id="kmJrSec"><div class="km-sh"><h2>تقدّمي في الصحيفة</h2><span class="km-tag">اضغط أي مقرر</span></div><div class="km-fs">'+chips+'</div>'+(cats?'<div class="km-fs cats">'+cats+'</div>':'')+rows
    +'<div class="km-key"><span><i class="d ok"></i>اجتزته</span><span><i class="d now"></i>متاح الآن</span><span><i class="d wait"></i>ينتظر</span><span><i class="d f"></i>من قسم آخر</span></div></section>'}
 
 /* ── سلاسل المسبقات العابرة للأقسام ── */
 function kmChainsHtml(){var X=KM.x,ch=X.chains();if(!ch.length)return'';
   var groups={},order=[];ch.forEach(function(line){var r=line[0];if(!groups[r]){groups[r]=[];order.push(r)}groups[r].push(line.slice(1))});
-  var hues=["#2563EB","#0891B2","#DB2777","#7C3AED","#EA580C","#059669"],h='<section class="km-sec fade"><div class="km-sh"><h2>مسبقاتي</h2><span class="km-tag">مسبقاتٌ تعبر الأقسام</span></div><div class="kch">';
+  var hues=["#2563EB","#0891B2","#DB2777","#7C3AED","#EA580C","#059669"],h='<details class="km-pre-details"><summary><span class="km-pre-icon">'+ic("layers","")+'</span><span><b>المسبقات بين الأقسام</b><small>استكشف ما يفتح كل مقرر</small></span>'+ic("down","")+'</summary><section class="km-sec fade"><div class="kch">';
   var st=function(id,big){var s=X.status(id);return '<button type="button" class="ks s-'+s+(big?' big':'')+'" data-id="'+id+'" aria-label="'+esc(X.byId[id].name)+' — '+KMST[s]+'">'+esc(X.byId[id].short)+'</button>'};
   order.forEach(function(r,i){var root=X.byId[r],br=groups[r],hue=hues[i%hues.length],ids={};ids[r]=1;br.forEach(function(path){path.forEach(function(id){ids[id]=1})});
     var all=Object.keys(ids).map(Number),done=all.filter(function(id){return X.isPassed(id)}).length,kids={};
     h+='<div class="kchl" style="--h:'+hue+'"><div class="kchh"><b>'+esc(root.own?root.name:(root.owner||root.name))+'</b><small>'+done+'/'+all.length+'</small></div><div class="kchr">'+st(r,true)+'<div class="kchb">';
     br.forEach(function(path){h+='<div class="kchbr">';path.forEach(function(id,k){h+='<i class="ln'+(X.isPassed(k?path[k-1]:r)?' on':'')+'"></i>'+st(id,false)});h+='</div>'});
     h+='</div></div><small class="kchc">'+esc(root.name)+' ← '+br.map(function(path){return esc(X.byId[path[0]].name)}).filter(function(n,k,a){return a.indexOf(n)===k}).join(" · ")+'</small></div>'});
-  return h+'</div></section>'}
+  return h+'</div></section></details>'}
 
 /* ── بقية متطلباتي: حلقةٌ لكل تصنيف ── */
 function kmReqData(){var X=KM.x,m=KM.m,need=X.need(),out=[];if(!m.cats.length)return out;
@@ -442,12 +454,12 @@ function kmReqHtml(){var data=kmReqData();if(!data.length)return'';var h='<secti
 function kmMapHtml(){return '<a class="km-map fade" href="/api/public/me/map-page"><span class="mi"><svg viewBox="0 0 64 40" aria-hidden="true"><rect x="2" y="3" width="16" height="9" rx="3"/><rect x="2" y="16" width="16" height="9" rx="3"/><rect x="24" y="9" width="16" height="9" rx="3"/><rect x="46" y="3" width="16" height="9" rx="3"/><rect x="46" y="24" width="16" height="9" rx="3"/><path d="M18 7.5h2.5a3 3 0 0 1 3 3v3M18 20.5h2.5a3 3 0 0 0 3-3M40 13.5h2.5a3 3 0 0 1 3 3v8M40 13.5h2.5a3 3 0 0 0 3-3v-3" fill="none"/></svg></span><span class="mt"><b>خريطة قسمي بالأسهم</b><small>كل مسبق وما يفتحه، ملوّنةً بإنجازي</small></span>'+ic("fwd")+'</a>'}
 
 /* ── الهيكل والرسم ── */
-function kmShell(){return '<div class="km" id="kmRoot" data-pane="'+KM.pane+'"><div class="km-grid"><aside class="km-side"><div class="km-sticky"><div id="kmHero" class="o1"></div><nav id="kmSeg" class="km-seg o1" aria-label="أقسام خريطتي"></nav><div id="kmRq" class="o6" data-pane="rq"></div></div></aside><div class="km-main"><div id="kmReg" class="o2" data-pane="reg"></div><div id="kmMap" class="o3" data-pane="reg"></div><div id="kmJr" class="o4" data-pane="jr"></div><div id="kmCh" class="o5" data-pane="ch"></div></div></div></div>'}
-/* الجوال: أربع لوحاتٍ بدل صفحةٍ طويلة؛ الحاسوب يعرضها كلَّها (القاعدةُ في CSS تحت ٩٠٠). */
-function kmSegHtml(){var X=KM.x,hasCh=X.chains().length>0,t=[["reg","سجّل",kmCanWish()],["jr","رحلتي",true],["ch","مسبقاتي",hasCh],["rq","متطلباتي",true]];
-  if(!hasCh&&KM.pane==="ch")KM.pane="jr";
+function kmShell(){return '<div class=\"km\" id=\"kmRoot\" data-pane=\"'+KM.pane+'\"><div class=\"km-grid\"><aside class=\"km-side\"><div class=\"km-sticky\"><div id=\"kmHero\" class=\"o1\" data-pane=\"progress\"></div><nav id=\"kmSeg\" class=\"km-seg o1\" aria-label=\"أقسام خريطتي\"></nav></div></aside><div class=\"km-main\"><div id=\"kmReg\" class=\"o2\" data-pane=\"reg\"></div><div id=\"kmMap\" class=\"o3\" data-pane=\"reg\"></div><div id=\"kmProgress\" class=\"o4 km-progress-stack\" data-pane=\"progress\"><div id=\"kmJr\"></div><div id=\"kmRq\"></div><div id=\"kmCh\"></div></div></div></div></div>'}
+/* الجوال: خطةُ الفصل في لوحة، والتقدّم والمتطلبات في لوحة ثانية؛ الحاسوب يعرضهما معاً. */
+function kmSegHtml(){var t=[["reg","خطة الفصل",kmCanWish()],["progress","تقدّمي",true]];
+  if(!kmCanWish()&&KM.pane==="reg")KM.pane="progress";
   return t.filter(function(x){return x[2]}).map(function(x){return '<button type="button" data-act="pane" data-p="'+x[0]+'" aria-pressed="'+(KM.pane===x[0]?"true":"false")+'">'+x[1]+'</button>'}).join("")}
-function kmPane(p,sc){KM.pane=p;var r=document.getElementById("kmRoot");if(r)r.setAttribute("data-pane",p);var sg=document.getElementById("kmSeg");if(sg)sg.innerHTML=kmSegHtml();
+function kmPane(p,sc){if(p==="jr"||p==="ch"||p==="rq")p="progress";KM.pane=p;var r=document.getElementById("kmRoot");if(r)r.setAttribute("data-pane",p);var sg=document.getElementById("kmSeg");if(sg)sg.innerHTML=kmSegHtml();
   if(sc){var h=document.getElementById("kmHero");if(h&&window.innerWidth<900){var y=h.getBoundingClientRect().bottom+window.scrollY-8;window.scrollTo({top:Math.max(0,y),behavior:"auto"})}}}
 function kmPaint(){var set=function(id,h){var el=document.getElementById(id);if(el)el.innerHTML=h};
   set("kmHero",kmHeroHtml());set("kmSeg",kmSegHtml());set("kmReg",kmRegHtml());set("kmMap",kmMapHtml());set("kmJr",kmJrHtml());set("kmCh",kmChainsHtml());set("kmRq",kmReqHtml());
@@ -551,12 +563,12 @@ function kmConfetti(col,l){if(window.matchMedia&&window.matchMedia("(prefers-red
 function kmAct(el){var a=el.getAttribute("data-act");
   if(a==="passed"){kmListSheet("المجتازة",KM.x.plan.filter(function(id){return KM.x.isPassed(id)}))}
   else if(a==="pane"){kmPane(el.getAttribute("data-p"),true)}
-  else if(a==="left"){KM.status="left";KM.cat="";kmPane("jr",false);kmRefresh(false);kmScroll("kmJrSec")}
-  else if(a==="now"){kmPane(kmCanWish()?"reg":"jr",false);var r=document.getElementById("kmReg");if(r&&r.scrollIntoView)r.scrollIntoView({behavior:"smooth",block:"start"})}
-  else if(a==="lv"){var l=Number(el.getAttribute("data-l"));kmPane("jr",false);KM.status="all";KM.cat="";KM.openLv[l]=true;kmRefresh(false);var t=document.querySelector('.kl[data-lv="'+l+'"]');if(t&&t.scrollIntoView)t.scrollIntoView({behavior:"smooth",block:"center"})}
+  else if(a==="left"){KM.status="left";KM.cat="";kmPane("progress",false);kmRefresh(false);kmScroll("kmJrSec")}
+  else if(a==="now"){kmPane(kmCanWish()?"reg":"progress",false);var r=document.getElementById("kmReg");if(r&&r.scrollIntoView)r.scrollIntoView({behavior:"smooth",block:"start"})}
+  else if(a==="lv"){var l=Number(el.getAttribute("data-l"));kmPane("progress",false);KM.status="all";KM.cat="";KM.openLv[l]=true;kmRefresh(false);var t=document.querySelector('.kl[data-lv="'+l+'"]');if(t&&t.scrollIntoView)t.scrollIntoView({behavior:"smooth",block:"center"})}
   else if(a==="regall"){KM.regAll=!KM.regAll;kmRefresh(false)}
   else if(a==="grp"){var gid=el.getAttribute("data-g");KM.openGrp[gid]=!KM.openGrp[gid];kmRefresh(false)}
-  else if(a==="el"){KM.status="all";KM.cat="";kmPane("rq",true);kmRefresh(false)}
+  else if(a==="el"){KM.status="all";KM.cat="";kmPane("progress",true);kmRefresh(false)}
   else if(a==="lvopen"){var l2=Number(el.getAttribute("data-l"));KM.openLv[l2]=!KM.openLv[l2];kmRefresh(false)}
   else if(a==="cat"){var c=el.getAttribute("data-c");KM.openCat=KM.openCat===c?"":c;kmRefresh(false)}}
 function kmScroll(id){var e=document.getElementById(id);if(e&&e.scrollIntoView)e.scrollIntoView({behavior:"smooth",block:"start"})}
