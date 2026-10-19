@@ -296,8 +296,14 @@ box.addEventListener('touchend',e=>{if(pz&&e.touches.length<2){pz=null;autoFit=n
 document.addEventListener('gesturestart',e=>{if(e.target.closest&&e.target.closest('.scroll'))e.preventDefault()});
 setTimeout(()=>hint.classList.add('gone'),7000);
 window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
-// ?pdf=1 (from the in-app publisher): open the print dialog so the visitor saves the A3 PDF directly.
-if(/[?&]pdf=1(&|$)/.test(location.search))addEventListener('load',()=>setTimeout(()=>window.print(),700));
+// When exporting a PDF, wait until Arabic web fonts have settled; 700ms was insufficient
+// on slow phones and could cause a scrambled page. A timeout prevents hanging indefinitely.
+if(/[?&]pdf=1(&|$)/.test(location.search))addEventListener('load',()=>{
+ const ready=document.fonts?.ready||Promise.resolve();
+ Promise.race([ready,new Promise(resolve=>setTimeout(resolve,3000))])
+   .then(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>window.print())))
+   .catch(()=>window.print());
+});
 // Student mode: tap the courses you passed; what is open to you now lights up. Kept on this device only.
 (function(){
  const ME=D.ME||null,KEY='planPassed:'+location.pathname,btn=document.getElementById('stbtn'),bar=document.getElementById('stbar');
