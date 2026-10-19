@@ -135,7 +135,8 @@ html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0)
  html[data-print-rotate="1"] #plan{
   width:297mm!important;height:210mm!important;
   transform-origin:0 0!important;
-  transform:translate(196.35mm,19.305mm) rotate(90deg) scale(.87)!important;
+  /* AirPrint clips the outer edge at .87 on some iPhones; reserve 8mm safety. */
+  transform:translate(191.1mm,26.73mm) rotate(90deg) scale(.82)!important;
   margin:0!important;direction:rtl!important
  }
 }
