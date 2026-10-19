@@ -7,6 +7,7 @@ import Courses from "../src/components/Courses";
 import ScopeAskBar, { trimScopeSelects, type ScopeAskSelect } from "../src/components/ScopeAskBar";
 import { visibleTermIds } from "../src/utils/scopedTerms";
 import { currentTermId } from "../src/utils/termSequence";
+import { invitationHref, isInvitationHash, parseInvitationHash } from "../src/utils/invitationLink";
 
 let passed = 0;
 function check(label: string, run: () => void) { run(); console.log(`✓ ${label}`); passed++; }
@@ -45,8 +46,13 @@ check("قائمة لم تتحقق بعد: لا منتقي بخيارات خام"
 });
 check("رابط الدعوة يملأ حقلي الدخول ويمسح بياناته من العنوان بعد القراءة", () => {
   const login = fs.readFileSync("src/components/Login.tsx", "utf8"), invitation = fs.readFileSync("src/components/AccountInvitation.tsx", "utf8");
-  assert(login.includes('hash.startsWith("#invite&")') && login.includes("setUsername(invitedUsername)") && login.includes("setPassword(invitedPassword)"));
-  assert(login.includes('window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)') && invitation.includes('`${SITE}#invite&${invite.toString()}`'));
+  const href = invitationHref("https://schedule-kw.com/", "tsbdept+one", "1234&5678");
+  const hash = new URL(href).hash;
+  assert(isInvitationHash(hash));
+  assert.deepEqual(parseInvitationHash(hash), { username: "tsbdept+one", password: "1234&5678" });
+  assert.deepEqual(parseInvitationHash("#invite&username=tsbdept&password=12345678"), { username: "tsbdept", password: "12345678" });
+  assert(login.includes("parseInvitationHash(hash)") && login.includes("setUsername(invite.username)") && login.includes("setPassword(invite.password)"));
+  assert(login.includes('window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)') && invitation.includes("invitationHref(SITE, login, temporaryPassword)"));
 });
 check("أحدث فصل أُنشئ يبقى فارغًا، والفصل الأقدم الفارغ يختفي", () => {
   const terms = [{ AdTermId: 11, AdTermName: "الفصل الثاني 2026/2027", AdTermClosed: false }, { ...term, AdTermClosed: false }, { AdTermId: 9, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: true }];

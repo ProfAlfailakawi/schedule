@@ -55,6 +55,7 @@ import { setDemoSession } from "./utils/demoSession";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
 import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb, telemetryGuide } from "./utils/clientTelemetry";
 import { AR, countOf, nounFor } from "./utils/arabicCount";
+import { isInvitationHash } from "./utils/invitationLink";
 
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
@@ -1291,7 +1292,7 @@ export default function App() {
        browser still has another account's session. Let Login consume the
        fragment before restoring that session; the fragment never reaches the
        server and Login removes it from the address bar after reading it. */
-    if (window.location.hash.startsWith("#invite&")) {
+    if (isInvitationHash(window.location.hash)) {
       setLoading(false);
       return;
     }
