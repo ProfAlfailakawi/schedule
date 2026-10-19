@@ -274,6 +274,11 @@ button,input{font:inherit;color:inherit}
 .sheet{inline-size:min(100%,520px);max-block-size:92dvh;overflow:auto;background:var(--card);border-radius:28px 28px 0 0;padding:10px 18px calc(20px + env(safe-area-inset-bottom));display:grid;gap:14px;animation:up .26s var(--ease)}
 .grab{inline-size:42px;block-size:5px;border-radius:5px;background:var(--line-strong);margin:0 auto}
 .sheet h3{margin:0;font-size:19px}
+/* تبقى نافذة إضافة مقرر أقصر من الشاشة: حيزٌ واضح للمس خارجها. */
+.sheet.pool-sheet{max-block-size:calc(100vh - 64px);max-block-size:calc(100dvh - 64px);overscroll-behavior:contain}
+.pool-sheet-head{position:sticky;inset-block-start:-10px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;min-block-size:52px;margin-block-start:-10px;padding:10px 0 6px;background:var(--card)}
+.pool-sheet-head h3{min-inline-size:0;flex:1}
+.pool-sheet-close{display:grid;place-items:center;flex:none;inline-size:44px;block-size:44px;border-radius:14px;border:1px solid var(--line-strong);background:var(--card2);color:var(--ink);font-size:27px;line-height:1;cursor:pointer}
 @keyframes up{from{transform:translateY(40px);opacity:.5}to{transform:none;opacity:1}}
 .toast{position:fixed;inset-inline:16px;inset-block-end:calc(96px + env(safe-area-inset-bottom));z-index:80;margin:0 auto;max-inline-size:420px;padding:12px 16px;border-radius:16px;background:var(--ink);color:#fff;font-size:14px;box-shadow:0 14px 30px -14px rgba(0,0,0,.5);animation:up .22s var(--ease)}
 .toast.bad{background:var(--bad)}
@@ -434,7 +439,11 @@ function phaseChip(){var s=S.state;if(!s)return"";var ph=s.phase;return '<div cl
 function track(){var s=S.state;if(!s||!s.timeline)return"";var ICON={submission:"book",wishes:"heart",frozen:"lock",round:"ticket",close:"flag"};var h='<ol class="track" aria-label="رحلة الفصل">';s.timeline.forEach(function(st){var d=st.to||st.from;h+='<li class="stp '+st.state+'"'+(st.state==="now"?' aria-current="step"':"")+'><span class="d">'+ic(st.state==="done"?"check":ICON[st.kind]||"clock")+'</span><b>'+esc(st.title)+'</b><small>'+(d?esc(fmtShort(d)):"—")+'</small></li>'});return h+'</ol>'}
 function setTop(){var s=S.state;topEl.innerHTML='<span class="mark">SCHEDULE</span><span class="topr">'+(s&&s.demo?'<span class="term demo">تجربة · افتراضي</span>':"")+(s&&s.term?'<span class="term">'+ic("cal")+esc(s.term.name)+'</span>':"")+'<a class="jrn" href="/?journey=1&amp;back=/me" aria-label="افتح رحلة SCHEDULE">'+ic("spark")+'<span>الرحلة</span></a></span>'}
 function setView(v){S.view=v;if(v!=="home"){var kb=document.getElementById("kbar");if(kb)kb.hidden=true;kmClose()}render()}
-function sheet(html){closeSheet();var el=document.createElement("div");el.className="scrim";el.id="scrim";el.innerHTML='<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>'+html+'</div>';el.addEventListener("click",function(e){if(e.target===el)closeSheet()});document.body.appendChild(el);return el}
+function sheet(html){closeSheet();var el=document.createElement("div");el.className="scrim";el.id="scrim";el.innerHTML='<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>'+html+'</div>';
+  /* يعمل اللمس خارج الورقة في الهاتف حتى إذا لم يصدر المتصفح حدث click بعد اللمس. */
+  el.addEventListener("pointerdown",function(e){if(e.target===el)closeSheet()});
+  el.addEventListener("click",function(e){if(e.target===el||e.target.closest(".pool-sheet-close"))closeSheet()});
+  document.body.appendChild(el);return el}
 function closeSheet(){var el=document.getElementById("scrim");if(el)el.remove()}
 function errBox(id){return '<div class="err" id="'+id+'" role="alert" hidden></div>'}
 function showErr(id,msg){var el=document.getElementById(id);if(!el)return;el.textContent=msg;el.hidden=!msg}
@@ -751,7 +760,8 @@ function tkPoolSheet(cur,replaceId){
     var why=lock?ic("lock","")+' يلزمك أولاً: '+esc(p.needs.join(" + ")):(!opt?'يتعارض مع جدولك':(over?'يتجاوز 15 وحدة':''));
     var row='<button type="button" class="opt'+(why?' off':'')+'" data-p="'+p.courseId+'"'+(why?' disabled':'')+'><span class="tx"><b>'+esc(p.name)+'</b><small><span class="code">'+esc(p.code)+'</span> · '+countOf(p.credit,AR.unit)+' · '+countOf(p.offerings.length,AR.section)+'</small>'+(why?'<small class="need">'+why+'</small>':'')+'</span>'+(why?'':ic("plus"))+'</button>';
     if(lock)locked+=row;else ok+=row});
-  var el=sheet('<h3>'+(replaceId?'بدّل المقرر':'أضف مقرراً')+'</h3><p class="muted">وحداتك الآن '+tkUnits(items)+' · معاينةٌ شخصية لا تغيّر جدول القسم.</p><div class="list">'+(ok||'<p class="muted">لا مقررات متاحة لك الآن.</p>')+(locked?'<div class="grp">مقفلة — ينقصك مسبق</div>'+locked:'')+'</div><button class="btn alt" id="pc">إغلاق</button>');
+  var el=sheet('<div class="pool-sheet-head"><h3>'+(replaceId?'بدّل المقرر':'أضف مقرراً')+'</h3><button type="button" class="pool-sheet-close" aria-label="إغلاق النافذة" title="إغلاق">×</button></div><p class="muted">وحداتك الآن '+tkUnits(items)+' · معاينةٌ شخصية لا تغيّر جدول القسم.</p><div class="list">'+(ok||'<p class="muted">لا مقررات متاحة لك الآن.</p>')+(locked?'<div class="grp">مقفلة — ينقصك مسبق</div>'+locked:'')+'</div><button class="btn alt" id="pc">إغلاق</button>');
+  el.querySelector(".sheet").classList.add("pool-sheet");
   document.getElementById("pc").addEventListener("click",closeSheet);
   el.querySelectorAll("[data-p]").forEach(function(b){b.addEventListener("click",function(){
     var p=pool.filter(function(x){return Number(x.courseId)===Number(b.getAttribute("data-p"))})[0],opt=p.offerings.filter(function(o){return!items.some(function(x){return clash(x.slots,o.slots)})})[0];if(!p||!opt)return;
