@@ -16,7 +16,7 @@
  */
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { createHmac, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 import { Repository } from "../db/repository";
 import type { AdCourse, StudentNeed, StudentProfile, StudentWishes } from "../types";
@@ -319,8 +319,6 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       },
       timeline: studentTimeline(term?.AdTermStudentPhases, term?.AdTermSubmissionDeadline, today),
       signedIn: Boolean(door),
-      /* مفتاحٌ مشتقٌ لا يكشف بصمة الطالب، لتخزين ملخص الزيارة على جهازه فقط. */
-      visitKey: door ? createHmac("sha256", await deps.identityKey()).update(`masari-visit:${door.fingerprint}`).digest("hex").slice(0, 32) : "",
       profile: door ? await summaryOf(door.profile) : null,
       limits: { codeLength: CODE_LENGTH, wishUnitsMin: WISH_UNITS_MIN, wishUnitsMax: WISH_UNITS_MAX, afterGraduationDays: AFTER_GRADUATION_DAYS },
     });
@@ -488,7 +486,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
   /* ── خريطتي: صحيفتي كلُّها (مقرراتُ قسمي والأقسام الأخرى والعامة) بقواعدها، بلا أيّ بيانٍ عني ──
      الحالةُ (اجتزته/متاح/ينتظر) تُحسب في المتصفح من إنجازي، فتتجدّد لحظةَ أعلّم مقرراً. */
   app.get("/api/public/me/map", requireDoor, async (_req: Request, res: Response) => {
-    const { profile } = doorOf(res);
+    const { fingerprint, profile } = doorOf(res);
     noStore(res);
     if (profile.AdSectionId <= 0) { res.json({ ready: false, reason: "no-setup" }); return; }
     const [catalog, sections, terms] = await Promise.all([sectionCatalog(profile.AdSectionId), Repository.getSections(), Repository.getTerms()]);
@@ -507,7 +505,34 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       categoryOrder: resolver ? REFERENCE_CATEGORIES.order : undefined,
       planName: catalog.plans.find(plan => plan.id === profile.curriculumPlanId)?.name || "", studentSectionName: mine, termName: term ? String(term.AdTermName || "") : "",
     });
-    res.json({ ready: true, hasRules: Boolean(rules?.rules.length), model });
+    const termId = Number(term?.AdTermId || 0), day = kuwaitDateISO();
+    const passedIds = profile.passedCourseIds.filter(id => model.courses.some(course => course.id === id));
+    const passed = new Set(passedIds);
+    const passedUnitsNow = passedIds.reduce((sum, id) => sum + (known.get(id)?.credit || 0), 0);
+    const completedGroups = new Set(model.groups.filter(group => {
+      const ids = group.courseIds.filter(id => passed.has(id));
+      const units = ids.reduce((sum, id) => sum + (known.get(id)?.credit || 0), 0);
+      return ids.length >= group.minCourses && units >= group.minUnits;
+    }).map(group => group.id));
+    const availableIds = model.courses.filter(course => {
+      if (passed.has(course.id) || (course.group && completedGroups.has(course.group))) return false;
+      const rule = model.rules[course.id];
+      if (!rule) return true;
+      return rule.all.every(id => passed.has(id)) && rule.anyOf.every(group => group.some(id => passed.has(id)))
+        && passedUnitsNow >= rule.minUnits;
+    }).map(course => course.id);
+    const offeredIds = Object.keys(model.offered).map(Number);
+    const snapshot = { termId, day, passedIds, offeredIds, availableIds };
+    const prior = profile.visitSnapshot?.termId === termId ? profile.visitSnapshot : null;
+    const changes = prior ? {
+      passed: passedIds.filter(id => !prior.passedIds.includes(id)),
+      offered: offeredIds.filter(id => !prior.offeredIds.includes(id)),
+      available: availableIds.filter(id => !prior.availableIds.includes(id)),
+    } : null;
+    if (termId && profile.visitSnapshot?.day !== day) {
+      await Repository.updateStudentProfile(fingerprint, current => current ? { ...current, visitSnapshot: snapshot } : undefined);
+    }
+    res.json({ ready: true, hasRules: Boolean(rules?.rules.length), model, changes });
   });
 
   /* خريطةُ قسمي كاملةً بالأسهم (التصميمُ المعتمد)، ملوّنةً بإنجازي: صفحةٌ خاصة بلا رمز QR، ترجع إلى «خريطتي». */

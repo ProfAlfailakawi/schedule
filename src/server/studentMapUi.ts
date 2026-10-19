@@ -275,14 +275,14 @@ function kmCartIds(){return Object.keys(KM.cart).map(Number)}
 function kmUnits(ids){var s=0;ids.forEach(function(id){s+=KM.x.byId[id].credit});return s}
 function kmOff(id){return KM.m.offered[id]||0}
 function kmFirstName(){var p=S.state.profile;return p&&p.identity&&p.identity.name?String(p.identity.name).split(" ")[0]:""}
-function kmVisitChanges(model){var el=document.getElementById("visitChanges"),key=S.state&&S.state.visitKey;if(!el||!key||!S.state.profile)return;
-  var storageKey="masari-visit-v1:"+key+":"+(S.state.term&&S.state.term.id||0),current={version:1,passed:(S.state.profile.passedCourseIds||[]).map(Number).sort(function(a,b){return a-b}),offered:Object.keys(model.offered||{}).map(Number).sort(function(a,b){return a-b}),available:KM.x.plan.filter(function(id){return KM.x.status(id)==="now"}).sort(function(a,b){return a-b})},prior=null;
-  try{prior=JSON.parse(localStorage.getItem(storageKey)||"null")}catch(e){prior=null}try{localStorage.setItem(storageKey,JSON.stringify(current))}catch(e){return}if(!prior||prior.version!==1)return;
-  var diff=function(a,b){var seen={};(b||[]).forEach(function(id){seen[id]=1});return(a||[]).filter(function(id){return!seen[id]})},nameList=function(ids){return ids.slice(0,2).map(function(id){return esc(KM.x.byId[id].name)}).join("، ")+(ids.length>2?'، و'+countOf(ids.length-2,AR.course)+' أخرى':'')},passed=diff(current.passed,prior.passed),offered=diff(current.offered,prior.offered),available=diff(current.available,prior.available);
-  var pills=[];if(passed.length)pills.push('<span class="visit-pill">'+ic('check','')+' اجتزت '+countOf(passed.length,AR.course)+(passed.length<3?' · '+nameList(passed):'')+'</span>');if(offered.length)pills.push('<span class="visit-pill">'+ic('book','')+' طُرحت '+countOf(offered.length,AR.course)+(offered.length<3?' · '+nameList(offered):'')+'</span>');if(available.length)pills.push('<span class="visit-pill">'+ic('spark','')+' صارت متاحة '+countOf(available.length,AR.course)+(available.length<3?' · '+nameList(available):'')+'</span>');
-  if(!pills.length)return;el.innerHTML='<section class="card visit-delta fade"><h2><span class="b">'+ic('spark')+'</span>منذ زيارتك الأخيرة</h2><div class="visit-pills">'+pills.join('')+'</div></section>'}
+function kmVisitChanges(model,changes){var el=document.getElementById("visitChanges");if(!el||!changes)return;
+  var nameList=function(ids){return ids.slice(0,2).map(function(id){return KM.x.byId[id]?esc(KM.x.byId[id].name):""}).filter(Boolean).join("، ")+(ids.length>2?'، و'+countOf(ids.length-2,AR.course)+' أخرى':'')},pills=[];
+  if(changes.passed&&changes.passed.length)pills.push('<span class="visit-pill">'+ic('check','')+' اجتزت '+countOf(changes.passed.length,AR.course)+(changes.passed.length<3?' · '+nameList(changes.passed):'')+'</span>');
+  if(changes.offered&&changes.offered.length)pills.push('<span class="visit-pill">'+ic('book','')+' طُرحت '+countOf(changes.offered.length,AR.course)+(changes.offered.length<3?' · '+nameList(changes.offered):'')+'</span>');
+  if(changes.available&&changes.available.length)pills.push('<span class="visit-pill">'+ic('spark','')+' صارت متاحة '+countOf(changes.available.length,AR.course)+(changes.available.length<3?' · '+nameList(changes.available):'')+'</span>');
+  if(pills.length)el.innerHTML='<section class="card visit-delta fade"><h2><span class="b">'+ic('spark')+'</span>منذ زيارتك الأخيرة</h2><div class="visit-pills">'+pills.join('')+'</div></section>'}
 
-function kmInit(model,advice){
+function kmInit(model,advice,changes){
   KM.m=model;KM.advice=advice||null;KM.x=kmCore(model,S.state.profile.passedCourseIds||[]);
   KM.transfer=S.state.profile.transfer===true;KM.eq={};(S.state.profile.equivalentCourseIds||[]).forEach(function(i){KM.eq[i]=1});
   /* ما حُفظ سابقاً بغير ترتيب المسبقات يُصحَّح الآن ويُحفظ مصحَّحاً. */
@@ -294,7 +294,7 @@ function kmInit(model,advice){
     var ids=cur?cur.courseIds:Object.keys(KM.picks).map(Number);
     ids.forEach(function(id){if(KM.x.byId[id]&&!KM.x.isPassed(id)&&KM.x.status(id)!=="wait")KM.cart[id]=1})}
   KM.status="all";KM.cat="";KM.focus=0;KM.futureCourse=0;KM.openLv={};KM.openCat="";KM.openGrp={};KM.regAll=false;KM.dirty=false;KM.ready=true;KM.first=true;
-  KM.desk=!!(window.matchMedia&&window.matchMedia("(min-width:900px)").matches);kmVisitChanges(model)}
+  KM.desk=!!(window.matchMedia&&window.matchMedia("(min-width:900px)").matches);kmVisitChanges(model,changes)}
 
 /* ── حلقة التقدّم: قوسٌ لكل مستوى بحجم وحداته؛ المملوء ما اجتزته، والباهت ما اخترته لهذا الفصل ── */
 function kmSegs(){var X=KM.x,m=KM.m,need=X.need(),segs=[];

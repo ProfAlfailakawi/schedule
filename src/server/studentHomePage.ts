@@ -869,7 +869,7 @@ function loadPlan(){var host=document.getElementById("advice");if(!host)return;
   host.innerHTML='<div class="skel"></div>';
   Promise.all([api("GET","/api/public/me/advice"),api("GET","/api/public/me/offered"),api("GET","/api/public/me/map")]).then(function(rs){
     var a=rs[0].ok&&rs[0].d.ready?rs[0].d:null,o=rs[1].ok&&rs[1].d.ready?rs[1].d:null,mp=rs[2].ok&&rs[2].d.ready?rs[2].d:null;S.offered=o;
-    if(mp){KM.hasRules=!!mp.hasRules;kmInit(mp.model,a);kmMount(host);var ap=document.querySelector(".app");if(ap)ap.classList.toggle("km-on",S.tab==="plan")}
+    if(mp){KM.hasRules=!!mp.hasRules;kmInit(mp.model,a,rs[2].d.changes||null);kmMount(host);var ap=document.querySelector(".app");if(ap)ap.classList.toggle("km-on",S.tab==="plan")}
     else if(!a&&!o){host.innerHTML=""}else{host.innerHTML=planCard(a,o);animateRings();markOverflow()}
     var kt=document.getElementById("kt"),ks=document.getElementById("kts");
     if(a&&kt){var n=a.done?0:(a.termsAfter===null?null:a.termsAfter+(a.picks.length?1:0));kt.textContent=n===null?"؟":(n===0?"✓":n);ks.textContent=n===0?"أكملت الصحيفة":(n===null?"راجع مرشدك":"فصول للتخرّج")}
