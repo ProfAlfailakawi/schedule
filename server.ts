@@ -113,6 +113,7 @@ import { dayKeysOf, DAY_LETTERS, requestItemFromRow } from "./src/utils/instruct
 import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
 import { registerInsightRoutes } from "./src/server/insightRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
+import { DEFAULT_INVITATION_PASSWORD } from "./src/utils/invitationLink";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { loadSimulationInput, rankDemandRepairsBySimulation, rankSectionOpeningsBySimulation } from "./src/server/simulationData";
@@ -2408,6 +2409,17 @@ app.post("/api/demo/role", rateLimitDemoRole, requireAuth, async (req: Authentic
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "تعذّر تبديل الصفة" });
   }
+});
+
+/* رابطٌ قصير يُقرأ من صورة واتساب. لا تعتمد الدعوة المصوّرة على بقاء #fragment
+   عند فتح الصورة أو على تحويل النص المصوَّر إلى رابطٍ يحمل معاملات مخفية. */
+app.get("/i/:username", rateLimitLogin, (req: Request, res: Response) => {
+  const username = String(req.params.username || "").trim();
+  if (!username || username.length > 200) { res.status(400).type("text/plain").send("رابط الدعوة غير صالح"); return; }
+  const invite = new URLSearchParams({ username, password: DEFAULT_INVITATION_PASSWORD });
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.redirect(302, `/#invite=${encodeURIComponent(invite.toString())}`);
 });
 
 app.post("/api/auth/login", rateLimitLogin, async (req: Request, res: Response) => {

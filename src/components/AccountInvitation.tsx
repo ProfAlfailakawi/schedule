@@ -2,22 +2,24 @@ import React, { useEffect, useState } from "react";
 import { Check, Copy, Download, KeyRound, Link, Send, X } from "lucide-react";
 import BrandMark from "./BrandMark";
 import "./account-invitation.css";
-import { invitationHref } from "../utils/invitationLink";
+import { DEFAULT_INVITATION_PASSWORD, invitationHref, photoInvitationHref } from "../utils/invitationLink";
 
 type Props = { name: string; login: string; active: boolean; hasPassword?: boolean };
 const SITE = "https://schedule-kw.com/";
 
 export default function AccountInvitation({ name, login, active, hasPassword }: Props) {
   const [open, setOpen] = useState(false);
-  const [temporaryPassword, setTemporaryPassword] = useState("12345678");
+  const [temporaryPassword, setTemporaryPassword] = useState(DEFAULT_INVITATION_PASSWORD);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setOpen(false);
-    setTemporaryPassword("12345678");
+    setTemporaryPassword(DEFAULT_INVITATION_PASSWORD);
     setStatus("");
   }, [login]);
-  const url = invitationHref(SITE, login, temporaryPassword);
+  const photoUrl = photoInvitationHref(SITE, login, temporaryPassword);
+  const url = photoUrl || invitationHref(SITE, login, temporaryPassword);
+  const displayUrl = photoUrl || "schedule-kw.com";
   const message = `أهلًا بـ${name}\n\nبيانات دخولكم إلى *SCHEDULE*\nنظام القرار الأكاديمي\n\nرابط الدخول:\n${url}\n\nاسم المستخدم:\n${login}\n\nكلمة المرور المؤقتة:\n${temporaryPassword}\n\nاحتفظوا ببيانات الدخول لدى المسؤول عن الحساب.`;
   const ready = active && hasPassword !== false && Boolean(temporaryPassword.trim());
 
@@ -79,12 +81,19 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         ctx.fillStyle = "#123e35"; ctx.fillText(value, 600, y + 145);
       };
       credential("اسم المستخدم", login, 620); credential("كلمة المرور المؤقتة", temporaryPassword, 855);
-      ctx.textAlign = "center"; ctx.direction = "ltr"; ctx.font = '700 38px "Plex Arabic", sans-serif'; ctx.fillStyle = "#123e35"; ctx.fillText("schedule-kw.com", 600, 1170);
-      ctx.direction = "rtl"; ctx.font = '400 26px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e"; ctx.fillText("افتح رابط الدخول المرفق في رسالة واتساب", 600, 1240);
+      ctx.textAlign = "center"; ctx.direction = "ltr"; let siteSize = 40;
+      ctx.font = `700 ${siteSize}px "Plex Arabic", sans-serif`;
+      while (ctx.measureText(displayUrl).width > 1020 && siteSize > 19) ctx.font = `700 ${--siteSize}px "Plex Arabic", sans-serif`;
+      ctx.fillStyle = "#123e35"; ctx.fillText(displayUrl, 600, 1170);
+      ctx.direction = "rtl"; ctx.font = '400 26px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e";
+      ctx.fillText(photoUrl ? "رابط الدخول الخاص بكم — افتحوه من الصورة أو الرسالة" : "افتحوا رابط الدخول المرفق في رسالة واتساب", 600, 1240);
       ctx.fillStyle = "#d5bd84"; ctx.fillRect(520, 1310, 160, 3);
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("export")), "image/png"));
       const objectUrl = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = objectUrl; a.download = `SCHEDULE-${login.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
-      setStatus("حُفظت البطاقة. أرفق معها الرسالة ليتمكن المستلم من نسخ البيانات وفتح الرابط.");
+      try {
+        await navigator.clipboard.writeText(url);
+        setStatus("حُفظت البطاقة ونُسخ رابط الدخول. الصقه وصفاً للصورة في واتساب ليُفتح بلمسة واحدة.");
+      } catch { setStatus("حُفظت البطاقة. انسخ رسالة واتساب وأرفقها مع الصورة ليُفتح الرابط بلمسة واحدة."); }
     } catch { setStatus("تعذّر حفظ الصورة. يمكنك نسخ رسالة الدخول."); }
     finally { setBusy(false); }
   }
@@ -99,7 +108,7 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         <div className="invitation-card-content"><h3>{name}</h3><p>أهلًا بكم، هنا تبدأ خطوتكم القادمة</p>
           <div className="invitation-credential"><small>اسم المستخدم</small><bdi dir="ltr">{login}</bdi></div>
           <div className="invitation-credential"><small>كلمة المرور المؤقتة</small><bdi dir="ltr">{temporaryPassword || "—"}</bdi></div>
-          <footer><strong dir="ltr">schedule-kw.com</strong><small>رابط الدخول المعبّأ موجود في رسالة واتساب</small></footer>
+          <footer><strong dir="ltr">{displayUrl}</strong><small>{photoUrl ? "رابط الدخول الخاص بكم" : "رابط الدخول المعبّأ موجود في رسالة واتساب"}</small></footer>
         </div>
       </div>
       <label className="invitation-password"><span><KeyRound aria-hidden="true" /> كلمة المرور التي ستُرسل</span><input dir="ltr" value={temporaryPassword} onChange={e => { setTemporaryPassword(e.target.value); setStatus(""); }} autoComplete="off" maxLength={128} /><small>القيمة الافتراضية 12345678. راجع مطابقتها لكلمة الحساب الحالية؛ إعداد البطاقة لا يغيّر كلمة المرور.</small></label>
