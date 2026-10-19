@@ -3885,7 +3885,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           ) : null}
           {canPublishSheets && activeInsightKey === "sheet" ? (
             <div className="content-stack insight-scene-panel" id="insight-panel-sheet" role="tabpanel" aria-labelledby="insight-tab-sheet" tabIndex={0}>
-              <PlanSheetPublisher onChanged={loadSheetSummary} focusSectionId={Number(sectionId) || 0} />
+              <PlanSheetPublisher onChanged={loadSheetSummary} focusSectionId={Number(sectionId) || 0} isAdmin={isPowerAdmin} />
             </div>
           ) : null}
           {activeInsightKey === "predict" ? (

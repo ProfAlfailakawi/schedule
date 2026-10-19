@@ -24,7 +24,7 @@ async function call(url: string, body?: unknown) {
   return json;
 }
 
-export default function PlanSheetPublisher({ onChanged, focusSectionId = 0 }: { onChanged?: () => void; focusSectionId?: number }) {
+export default function PlanSheetPublisher({ onChanged, focusSectionId = 0, isAdmin = false }: { onChanged?: () => void; focusSectionId?: number; isAdmin?: boolean }) {
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -127,7 +127,7 @@ p{margin:0;font-size:22px;font-weight:700}small{font-size:14px;color:#64748B;dir
         <div><strong>انشر الصحيفة للجميع</strong><small>رابطٌ تفاعلي وQR وPDF بلا حساب · {publishedCount} من {total} منشورة</small></div>
         <div className="psh-head-actions">
           <PrimaryButton disabled={!pending || Boolean(busy)} onClick={() => publish({}, "all")} data-guide-ignore="نشر كل ما يملكه الحساب من صحائف معتمدة دفعةً واحدة">{busy === "all" ? "جارٍ النشر…" : `انشر كل صحائفي${pending ? ` (${pending})` : ""}`}</PrimaryButton>
-          <SecondaryButton onClick={() => showQr("كل الأقسام", indexUrl)} data-guide-ignore="رمز QR لفهرس الخطط الدراسية العام"><QrCode /> QR كل الأقسام</SecondaryButton>
+          {isAdmin ? <SecondaryButton onClick={() => showQr("كل الأقسام", indexUrl)} data-guide-ignore="رمز QR لفهرس الخطط الدراسية العام"><QrCode /> QR كل الأقسام</SecondaryButton> : null}
         </div>
       </header>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}

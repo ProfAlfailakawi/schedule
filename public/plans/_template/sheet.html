@@ -96,6 +96,8 @@ html.student #plan .card.ok>rect:first-of-type{fill:#D1FAE5}
 html.student #plan .card.can>rect:first-of-type{fill:#FEF9C3;stroke:#CA8A04;stroke-opacity:1;stroke-width:2.5}
 html.student #plan .card.no{opacity:.42}
 html.student #plan .edge{opacity:.25}
+/* Match the original curriculum map's vivid moving prerequisite arrows on selection, including student view. */
+html.student #plan .edge.on{opacity:1}
 @media (min-width:1200px){#stbtn{bottom:calc(126px + env(safe-area-inset-bottom,0))}}
 #backlink{position:fixed;top:12px;right:12px;z-index:9;display:flex;align-items:center;gap:6px;background:#0B2545;color:#fff;text-decoration:none;font-weight:800;font-size:14.5px;padding:8px 16px 8px 12px;border-radius:999px;box-shadow:0 8px 22px rgba(11,37,69,.3)}
 #backlink svg{width:16px;height:16px}
@@ -107,14 +109,18 @@ html.me body{padding-top:calc(58px + env(safe-area-inset-top,0))}
 html.me #stbar{bottom:calc(14px + env(safe-area-inset-bottom,0));flex-wrap:nowrap;gap:12px;padding:7px 16px;font-size:13px;white-space:nowrap}
 html.me #stbar b{font-size:15px}
 html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0));padding:8px 12px;font-size:13px}
-@page{size:420mm 297mm;margin:0}
+/* A3 landscape: reserve a true safe margin so printer/PDF boundaries never clip the map. */
+@page{size:A3 landscape;margin:6mm}
 @media print{
- html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ html,body{background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;margin:0!important;padding:0!important;width:100%!important;height:100%!important;overflow:hidden!important}
+ html.me body{padding:0!important}
  #sheet,#hint,#fitbtn,#pdfbtn,#stbtn,#stbar,#backlink,#tag{display:none!important}
- .scroll{overflow:visible;padding:0}
- #plan [filter]{filter:none}
- .card,.edge{opacity:1!important}
- #plan{width:420mm;height:297mm;min-width:0;max-width:none}
+ #dview,.scroll{display:block!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;overflow:hidden!important}
+ #plan{display:block!important;width:100%!important;height:100%!important;min-width:0!important;max-width:none!important;max-height:none!important;margin:0 auto!important;overflow:visible!important}
+ #plan [filter]{filter:none!important}
+ #plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}
+ #plan .card rect{filter:none!important}
+ #plan .edge path{animation:none!important}
 }
 </style>
 </head>
@@ -290,8 +296,14 @@ box.addEventListener('touchend',e=>{if(pz&&e.touches.length<2){pz=null;autoFit=n
 document.addEventListener('gesturestart',e=>{if(e.target.closest&&e.target.closest('.scroll'))e.preventDefault()});
 setTimeout(()=>hint.classList.add('gone'),7000);
 window.addEventListener('beforeprint',()=>{sel=null;hov=null;render()});
-// ?pdf=1 (from the in-app publisher): open the print dialog so the visitor saves the A3 PDF directly.
-if(/[?&]pdf=1(&|$)/.test(location.search))addEventListener('load',()=>setTimeout(()=>window.print(),700));
+// When exporting a PDF, wait until Arabic web fonts have settled; 700ms was insufficient
+// on slow phones and could cause a scrambled page. A timeout prevents hanging indefinitely.
+if(/[?&]pdf=1(&|$)/.test(location.search))addEventListener('load',()=>{
+ const ready=document.fonts?.ready||Promise.resolve();
+ Promise.race([ready,new Promise(resolve=>setTimeout(resolve,3000))])
+   .then(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>window.print())))
+   .catch(()=>window.print());
+});
 // Student mode: tap the courses you passed; what is open to you now lights up. Kept on this device only.
 (function(){
  const ME=D.ME||null,KEY='planPassed:'+location.pathname,btn=document.getElementById('stbtn'),bar=document.getElementById('stbar');
