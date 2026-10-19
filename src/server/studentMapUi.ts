@@ -3,7 +3,7 @@
  *
  * لوحةٌ واحدة لصحيفة الطالب كلها، كلُّ ما فيها يُضغط ويستجيب: الحلقةُ والأرقامُ والبطاقاتُ والمستوياتُ والسلاسلُ
  * والتصنيفات؛ وعند فتح أي مقررٍ تضيء سلسلتُه (ما يتطلبه وما يفتحه) في كل مكانٍ، ويُعلَّم مجتازاً فتُعاد الأرقامُ لحظتَها
- * ويُحفظ إنجازُه. على الهاتف: ورقةٌ من الأسفل. على الحاسوب: عمودان ولوحةٌ جانبية.
+ * ويُحفظ إنجازُه. الواجهةُ متسقة على الهاتف والحاسوب، بعرض مريح وورقة تفاصيل من الأسفل.
  *
  * السكربتُ ES5 عادي (يعمل على هواتفَ قديمة): بلا علامة اقتباسٍ مائلة ولا ‎${‎ ولا دوالَّ سهمية — النصُّ قالبٌ في الخادم،
  * ويُفحص ذلك في tests/student-map-audit.ts.
@@ -150,7 +150,7 @@ export const STUDENT_MAP_CSS = `
 .ks.s-wait,.ks.s-full{border-color:var(--line-strong);color:var(--muted)}
 .term.demo{white-space:nowrap;background:#F3EAD9;color:#6B4A12;border-color:#E3CFA0}
 .kchr{display:grid;grid-template-columns:auto 1fr;gap:6px;align-items:center}
-.kchb{display:grid;gap:8px}.kchbr{display:flex;align-items:center}.ln{display:block;inline-size:14px;block-size:2px;background:#cfd6d2;flex:none}.ln.on{background:var(--h)}
+.kchb{display:grid;gap:8px}.kchbr{display:flex;align-items:center}.kchbr>.ln{display:block;inline-size:14px;block-size:2px;background:#cfd6d2;flex:none}.kchbr>.ln.on{background:var(--h)}
 .ks.big{min-inline-size:62px;block-size:46px;font-size:15.5px}
 .app.km-bar{padding-block-end:200px}
 .kl.gold .kl-h b{font-size:15.5px}.kl.gold .kl-h{grid-template-columns:1fr auto}.kl.gold .kl-h i{grid-column:1/-1}
@@ -214,6 +214,8 @@ body.km-lock{overflow:hidden}
 .tk-plan .tk-score:before{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--card)}.tk-plan[aria-pressed="true"] .tk-score:before{background:var(--accent-soft)}.tk-plan .tk-score b{position:relative}
 .tk-plan strong{font-size:12px;line-height:1.35}.tk-plan small{font-size:10px;color:var(--muted);line-height:1.45}.tk-plan .tk-best{position:absolute;inset-block-start:-8px;inset-inline-start:50%;transform:translateX(50%);white-space:nowrap;padding:1px 7px;border-radius:99px;background:var(--gold-soft);color:var(--gold);font-size:9px;font-weight:700}
 .tk-compare-note{margin:0;font-size:10.5px;color:var(--muted);line-height:1.55}
+/* لا يضغط أي نص في صفوف التذكرة تحت حجم الخط العربي. */
+.tk .ln,.adv .ln{min-inline-size:0}.tk .ln .tx,.adv .ln .tx{min-inline-size:0}.tk .ln .tx b,.adv .ln .tx b,.tk .ln .tx small,.adv .ln .tx small{overflow-wrap:anywhere;line-height:1.55}.tk-plan strong,.tk-plan small{overflow-wrap:anywhere}
 .kb-meter{position:relative;block-size:7px;border-radius:9px;background:rgba(255,255,255,.18);overflow:hidden}
 .kb-meter i{position:absolute;inset-block:0;inset-inline-start:0;border-radius:9px;background:#f0cf95;transition:inline-size .35s var(--ease)}
 .kb-meter span{position:absolute;inset-block:0;inset-inline-start:80%;inline-size:2px;background:rgba(255,255,255,.75)}
@@ -227,7 +229,7 @@ body.km-lock{overflow:hidden}
 .km [data-id].dim{opacity:.22}
 .km [data-id].foc{box-shadow:0 0 0 3px var(--h,#c79b5f),0 12px 26px -12px rgba(19,24,23,.5);transform:scale(1.04);position:relative;z-index:1}
 .km [data-id].rel{box-shadow:0 0 0 2.5px var(--h,#c79b5f)}
-@media (max-width:899px){
+@media (min-width:0px){
 .app.km-on{padding-block-end:calc(194px + env(safe-area-inset-bottom))}
 .km-hero{gap:10px;padding:14px 14px 12px;border-radius:24px}
 .km-hrow{gap:10px}
@@ -255,20 +257,6 @@ body.km-lock{overflow:hidden}
 .km-seg button[aria-pressed="true"]{background:#0F5E4A;border-color:#0F5E4A;color:#fff;box-shadow:0 4px 14px rgba(15,94,74,.28)}
 .km-seg button:focus-visible{outline:2px solid #0F5E4A;outline-offset:2px}
 .km[data-pane="reg"] [data-pane]:not([data-pane="reg"]),.km[data-pane="progress"] [data-pane]:not([data-pane="progress"]){display:none}
-}
-@media (min-width:900px){
-  .app.km-on{max-inline-size:1180px}
-  .km-seg{display:none}
-  .km-grid{display:grid;grid-template-columns:352px minmax(0,1fr);gap:22px;align-items:start}
-  .km-side{display:block}.km-main{display:grid;gap:22px;align-content:start;transition:margin .25s var(--ease)}
-  .km-sticky{display:grid;gap:18px;position:sticky;inset-block-start:12px;max-block-size:calc(100dvh - 24px);overflow:auto;padding:2px;scrollbar-width:thin}
-  .km.km-d .km-main{margin-inline-end:424px}
-  .kc-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .kl-d{grid-template-columns:repeat(auto-fill,minmax(52px,1fr))}
-  .krq{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .kd.desk{inset-inline:auto;inset-inline-end:16px;inset-block:16px;inline-size:400px;max-block-size:none;border-radius:26px;border:1px solid var(--line);box-shadow:0 28px 60px -24px rgba(10,24,17,.55);animation:kslide .28s var(--ease)}
-  .kd.desk::before{display:none}
-  .kbar{inset-block-end:calc(92px + env(safe-area-inset-bottom))}
 }
 @keyframes kslide{from{transform:translateX(-24px);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.km-ring path,.kc,.kdot,.kd,.kbar,.km-conf i,.kl-h i u{transition:none;animation:none}}
@@ -306,7 +294,7 @@ function kmInit(model,advice,changes){
     var ids=cur?cur.courseIds:Object.keys(KM.picks).map(Number);
     ids.forEach(function(id){if(KM.x.byId[id]&&!KM.x.isPassed(id)&&KM.x.status(id)!=="wait")KM.cart[id]=1})}
   KM.status="all";KM.cat="";KM.focus=0;KM.futureCourse=0;KM.openLv={};KM.openCat="";KM.openGrp={};KM.regAll=false;KM.dirty=false;KM.ready=true;KM.first=true;
-  KM.desk=!!(window.matchMedia&&window.matchMedia("(min-width:900px)").matches);kmVisitChanges(model,changes)}
+  KM.desk=false;kmVisitChanges(model,changes)}
 
 /* ── حلقة التقدّم: قوسٌ لكل مستوى بحجم وحداته؛ المملوء ما اجتزته، والباهت ما اخترته لهذا الفصل ── */
 function kmSegs(){var X=KM.x,m=KM.m,need=X.need(),segs=[];
