@@ -46,7 +46,7 @@ const model: SheetModel = {
   check(!html.includes('data-c="150"') && !html.includes('data-s="150"'), "S1 المقررُ الخارجي لا بطاقةَ له ولا سهم");
   check(html.includes("{{") === false && html.includes("const D=") && html.includes('"LV"'), "S1 القالبُ مملوءٌ بلا علاماتٍ متروكة، وبيانات التفاعل مضمّنة");
   check(html.includes('id="stbtn"') && html.includes("planPassed:") && html.includes("المتاح لك الآن") && html.includes("@media print") && /#stbtn,#stbar/.test(html), "S1 وضعُ الطالب: يعلّم ما اجتازه على جهازه ويضيء المتاح، ولا يُطبع");
-  check(html.includes("تحميل PDF") && html.includes("window.print()") && html.includes("@page{size:420mm 297mm"), "S1 زرُّ PDF (طباعة A3) موجود");
+  check(html.includes("تحميل PDF") && html.includes("window.print()") && html.includes("@page{size:A4 landscape;margin:0}") && html.includes("width:297mm!important;height:210mm!important"), "S1 زر PDF يطبع صحيفة كاملة بحجم A4 أفقي");
   const arabicLabel = buildPlanSheet({ ...model, planLabel: "الصحيفة السابقة" }, { template });
   const labelTag = arabicLabel.match(/<text[^>]*>الصحيفة السابقة<\/text>/)?.[0] || "";
   check(labelTag.includes('direction="rtl"') && labelTag.includes('text-anchor="start"') && !labelTag.includes("letter-spacing"), "S1 عنوانُ الصحيفة العربي: اتجاهٌ يمينيّ ومرساةٌ عند الحافة اليمنى (لا يُقطع) وبلا تباعد حروف", labelTag);
