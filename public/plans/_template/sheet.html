@@ -107,14 +107,16 @@ html.me body{padding-top:calc(58px + env(safe-area-inset-top,0))}
 html.me #stbar{bottom:calc(14px + env(safe-area-inset-bottom,0));flex-wrap:nowrap;gap:12px;padding:7px 16px;font-size:13px;white-space:nowrap}
 html.me #stbar b{font-size:15px}
 html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0));padding:8px 12px;font-size:13px}
-@page{size:420mm 297mm;margin:0}
+/* Print the entire variable-height SVG on one A4 landscape sheet (including iOS AirPrint).
+   Do not force an A3-sized SVG into an A4 printer, which produces a nearly empty second page. */
+@page{size:A4 landscape;margin:0}
 @media print{
- html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ html,body{background:#fff!important;margin:0!important;padding:0!important;width:297mm!important;height:210mm!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
  #sheet,#hint,#fitbtn,#pdfbtn,#stbtn,#stbar,#backlink,#tag{display:none!important}
- .scroll{overflow:visible;padding:0}
+ #dview,.scroll{display:block!important;position:static!important;margin:0!important;padding:0!important;width:297mm!important;height:210mm!important;min-height:0!important;max-height:210mm!important;overflow:hidden!important;box-shadow:none!important;border:0!important}
  #plan [filter]{filter:none}
  .card,.edge{opacity:1!important}
- #plan{width:420mm;height:297mm;min-width:0;max-width:none}
+ #plan{display:block!important;width:297mm!important;height:210mm!important;min-width:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;break-inside:avoid!important;page-break-inside:avoid!important}
 }
 </style>
 </head>
