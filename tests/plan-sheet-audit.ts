@@ -46,7 +46,7 @@ const model: SheetModel = {
     && html.includes("g.classList.toggle('on',on)") && html.includes('prefers-reduced-motion:reduce'),
     "S1 الأسهم الملونة المتحركة عند اختيار المقرر تطابق مرجع تكنولوجيا التعليم وتحترم تقليل الحركة");
   check(html.includes('html.student #plan .edge.on{opacity:1}')
-    && html.includes('marker-end="url(#m') && html.includes('data-s="101"') === false,
+    && html.includes('marker-end="url(#m') && html.includes('data-s="105"') && html.includes('data-t="121"'),
     "S1 الصحائف المولّدة تُظهر الأسهم المختارة بوضوح حتى في وضع الطالب، مع حفظ اتجاه المسبقات");
   check((html.match(/<a href="([^"]+)" aria-label="رمز QR/) || [])[1] === "https://schedule-kw.com/plans/s9/p1/" && !html.includes("dr-alfailakawi"), "S1 رمزُ QR يحمل الدومين الرسمي وحده");
   check(["المستوى 100", "المستوى 200", "المستوى 300", "المستوى 400"].every(label => html.includes(label)) && !html.includes("السنة الأولى") && !html.includes("فصل 1"), "S1 الأعمدةُ مستوياتٌ لا سنواتٌ ولا فصول");
