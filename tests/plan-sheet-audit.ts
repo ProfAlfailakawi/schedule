@@ -48,6 +48,10 @@ const model: SheetModel = {
   check(html.includes('id="stbtn"') && html.includes("planPassed:") && html.includes("المتاح لك الآن") && html.includes("@media print") && /#stbtn,#stbar/.test(html), "S1 وضعُ الطالب: يعلّم ما اجتازه على جهازه ويضيء المتاح، ولا يُطبع");
   check(html.includes("تحميل PDF") && html.includes("window.print()")
     && html.includes("@page{size:A4 landscape;margin:0}")
+    && html.includes('html[data-print-rotate="1"] #plan')
+    && html.includes("rotate(90deg) scale(.86)")
+    && html.includes("function printPlan()")
+    && html.includes("isStandalone&&isIOSPrint")
     && html.includes('#dview,.scroll{display:block!important;position:static!important;width:297mm!important;height:210mm!important')
     && html.includes('#plan{display:block!important;width:297mm!important;height:210mm!important;min-width:0!important')
     && html.includes('#plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}')
