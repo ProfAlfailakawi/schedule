@@ -54,6 +54,8 @@ const model: SheetModel = {
     && html.includes("/Count 1")
     && html.includes("navigator.share({files:[file],title:document.title})")
     && html.includes("const fit=Math.min(289/box.width,202/box.height)")
+    && html.includes("background.addColorStop(0,'#EEF4FF');background.addColorStop(1,'#F8FAFC')")
+    && html.includes("fit=Math.min(297/box.width,210/box.height)")
     && html.includes('#dview,.scroll{display:block!important;position:static!important;width:297mm!important;height:210mm!important')
     && html.includes('#plan{display:block!important;width:var(--print-plan-width,289mm)!important')
     && html.includes('#plan .card,#plan .edge{opacity:1!important;transform:none!important;animation:none!important}')
