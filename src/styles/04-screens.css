@@ -2427,7 +2427,9 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 @media(max-width:900px){.plan-start{grid-template-columns:1fr}.plan-steps ol{grid-template-columns:1fr}.plan-map-form{grid-template-columns:1fr}.plan-map-form>svg{justify-self:center;transform:rotate(90deg)}}
 @media(max-width:640px){
   .curriculum-admin{inline-size:100%;overflow-wrap:anywhere}
-  .curriculum-section-bar{grid-template-columns:auto minmax(0,1fr);gap:10px;padding:12px}
+  .curriculum-section-bar,.curriculum-section-bar:has(select+select){grid-template-columns:auto minmax(0,1fr);gap:10px;padding:12px}
+  /* Two dropdowns must never leave desktop's four columns active on phones. */
+  .curriculum-section-bar>div:nth-child(2){min-inline-size:0;overflow-wrap:normal;word-break:normal}
   .curriculum-section-bar select{grid-column:1/-1;inline-size:100%;min-inline-size:0}
   .plan-start{grid-template-columns:minmax(0,1fr);padding:var(--s4);gap:14px}
   .plan-start-form{min-width:0;padding:14px}

@@ -46,7 +46,7 @@ type Tab = "new" | "old" | "map";
 
 const RULE_FIELDS: Array<[keyof Rule, string, string]> = [
   ["degreeUnits", "مجموع وحدات الدرجة", "كما في «الوحدات المطلوبة» بصحيفة التخرج"],
-  ["fieldTrainingRequired", "لفتح التدريب الميداني", "الوحدات المجتازة قبل الميداني"],
+  ["fieldTrainingRequired", "لفتح التدريب الميداني (اختياري)", "اتركه فارغًا إذا لم تتضمن هذه الصحيفة تدريبًا ميدانيًا"],
   ["graduateRegularPassed", "خريج / متوقع · فصل عادي", "حدّ طلب الخريج في الفصل العادي"],
   ["graduateSummerPassed", "خريج / متوقع · فصل صيفي", "حدّ طلب الخريج في الفصل الصيفي"],
 ];
@@ -214,11 +214,13 @@ export default function CurriculumPlans({
   const startRule = (plan: CurriculumPlan) => {
     const current = ruleOf(plan.id).rule;
     const seed = current || ruleOf(livePlans.find(row => row.id !== plan.id)?.id).rule;
-    setRuleDraft({ planId: plan.id, values: Object.fromEntries(RULE_FIELDS.map(([key]) => [key, seed ? String(seed[key]) : ""])) });
+    setRuleDraft({ planId: plan.id, values: Object.fromEntries(RULE_FIELDS.map(([key]) => [key, key === "fieldTrainingRequired" ? (current?.fieldTrainingRequired ? String(current.fieldTrainingRequired) : "") : (seed ? String(seed[key]) : "")])) });
   };
   const saveRule = async () => {
     if (!ruleDraft) return;
-    const values = Object.fromEntries(RULE_FIELDS.map(([key]) => [key, Number(ruleDraft.values[key])]));
+    // An empty field-training threshold means this plan has no field training. Persist 0 explicitly,
+    // rather than omitting the key and inheriting a guessed threshold from another plan.
+    const values = Object.fromEntries(RULE_FIELDS.map(([key]) => [key, Number(ruleDraft.values[key] || 0)]));
     const body = await mutate(`/api/curriculum/plans/${encodeURIComponent(ruleDraft.planId)}`, json("PUT", { AdSectionId: sectionId, degreeRule: values }),
       "حُفظت شروط التخرج. يقيس الاستبيان عليها طلبة هذه الصحيفة من الآن.");
     if (body) setRuleDraft(null);
@@ -312,7 +314,7 @@ export default function CurriculumPlans({
             ))}
           </div>
           <div className="plan-rule-actions">
-            <PrimaryButton data-guide-ignore="حفظ شروط التخرج لهذه الصحيفة" onClick={saveRule} disabled={busy || RULE_FIELDS.some(([key]) => !editing.values[key])}><Check /> حفظ الشروط</PrimaryButton>
+            <PrimaryButton data-guide-ignore="حفظ شروط التخرج لهذه الصحيفة" onClick={saveRule} disabled={busy || RULE_FIELDS.some(([key]) => key !== "fieldTrainingRequired" && !editing.values[key]?.trim())}><Check /> حفظ الشروط</PrimaryButton>
             <SecondaryButton data-guide-ignore="إلغاء تعديل شروط التخرج" onClick={() => setRuleDraft(null)} disabled={busy}>إلغاء</SecondaryButton>
           </div>
         </div>
@@ -329,7 +331,7 @@ export default function CurriculumPlans({
     return (
       <div className="plan-rule">
         <dl className="plan-rule-grid">
-          {RULE_FIELDS.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{num(rule[key])}</dd></div>)}
+          {RULE_FIELDS.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{key === "fieldTrainingRequired" && rule[key] === 0 ? "لا ينطبق" : num(rule[key])}</dd></div>)}
         </dl>
         <div className="plan-rule-foot">
           <small>{inherited ? "منقولة من قواعد القسم السابقة" : "شروط تخرج معتمدة لهذه الصحيفة"}</small>

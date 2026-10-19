@@ -152,6 +152,18 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
   check(ok(low) && (low as any).rule.degreeUnits === 12, "رقمٌ دون ٣٠ يُقبل");
   const explicit = readDegreeRuleInput({ degreeUnits: 75, fieldTrainingRequired: 90, graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50);
   check(ok(explicit) && (explicit as any).rule.fieldTrainingRequired === 90, "شاشة الصحائف: التدريب الميداني المُرسَل يُقبل كما كُتب");
+  const noTraining = readDegreeRuleInput({ degreeUnits: 75, fieldTrainingRequired: 0, graduateRegularPassed: 60, graduateSummerPassed: 63 }, 102);
+  check(ok(noTraining) && (noTraining as any).rule.fieldTrainingRequired === 0, "صحيفة لا تحتوي تدريبًا ميدانيًا تحفظ استثناء التدريب بصفر صريح، دون تخمين رقم");
+  const plansScreen = fs.readFileSync(path.join(process.cwd(), "src/components/CurriculumPlans.tsx"), "utf8");
+  check(plansScreen.includes('key !== "fieldTrainingRequired" && !editing.values[key]?.trim()')
+    && plansScreen.includes('current?.fieldTrainingRequired ? String(current.fieldTrainingRequired) : ""')
+    && plansScreen.includes('Number(ruleDraft.values[key] || 0)')
+    && plansScreen.includes('rule[key] === 0 ? "لا ينطبق"'),
+    "حقل التدريب اختياري في الصحيفة، والفراغ يُحفظ بلا شرط ويظهر لا ينطبق");
+  const curriculumCss = fs.readFileSync(path.join(process.cwd(), "src/styles/04-screens.css"), "utf8");
+  check(curriculumCss.includes('.curriculum-section-bar,.curriculum-section-bar:has(select+select){grid-template-columns:auto minmax(0,1fr)')
+    && curriculumCss.includes('.curriculum-section-bar select{grid-column:1/-1'),
+    "الكلية والقسم في شاشة الصحائف على الهاتف لا يضغطان العنوان إلى عمود حرفي");
   check(!ok(readDegreeRuleInput({ degreeUnits: "abc", graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50)), "ما ليس رقماً يُرفض");
   check(!ok(readDegreeRuleInput({ degreeUnits: 75, graduateRegularPassed: -5, graduateSummerPassed: 63 }, 50)) && !ok(readDegreeRuleInput({ degreeUnits: 5000, graduateRegularPassed: 60, graduateSummerPassed: 63 }, 50)), "السالب وما فوق ٩٩٩ يُرفضان (خطأ كتابة)");
   const sectionsScreen = fs.readFileSync(path.join(process.cwd(), "src/components/Sections.tsx"), "utf8");
