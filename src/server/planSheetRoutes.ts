@@ -179,8 +179,10 @@ const FILTER_SCRIPT = `<script>(function(){var q=document.getElementById('q');if
 
 export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void {
   const roleId = (req: any): string => roleDefinition(req.user?.Role).id;
-  const canPublish = (req: any, collegeId: number, sectionId: number) =>
+  const canViewSheets = (req: any, collegeId: number, sectionId: number) =>
     deps.isPowerUser(req) || (roleId(req) === "committeeChair" && deps.isScopeAllowed(req, collegeId, sectionId));
+  /* Publishing and unpublishing affect public pages; the owner reserved these actions for admin. */
+  const canPublish = (req: any, _collegeId: number, _sectionId: number) => deps.isPowerUser(req);
   const fail = (res: Response, status: number, error: string) => res.status(status).json({ error });
 
   const publicRead = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false, message: "طلباتٌ كثيرة. انتظر قليلاً." });
@@ -217,7 +219,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
     for (const track of tracks) {
       const section = track.canonical, sectionId = Number(section.AdSectionId), collegeId = Number(section.AdCollegeId);
       const members = [section, ...track.mirrors].map(row => Number(row.AdSectionId));
-      if (!canPublish(req, collegeId, sectionId)) continue;
+      if (!canViewSheets(req, collegeId, sectionId)) continue;
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => !plan.virtual && plan.status !== "archived");
       const sheets: any[] = [];
       for (const plan of plans) {
@@ -236,6 +238,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
 
   /* نشرُ صحيفةٍ واحدة، أو كلِّ صحائف قسمٍ، أو كلِّ ما يملكه الحساب من صحائفَ معتمدة. */
   app.post("/api/plan-sheets/publish", deps.requireAuth, publishLimit, async (req: Request, res: Response) => {
+    if (!deps.isPowerUser(req)) return fail(res, 403, "نشر الصحائف لإدارة النظام وحدها.");
     const body = req.body || {};
     const targets: Array<{ planId: string; sectionId: number }> = [];
     if (body.planId) targets.push({ planId: String(body.planId), sectionId: Number(body.sectionId || 0) });
@@ -269,6 +272,7 @@ export function registerPlanSheetRoutes(app: Express, deps: PlanSheetDeps): void
   });
 
   app.post("/api/plan-sheets/unpublish", deps.requireAuth, publishLimit, async (req: Request, res: Response) => {
+    if (!deps.isPowerUser(req)) return fail(res, 403, "إيقاف نشر الصحائف لإدارة النظام وحدها.");
     const planId = String(req.body?.planId || "");
     const sheet = await Repository.getPublishedSheet(planId);
     if (!sheet) return fail(res, 404, "هذه الصحيفة غير منشورة.");
