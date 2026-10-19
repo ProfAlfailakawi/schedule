@@ -124,18 +124,18 @@ html.me #fitbtn,html.me #pdfbtn{bottom:calc(70px + env(safe-area-inset-bottom,0)
  /* iOS Safari/AirPrint ignores @page landscape: paint the 297×210 sheet
     rotated inside ONE portrait A4 physical page, as in report printing. */
  html[data-print-rotate="1"],html[data-print-rotate="1"] body{
-  width:210mm!important;height:297mm!important;max-height:297mm!important;
+  width:210mm!important;height:260mm!important;max-height:260mm!important;
   overflow:hidden!important;direction:ltr!important
  }
  html[data-print-rotate="1"] #dview,
  html[data-print-rotate="1"] .scroll{
-  width:210mm!important;height:255.42mm!important;max-height:255.42mm!important;
+  width:210mm!important;height:260mm!important;max-height:260mm!important;
   overflow:visible!important;direction:ltr!important
  }
  html[data-print-rotate="1"] #plan{
   width:297mm!important;height:210mm!important;
   transform-origin:0 0!important;
-  transform:translate(180.6mm,20.79mm) rotate(90deg) scale(.86)!important;
+  transform:translate(196.35mm,19.305mm) rotate(90deg) scale(.87)!important;
   margin:0!important;direction:rtl!important
  }
 }
@@ -155,16 +155,22 @@ const isIOSPrint=/iPad|iPhone|iPod/i.test(navigator.userAgent||'');
 const isStandalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 function printPlan(){
  if(isStandalone&&isIOSPrint){
-  // iOS installed PWAs may silently ignore window.print(); open the
-  // public sheet in Safari instead, where Share > Print / Save PDF works.
+  // A new tab from an installed iOS PWA may display a blank screen.
+  // Use the native share sheet instead; it can pass the public URL to
+  // Safari for printing, without leaving the user on a blank page.
   const url=new URL(location.href);url.searchParams.delete('pdf');
-  const a=document.createElement('a');a.href=url.href;a.target='_blank';a.rel='noopener';
-  document.body.appendChild(a);a.click();a.remove();
+  if(navigator.share){
+   navigator.share({title:document.title,url:url.href}).catch(()=>{});
+   return;
+  }
+  // Fallback for older embedded browsers with no Web Share API.
+  alert('افتح رابط الصحيفة في Safari ثم اختر مشاركة ← طباعة.');
   return;
  }
  if(isIOSPrint)document.documentElement.dataset.printRotate='1';
  window.print();
 }
+if(isStandalone&&isIOSPrint)document.getElementById('pdfbtn').lastChild.textContent='مشاركة / طباعة';
 addEventListener('afterprint',()=>{delete document.documentElement.dataset.printRotate});
 const C=D.C,EL=D.EL,E=D.E,H=D.H;
 let sel=null;
