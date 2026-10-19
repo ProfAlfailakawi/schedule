@@ -442,7 +442,7 @@ function metricBadge(metric: unknown) {
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
   /* نشرُ الصحائف للعامة: رئيس لجنة الجدول وإدارة النظام وحدهما (والخادمُ يتحقق ثانيةً). */
-  const canPublishSheets = isPowerAdmin || roleDefinition((user as any)?.Role).id === "committeeChair";
+  const canPublishSheets = isPowerAdmin;
   const [sheetSummary, setSheetSummary] = useState<{ published: number; total: number } | null>(null);
   const loadSheetSummary = useCallback(() => {
     if (!canPublishSheets) return;
@@ -3883,7 +3883,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </Surface>
             </div>
           ) : null}
-          {canPublishSheets && activeInsightKey === "sheet" ? (
+          {isPowerAdmin && activeInsightKey === "sheet" ? (
             <div className="content-stack insight-scene-panel" id="insight-panel-sheet" role="tabpanel" aria-labelledby="insight-tab-sheet" tabIndex={0}>
               <PlanSheetPublisher onChanged={loadSheetSummary} focusSectionId={Number(sectionId) || 0} />
             </div>
