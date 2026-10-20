@@ -69,7 +69,7 @@ type VisitingTeachingData = {
   instructors: AdInstructor[];
   rows: FSchedule[];
 };
-type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "visiting" | "visitingHistory" | "fairness" | "balance";
+type Lens = "list" | "week" | "instructor" | "room" | "roomInstructor" | "matrix" | "time" | "visiting" | "visitingHistory" | "fairness" | "balance";
 type PrintKind = Lens | "comprehensive" | "comprehensive-branch" | null;
 
 /* Safari is the one printing engine here that ignores `@page size` (so wide
@@ -148,6 +148,7 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
   { id: "week", label: "الأسبوع", hint: "الأسبوع كشبكة أيام وأوقات", icon: <CalendarDays /> },
   { id: "instructor", label: "الأساتذة", hint: "مواعيد كل أستاذ وحمله الأسبوعي", icon: <UserRound /> },
   { id: "room", label: "القاعات", hint: "ما تشغله كل قاعة ومتى تفرغ", icon: <Building2 /> },
+  { id: "roomInstructor", label: "القاعات والأساتذة", hint: "كل قاعة ومبناها وأساتذتها، وكل أستاذ والقاعات التي يدرّس فيها", icon: <Landmark /> },
   { id: "matrix", label: "القاعات × الأوقات", hint: "شبكة تقاطع كل قاعة مع كل وقت", icon: <Table2 /> },
   { id: "time", label: "الأوقات", hint: "توزّع المواعيد على ساعات اليوم", icon: <Clock3 /> },
   { id: "visiting", label: "المنتدبون", hint: "منتدبو الفصل الحالي أو المقارنة عبر كل الفصول", icon: <UserPlus /> },
@@ -178,10 +179,10 @@ const ROLE_LENSES: Record<string, Lens[]> = {
      والقائمةُ — المعتمدة وحدها — تكون فارغةً قبل أن يعتمد التسجيل شيئاً، فشاشةٌ
      أولى فارغة لا تجيب أحداً. ثم الجداول نفسها وما يُكمل الصورة. */
   dean:           ["balance", "list", "week", "fairness", "visiting"],
-  viceDean:       ["balance", "list", "week", "fairness", "visiting", "instructor", "room", "matrix"],
+  viceDean:       ["balance", "list", "week", "fairness", "visiting", "instructor", "room", "roomInstructor", "matrix"],
   registrarDean:  ["balance", "fairness"],
-  registrarHead:  ["balance", "list", "room", "matrix"],
-  registrarStaff: ["balance", "list", "room"],
+  registrarHead:  ["balance", "list", "room", "roomInstructor", "matrix"],
+  registrarStaff: ["balance", "list", "room", "roomInstructor"],
 };
 
 /**
@@ -555,6 +556,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     return () => query.removeEventListener?.("change", sync);
   }, []);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [directorySide, setDirectorySide] = useState<"rooms" | "teachers">("rooms");
   const [selectedResultId, setSelectedResultId] = useState<number | null>(null);
   const [occupancy, setOccupancy] = useState<any>(null);
   const [occupancyLoading, setOccupancyLoading] = useState(false);
@@ -1601,7 +1603,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     const root = document.documentElement;
     const originalTitle = document.title;
     const reportTitles: Record<Exclude<PrintKind, null>, string> = {
-      list: "نتائج الاستعلام", week: "الأسبوع", instructor: "تقرير الأستاذ", room: "إشغال القاعات والفراغات",
+      list: "نتائج الاستعلام", week: "الأسبوع", instructor: "تقرير الأستاذ", room: "إشغال القاعات والفراغات", roomInstructor: "القاعات والأساتذة",
       matrix: "القاعات والأوقات", time: "الأوقات", visiting: "المنتدبون — الفصل الحالي",
       visitingHistory: "المنتدبون — كل الفصول", fairness: "عدالة توزيع العبء", balance: "ميزان الأقسام",
       comprehensive: "تقرير الجدول الشامل", "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
@@ -1875,6 +1877,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   };
 
   const groups = lens === "instructor" ? byInstructor : [];
+  const roomTeacherIndex = useMemo(() => roomInstructorDirectory(results, instructorById), [results, instructorById]);
   const maxLoad = Math.max(1, ...byInstructor.map(group => group.load));
   const maxSlot = Math.max(1, ...byTime.map(slot => slot.count));
   const selectedResult = selectedResultId === null ? null : results.find(row => row.id === selectedResultId) || null;
@@ -2878,6 +2881,28 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           ) : (
             <div className="query-empty"><EmptyState title="لا يوجد تاريخ منتدبين" detail="بعد حفظ منتدبي الفصول سيظهر هنا سجل المقارنة بين السنوات." /></div>
           )
+        ) : lens === "roomInstructor" ? (
+          <div className="room-teacher-report">
+            <div className="room-teacher-switch" role="group" aria-label="اتجاه التقرير">
+              <button type="button" data-guide-ignore="تبديل اتجاه التقرير بين القاعات والأساتذة للعرض فقط" className={directorySide === "rooms" ? "active" : ""} aria-pressed={directorySide === "rooms"} onClick={() => setDirectorySide("rooms")}><Building2 aria-hidden="true" /> القاعات <b>{num(roomTeacherIndex.rooms.length)}</b></button>
+              <button type="button" data-guide-ignore="تبديل اتجاه التقرير بين الأساتذة والقاعات للعرض فقط" className={directorySide === "teachers" ? "active" : ""} aria-pressed={directorySide === "teachers"} onClick={() => setDirectorySide("teachers")}><UserRound aria-hidden="true" /> الأساتذة <b>{num(roomTeacherIndex.teachers.length)}</b></button>
+            </div>
+            <div className="room-teacher-cards">
+              {directorySide === "rooms" ? roomTeacherIndex.rooms.map(room => (
+                <article key={`${room.building}/${room.hall}`} className="room-teacher-card">
+                  <div className="room-teacher-symbol"><Building2 aria-hidden="true" /></div>
+                  <div className="room-teacher-content"><small>مبنى <bdi dir="ltr">{room.building}</bdi></small><h3>قاعة <bdi dir="ltr">{room.hall}</bdi></h3><div className="room-teacher-tags">{[...room.teachers.entries()].sort((a,b) => byArabic(a[1],b[1])).map(([id,name]) => <span key={id}><UserRound aria-hidden="true" />{name}</span>)}</div></div>
+                  <div className="room-teacher-count"><b>{num(room.teachers.size)}</b><small>أساتذة</small></div>
+                </article>
+              )) : roomTeacherIndex.teachers.map(teacher => (
+                <article key={teacher.id} className="room-teacher-card">
+                  <div className="room-teacher-symbol"><UserRound aria-hidden="true" /></div>
+                  <div className="room-teacher-content"><small>عضو هيئة التدريس</small><h3>{teacher.name}</h3><div className="room-teacher-tags">{[...teacher.rooms.values()].sort((a,b) => byRoomLabel(`${a.building}/${a.hall}`,`${b.building}/${b.hall}`)).map(room => <span key={`${room.building}/${room.hall}`}><Building2 aria-hidden="true" /><bdi dir="ltr">{room.building} / {room.hall}</bdi></span>)}</div></div>
+                  <div className="room-teacher-count"><b>{num(teacher.rooms.size)}</b><small>قاعات</small></div>
+                </article>
+              ))}
+            </div>
+          </div>
         ) : lens === "instructor" ? (
           <div className="lens-groups">
             {groups.map(group => (
@@ -3373,6 +3398,30 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
 const placeOfRow = (row: FSchedule) =>
   [String(row.AdRoomCode || "").trim(), String(row.AdRoomHall || "").trim()].filter(Boolean).join("/") || "بلا قاعة";
 
+/** A room is identified by its building and hall together; names come from the
+ * same scoped schedule rows used by the other reports. Repeated lectures count
+ * once per instructor/room pair. */
+function roomInstructorDirectory(rows: FSchedule[], instructors: Map<number, AdInstructor>) {
+  const rooms = new Map<string, { building: string; hall: string; teachers: Map<number, string>; appointments: number }>();
+  const teachers = new Map<number, { id: number; name: string; rooms: Map<string, { building: string; hall: string }>; appointments: number }>();
+  rows.forEach(row => {
+    const building = cleanOptionText(row.AdRoomCode);
+    const hall = cleanOptionText(row.AdRoomHall);
+    const name = cleanOptionText(instructors.get(Number(row.AdInstructorId))?.AdInstructorName);
+    if (!building || !hall || !name) return;
+    const key = `${optionKey(building)}\u0000${optionKey(hall)}`;
+    const id = Number(row.AdInstructorId);
+    const room = rooms.get(key) || { building, hall, teachers: new Map<number, string>(), appointments: 0 };
+    room.teachers.set(id, name); room.appointments++; rooms.set(key, room);
+    const teacher = teachers.get(id) || { id, name, rooms: new Map<string, { building: string; hall: string }>(), appointments: 0 };
+    teacher.rooms.set(key, { building, hall }); teacher.appointments++; teachers.set(id, teacher);
+  });
+  return {
+    rooms: [...rooms.values()].sort((a, b) => byRoomLabel(`${a.building}/${a.hall}`, `${b.building}/${b.hall}`)),
+    teachers: [...teachers.values()].sort((a, b) => byArabic(a.name, b.name) || a.id - b.id),
+  };
+}
+
 function groupRows(rows: FSchedule[], keyOf: (row: FSchedule) => string) {
   const groups = new Map<string, FSchedule[]>();
   rows.forEach(row => {
@@ -3666,6 +3715,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     week: "الأسبوع",
     instructor: "الأساتذة",
     room: "إشغال القاعات والفراغات",
+    roomInstructor: "القاعات والأساتذة",
     matrix: "القاعات × الأوقات",
     time: "الأوقات",
     visiting: "المنتدبون — الفصل الحالي",
@@ -3986,6 +4036,27 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
         }) : <p className="print-empty">لا توجد بيانات أساتذة ضمن النطاق المحدد.</p>}
       </div>
     );
+  }
+
+  if (kind === "roomInstructor") {
+    const directory = roomInstructorDirectory(rows, instructorById);
+    const roomPages = paginateItems(directory.rooms, 12);
+    const teacherPages = paginateItems(directory.teachers, 12);
+    const total = roomPages.length + teacherPages.length;
+    const printList = (entries: Array<{ title: string; subtitle: string; names: string[] }>, title: string, page: number) => (
+      <section className="print-explicit-page" key={`${title}-${page}`}>
+        <PrintLetterhead title={`القاعات والأساتذة — ${title}`} scope={scopeLine} college={collegeName} footer={false} />
+        <div className="print-query-summaryline"><span><b>{directory.rooms.length}</b> قاعة</span><span><b>{directory.teachers.length}</b> أستاذ</span></div>
+        <table className="print-room-teacher-table"><thead><tr><th>{title === "حسب القاعة" ? "القاعة" : "الأستاذ"}</th><th>{title === "حسب القاعة" ? "المبنى" : "القاعات والمباني"}</th><th>{title === "حسب القاعة" ? "الأساتذة" : "العدد"}</th></tr></thead>
+          <tbody>{entries.map(entry => <tr key={`${entry.title}/${entry.subtitle}`}><th>{entry.title}</th><td>{entry.subtitle}</td><td>{entry.names.join(" · ")}</td></tr>)}</tbody>
+        </table>
+        <PrintPageMeta page={page} total={total} college={collegeName} date={issueDate} />
+      </section>
+    );
+    return <div className="print-report print-wide print-query-report print-room-teacher-report">
+      {roomPages.map((page, index) => printList(page.map(room => ({ title: `قاعة ${room.hall}`, subtitle: `مبنى ${room.building}`, names: [...room.teachers.values()].sort(byArabic) })), "حسب القاعة", index + 1))}
+      {teacherPages.map((page, index) => printList(page.map(teacher => ({ title: teacher.name, subtitle: [...teacher.rooms.values()].map(room => `${room.building}/${room.hall}`).join(" · "), names: [String(teacher.rooms.size)] })), "حسب الأستاذ", roomPages.length + index + 1))}
+    </div>;
   }
 
   if (kind === "room") {
