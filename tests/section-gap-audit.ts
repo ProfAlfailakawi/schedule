@@ -55,7 +55,9 @@ check(planning.includes("importOnly ? null : buildReady") && (planning.match(/im
 check(planning.includes("const autoApply = importOnly") && planning.includes('preview!.source !== "scan"') && !/const autoApply[^;]*nReview/.test(planning) && planning.includes("{preview && !autoApply ? createPortal("), "التعبئة المباشرة بما قُرئ بوضوح بلا نافذة مراجعة، والممسوح أو الفصل المخالف يمرّ بالمراجعة");
 check(planning.includes('importOnly && saveState === "error"') && planning.includes("أعد المحاولة"), "الشاشة المختصرة: تعذّر الحفظ يظهر معه زر إعادة المحاولة");
 check(sheet.includes("useDialogDismiss(!reviewing, onClose)") && sheet.includes("onPreviewChange={setReviewing}") && planning.includes("onPreviewChange?.(Boolean(preview))"), "الـEscape لنافذة المراجعة الداخلية وحدها ما دامت مفتوحة");
-import { Result } from "../src/components/QuickPlanSheet";
+import { Result, demoPlanItems } from "../src/components/QuickPlanSheet";
+const demoItems = demoPlanItems([c(1, "101", 30, 2, 0), c(2, "102", 30, 3, 0), c(3, "103", 30, 0, 0)]);
+check(demoItems.length === 2 && demoItems[0].extra === 2 && demoItems[1].extra === 2 && demoItems.every(item => item.basis === "plan"), "الديمو: مقارنة توضيحية من مقررات القسم الفعلية وبحساب التخطيط نفسه، بلا حفظ");
 const sample = { planItems: many.slice(0, 6).map(item => ({ ...item, basis: "plan" as const })), studentItems: [], planImported: true, loaded: true, ready: true, source: "المتبقي.pdf", reload: () => {} } as any;
 const rendered = renderToStaticMarkup(React.createElement(Result, { gap: sample, onClose: () => {} }));
 check(rendered.includes("تحتاج شعباً") && (rendered.match(/<li/g) || []).length === 4 && rendered.includes("أخرى") && rendered.includes("المتبقي.pdf") && rendered.includes("gap-cells"), "النتيجة: سطرٌ يعدّ المقررات، وأربعة أسطر، و«و… أخرى»، واسم الملف، ومربعاتٌ للموجود والمطلوب");

@@ -10210,6 +10210,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           termId={filterTerm}
           signatureStage={approvalStage}
           powerAdmin={Boolean(user?.IsAdminUser || user?.IsRootAdmin)}
+          demoMode={Boolean(user?.IsDemo)}
           /* ── الشريط يسمع ما يقع في الجدول تحته ──────────────────────────
              تعديلُ موعدٍ يغيّر سجلَّ الاعتماد على الخادم: جدولٌ مقبول يعود
              جولةً جديدة، وشعبةٌ تُضاف بعد التوقيع تنتظر إقراراً. وكان الشريط
