@@ -69,7 +69,7 @@ export function useSectionGap(collegeId: number, sectionId: number, termId: numb
   const reload = useCallback(() => setBump(value => value + 1), []);
   /* مع كشفٍ مرفوع لا تكتمل حسبة التخطيط قبل أن يصل تاريخ الفصول (وإلا اقترح «شعبةً واحدة» فأخفى النقص). */
   const ready = data !== null && (!data.planImported || historyReady);
-  return { planItems, studentItems, planImported: Boolean(data?.planImported), loaded: data !== null, ready, source: data?.planSource?.fileName || "", reload };
+  return { planItems, studentItems, courses: data?.courses || [], planImported: Boolean(data?.planImported), loaded: data !== null, ready, source: data?.planSource?.fileName || "", reload };
 }
 
 export type Gap = ReturnType<typeof useSectionGap>;

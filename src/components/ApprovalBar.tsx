@@ -76,6 +76,7 @@ interface Props {
   signatureStage: "committee" | "head" | null;
   /** حسابُ الإدارة الرئيسي يُرسل ويوقّع نيابةً حيث يسمح الخادم. */
   powerAdmin?: boolean;
+  demoMode?: boolean;
   /** يتغيّر كلّما تغيّر الجدول تحته، فيُعاد قراءةُ الحال. */
   refreshSignal?: number;
   /** أيملك صاحب الحساب صلاحية تعديل المقررات؟ وإلا عُطّلت خاناتها وظهر القفل. */
@@ -119,7 +120,7 @@ const arabicDate = (iso?: string) => {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
-export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, canEditCourses = false, onOpenRow, onChanged, onLockChange, onOpenNotes, onOpenCourses, onStudentGaps }: Props) {
+export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, demoMode = false, refreshSignal = 0, canEditCourses = false, onOpenRow, onChanged, onLockChange, onOpenNotes, onOpenCourses, onStudentGaps }: Props) {
   const [state, setState] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -678,7 +679,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             <FileUp aria-hidden="true" />
           </button>
         ) : null}
-        {planSheet ? <QuickPlanSheet collegeId={collegeId} sectionId={sectionId} termId={termId} gap={gap} onClose={() => setPlanSheet(false)} /> : null}
+        {planSheet ? <QuickPlanSheet collegeId={collegeId} sectionId={sectionId} termId={termId} gap={gap} demoMode={demoMode} onClose={() => setPlanSheet(false)} /> : null}
         {canSignNow && blockingConflicts === 0 ? (
           <span className="apb-badge apb-ready" data-tone="success" data-guide-ignore="شارة جاهزية التوقيع — عرضٌ لا فعل">
             <ShieldCheck aria-hidden="true" /><span>جاهز للتوقيع</span>
