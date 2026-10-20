@@ -2891,14 +2891,18 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               {directorySide === "rooms" ? roomTeacherIndex.rooms.map(room => (
                 <article key={`${room.building}/${room.hall}`} className="room-teacher-card">
                   <div className="room-teacher-symbol"><Building2 aria-hidden="true" /></div>
-                  <div className="room-teacher-content"><small>مبنى <bdi dir="ltr">{room.building}</bdi></small><h3>قاعة <bdi dir="ltr">{room.hall}</bdi></h3><div className="room-teacher-tags">{[...room.teachers.entries()].sort((a,b) => byArabic(a[1],b[1])).map(([id,name]) => <span key={id}><UserRound aria-hidden="true" />{name}</span>)}</div></div>
-                  <div className="room-teacher-count"><b>{num(room.teachers.size)}</b><small>أساتذة</small></div>
+                  <div className="room-teacher-content">
+                    <small>مبنى <bdi dir="ltr">{room.building}</bdi></small>
+                    <h3>قاعة <bdi dir="ltr">{room.hall}</bdi></h3>
+                    <div className="room-teacher-tags">{[...room.teachers.entries()].sort((a,b) => byArabic(a[1],b[1])).map(([id,name]) => <span key={id}><UserRound aria-hidden="true" />{name}</span>)}</div>
+                  </div>
+                  <div className="room-teacher-count"><b>{countOf(room.teachers.size, AR.instructor)}</b></div>
                 </article>
               )) : roomTeacherIndex.teachers.map(teacher => (
                 <article key={teacher.id} className="room-teacher-card">
                   <div className="room-teacher-symbol"><UserRound aria-hidden="true" /></div>
                   <div className="room-teacher-content"><small>عضو هيئة التدريس</small><h3>{teacher.name}</h3><div className="room-teacher-tags">{[...teacher.rooms.values()].sort((a,b) => byRoomLabel(`${a.building}/${a.hall}`,`${b.building}/${b.hall}`)).map(room => <span key={`${room.building}/${room.hall}`}><Building2 aria-hidden="true" /><bdi dir="ltr">{room.building} / {room.hall}</bdi></span>)}</div></div>
-                  <div className="room-teacher-count"><b>{num(teacher.rooms.size)}</b><small>قاعات</small></div>
+                  <div className="room-teacher-count"><b>{countOf(teacher.rooms.size, AR.room)}</b></div>
                 </article>
               ))}
             </div>
@@ -4046,7 +4050,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     const printList = (entries: Array<{ title: string; subtitle: string; names: string[] }>, title: string, page: number) => (
       <section className="print-explicit-page" key={`${title}-${page}`}>
         <PrintLetterhead title={`القاعات والأساتذة — ${title}`} scope={scopeLine} college={collegeName} footer={false} />
-        <div className="print-query-summaryline"><span><b>{directory.rooms.length}</b> قاعة</span><span><b>{directory.teachers.length}</b> أستاذ</span></div>
+        <div className="print-query-summaryline"><span>{countOf(directory.rooms.length, AR.room)}</span><span>{countOf(directory.teachers.length, AR.instructor)}</span></div>
         <table className="print-room-teacher-table"><thead><tr><th>{title === "حسب القاعة" ? "القاعة" : "الأستاذ"}</th><th>{title === "حسب القاعة" ? "المبنى" : "القاعات والمباني"}</th><th>{title === "حسب القاعة" ? "الأساتذة" : "العدد"}</th></tr></thead>
           <tbody>{entries.map(entry => <tr key={`${entry.title}/${entry.subtitle}`}><th>{entry.title}</th><td>{entry.subtitle}</td><td>{entry.names.join(" · ")}</td></tr>)}</tbody>
         </table>
