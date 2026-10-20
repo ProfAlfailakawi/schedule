@@ -5,3 +5,4 @@
 .invitation-card header>svg{left:24px;right:auto;inset-inline-start:auto}
 
 .invitation-card footer a{display:inline-block;max-inline-size:100%;font:700 17px/1.6 "Plex Arabic",sans-serif;color:#123e35;text-decoration:none;border-bottom:1px solid #d5bd84}.invitation-card footer a:hover{text-decoration:underline}.invitation-card footer a:focus-visible{outline:2px solid #123e35;outline-offset:3px}
+.invitation-card-qr{display:block;width:112px;height:112px;margin:0 auto 10px;padding:7px;border-radius:12px;background:#fff;image-rendering:pixelated}

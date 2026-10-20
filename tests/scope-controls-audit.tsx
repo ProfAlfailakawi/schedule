@@ -55,9 +55,11 @@ check("رابط الدعوة يملأ حقلي الدخول ويمسح بيان�
   assert.equal(photoInvitationHref("https://schedule-kw.com/", "tsbdept", "different"), null);
   assert(login.includes("parseInvitationHash(hash)") && login.includes("setUsername(invite.username)") && login.includes("setPassword(invite.password)"));
   assert(login.includes('window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)') && invitation.includes("invitationHref(SITE, login, temporaryPassword)"));
-  assert(invitation.includes('const displayUrl = "schedule-kw.com"') && invitation.includes('<footer><a href={url}') && invitation.includes('clipboard.writeText(url)'));
+  assert(invitation.includes('const displayUrl = "schedule-kw.com"') && invitation.includes('<a href={url}') && invitation.includes('clipboard.writeText(url)'));
   assert(!invitation.includes('credential("كلمة المرور المؤقتة"') && !invitation.includes('<div className="invitation-credential"><small>كلمة المرور المؤقتة</small>'));
   assert(invitation.includes('credential("اسم المستخدم", login, 620)') && invitation.includes('const url = photoUrl || invitationHref(SITE, login, temporaryPassword)'));
+  assert(invitation.includes('code.addData(url)') && invitation.includes('ctx.drawImage(qr, 500, 866, 200, 200)'));
+  assert(invitation.includes('اضغط مطولاً على QR Code لفتح الموقع') && invitation.includes('className="invitation-card-qr"'));
 });
 check("أحدث فصل أُنشئ يبقى فارغًا، والفصل الأقدم الفارغ يختفي", () => {
   const terms = [{ AdTermId: 11, AdTermName: "الفصل الثاني 2026/2027", AdTermClosed: false }, { ...term, AdTermClosed: false }, { AdTermId: 9, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: true }];
