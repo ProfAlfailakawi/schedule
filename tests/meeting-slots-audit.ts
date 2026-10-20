@@ -90,18 +90,24 @@ const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 const route = server.slice(server.indexOf('app.post("/api/schedules/meeting-slots"'), server.indexOf('const SCHEDULE_ORIGIN_KINDS'));
 check(/getSchedulesByScope\(\{\s*termId\s*\}\)/.test(route), "الخادم يقرأ صفوف الفصل كله (termId فقط، بلا كلية/قسم)");
 check(/computeMeetingSlots\(/.test(route) && !/SCHEDULE_DAY_START/.test(route), "الحساب في utils/meetingSlots وحده — لا نسخة ثانية في الخادم");
-check(/requirePermission\(7\)/.test(route), "المسار محمي بصلاحية الجدول");
+check(/requireMeetingAccess/.test(route), "المسار محمي بصلاحية أداة الاجتماع");
 check(!/AdCourseName|AdRoomCode|AdCollegeName/.test(route), "لا يخرج من المسار إلا متفرغ/مشغول — لا مقرر ولا قاعة ولا كلية");
 check(/meetingExcludedIds\(termId\)/.test(route) && /participantIds/.test(route), "الخادم هو الحَكَم: يُسقط «هيئة تدريسية» والمنتدبين مما أرسله العميل");
-const helper = server.slice(server.indexOf("async function meetingExcludedIds"), server.indexOf('app.get("/api/schedules/meeting-participants"'));
+const helper = server.slice(server.indexOf("async function meetingExcludedIds"), server.indexOf("const requireMeetingAccess"));
+const departmentHelper = server.slice(server.indexOf("async function meetingDepartmentPeople"), server.indexOf('app.get("/api/schedules/meeting-participants"'));
 const participantsRoute = server.slice(server.indexOf('app.get("/api/schedules/meeting-participants"'), server.indexOf('app.post("/api/schedules/meeting-slots"'));
-check(/departmentFamily\(/.test(participantsRoute) && /isScopeAllowed\(/.test(participantsRoute), "اجتماع القسم: أساتذته من كل كلياته، ضمن نطاق القارئ");
+check(/departmentFamily\(/.test(departmentHelper) && /isScopeAllowed\(/.test(departmentHelper), "اجتماع القسم: أساتذته من كل كلياته، ضمن نطاق القارئ");
 check(/termVisitingIds\(/.test(helper) && /meetingParticipants\(/.test(helper) && !/collegeId|sectionId/.test(helper.replace(/getDelegateAffiliations/, "")), "المستبعدون من الفصل كله بلا كلية/قسم، وبالقاعدة المشتركة");
-check(/meeting-participants/.test(participantsRoute) && /requirePermission\(7\)/.test(participantsRoute), "قائمة المستبعدين للواجهة من الخادم وبصلاحية الجدول");
+check(/meeting-participants/.test(participantsRoute) && /requireMeetingAccess/.test(participantsRoute), "قائمة المستبعدين للواجهة من الخادم وبصلاحية أداة الاجتماع");
+check(/granted\.includes\(7\).*roleDefinition\(req\.user\.Role\)\.id === "departmentHead" && granted\.includes\(14\)/s.test(server), "صلاحية التقرير توسّع الأداة لرئيس القسم وحده");
+check(/ids\.some\(id => !allowed\.has\(id\)\)/.test(route) && /meetingDepartmentPeople\(req, sectionId, termId\)/.test(route), "طلب رئيس القسم يرفض أسماءً خارج قسمه في الخادم");
+const reports = fs.readFileSync(path.join(process.cwd(), "src/components/Reports.tsx"), "utf8");
+check(/roleId === "departmentHead" && filters\.termId/.test(reports) && /<MeetingSlots/.test(reports), "زر متى نلتقي في الاستعلامات لرئيس القسم فقط");
 const live = server.slice(server.indexOf("async function readLiveVisitingRoster"), server.indexOf("async function readLiveVisitingRoster") + 900);
 check(/liveVisitingIds\(/.test(live), "readLiveVisitingRoster يسأل القاعدة نفسها (liveVisitingIds) — لا نسخة ثانية");
 
 const ui = fs.readFileSync(path.join(process.cwd(), "src/components/MeetingSlots.tsx"), "utf8");
+check(ui.includes('JSON.stringify({ termId, sectionId, durationMinutes: duration'), "النافذة ترسل القسم للتحقق من نطاق رئيس القسم");
 check(!ui.includes("لا نافذة كاملة"), "الواجهة لا تنتهي بـ«لا نافذة كاملة»");
 check(ui.includes("meetingParticipants("), "الواجهة تختار المشاركين بالقاعدة المشتركة");
 {
