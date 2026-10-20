@@ -10,11 +10,20 @@ import { createPortal } from "react-dom";
 import { CheckCircle2, FileText, FileUp, Layers, X } from "lucide-react";
 import SectionPlanning from "./SectionPlanning";
 import { type Gap } from "./SectionGapNote";
+import { planGaps, type GapCourse } from "../utils/sectionGap";
 import { AR, countOf } from "../utils/arabicCount";
 import { useDialogDismiss } from "./ui";
 
 const num = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
 const TOP = 4;
+
+export function demoPlanItems(courses: GapCourse[]) {
+  const sample = courses.filter(course => course.existing > 0).slice(0, TOP);
+  return planGaps(sample, {
+    accepted: Object.fromEntries(sample.map((course, index) => [String(course.id), course.existing + (index < 2 ? 2 : 1)])),
+    remaining: {}, history: {},
+  });
+}
 
 /** النتيجة: سطرٌ واحد يقول كم مقرراً ينقصه شعب، وأربعةُ أسطرٍ على الأكثر («الموجود» شريطاً و«+الزيادة»)، ثم «تم». */
 /** الموجود مربعاتٍ ممتلئة، والمطلوب زيادتُه مربعاتٍ مفرَّغة. فوق عشرة تُقسَم على النسبة فيبقى الرسم بحجمٍ واحد. */
@@ -62,13 +71,18 @@ export function Result({ gap, onClose, skipped = 0 }: { gap: Gap; onClose: () =>
   );
 }
 
-export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onClose }: { collegeId: number; sectionId: number; termId: number; gap: Gap; onClose: () => void }) {
+export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, demoMode = false, onClose }: { collegeId: number; sectionId: number; termId: number; gap: Gap; demoMode?: boolean; onClose: () => void }) {
   /* الـEscape لنافذة المراجعة الداخلية وحدها ما دامت مفتوحة، ولا تُغلق الشاشة كلها فيضيع الكشف المقروء. */
   const [reviewing, setReviewing] = useState(false);
   useDialogDismiss(!reviewing, onClose);
   const [saved, setSaved] = useState(false);
   const [skipped, setSkipped] = useState(0);
+  const [showDemoResult, setShowDemoResult] = useState(demoMode);
   const done = saved && gap.planImported;
+  /* The demo shows the same comparison with the sandbox's own course names.
+     These chosen counts are illustrative and never saved to registration data. */
+  const demoItems = demoPlanItems(gap.courses);
+  const demoGap = { ...gap, planItems: demoItems, ready: true, source: "كشف تجريبي · بيانات وهمية" };
   return createPortal(
     <div className="student-qr-backdrop no-print" onClick={onClose}>
       <div className="gap-sheet" role="dialog" aria-modal="true" aria-label="قارن شعبك بكشف المتبقي" onClick={event => event.stopPropagation()}>
@@ -79,6 +93,12 @@ export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, onCl
         </header>
         {done ? (
           <Result gap={gap} onClose={onClose} skipped={skipped} />
+        ) : demoMode && showDemoResult ? (
+          <>
+            <p className="gap-sheet-hint">مثال توضيحي من مقررات الديمو؛ الأعداد وهمية ولا تُحفظ.</p>
+            {gap.loaded ? <Result gap={demoGap} onClose={onClose} /> : <p className="gap-sheet-hint" role="status">يُجهّز المثال…</p>}
+            <button type="button" className="gap-result-done" onClick={() => setShowDemoResult(false)}>جرّب رفع كشف المتبقي</button>
+          </>
         ) : (
           <>
             <p className="gap-sheet-hint">ارفع كشف المتبقي من عمادة التسجيل (PDF أو صور)، فتظهر لك الشعب المقترح زيادتها.</p>
