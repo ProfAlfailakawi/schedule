@@ -240,7 +240,7 @@ ${msg}
 <section class="hero">
   <p class="brand">SCHEDULE · نظام القرار الأكاديمي</p>
   <h1>حملة ${esc(c.company)}</h1>
-  <p class="lead">هذه أرقام حملتك وحدها، تتحدث تلقائياً كل ما زار الطلبة أو الكادر الموقع الإعلاني.</p>
+  <p class="lead">هذه أرقام حملتك وحدها، تتحدث تلقائياً مع زيارات الطلبة وأعضاء هيئة التدريس والإداريين للصفحات الإعلانية.</p>
   <div class="chips">
     <span class="chip ${phase === "live" ? "live" : ""}">${esc(PHASE_LABEL[phase])}</span>
     ${c.trial ? `<span class="chip warn">حملة تجريبية</span>` : ""}
