@@ -2204,6 +2204,7 @@
   .print-room-teacher-table th,.print-room-teacher-table td{border-bottom:.4pt solid #d6ddda;padding:2.2mm 2.5mm;text-align:right;vertical-align:top;font-size:8pt;line-height:1.45;overflow-wrap:anywhere}
   .print-room-teacher-table thead th{background:#eaf2ef;color:#163f37;font-weight:700}
   .print-room-teacher-table th:first-child{width:24%}.print-room-teacher-table td:nth-child(2){width:24%}.print-room-teacher-table tbody tr{break-inside:avoid;page-break-inside:avoid}
+  .print-course-load-table th:first-child{width:22%}.print-course-load-table td:nth-child(2){width:63%}.print-course-load-table td:nth-child(3){width:15%}
   .print-room-directory h2{margin:0 0 2.4mm !important}
 
   .print-room-directory-table{

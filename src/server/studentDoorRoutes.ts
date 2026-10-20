@@ -535,7 +535,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     res.json({ ready: true, hasRules: Boolean(rules?.rules.length), model, changes });
   });
 
-  /* خريطةُ قسمي كاملةً بالأسهم (التصميمُ المعتمد)، ملوّنةً بإنجازي: صفحةٌ خاصة بلا رمز QR، ترجع إلى «خريطتي». */
+  /* خريطةُ قسمي ملوّنةً بإنجازي؛ QR المطبوع يعيد إلى باب مساري العام، لا إلى جلسة الطالب الخاصة. */
   app.get("/api/public/me/map-page", requireDoor, async (_req: Request, res: Response) => {
     const { profile } = doorOf(res);
     res.setHeader("Cache-Control", "no-store"); res.setHeader("X-Robots-Tag", "noindex");
@@ -548,7 +548,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     if (!plan || !live) { message(404, "لم تُعتمد قواعد صحيفتك بعد."); return; }
     const { model } = await buildSheetModel(plan, live);
     const passedCodes = profile.passedCourseIds.map(id => catalog.courses.get(id)?.code || "").filter(Boolean);
-    res.type("text/html; charset=utf-8").send(buildPlanSheet(model, { template: deps.planSheetTemplate }, { passed: passedCodes, back: "/me#plan" }));
+    res.type("text/html; charset=utf-8").send(buildPlanSheet(model, { template: deps.planSheetTemplate }, { passed: passedCodes, back: "/me#plan", qrUrl: "https://schedule-kw.com/me#plan" }));
   });
 
   /* ── ملفي: القراءة والحفظ ────────────────────────────────────────────────── */

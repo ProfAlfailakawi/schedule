@@ -91,6 +91,8 @@ export interface SheetEmbedOptions {
   passed: string[];
   /** رابطُ الرجوع إلى «خريطتي». */
   back: string;
+  /** Public entry point to the student's own map; never contains progress or a session token. */
+  qrUrl?: string;
 }
 
 export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts, embed?: SheetEmbedOptions): string {
@@ -238,10 +240,10 @@ export function buildPlanSheet(model: SheetModel, parts: SheetTemplateParts, emb
   out.push(/[\u0600-\u06FF]/.test(model.planLabel)
     ? `<text x="${W - 42}" y="118" text-anchor="start" font-size="14" font-weight="500" fill="#64748B">الخطة الدراسية</text>`
     : `<text x="${W - 42 - 168}" y="152" text-anchor="start" font-size="14" font-weight="500" fill="#64748B">الخطة الدراسية</text>`);
-  /* خريطةُ الطالب الخاصة لا تحمل رمزاً: رابطُها شخصيّ، والرجوعُ إلى «خريطتي» بدلَه. */
-  if (!embed) {
-    out.push(`<a href="${esc(model.url)}" aria-label="رمز QR للنسخة التفاعلية"><rect x="38" y="28" width="136" height="136" rx="16" fill="#fff" stroke="#CBD5E1" stroke-width="1"/><path d="${qrPath(model.url, 50, 40, 112)}" fill="#0B2545" shape-rendering="crispEdges"/></a>`);
-    out.push(`<text x="184" y="90" text-anchor="end" font-size="16" font-weight="700" fill="#0B2545">النسخة التفاعلية</text><text x="184" y="116" text-anchor="end" font-size="14" font-weight="500" fill="#64748B">امسح الرمز لتفتح الخطة</text>`);
+  const qrUrl = embed?.qrUrl || (!embed ? model.url : "");
+  if (qrUrl) {
+    out.push(`<a href="${esc(qrUrl)}" aria-label="رمز QR ${embed ? "لخريطتي في مساري" : "للنسخة التفاعلية"}"><rect x="38" y="28" width="136" height="136" rx="16" fill="#fff" stroke="#CBD5E1" stroke-width="1"/><path d="${qrPath(qrUrl, 50, 40, 112)}" fill="#0B2545" shape-rendering="crispEdges"/></a>`);
+    out.push(`<text x="184" y="90" text-anchor="end" font-size="16" font-weight="700" fill="#0B2545">${embed ? "خريطتي في مساري" : "النسخة التفاعلية"}</text><text x="184" y="116" text-anchor="end" font-size="14" font-weight="500" fill="#64748B">امسح الرمز لتفتح ${embed ? "خريطتك" : "الخطة"}</text>`);
   }
   out.push(`<text x="${cx}" y="68" text-anchor="middle" font-size="${title.length > 26 ? 38 : 46}" font-weight="900" fill="#0B2545">${esc(title)}</text>`);
   out.push(`<rect x="${cx - 60}" y="82" width="120" height="5" rx="2.5" fill="#2563EB"/><rect x="${cx - 60}" y="82" width="30" height="5" rx="2.5" fill="#EA580C"/>`);

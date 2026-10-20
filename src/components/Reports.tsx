@@ -4,7 +4,7 @@ import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } fr
 import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 import { flushSync } from "react-dom";
 import {
-  Building2, CalendarDays, ChevronDown, ChevronUp, ClipboardList, Clock3, LayoutList,
+  BookOpen, Building2, CalendarDays, ChevronDown, ChevronUp, ClipboardList, Clock3, LayoutList,
   CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X,
   ShieldCheck, FileSpreadsheet,
 } from "lucide-react";
@@ -45,6 +45,7 @@ import { inboxAudience } from "../utils/inboxAudience";
 import { usePageAwake } from "../utils/pageAwake";
 import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
 import { DnaRing } from "./dna";
+import { instructorCourseLoad } from "../utils/instructorCourseLoad";
 import { ApprovalDnaStepper, DeadlineDnaRing } from "./dna/scheduleDna";
 
 /**
@@ -69,7 +70,7 @@ type VisitingTeachingData = {
   instructors: AdInstructor[];
   rows: FSchedule[];
 };
-type Lens = "list" | "week" | "instructor" | "room" | "roomInstructor" | "matrix" | "time" | "visiting" | "visitingHistory" | "fairness" | "balance";
+type Lens = "list" | "week" | "instructor" | "courseLoad" | "room" | "roomInstructor" | "matrix" | "time" | "visiting" | "visitingHistory" | "fairness" | "balance";
 type PrintKind = Lens | "comprehensive" | "comprehensive-branch" | null;
 
 /* Safari is the one printing engine here that ignores `@page size` (so wide
@@ -147,6 +148,7 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
   { id: "list", label: "الكل", hint: "كل مواعيد النطاق في قائمة واحدة", icon: <LayoutList /> },
   { id: "week", label: "الأسبوع", hint: "الأسبوع كشبكة أيام وأوقات", icon: <CalendarDays /> },
   { id: "instructor", label: "الأساتذة", hint: "مواعيد كل أستاذ وحمله الأسبوعي", icon: <UserRound /> },
+  { id: "courseLoad", label: "مواد الأساتذة", hint: "عدد المقررات والشعب لكل أستاذ في كل كلية", icon: <BookOpen /> },
   { id: "room", label: "القاعات", hint: "ما تشغله كل قاعة ومتى تفرغ", icon: <Building2 /> },
   { id: "roomInstructor", label: "القاعات والأساتذة", hint: "كل قاعة ومبناها وأساتذتها، وكل أستاذ والقاعات التي يدرّس فيها", icon: <Landmark /> },
   { id: "matrix", label: "القاعات × الأوقات", hint: "شبكة تقاطع كل قاعة مع كل وقت", icon: <Table2 /> },
@@ -178,9 +180,9 @@ const ROLE_LENSES: Record<string, Lens[]> = {
   /* العميدان يفتحان على ميزان الأقسام: «أين وصلت الأقسام؟» سؤالُهما الأول،
      والقائمةُ — المعتمدة وحدها — تكون فارغةً قبل أن يعتمد التسجيل شيئاً، فشاشةٌ
      أولى فارغة لا تجيب أحداً. ثم الجداول نفسها وما يُكمل الصورة. */
-  dean:           ["balance", "list", "week", "fairness", "visiting"],
-  viceDean:       ["balance", "list", "week", "fairness", "visiting", "instructor", "room", "roomInstructor", "matrix"],
-  registrarDean:  ["balance", "fairness"],
+  dean:           ["balance", "list", "week", "fairness", "courseLoad", "visiting"],
+  viceDean:       ["balance", "list", "week", "fairness", "courseLoad", "visiting", "instructor", "room", "roomInstructor", "matrix"],
+  registrarDean:  ["balance", "fairness", "courseLoad"],
   registrarHead:  ["balance", "list", "room", "roomInstructor", "matrix"],
   registrarStaff: ["balance", "list", "room", "roomInstructor"],
 };
@@ -1603,7 +1605,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     const root = document.documentElement;
     const originalTitle = document.title;
     const reportTitles: Record<Exclude<PrintKind, null>, string> = {
-      list: "نتائج الاستعلام", week: "الأسبوع", instructor: "تقرير الأستاذ", room: "إشغال القاعات والفراغات", roomInstructor: "القاعات والأساتذة",
+      list: "نتائج الاستعلام", week: "الأسبوع", instructor: "تقرير الأستاذ", courseLoad: "مواد الأساتذة حسب الكلية", room: "إشغال القاعات والفراغات", roomInstructor: "القاعات والأساتذة",
       matrix: "القاعات والأوقات", time: "الأوقات", visiting: "المنتدبون — الفصل الحالي",
       visitingHistory: "المنتدبون — كل الفصول", fairness: "عدالة توزيع العبء", balance: "ميزان الأقسام",
       comprehensive: "تقرير الجدول الشامل", "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
@@ -1877,6 +1879,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   };
 
   const groups = lens === "instructor" ? byInstructor : [];
+  const courseLoads = useMemo(() => instructorCourseLoad(results, instructorById, courseById, collegeById), [results, instructorById, courseById, collegeById]);
+  const courseLoadColleges = useMemo(() => {
+    const grouped = new Map<number, typeof courseLoads>();
+    courseLoads.forEach(row => grouped.set(row.collegeId, [...(grouped.get(row.collegeId) || []), row]));
+    return [...grouped.entries()].map(([id, people]) => ({ id, name: people[0].collegeName, people, max: Math.max(1, ...people.map(row => row.courseCount)), mean: people.reduce((sum, row) => sum + row.courseCount, 0) / people.length }));
+  }, [courseLoads]);
   const roomTeacherIndex = useMemo(() => roomInstructorDirectory(results, instructorById), [results, instructorById]);
   const maxLoad = Math.max(1, ...byInstructor.map(group => group.load));
   const maxSlot = Math.max(1, ...byTime.map(slot => slot.count));
@@ -2881,6 +2889,22 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           ) : (
             <div className="query-empty"><EmptyState title="لا يوجد تاريخ منتدبين" detail="بعد حفظ منتدبي الفصول سيظهر هنا سجل المقارنة بين السنوات." /></div>
           )
+        ) : lens === "courseLoad" ? (
+          <div className="course-load-report">
+            <div className="course-load-intro"><span><BookOpen aria-hidden="true" /></span><div><strong>مواد الأساتذة</strong><small>المقرر يُحسب مرة، ولو له أكثر من شعبة</small></div></div>
+            {courseLoadColleges.map(college => (
+              <section key={college.id} className="course-load-college">
+                <header><div><Landmark aria-hidden="true" /><h3>{college.name}</h3></div><span>{countOf(college.people.length, AR.instructor)} · متوسط المقررات: {college.mean.toLocaleString("ar-KW-u-nu-latn", { maximumFractionDigits: 1 })}</span></header>
+                <div className="course-load-list">{college.people.map(person => (
+                  <article key={person.instructorId} className="course-load-row">
+                    <div className="course-load-person"><span className="course-load-avatar"><UserRound aria-hidden="true" /></span><div><strong className="report-instructor-with-badge">{person.instructorName}{isVisitingInstructor(person.instructorId) ? <VisitingBadge compact /> : null}</strong><small>{person.courses.join(" · ")}</small></div></div>
+                    <div className="course-load-meter" aria-label={countOf(person.courseCount, AR.course)}><i style={{ width: share(person.courseCount, college.max) }} /></div>
+                    <div className="course-load-facts"><b>{countOf(person.courseCount, AR.course)}</b><small>{countOf(person.sectionCount, AR.section)}</small></div>
+                  </article>
+                ))}</div>
+              </section>
+            ))}
+          </div>
         ) : lens === "roomInstructor" ? (
           <div className="room-teacher-report">
             <div className="room-teacher-switch" role="group" aria-label="اتجاه التقرير">
@@ -2894,14 +2918,14 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   <div className="room-teacher-content">
                     <small>مبنى <bdi dir="ltr">{room.building}</bdi></small>
                     <h3>قاعة <bdi dir="ltr">{room.hall}</bdi></h3>
-                    <div className="room-teacher-tags">{[...room.teachers.entries()].sort((a,b) => byArabic(a[1],b[1])).map(([id,name]) => <span key={id}><UserRound aria-hidden="true" />{name}</span>)}</div>
+                    <div className="room-teacher-tags">{[...room.teachers.entries()].sort((a,b) => byArabic(a[1],b[1])).map(([id,name]) => <span key={id}><UserRound aria-hidden="true" />{name}{isVisitingInstructor(id) ? <VisitingBadge compact /> : null}</span>)}</div>
                   </div>
                   <div className="room-teacher-count"><b>{countOf(room.teachers.size, AR.instructor)}</b></div>
                 </article>
               )) : roomTeacherIndex.teachers.map(teacher => (
                 <article key={teacher.id} className="room-teacher-card">
                   <div className="room-teacher-symbol"><UserRound aria-hidden="true" /></div>
-                  <div className="room-teacher-content"><small>عضو هيئة التدريس</small><h3>{teacher.name}</h3><div className="room-teacher-tags">{[...teacher.rooms.values()].sort((a,b) => byRoomLabel(`${a.building}/${a.hall}`,`${b.building}/${b.hall}`)).map(room => <span key={`${room.building}/${room.hall}`}><Building2 aria-hidden="true" /><bdi dir="ltr">{room.building} / {room.hall}</bdi></span>)}</div></div>
+                  <div className="room-teacher-content"><small>عضو هيئة التدريس</small><h3 className="report-instructor-with-badge">{teacher.name}{isVisitingInstructor(teacher.id) ? <VisitingBadge compact /> : null}</h3><div className="room-teacher-tags">{[...teacher.rooms.values()].sort((a,b) => byRoomLabel(`${a.building}/${a.hall}`,`${b.building}/${b.hall}`)).map(room => <span key={`${room.building}/${room.hall}`}><Building2 aria-hidden="true" /><bdi dir="ltr">{room.building} / {room.hall}</bdi></span>)}</div></div>
                   <div className="room-teacher-count"><b>{countOf(teacher.rooms.size, AR.room)}</b></div>
                 </article>
               ))}
@@ -3718,6 +3742,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     list: "نتائج الاستعلام",
     week: "الأسبوع",
     instructor: "الأساتذة",
+    courseLoad: "مواد الأساتذة حسب الكلية",
     room: "إشغال القاعات والفراغات",
     roomInstructor: "القاعات والأساتذة",
     matrix: "القاعات × الأوقات",
@@ -4042,6 +4067,23 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     );
   }
 
+  if (kind === "courseLoad") {
+    const list = instructorCourseLoad(rows, instructorById, courseById, collegeById);
+    const pages = paginateItems(list, 11);
+    return <div className="print-report print-wide print-query-report print-course-load-report">
+      {pages.map((page, index) => <section className="print-explicit-page" key={`course-load-${index}`}>
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+        <div className="print-query-summaryline"><span>{countOf(list.length, AR.instructor)}</span><span>المقرر يُحسب مرة لكل أستاذ في الكلية</span></div>
+        <table className="print-room-teacher-table print-course-load-table"><thead><tr><th>الأستاذ</th><th>الكلية والمقررات</th><th>الحمل</th></tr></thead><tbody>{page.map(person => <tr key={`${person.collegeId}:${person.instructorId}`}>
+          <th>{person.instructorName}{visitingIds.has(person.instructorId) ? " · منتدب" : ""}</th>
+          <td><strong>{person.collegeName}</strong><br />{person.courses.join(" · ")}</td>
+          <td>{countOf(person.courseCount, AR.course)}<br />{countOf(person.sectionCount, AR.section)}</td>
+        </tr>)}</tbody></table>
+        <PrintPageMeta page={index + 1} total={pages.length} college={collegeName} date={issueDate} />
+      </section>)}
+    </div>;
+  }
+
   if (kind === "roomInstructor") {
     const directory = roomInstructorDirectory(rows, instructorById);
     const roomPages = paginateItems(directory.rooms, 12);
@@ -4058,8 +4100,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
       </section>
     );
     return <div className="print-report print-wide print-query-report print-room-teacher-report">
-      {roomPages.map((page, index) => printList(page.map(room => ({ title: `قاعة ${room.hall}`, subtitle: `مبنى ${room.building}`, names: [...room.teachers.values()].sort(byArabic) })), "حسب القاعة", index + 1))}
-      {teacherPages.map((page, index) => printList(page.map(teacher => ({ title: teacher.name, subtitle: [...teacher.rooms.values()].map(room => `${room.building}/${room.hall}`).join(" · "), names: [String(teacher.rooms.size)] })), "حسب الأستاذ", roomPages.length + index + 1))}
+      {roomPages.map((page, index) => printList(page.map(room => ({ title: `قاعة ${room.hall}`, subtitle: `مبنى ${room.building}`, names: [...room.teachers.entries()].sort((a,b) => byArabic(a[1],b[1])).map(([id,name]) => `${name}${visitingIds.has(id) ? " · منتدب" : ""}`) })), "حسب القاعة", index + 1))}
+      {teacherPages.map((page, index) => printList(page.map(teacher => ({ title: `${teacher.name}${visitingIds.has(teacher.id) ? " · منتدب" : ""}`, subtitle: [...teacher.rooms.values()].map(room => `${room.building}/${room.hall}`).join(" · "), names: [String(teacher.rooms.size)] })), "حسب الأستاذ", roomPages.length + index + 1))}
     </div>;
   }
 

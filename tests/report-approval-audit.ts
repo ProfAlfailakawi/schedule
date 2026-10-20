@@ -115,7 +115,7 @@ check(balanceBody.includes("if (!isScopeAllowed(req, Number(row.AdCollegeId), Nu
 /* ── العدسات بحسب الصفة ────────────────────────────────────────────────── */
 
 check(reports.includes("const ROLE_LENSES"), "قائمة العدسات بحسب الصفة معرَّفة");
-const roleLensBlock = reports.slice(reports.indexOf("const ROLE_LENSES"), reports.indexOf("const ROLE_LENSES") + 700);
+const roleLensBlock = reports.slice(reports.indexOf("const ROLE_LENSES"), reports.indexOf("};", reports.indexOf("const ROLE_LENSES")) + 2);
 check(/dean:\s*\["balance", "list", "week"/.test(roleLensBlock), "العميد يفتح على ميزان الأقسام، ثم الجداول المعتمدة نفسها (N2: قائمةٌ فارغة قبل أول اعتماد لا تجيب)");
 check(/registrarHead:\s*\["balance"/.test(roleLensBlock), "رئيس التسجيل يفتح على الميزان أيضاً");
 check(!roleLensBlock.includes("committeeChair"), "لجنة الجدول ترى القائمة كاملةً كما كانت قبل هذه الإضافة");
