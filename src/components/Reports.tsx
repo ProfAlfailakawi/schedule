@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import {
   BookOpen, Building2, CalendarDays, ChevronDown, ChevronUp, ClipboardList, Clock3, LayoutList,
   CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X,
-  ShieldCheck, FileSpreadsheet,
+  ShieldCheck, FileSpreadsheet, UsersRound,
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
@@ -45,6 +45,7 @@ import { inboxAudience } from "../utils/inboxAudience";
 import { usePageAwake } from "../utils/pageAwake";
 import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
 import { DnaRing } from "./dna";
+import MeetingSlots from "./MeetingSlots";
 import { instructorCourseLoad } from "../utils/instructorCourseLoad";
 import { ApprovalDnaStepper, DeadlineDnaRing } from "./dna/scheduleDna";
 
@@ -521,6 +522,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     return query.toString();
   }, [filters]);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [meetingOpen, setMeetingOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   /**
    * ── حال الاعتماد، للوثيقة الرسمية ──────────────────────────────────────
@@ -2036,7 +2038,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         </form>
         {askNote ? <p className="query-ask-note" id="query-ask-note" role="status">{askNote}</p> : null}
 
-        <div className="query-scope query-primary-filters" data-count={3 - (hidesCollege(scopeShape(scopes, isPowerAdmin)) ? 1 : 0) - (soleDepartment !== null || hidesSection(scopeShape(scopes, isPowerAdmin)) ? 1 : 0)} aria-label="المرشحات الأساسية">
+        <div className="query-scope query-primary-filters" data-count={3 - (hidesCollege(scopeShape(scopes, isPowerAdmin)) ? 1 : 0) - (soleDepartment !== null || hidesSection(scopeShape(scopes, isPowerAdmin)) ? 1 : 0) + (roleId === "departmentHead" && filters.termId && (filters.sectionId || soleDepartment) ? 1 : 0)} aria-label="المرشحات الأساسية">
           {hidesCollege(scopeShape(scopes, isPowerAdmin)) ? null : <Field label="الكلية">
             <select
               value={filters.collegeId || ""}
@@ -2063,6 +2065,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               {termOptions.map(row => <option key={row.AdTermId} value={row.AdTermId}>{cleanOptionText(row.AdTermName)}</option>)}
             </TermSelect>
           </Field>
+          {roleId === "departmentHead" && filters.termId && (filters.sectionId || soleDepartment) ? <GhostButton
+            type="button"
+            data-guide-ignore="أداة قراءة فقط لرئيس القسم: تحسب مواعيد اجتماع الأساتذة ولا تغيّر الجدول"
+            onClick={() => setMeetingOpen(true)}
+            title="اعرف النوافذ الأسبوعية المشتركة لأساتذة القسم"
+          ><UsersRound aria-hidden="true" /> متى نلتقي؟</GhostButton> : null}
           <GhostButton
             type="button"
             onClick={() => setMoreOpen(v => !v)}
@@ -3109,6 +3117,13 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           balanceApprovals={termApprovals}
         />
       </PrintPortal>
+      {meetingOpen && roleId === "departmentHead" ? <MeetingSlots
+        instructors={instructorOptions.map(person => ({ AdInstructorId: person.AdInstructorId, AdInstructorName: person.AdInstructorName }))}
+        scopeNarrowed
+        termId={filters.termId}
+        sectionId={filters.sectionId || soleDepartment || 0}
+        onClose={() => setMeetingOpen(false)}
+      /> : null}
       <PrintPortal className="authority-pdf-print-host">
         {/* إما تقرير موقع واحد، أو كتاب مواقع الفرع — لا يجتمعان في المنفذ. */}
         {authorityBook?.length ? (() => {

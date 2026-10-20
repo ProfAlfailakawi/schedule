@@ -7494,33 +7494,59 @@ async function meetingExcludedIds(termId: number) {
   return { instructors, excluded: instructors.map(person => Number(person.AdInstructorId)).filter(id => !kept.has(id)), visiting };
 }
 
-app.get("/api/schedules/meeting-participants", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+/* The timetable tool keeps permission 7. The same read-only calculation is also
+   available to a department head from reports (permission 14), and only for
+   instructors in that head's own department. */
+const requireMeetingAccess = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (!req.user) { res.status(401).json({ error: signInRequiredMessage(req) }); return; }
+  const granted = req.permissions ?? (await Repository.getSecurityByUser(req.user.SystemUserId)).map(item => Number(item.FormNameId));
+  if (granted.includes(7) || (roleDefinition(req.user.Role).id === "departmentHead" && granted.includes(14))) { next(); return; }
+  res.status(403).json({ error: "ليس لديك صلاحية للوصول إلى هذا القسم" });
+};
+
+async function meetingDepartmentPeople(req: AuthenticatedRequest, sectionId: number, termId: number) {
+  const sections = await Repository.getSections();
+  const own = (sections as any[]).find(sec => Number(sec.AdSectionId) === sectionId);
+  if (!own || !isScopeAllowed(req, Number(own.AdCollegeId), sectionId)) return null;
+  const family = departmentFamily(sections as any, Number(own.AdCollegeId), sectionId);
+  const members = roleDefinition(req.user?.Role).id === "departmentHead"
+    ? family.filter(member => isScopeAllowed(req, member.collegeId, member.sectionId)) : family;
+  const lists = await Promise.all(members.map(member => Repository.getInstructorsByScope(member.sectionId, termId)));
+  return [...new Map(lists.flat().map(person => [Number(person.AdInstructorId),
+    { AdInstructorId: Number(person.AdInstructorId), AdInstructorName: String(person.AdInstructorName || "") }])).values()];
+}
+
+app.get("/api/schedules/meeting-participants", requireMeetingAccess, async (req: AuthenticatedRequest, res: Response) => {
   const termId = Number(req.query.termId || 0);
   if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
-  const { excluded } = await meetingExcludedIds(termId);
   /* اجتماع القسم: القسمُ عائلةٌ عبر كلياته (departmentFamily)، فأساتذته من
      كل كلياته — لا من الكلية المعروضة وحدها. أسماءٌ وأرقامٌ فقط. */
   const sectionId = Number(req.query.sectionId || 0);
   let participants: Array<{ AdInstructorId: number; AdInstructorName: string }> | undefined;
+  if (roleDefinition(req.user?.Role).id === "departmentHead" && !sectionId) { res.status(403).json({ error: "حدد قسمك" }); return; }
   if (sectionId) {
-    const sections = await Repository.getSections();
-    const own = (sections as any[]).find(sec => Number(sec.AdSectionId) === sectionId);
-    if (!own || !isScopeAllowed(req, Number(own.AdCollegeId), sectionId)) { res.status(403).json({ error: "خارج نطاقك" }); return; }
-    const family = departmentFamily(sections as any, Number(own.AdCollegeId), sectionId);
-    const lists = await Promise.all(family.map(member => Repository.getInstructorsByScope(member.sectionId, termId)));
-    participants = [...new Map(lists.flat().map(person => [Number(person.AdInstructorId),
-      { AdInstructorId: Number(person.AdInstructorId), AdInstructorName: String(person.AdInstructorName || "") }])).values()];
+    const scoped = await meetingDepartmentPeople(req, sectionId, termId);
+    if (!scoped) { res.status(403).json({ error: "خارج نطاقك" }); return; }
+    participants = scoped;
   }
+  const { excluded } = await meetingExcludedIds(termId);
   res.json({ excludedInstructorIds: excluded, participants });
 });
 
-app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/schedules/meeting-slots", requireMeetingAccess, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body || {};
   const termId = Number(body.termId || 0);
   const duration = Math.max(30, Math.min(180, Number(body.durationMinutes || 60)));
   const ids = Array.from(new Set((Array.isArray(body.instructorIds) ? body.instructorIds : []).map((value: unknown) => Number(value)).filter((value: number) => value > 0))) as number[];
   if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
   if (ids.length < 2) { res.status(400).json({ error: "اختر أستاذين على الأقل" }); return; }
+  if (roleDefinition(req.user?.Role).id === "departmentHead") {
+    const sectionId = Number(body.sectionId || 0);
+    const scoped = sectionId ? await meetingDepartmentPeople(req, sectionId, termId) : null;
+    if (!scoped) { res.status(403).json({ error: "القسم خارج نطاقك" }); return; }
+    const allowed = new Set(scoped.map(person => person.AdInstructorId));
+    if (ids.some(id => !allowed.has(id))) { res.status(403).json({ error: "أستاذ خارج نطاق القسم" }); return; }
+  }
 
   /* Busy time is the person's WHOLE term — every college, every department.
      A professor who teaches in two colleges is not free on Monday at 10:00

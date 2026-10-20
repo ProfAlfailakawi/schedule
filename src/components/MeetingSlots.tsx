@@ -120,7 +120,7 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
     try {
       const body = await readJson("/api/schedules/meeting-slots", {
         method: "POST",
-        body: JSON.stringify({ termId, durationMinutes: duration, instructorIds: [...picked] }),
+        body: JSON.stringify({ termId, sectionId, durationMinutes: duration, instructorIds: [...picked] }),
       });
       setAnswer(body as MeetingAnswer);
     } catch (issue) {
@@ -129,7 +129,7 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
     } finally {
       setLoading(false);
     }
-  }, [termId, duration, picked]);
+  }, [termId, sectionId, duration, picked]);
 
   return (
     <>
