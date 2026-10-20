@@ -39,6 +39,9 @@ const model: SheetModel = {
   const html = buildPlanSheet(model, { template });
   check(!/<image\b|logo/i.test(html), "S1 بلا شعارٍ في الصفحة (لا <image> ولا logo)");
   check((html.match(/<a href="([^"]+)" aria-label="رمز QR/) || [])[1] === "https://schedule-kw.com/plans/s9/p1/" && !html.includes("dr-alfailakawi"), "S1 رمزُ QR يحمل الدومين الرسمي وحده");
+  const personal = buildPlanSheet(model, { template }, { passed: ["0109105"], back: "/me#plan", qrUrl: "https://schedule-kw.com/me#plan" });
+  check(personal.includes('href="https://schedule-kw.com/me#plan" aria-label="رمز QR لخريطتي في مساري"') && personal.includes("خريطتي في مساري") && personal.includes('id="backlink"'), "S1 خريطةُ الطالب المطبوعة تحمل QR لمساري وتُبقي الرجوع لخريطتي");
+  check(!personal.includes('href="https://schedule-kw.com/plans/s9/p1/" aria-label="رمز QR'), "S1 رمزُ خريطة الطالب لا يقود إلى صحيفة عامة مختلفة عن إنجازه");
   check(["المستوى 100", "المستوى 200", "المستوى 300", "المستوى 400"].every(label => html.includes(label)) && !html.includes("السنة الأولى") && !html.includes("فصل 1"), "S1 الأعمدةُ مستوياتٌ لا سنواتٌ ولا فصول");
   check((html.match(/class="card"/g) || []).length === 7, "S1 بطاقةٌ لكل مقررٍ (٥ في الخريطة + ٢ اختياري)");
   check((html.match(/class="edge"/g) || []).length === 6, "S1 سهمٌ لكل مسبق (٥ في الخريطة وواحدٌ للاختياري)");
