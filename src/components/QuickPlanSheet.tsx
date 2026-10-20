@@ -97,7 +97,7 @@ export default function QuickPlanSheet({ collegeId, sectionId, termId, gap, demo
           <>
             <p className="gap-sheet-hint">مثال توضيحي من مقررات الديمو؛ الأعداد وهمية ولا تُحفظ.</p>
             {gap.loaded ? <Result gap={demoGap} onClose={onClose} /> : <p className="gap-sheet-hint" role="status">يُجهّز المثال…</p>}
-            <button type="button" className="gap-result-done" onClick={() => setShowDemoResult(false)}>جرّب رفع كشف المتبقي</button>
+            <button type="button" className="gap-result-done" data-guide-ignore="داخل نافذة الديمو: ينتقل من المثال التوضيحي إلى رفع الكشف المعتاد" onClick={() => setShowDemoResult(false)}>جرّب رفع كشف المتبقي</button>
           </>
         ) : (
           <>
