@@ -20,7 +20,7 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
   const photoUrl = photoInvitationHref(SITE, login, temporaryPassword);
   const url = photoUrl || invitationHref(SITE, login, temporaryPassword);
   const displayUrl = "schedule-kw.com";
-  const message = `أهلًا بـ${name}\n\nبيانات دخولكم إلى *SCHEDULE*\nنظام القرار الأكاديمي\n\nرابط الدخول:\n${url}\n\nاسم المستخدم:\n${login}\n\nكلمة المرور المؤقتة:\n${temporaryPassword}\n\nاحتفظوا ببيانات الدخول لدى المسؤول عن الحساب.`;
+  const message = `أهلًا بـ${name}\n\nدعوتكم إلى *SCHEDULE*\nنظام القرار الأكاديمي\n\nاضغطوا رابط الدخول لتجهيز بيانات الحساب تلقائيًا:\n${url}\n\nاسم المستخدم: ${login}\n\nاحتفظوا بالرابط لدى المسؤول عن الحساب.`;
   const ready = active && hasPassword !== false && Boolean(temporaryPassword.trim());
 
   async function copy() {
@@ -37,11 +37,11 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         document.fonts.load('600 56px "Plex Mono"', login),
       ]);
       await document.fonts.ready;
-      const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 1440;
+      const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 1180;
       const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("canvas");
       ctx.fillStyle = "#f4f2eb";
-      ctx.beginPath(); ctx.roundRect(0, 0, 1200, 1440, 28); ctx.fill();
-      ctx.save(); ctx.beginPath(); ctx.roundRect(0, 0, 1200, 1440, 28); ctx.clip();
+      ctx.beginPath(); ctx.roundRect(0, 0, 1200, 1180, 28); ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.roundRect(0, 0, 1200, 1180, 28); ctx.clip();
       ctx.fillStyle = "#123e35"; ctx.fillRect(0, 0, 1200, 350);
       const markSource = document.querySelector<SVGSVGElement>(".invitation-card header svg");
       if (markSource) {
@@ -80,14 +80,14 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         while (ctx.measureText(value).width > 900 && fontSize > 18) ctx.font = `600 ${--fontSize}px "Plex Mono", monospace`;
         ctx.fillStyle = "#123e35"; ctx.fillText(value, 600, y + 145);
       };
-      credential("اسم المستخدم", login, 620); credential("كلمة المرور المؤقتة", temporaryPassword, 855);
+      credential("اسم المستخدم", login, 620);
       ctx.textAlign = "center"; ctx.direction = "ltr"; let siteSize = 40;
       ctx.font = `700 ${siteSize}px "Plex Arabic", sans-serif`;
       while (ctx.measureText(displayUrl).width > 1020 && siteSize > 19) ctx.font = `700 ${--siteSize}px "Plex Arabic", sans-serif`;
-      ctx.fillStyle = "#123e35"; ctx.fillText(displayUrl, 600, 1170);
+      ctx.fillStyle = "#123e35"; ctx.fillText(displayUrl, 600, 940);
       ctx.direction = "rtl"; ctx.font = '400 26px "Plex Arabic", sans-serif'; ctx.fillStyle = "#68766e";
-      ctx.fillText("رابط الدخول الكامل في الرسالة المرفقة", 600, 1240);
-      ctx.fillStyle = "#d5bd84"; ctx.fillRect(520, 1310, 160, 3);
+      ctx.fillText("اضغط رابط الدخول في الرسالة المرفقة", 600, 1010);
+      ctx.fillStyle = "#d5bd84"; ctx.fillRect(520, 1080, 160, 3);
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error("export")), "image/png"));
       const objectUrl = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = objectUrl; a.download = `SCHEDULE-${login.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
       try {
@@ -107,7 +107,6 @@ export default function AccountInvitation({ name, login, active, hasPassword }: 
         <header><BrandMark variant="tile" /><div><small>دعوة إلى مساحة عملكم</small><b>SCHEDULE</b><span>نظام القرار الأكاديمي</span></div></header>
         <div className="invitation-card-content"><h3>{name}</h3><p>أهلًا بكم، هنا تبدأ خطوتكم القادمة</p>
           <div className="invitation-credential"><small>اسم المستخدم</small><bdi dir="ltr">{login}</bdi></div>
-          <div className="invitation-credential"><small>كلمة المرور المؤقتة</small><bdi dir="ltr">{temporaryPassword || "—"}</bdi></div>
           <footer><a href={url} target="_blank" rel="noopener noreferrer" dir="ltr" title="فتح رابط الدخول الخاص">{displayUrl}</a><small>اضغط الموقع لفتح رابط الدخول الخاص</small></footer>
         </div>
       </div>
