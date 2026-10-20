@@ -112,6 +112,12 @@ check(!roleWriteDecision({ method: "PUT", path: "/courses/101", authenticated: t
   "صلاحية الصحيفة لا تفتح شاشة المقررات العامة ولا تعديل الجدول");
 check(!roleWriteDecision({ method: "POST", path: "/plan-review/approve", authenticated: true, powerUser: false, role: "departmentHead" }).allowed,
   "رئيس القسم لا يعتمد الصحيفة عبر الباب المحدود");
+check(roleWriteDecision({ method: "POST", path: "/schedules/meeting-slots", authenticated: true, powerUser: false, role: "departmentHead" }).allowed,
+  "رئيس القسم يستطيع حساب النوافذ المشتركة بلا كتابة بيانات");
+check(!roleWriteDecision({ method: "PUT", path: "/schedules/meeting-slots", authenticated: true, powerUser: false, role: "departmentHead" }).allowed
+  && !roleWriteDecision({ method: "POST", path: "/schedules/meeting-slots-extra", authenticated: true, powerUser: false, role: "departmentHead" }).allowed
+  && !roleWriteDecision({ method: "POST", path: "/schedules/meeting-slots", authenticated: true, powerUser: false, role: "dean" }).allowed,
+  "استثناء الاجتماع محصور في POST للرئيس والمسار المحدد");
 
 check(roleWriteDecision({ method: "POST", path: "/auth/logout", authenticated: true, powerUser: false, role: "dean" }).allowed, "الخروج مفتوحٌ لكل صفة");
 check(roleWriteDecision({ method: "POST", path: "/auth/heartbeat", authenticated: true, powerUser: false, role: "dean" }).allowed, "النبض ليس تعديلاً");

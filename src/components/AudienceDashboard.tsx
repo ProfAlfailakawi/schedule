@@ -69,7 +69,7 @@ function HBars({ rows }: { rows: Array<{ label: string; count: number }> }) {
 }
 
 const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
-const SOURCE_LABEL: Record<string, string> = { me: "«مساري»", schedule: "جداول القسم والطلبة", status: "حالة الطلب", survey: "الاستبيان", staff: "بطاقة الأستاذ", app: "تطبيق الكادر" };
+const SOURCE_LABEL: Record<string, string> = { me: "«مساري»", schedule: "جداول القسم والطلبة", status: "حالة الطلب", survey: "الاستبيان", staff: "بطاقة الأستاذ", app: "نظام SCHEDULE" };
 
 export default function AudienceDashboard({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const [data, setData] = useState<Payload | null>(null);

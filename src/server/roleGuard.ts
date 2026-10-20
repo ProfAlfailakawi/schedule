@@ -88,6 +88,9 @@ export function roleWriteDecision(input: RoleGuardInput): RoleGuardVerdict {
   if (SESSION_WRITE_PATHS.has(input.path)) return { allowed: true, reason: "session" };
   if (input.powerUser) return { allowed: true, reason: "power" };
   if (!isReadOnlyRole(input.role)) return { allowed: true, reason: "writer" };
+  // This POST only calculates free time. The endpoint separately checks
+  // permission 14 and every participant against the head's department.
+  if (input.method.toUpperCase() === "POST" && input.path === "/schedules/meeting-slots" && roleDefinition(input.role).id === "departmentHead") return { allowed: true, reason: "read" };
   if (roleDefinition(input.role).id === "departmentHead" && DEPARTMENT_PLAN_REVIEW_WRITES.has(input.path)) return { allowed: true, reason: "approval" };
   /* المرشد يقرأ كشف التسجيل ولا يشارك في دورة الاعتماد: لا يمرّ من البابِ الضيّق. */
   if (isApprovalWritePath(input.path) && !isViewerOnlyRole(input.role) && !isAdvisorRole(input.role)) return { allowed: true, reason: "approval" };
