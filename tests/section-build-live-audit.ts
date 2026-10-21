@@ -41,7 +41,7 @@ try {
       const response = await fetch(BASE + url, { method, headers: { cookie, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json().catch(() => null) as any };
     };
-    /* سعة القاعة مخفيّة من البرنامج: القاعة بلا سعة مسجّلة تبقى صالحةً للبناء. أساتذة التجربة بلا نصاب؛ بدونه يقول المحرّك السبب ولا يخترع. */
+    /* القاعة بلا سعة مسجّلة تبقى صالحةً للبناء. أساتذة التجربة بلا نصاب؛ بدونه يقول المحرّك السبب ولا يخترع. */
     for (const person of (await call("GET", "/api/instructors")).body as any[]) await call("PUT", `/api/instructors/${person.AdInstructorId}`, { ...person, AdInstructorLoad: 40 });
 
     const scope = { collegeId: 1, sectionId: 1, termId: 1 };

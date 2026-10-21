@@ -254,7 +254,7 @@ export function readSectionOpenings(
     const current=roomUse.get(key);
     roomUse.set(key,{count:(current?.count||0)+1,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),capacity:Number(verifiedRoom.capacity) || 0});
   }
-  /* سعة القاعة مخفيّة من البرنامج فلا تُسجَّل: السعةُ المجهولة (0) لا تُقصي القاعة، والمعلومة تُشترط. */
+  /* السعةُ المسجلة شرطُ ملاءمةٍ عند اقتراح القاعة؛ وإذا جُهلت فلا تُقصي القاعة. */
   const fits = (room: { capacity: number }, needed: number) => !(room.capacity > 0) || room.capacity >= needed;
   const rooms = [...roomUse.entries()]
     .sort((a, b) => b[1].count - a[1].count)

@@ -372,7 +372,7 @@ export interface MasterRoom {
   buildingCode: string;
   canonicalCode: string;
   /** Verified seat count used by the registration schedule rehearsal. Missing means unknown. */
-  capacity?: number;
+  capacity?: number | null;
   active: boolean;
   aliases: LocationRegistryAlias[];
   collegeIds: number[];
