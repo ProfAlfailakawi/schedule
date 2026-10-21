@@ -2693,6 +2693,9 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 .location-type-row{display:flex;align-items:center;gap:8px;min-height:38px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .location-type-row strong{font-size:.9rem;color:var(--lqs-ink)}
 .location-type-edit,.location-type-cancel{display:inline-flex;align-items:center;gap:4px;padding:5px 8px;border:0;border-radius:8px;background:color-mix(in srgb,var(--lqs-accent) 8%,white);color:var(--lqs-accent);font:inherit;font-size:.78rem;cursor:pointer}
+.location-type-delete{display:grid;place-items:center;width:32px;height:32px;border:1px solid color-mix(in srgb,var(--danger) 24%,var(--line));border-radius:9px;background:color-mix(in srgb,var(--danger) 6%,white);color:var(--danger);cursor:pointer}
+.location-type-delete svg{width:15px;height:15px}
+.location-type-delete:disabled{opacity:.55;cursor:not-allowed}
 .location-type-edit svg{inline-size:14px;block-size:14px}
 .location-type-edit:disabled{opacity:.55;cursor:not-allowed}
 .location-type-row input,.location-type-add input{min-width:150px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font:inherit}

@@ -3652,6 +3652,22 @@ app.put("/api/admin/location-room-types/:type",requirePermission(7),requireRootA
   res.json({types:[...types].sort((a,b)=>a.localeCompare(b,"ar")),updatedRooms:changedRooms.length,updatedCourses});
 });
 
+app.delete("/api/admin/location-room-types/:type",requirePermission(7),requireRootAdmin,async(req:AuthenticatedRequest,res:Response)=>{
+  const name=String(req.params.type||"").normalize("NFKC").trim();
+  if(!name){res.status(400).json({error:"اختر نوع القاعة المراد حذفه."});return;}
+  const [configured,registry,courses]=await Promise.all([Repository.getLocationRoomTypes(),readLocationRegistry(),Repository.getCourses()]);
+  const types=new Set(configured.length?configured:["تدريسية","مختبر","مختبر حاسوب"]);
+  registry.rooms.forEach(room=>{const type=String(room.roomType||"").normalize("NFKC").trim();if(type)types.add(type);});
+  courses.forEach(course=>{const type=String(course.CourseRoomType||"").normalize("NFKC").trim();if(type)types.add(type);});
+  if(!types.has(name)){res.status(404).json({error:"نوع القاعة غير موجود."});return;}
+  const linkedRooms=registry.rooms.filter(room=>String(room.roomType||"").normalize("NFKC").trim()===name).length;
+  const linkedCourses=courses.filter(course=>String(course.CourseRoomType||"").normalize("NFKC").trim()===name).length;
+  if(linkedRooms||linkedCourses){res.status(409).json({error:`لا يمكن حذف «${name}» لأنه مرتبط بـ ${countOf(linkedRooms,AR.room)} و${countOf(linkedCourses,AR.course)}. غيّر ارتباطاتها أولاً.`});return;}
+  if(types.size<=1){res.status(409).json({error:"أبقِ نوعًا واحدًا على الأقل للقاعات."});return;}
+  types.delete(name);await Repository.setLocationRoomTypes([...types]);
+  res.json({types:[...types].sort((a,b)=>a.localeCompare(b,"ar")),deleted:name});
+});
+
 app.get("/api/courses", requireAnyPermission([6, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = req.query.sectionId ? parseInt(req.query.sectionId as string) : undefined;
   const operational = String(req.query.operational || "") === "1";
