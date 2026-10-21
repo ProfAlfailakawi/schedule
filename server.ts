@@ -6889,6 +6889,32 @@ app.post("/api/admin/location-setup/buildings", requirePermission(7), requireRoo
   const row:MasterBuilding={id:`building_${parsed.officialCode}`,officialCode:parsed.officialCode,sitePrefix:prefix,prefix:/^[0-9]{3}[A-Z]$/.test(prefix)?prefix.slice(0,3):prefix,siteLetter:/[A-Z]$/.test(prefix)?prefix.slice(-1):"",buildingNumber:parsed.buildingNumber,siteName:college.AdCollegeName,branchName:college.AdCollegeName,description:"",active:true,aliases:[],collegeIds:[collegeId],sectionIds:sectionId?[sectionId]:[],historicalUsageCount:0,roomCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[`إضافة من واجهة المدير الرئيسي. Prefix الموقع ${prefix} + رقم المبنى ${parsed.buildingNumber}.`],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now};
   await Repository.upsertLocationBuildings([row]);invalidateLocationRegistry();res.status(201).json(row);
 });
+app.put("/api/admin/location-setup/buildings/:id", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
+  const registry=await readLocationRegistry();const current=registry.buildings.find(item=>item.id===req.params.id);if(!current){res.status(404).json({error:"المبنى غير موجود"});return;}
+  const sectionIds=locationIdList(req.body?.sectionIds===undefined?current.sectionIds:req.body.sectionIds);
+  const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+  const validCollegeIds=officialBuildingCollegeIds(current,colleges);
+  if(sections.some(section=>sectionIds.includes(Number(section.AdSectionId))&&!validCollegeIds.includes(Number(section.AdCollegeId)))||sectionIds.some(id=>!sections.some(section=>Number(section.AdSectionId)===id))){res.status(400).json({error:"الأقسام المختارة لا تتبع موقع المبنى الرسمي."});return;}
+  const now=new Date().toISOString();
+  const next={siteName:String(req.body?.siteName??current.siteName??"").trim(),branchName:String(req.body?.branchName??current.branchName??"").trim(),description:String(req.body?.description??current.description??"").trim(),sectionIds};
+  const row:MasterBuilding={...current,...next,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"UPDATE",before:{siteName:current.siteName,branchName:current.branchName,description:current.description,sectionIds:current.sectionIds},after:next}]};
+  await Repository.upsertLocationBuildings([row]);invalidateLocationRegistry();res.json(row);
+});
+app.delete("/api/admin/location-setup/buildings/:id", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
+  const registry=await readLocationRegistry();const current=registry.buildings.find(item=>item.id===req.params.id);if(!current){res.status(404).json({error:"المبنى غير موجود"});return;}
+  const now=new Date().toISOString();
+  const affectedRooms=registry.rooms.filter(room=>room.buildingId===current.id&&room.active);
+  const inactiveRooms=affectedRooms.map(room=>({...room,active:false,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(room.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"DELETE",before:{active:room.active},after:{active:false},note:`إيقاف مع حذف المبنى ${current.officialCode}.`}]}));
+  const inactiveBuilding:MasterBuilding={...current,active:false,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"DELETE",before:{active:current.active},after:{active:false},note:"إيقاف المبنى وقاعاته مع حفظ سجل الاستخدام التاريخي."}]};
+  try{
+    if(inactiveRooms.length)await Repository.upsertLocationRooms(inactiveRooms);
+    await Repository.upsertLocationBuildings([inactiveBuilding]);
+  }catch(error){
+    await Promise.all([Repository.upsertLocationBuildings([current]),...(affectedRooms.length?[Repository.upsertLocationRooms(affectedRooms)]:[])]);
+    throw error;
+  }
+  invalidateLocationRegistry();res.json({building:inactiveBuilding,deactivatedRoomCount:inactiveRooms.length});
+});
 app.post("/api/admin/location-setup/rooms", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const [registry,colleges,sections]=await Promise.all([readLocationRegistry(),Repository.getColleges(),Repository.getSections()]);
   const building=registry.buildings.find(item=>item.id===String(req.body?.buildingId||"")&&item.active&&item.confidence==="CONFIRMED");
@@ -6904,6 +6930,12 @@ app.post("/api/admin/location-setup/rooms", requirePermission(7), requireRootAdm
   const now=new Date().toISOString();
   const rows:MasterRoom[]=codes.map((code:string)=>({id:`room_${building.officialCode}_${code.replace(/[^A-Z0-9]/g,"_")}`,buildingId:building.id,buildingCode:building.officialCode,canonicalCode:code,active:true,aliases:[],collegeIds:officialCollegeIds,sectionIds,primarySectionIds:sectionIds,shared:sectionIds.length>1,sharedConfidence:"CONFIRMED",historicalUsageCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[sectionIds.length>1?`إضافة من واجهة المدير الرئيسي كقاعة مشتركة بين ${sectionIds.map(id=>sections.find(section=>Number(section.AdSectionId)===id)?.AdSectionName).filter(Boolean).join("، ")}.`:"إضافة من واجهة المدير الرئيسي للقسم المحدد."],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now}));
   await Repository.upsertLocationRooms(rows);invalidateLocationRegistry();res.status(201).json({created:rows.length,rooms:rows});
+});
+app.delete("/api/admin/location-setup/rooms/:id", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
+  const registry=await readLocationRegistry();const current=registry.rooms.find(item=>item.id===req.params.id);if(!current){res.status(404).json({error:"القاعة غير موجودة"});return;}
+  const now=new Date().toISOString();
+  const row:MasterRoom={...current,active:false,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"DELETE",before:{active:current.active},after:{active:false},note:"إيقاف القاعة مع حفظ سجل الاستخدام التاريخي."}]};
+  await Repository.upsertLocationRooms([row]);invalidateLocationRegistry();res.json(row);
 });
 app.post("/api/admin/location-registry/buildings", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const collegeIds=locationIdList(req.body?.collegeIds);

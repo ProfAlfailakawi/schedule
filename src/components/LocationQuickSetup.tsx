@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, DoorOpen, Plus, UsersRound } from "lucide-react";
+import { Building2, DoorOpen, Pencil, Plus, Trash2, UsersRound } from "lucide-react";
 import type { AdCollege, AdSection, MasterBuilding, MasterRoom } from "../types";
 import { Badge, Field, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { officialCollegeSitePrefix, officialSiteLabel } from "../utils/locationCollegePrefixes";
@@ -30,6 +30,10 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [editingBuilding, setEditingBuilding] = useState<MasterBuilding | null>(null);
+  const [buildingDraft, setBuildingDraft] = useState({ siteName: "", branchName: "", description: "" });
+  const [editingRoom, setEditingRoom] = useState<MasterRoom | null>(null);
+  const [roomDraft, setRoomDraft] = useState<{ canonicalCode: string; sectionIds: number[] }>({ canonicalCode: "", sectionIds: [] });
 
   const load = async () => {
     setLoading(true); setError("");
@@ -70,6 +74,51 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
     finally { setBusy(false); }
   };
 
+  const startBuildingEdit = (building: MasterBuilding) => {
+    setBuildingDraft({ siteName: building.siteName || "", branchName: building.branchName || "", description: building.description || "" });
+    setEditingBuilding(building); setError(""); setNotice("");
+  };
+  const saveBuildingEdit = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!editingBuilding) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await request(`/api/admin/location-setup/buildings/${encodeURIComponent(editingBuilding.id)}`, { method: "PUT", body: JSON.stringify(buildingDraft) });
+      setEditingBuilding(null); setNotice(`تم تحديث بيانات المبنى ${editingBuilding.officialCode}`); await load();
+    } catch (e: any) { setError(e?.message || "تعذر تعديل المبنى"); }
+    finally { setBusy(false); }
+  };
+  const deleteBuilding = async (building: MasterBuilding) => {
+    if (!window.confirm(`حذف المبنى ${building.officialCode}؟ ستتوقف قاعاته عن الاستخدام الجديد، مع الاحتفاظ بسجل المواعيد القديمة.`)) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await request(`/api/admin/location-setup/buildings/${encodeURIComponent(building.id)}`, { method: "DELETE" });
+      setBuildingId(""); setEditingBuilding(null); setNotice(`حُذف المبنى ${building.officialCode} وأُوقفت ${countOf(result.deactivatedRoomCount, AR.room)} تابعة له.`); await load();
+    } catch (e: any) { setError(e?.message || "تعذر حذف المبنى"); }
+    finally { setBusy(false); }
+  };
+  const startRoomEdit = (room: MasterRoom) => {
+    setRoomDraft({ canonicalCode: room.canonicalCode, sectionIds: [...room.sectionIds] });
+    setEditingRoom(room); setError(""); setNotice("");
+  };
+  const saveRoomEdit = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!editingRoom) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await request(`/api/admin/location-registry/rooms/${encodeURIComponent(editingRoom.id)}`, { method: "PUT", body: JSON.stringify(roomDraft) });
+      setEditingRoom(null); setNotice(`تم تحديث القاعة ${result.canonicalCode}${result.updatedScheduleCount ? ` · جرى تحديث ${countOf(result.updatedScheduleCount, AR.record)} في الجداول الحالية والقادمة` : ""}`); await load();
+    } catch (e: any) { setError(e?.message || "تعذر تعديل القاعة"); }
+    finally { setBusy(false); }
+  };
+  const deleteRoom = async (room: MasterRoom) => {
+    if (!window.confirm(`حذف القاعة ${room.canonicalCode}؟ ستتوقف عن الاستخدام الجديد، مع الاحتفاظ بسجل المواعيد القديمة.`)) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await request(`/api/admin/location-setup/rooms/${encodeURIComponent(room.id)}`, { method: "DELETE" });
+      setEditingRoom(null); setNotice(`حُذفت القاعة ${room.canonicalCode} وحُفظ سجلها التاريخي.`); await load();
+    } catch (e: any) { setError(e?.message || "تعذر حذف القاعة"); }
+    finally { setBusy(false); }
+  };
+
   return <div className="content-stack location-quick-setup">
     {header}
     <PageTitle eyebrow="إدارة النظام · للمدير الرئيسي فقط" subtitle="إضافة المباني وقاعات الأقسام المشتركة، مع بقاء السجل الإداري الكامل كما هو.">إضافة المباني والقاعات</PageTitle>
@@ -82,6 +131,12 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
       <Field label="نوع القاعات"><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as "all" | "shared")}><option value="all">كل القاعات</option><option value="shared">المشتركة فقط</option></select></Field>
     </Surface>
 
+    {currentBuilding ? <Surface className="location-quick-building-tools"><div><strong dir="ltr">{currentBuilding.officialCode}</strong><span>{currentBuilding.branchName || currentBuilding.siteName || "المبنى المحدد"}</span></div><div className="location-quick-item-actions"><button type="button" data-guide-ignore="تعديل بيانات المبنى المحدد" aria-label={`تعديل بيانات المبنى ${currentBuilding.officialCode}`} title="تعديل المبنى" disabled={busy || demoReadOnly} onClick={() => startBuildingEdit(currentBuilding)}><Pencil aria-hidden="true"/><span>تعديل</span></button><button type="button" data-guide-ignore="حذف المبنى المحدد مع حفظ السجل التاريخي" aria-label={`حذف المبنى ${currentBuilding.officialCode}`} title="حذف المبنى" disabled={busy || demoReadOnly} onClick={() => void deleteBuilding(currentBuilding)}><Trash2 aria-hidden="true"/><span>حذف</span></button></div></Surface> : null}
+
+    {editingBuilding ? <Surface className="location-quick-form"><form onSubmit={saveBuildingEdit}><div><h2>تعديل بيانات المبنى <b dir="ltr">{editingBuilding.officialCode}</b></h2><p>الكود الرسمي ثابت لسلامة ربط القاعات والجداول. الحذف يوقف الاستخدام الجديد ويحفظ السجل التاريخي.</p></div><Field label="الموقع"><input value={buildingDraft.siteName} onChange={event => setBuildingDraft(current => ({ ...current, siteName: event.target.value }))} required/></Field><Field label="الفرع"><input value={buildingDraft.branchName} onChange={event => setBuildingDraft(current => ({ ...current, branchName: event.target.value }))}/></Field><Field label="وصف مختصر"><input value={buildingDraft.description} onChange={event => setBuildingDraft(current => ({ ...current, description: event.target.value }))}/></Field><div className="location-quick-form-actions"><SecondaryButton type="button" data-guide-ignore="إلغاء تعديل المبنى" onClick={() => setEditingBuilding(null)}>إلغاء</SecondaryButton><PrimaryButton type="submit" data-guide-ignore="حفظ تعديل المبنى" disabled={busy || demoReadOnly}>حفظ التعديل</PrimaryButton></div></form></Surface> : null}
+
+    {editingRoom ? <Surface className="location-quick-form"><form onSubmit={saveRoomEdit}><div><h2><b dir="ltr">{editingRoom.canonicalCode}</b> · تعديل القاعة</h2><p>تغيير الرمز يحدّث القاعات المرتبطة في الجداول الحالية والقادمة، ويحفظ الرمز السابق في السجل.</p></div><Field label="رمز القاعة"><input dir="ltr" value={roomDraft.canonicalCode} maxLength={12} autoCapitalize="characters" onChange={event => setRoomDraft(current => ({ ...current, canonicalCode: event.target.value.toUpperCase().replace(/\s+/g, "") }))} required/></Field><fieldset className="location-quick-section-picker"><legend>الأقسام المرتبطة</legend><div>{sections.map(item => <label key={item.AdSectionId}><input type="checkbox" checked={roomDraft.sectionIds.includes(Number(item.AdSectionId))} onChange={event => setRoomDraft(current => ({ ...current, sectionIds: event.target.checked ? [...new Set([...current.sectionIds, Number(item.AdSectionId)])] : current.sectionIds.filter(id => id !== Number(item.AdSectionId)) }))}/><span>{item.AdSectionName}</span></label>)}</div></fieldset><div className="location-quick-form-actions"><SecondaryButton type="button" data-guide-ignore="إلغاء تعديل القاعة" onClick={() => setEditingRoom(null)}>إلغاء</SecondaryButton><PrimaryButton type="submit" data-guide-ignore="حفظ تعديل القاعة" disabled={busy || demoReadOnly || !roomDraft.canonicalCode.trim()}>حفظ التعديل</PrimaryButton></div></form></Surface> : null}
+
     <div className="location-quick-actions">
       <Surface><span className="location-quick-icon"><Building2/></span><div><strong>إضافة مبنى</strong><small>اختر الموقع والقسم، ثم أدخل رقم المبنى.</small></div><PrimaryButton type="button" data-guide-ignore="فتح نموذج إضافة مبنى" onClick={() => { setAddBuilding(value => !value); setAddRooms(false); }} disabled={!collegeId}><Plus/>مبنى جديد</PrimaryButton></Surface>
       <Surface><span className="location-quick-icon"><DoorOpen/></span><div><strong>إضافة قاعات</strong><small>أضف قاعة أو عدة قاعات للمبنى المحدد.</small></div><PrimaryButton type="button" data-guide-ignore="فتح نموذج إضافة قاعات" onClick={() => { setAddRooms(value => !value); setAddBuilding(false); }} disabled={!currentBuilding}><Plus/>قاعات جديدة</PrimaryButton></Surface>
@@ -93,7 +148,7 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
 
     <Surface className="location-quick-directory"><header><div><h2>{currentBuilding ? `${currentBuilding.officialCode} · القاعات` : "المباني والقاعات"}</h2><p>{loading ? "جارٍ تحميل السجل…" : `${countOf(buildings.length, AR.building)} · ${countOf(visibleRooms.length, AR.room)} ظاهرة`}</p></div><SecondaryButton type="button" data-guide-ignore="تحديث سجل المباني والقاعات" onClick={() => void load()}>تحديث</SecondaryButton></header>
       {!loading && !currentBuilding ? <div className="location-quick-empty"><Building2/><strong>اختر موقعًا لعرض مبانيه</strong></div> : null}
-      {visibleRooms.length ? <div className="location-quick-room-list">{visibleRooms.map(room => <article key={room.id}><DoorOpen/><strong dir="ltr">{room.canonicalCode}</strong>{room.sectionIds.length > 1 ? <Badge>مشتركة</Badge> : null}<small>{!currentBuilding ? `${room.buildingCode} · ` : ""}{room.sectionIds.map(id => data.sections.find(item => Number(item.AdSectionId) === Number(id))?.AdSectionName).filter(Boolean).join(" · ") || "غير مخصصة"}</small></article>)}</div> : null}
+      {visibleRooms.length ? <div className="location-quick-room-list">{visibleRooms.map(room => <article key={room.id}><DoorOpen/><strong dir="ltr">{room.canonicalCode}</strong>{room.sectionIds.length > 1 ? <Badge>مشتركة</Badge> : null}<small>{!currentBuilding ? `${room.buildingCode} · ` : ""}{room.sectionIds.map(id => data.sections.find(item => Number(item.AdSectionId) === Number(id))?.AdSectionName).filter(Boolean).join(" · ") || "غير مخصصة"}</small><div className="location-quick-item-actions"><button type="button" data-guide-ignore="تعديل القاعة" aria-label={`تعديل القاعة ${room.canonicalCode}`} title="تعديل القاعة" disabled={busy || demoReadOnly} onClick={() => startRoomEdit(room)}><Pencil aria-hidden="true"/><span>تعديل</span></button><button type="button" data-guide-ignore="حذف القاعة مع حفظ السجل التاريخي" aria-label={`حذف القاعة ${room.canonicalCode}`} title="حذف القاعة" disabled={busy || demoReadOnly} onClick={() => void deleteRoom(room)}><Trash2 aria-hidden="true"/><span>حذف</span></button></div></article>)}</div> : null}
       {!visibleRooms.length && !loading ? <div className="location-quick-empty"><DoorOpen/><strong>لا توجد قاعات مطابقة للفلاتر</strong><span>يمكنك إضافة قاعات من بطاقة المبنى المحدد.</span></div> : null}
     </Surface>
   </div>;
