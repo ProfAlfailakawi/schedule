@@ -1175,6 +1175,13 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   background:var(--surface-2);
   transition:border-color .16s var(--ease),box-shadow .16s var(--ease),background .16s var(--ease);
 }
+.schedule-editor .schedule-time-limit-note{
+  display:block;
+  margin-top:6px;
+  color:var(--muted);
+  font-size:var(--t-xs);
+  line-height:1.4;
+}
 /* The clock button that summons the wheel counter sits at the inline-end of the
    field, small and quiet, so the value still owns the centre of the box. */
 .schedule-time-counter-toggle{
