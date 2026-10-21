@@ -1,26 +1,37 @@
 import type { AdCollege, AdCourse, AdInstructor, FSchedule } from "../types";
 import { byArabic } from "./sorting";
+import { officialCollegeSitePrefix, officialSiteLabel } from "./locationCollegePrefixes";
 
-export interface InstructorCourseLoad {
+export interface InstructorSiteLoad {
   collegeId: number;
-  collegeName: string;
-  instructorId: number;
-  instructorName: string;
+  siteName: string;
   courses: string[];
   courseCount: number;
   sectionCount: number;
 }
 
-/** Count distinct subjects and sections within each college, never lecture rows. */
+export interface InstructorCourseLoad {
+  instructorId: number;
+  instructorName: string;
+  sites: InstructorSiteLoad[];
+  courses: string[];
+  courseCount: number;
+  sectionCount: number;
+}
+
+/** One professor across all accessible sites; a subject counts once in the total,
+ * and once at every site where it is actually taught. Repeated meetings do not
+ * become extra sections. */
 export function instructorCourseLoad(
   rows: FSchedule[],
   instructors: Map<number, AdInstructor>,
   courses: Map<number, AdCourse>,
   colleges: Map<number, AdCollege>,
 ): InstructorCourseLoad[] {
-  const groups = new Map<string, {
-    collegeId: number; collegeName: string; instructorId: number; instructorName: string;
+  const groups = new Map<number, {
+    instructorId: number; instructorName: string;
     subjects: Map<string, string>; sections: Set<string>;
+    sites: Map<number, { siteName: string; subjects: Map<string, string>; sections: Set<string> }>;
   }>();
   for (const row of rows) {
     const instructorId = Number(row.AdInstructorId);
@@ -31,19 +42,30 @@ export function instructorCourseLoad(
     const courseName = String(row.CourseNameSnapshot || row.AdCourseName || courses.get(Number(row.AdCourseId))?.CourseName || code).trim();
     const subjectKey = code || `id:${Number(row.AdCourseId)}`;
     if (!subjectKey || subjectKey === "id:0") continue;
-    const groupKey = `${collegeId}:${instructorId}`;
-    const group = groups.get(groupKey) || {
-      collegeId, collegeName: colleges.get(collegeId)?.AdCollegeName || "كلية غير مسماة",
-      instructorId, instructorName, subjects: new Map<string, string>(), sections: new Set<string>(),
+    const group = groups.get(instructorId) || {
+      instructorId, instructorName, subjects: new Map<string, string>(), sections: new Set<string>(), sites: new Map(),
+    };
+    const collegeName = colleges.get(collegeId)?.AdCollegeName || "موقع غير مسمى";
+    const prefix = officialCollegeSitePrefix(collegeName);
+    const site = group.sites.get(collegeId) || {
+      siteName: prefix ? officialSiteLabel(prefix, collegeName) : collegeName,
+      subjects: new Map<string, string>(), sections: new Set<string>(),
     };
     group.subjects.set(subjectKey, courseName || code);
-    group.sections.add(`${subjectKey}:${String(row.SCode || row.id).trim()}`);
-    groups.set(groupKey, group);
+    const sectionKey = `${collegeId}:${subjectKey}:${String(row.SCode || row.id).trim()}`;
+    group.sections.add(sectionKey);
+    site.subjects.set(subjectKey, courseName || code);
+    site.sections.add(sectionKey);
+    group.sites.set(collegeId, site);
+    groups.set(instructorId, group);
   }
   return [...groups.values()].map(group => ({
-    collegeId: group.collegeId, collegeName: group.collegeName,
     instructorId: group.instructorId, instructorName: group.instructorName,
+    sites: [...group.sites.entries()].map(([collegeId, site]) => ({
+      collegeId, siteName: site.siteName, courses: [...site.subjects.values()].sort(byArabic),
+      courseCount: site.subjects.size, sectionCount: site.sections.size,
+    })).sort((a, b) => byArabic(a.siteName, b.siteName)),
     courses: [...group.subjects.values()].sort(byArabic),
     courseCount: group.subjects.size, sectionCount: group.sections.size,
-  })).sort((a, b) => byArabic(a.collegeName, b.collegeName) || b.courseCount - a.courseCount || byArabic(a.instructorName, b.instructorName));
+  })).sort((a, b) => b.courseCount - a.courseCount || b.sites.length - a.sites.length || byArabic(a.instructorName, b.instructorName));
 }
