@@ -9,6 +9,9 @@ import { STUDENT_HOME_CSS, STUDENT_HOME_SCRIPT, studentHomePage } from "../src/s
 import { STUDENT_MAP_CSS } from "../src/server/studentMapUi";
 
 assert.match(STUDENT_HOME_CSS, /\.app\{max-inline-size:520px/);
+/* الشريط العلوي يلتفّ على الهاتف الضيق (شارة التجربة + الفصل + «الرحلة») فلا يُنتج تمريراً أفقياً. */
+assert.match(STUDENT_HOME_CSS, /\.topr\{[^}]*flex-wrap:wrap[^}]*min-inline-size:0/);
+assert.match(STUDENT_HOME_CSS, /header\.top\{flex-wrap:wrap\}/);
 assert.doesNotMatch(STUDENT_MAP_CSS, /\.app\.km-on\{max-inline-size:1180px/);
 assert.doesNotMatch(STUDENT_MAP_CSS, /@media\s*\(min-width:900px\)/);
 assert.match(STUDENT_MAP_CSS, /@media\s*\(min-width:0px\)/);
