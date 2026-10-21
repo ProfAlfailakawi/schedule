@@ -8789,7 +8789,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       value={form.fstarttime}
                       onOutOfRange={(limit) => {
                         const boundary = limit === "max" ? activeScheduleWindow.endTime : activeScheduleWindow.startTime;
-                        setStartTimeLimitNotice(`الحد ${limit === "max" ? "الأعلى" : "الأدنى"} لهذا القسم ${scheduleClockForDisplay(boundary)}.`);
+                        setStartTimeLimitNotice(`${limit === "max" ? "ينتهي الدوام" : "يبدأ الدوام"} عند ${scheduleClockForDisplay(boundary)}.`);
                       }}
                       onChange={(e) => {
                         setStartTimeLimitNotice("");
@@ -8836,7 +8836,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       value={form.fendtime}
                       onOutOfRange={(limit) => {
                         const boundary = limit === "max" ? activeScheduleWindow.endTime : activeScheduleWindow.startTime;
-                        setEndTimeLimitNotice(`الحد ${limit === "max" ? "الأعلى" : "الأدنى"} لهذا القسم ${scheduleClockForDisplay(boundary)}.`);
+                        setEndTimeLimitNotice(`${limit === "max" ? "ينتهي الدوام" : "يبدأ الدوام"} عند ${scheduleClockForDisplay(boundary)}.`);
                       }}
                       onChange={(e) => {
                         setEndTimeLimitNotice("");
