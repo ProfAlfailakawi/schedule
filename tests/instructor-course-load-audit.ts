@@ -19,6 +19,11 @@ assert.equal(result.length, 2);
 const sara = result.find(x => x.instructorId === 1)!;
 assert.deepEqual([sara.courseCount, sara.sectionCount, sara.sites.length], [2, 5, 3]);
 assert.deepEqual(sara.courses, ["مادة أ", "مادة ب"]);
+assert.deepEqual(
+  sara.courseLocations.flatMap(course => course.sites.map(site => [course.courseName, site.collegeId, site.sectionCount])).sort((a, b) => String(a[0]).localeCompare(String(b[0])) || Number(a[1]) - Number(b[1])),
+  [["مادة أ", 5, 2], ["مادة أ", 6, 1], ["مادة ب", 5, 1], ["مادة ب", 7, 1]],
+  "تُعرض كل مادة مع عدد شعبها في كل موقع، وتُدمج اجتماعات الشعبة نفسها",
+);
 assert.deepEqual(Object.fromEntries(sara.sites.map(site => [site.collegeId, site.courseCount])), { 5: 2, 6: 1, 7: 1 });
 assert(sara.sites.some(site => site.siteName.includes("الجهراء")));
 assert.deepEqual([result.find(x => x.instructorId === 2)?.courseCount, result.find(x => x.instructorId === 2)?.sites.length], [1, 1]);

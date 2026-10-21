@@ -688,4 +688,17 @@ ok('221 an instructor double booking marks the TIME cell (the value that is wron
    'if (/حجز مزدوج لأستاذ|لديه محاضرة متداخلة/.test(text)) return "time";' in preview_src
    and preview_src.index('return "time";') < preview_src.index('return "instructor";'))
 
+quick_setup=(ROOT/'src/components/LocationQuickSetup.tsx').read_text()
+ok('222 the root-admin quick location screen can edit buildings and rooms and soft-delete without losing historical room use',
+   'app.put("/api/admin/location-setup/buildings/:id", requirePermission(7), requireRootAdmin' in server
+   and 'app.delete("/api/admin/location-setup/buildings/:id", requirePermission(7), requireRootAdmin' in server
+   and 'app.delete("/api/admin/location-setup/rooms/:id", requirePermission(7), requireRootAdmin' in server
+   and 'action:"DELETE"' in server
+   and 'await Repository.upsertLocationRooms(inactiveRooms)' in server
+   and 'onClick={() => startBuildingEdit(currentBuilding)}' in quick_setup
+   and 'onClick={() => void deleteBuilding(currentBuilding)}' in quick_setup
+   and 'onClick={() => startRoomEdit(room)}' in quick_setup
+   and 'onClick={() => void deleteRoom(room)}' in quick_setup
+   and 'مع الاحتفاظ بسجل المواعيد القديمة' in quick_setup)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

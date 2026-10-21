@@ -10,11 +10,23 @@ export interface InstructorSiteLoad {
   sectionCount: number;
 }
 
+export interface InstructorCourseSiteLoad {
+  collegeId: number;
+  siteName: string;
+  sectionCount: number;
+}
+
+export interface InstructorCourseLocationLoad {
+  courseName: string;
+  sites: InstructorCourseSiteLoad[];
+}
+
 export interface InstructorCourseLoad {
   instructorId: number;
   instructorName: string;
   sites: InstructorSiteLoad[];
   courses: string[];
+  courseLocations: InstructorCourseLocationLoad[];
   courseCount: number;
   sectionCount: number;
 }
@@ -32,6 +44,7 @@ export function instructorCourseLoad(
     instructorId: number; instructorName: string;
     subjects: Map<string, string>; sections: Set<string>;
     sites: Map<number, { siteName: string; subjects: Map<string, string>; sections: Set<string> }>;
+    courseLocations: Map<string, { courseName: string; sites: Map<number, { siteName: string; sections: Set<string> }> }>;
   }>();
   for (const row of rows) {
     const instructorId = Number(row.AdInstructorId);
@@ -43,7 +56,7 @@ export function instructorCourseLoad(
     const subjectKey = code || `id:${Number(row.AdCourseId)}`;
     if (!subjectKey || subjectKey === "id:0") continue;
     const group = groups.get(instructorId) || {
-      instructorId, instructorName, subjects: new Map<string, string>(), sections: new Set<string>(), sites: new Map(),
+      instructorId, instructorName, subjects: new Map<string, string>(), sections: new Set<string>(), sites: new Map(), courseLocations: new Map(),
     };
     const collegeName = colleges.get(collegeId)?.AdCollegeName || "موقع غير مسمى";
     const prefix = officialCollegeSitePrefix(collegeName);
@@ -56,6 +69,11 @@ export function instructorCourseLoad(
     group.sections.add(sectionKey);
     site.subjects.set(subjectKey, courseName || code);
     site.sections.add(sectionKey);
+    const courseLocation = group.courseLocations.get(subjectKey) || { courseName: courseName || code, sites: new Map() };
+    const courseSite = courseLocation.sites.get(collegeId) || { siteName: site.siteName, sections: new Set<string>() };
+    courseSite.sections.add(sectionKey);
+    courseLocation.sites.set(collegeId, courseSite);
+    group.courseLocations.set(subjectKey, courseLocation);
     group.sites.set(collegeId, site);
     groups.set(instructorId, group);
   }
@@ -66,6 +84,11 @@ export function instructorCourseLoad(
       courseCount: site.subjects.size, sectionCount: site.sections.size,
     })).sort((a, b) => byArabic(a.siteName, b.siteName)),
     courses: [...group.subjects.values()].sort(byArabic),
+    courseLocations: [...group.courseLocations.values()].map(course => ({
+      courseName: course.courseName,
+      sites: [...course.sites.entries()].map(([collegeId, site]) => ({ collegeId, siteName: site.siteName, sectionCount: site.sections.size }))
+        .sort((a, b) => byArabic(a.siteName, b.siteName)),
+    })).sort((a, b) => byArabic(a.courseName, b.courseName)),
     courseCount: group.subjects.size, sectionCount: group.sections.size,
   })).sort((a, b) => byArabic(a.instructorName, b.instructorName));
 }
