@@ -11,6 +11,7 @@ import {
 } from "../utils/scheduleTime";
 import { sortByName } from "../utils/sorting";
 import { toEnglishDigits } from "../utils/digits";
+import { isAssignableInstructor } from "../utils/instructorStatus";
 
 /**
  * The appointment written where it was drawn.
@@ -246,7 +247,7 @@ export default function QuickCreatePopover({
             onChange={(e) => patch({ instructorId: Number(e.target.value) || 0 })}
           >
             <option value="">اختر الأستاذ…</option>
-            {instructors.map((i) => (
+            {instructors.filter(isAssignableInstructor).map((i) => (
               <option key={i.AdInstructorId} value={i.AdInstructorId}>
                 {i.AdInstructorName}
               </option>
