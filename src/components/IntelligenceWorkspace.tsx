@@ -98,6 +98,7 @@ import { sortByName, byRoom, byArabic } from "../utils/sorting";
 import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { isAssignableInstructor } from "../utils/instructorStatus";
 import StudentCasesTable from "./StudentCasesTable";
 import { RegistrationJourney, journeyFromViews, viewStatuses, type StatusFilter as CaseStatusFilter } from "./StudentCaseStatus";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
@@ -4367,7 +4368,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           ) : (
                             <option value="">اختر الأستاذ...</option>
                           )}
-                          {instructors.map((i) => (
+                          {instructors.filter(isAssignableInstructor).map((i) => (
                             <option
                               key={i.AdInstructorId}
                               value={i.AdInstructorId}

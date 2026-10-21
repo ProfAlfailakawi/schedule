@@ -11,6 +11,7 @@ import SchedulePublish from "./SchedulePublish";
 import StudentQrButton from "./StudentQrButton";
 import SectionPlanning from "./SectionPlanning";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { isAssignableInstructor } from "../utils/instructorStatus";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
@@ -38,6 +39,7 @@ interface Instructor {
   AdInstructorName: string;
   AdInstructorCivil?: string;
   AdInstructorMobile?: string;
+  AdInstructorStatus?: "retired" | "sabbatical" | null;
 }
 
 interface Props {
@@ -281,7 +283,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const branchSite = campusOf(collegeName) !== "main";
   const baseCollegeName = String(collegeName || "").replace(/\s*[-–]\s*(الجهراء|الفحيحيل)\s*$/, "").trim() || "كلية التربية الأساسية";
   const named = (id: number) => instructors.find(x => x.AdInstructorId === id)?.AdInstructorName || "";
-  const sortedInstructors = useMemo(() => sortByName(instructors, person => person.AdInstructorName), [instructors]);
+  const sortedInstructors = useMemo(() => sortByName(instructors.filter(isAssignableInstructor), person => person.AdInstructorName), [instructors]);
   const directory = useMemo(() => {
     const pool = new Map([...instructors, ...directoryPeople].map(person => [Number(person.AdInstructorId), person]));
     return sortByName(directoryIds.map(id => pool.get(Number(id))).filter(Boolean) as Instructor[], person => person.AdInstructorName);
