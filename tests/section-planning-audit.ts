@@ -145,7 +145,7 @@ values = remainingValues(r, r.column!);
 check(values["1"] === 1390 && values["3"] === 370 && values["4"] === 48, "القيم من «اعداد الذين لم يسجلوا» نفسه (1390، 370 بثقة 55 على الحدّ، 48) — لا من «المقاعد المتبقية» (1336، 256، 210)");
 check(!("2" in values) && !("5" in values) && remainingOf(r.rows.find(row => row.courseId === 2)!, r.column!).state === "noSections",
   "مقررٌ بلا شعب في الكشف (120، 255): لا قيمة — لا يؤخذ «لم يجتازوا» بدلها");
-/* مراجعة Codex على #184 — بمعنى «اعداد الذين لم يسجلوا» */
+/* Regression case #184 — «اعداد الذين لم يسجلوا» */
 const missedCell = [swrsPage(0, [["102", [1390, 1336, 0, 1336, 19, null]], ["201", [570, 256, 0, 256, 9, 570]]])];
 r = readRemainingReport(missedCell, islCatalogue, "0101");
 values = remainingValues(r, r.column!);
@@ -180,7 +180,7 @@ r = readRemainingReport(noNotPassed, islCatalogue, "0101");
 check(r.column != null && !r.rows.some(row => row.doubt) && remainingValues(r, r.column)["3"] === 370,
   "ولا بلا «لم يجتازوا» مقروءاً — ولا تُستبدل به السعة");
 
-/* مراجعة Codex على #185 */
+/* Regression case #185 */
 const wholeColumnMissed = [
   swrsPage(0, [["102", [1390, 1336, 0, 1336, 19, 1390]], ["201", [570, 256, 0, 256, 9, 570]]]),
   swrsPage(0.035, [["254", [48, 210, 0, 210, 3, null]], ["255", [35, 70, 0, 70, 1, null]]]),

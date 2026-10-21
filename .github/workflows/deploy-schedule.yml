@@ -82,5 +82,5 @@ jobs:
             if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "✓ schedule-kw.com serves this release"; exit 0; fi
             sleep 30
           done
-          echo "::error::schedule-kw.com is not serving the deployed build. Do NOT touch the domain mapping — see AGENTS.md."
+          echo "::error::schedule-kw.com is not serving the deployed build. Do NOT touch the domain mapping — see docs/DELIVERY_OPERATIONS.md."
           exit 1

@@ -8,7 +8,7 @@
  * while a new certificate was issued.
  *
  * This guard fails CI if either can happen again. The rules it enforces are in
- * AGENTS.md; change them only with the owner's explicit decision.
+ * docs/DELIVERY_OPERATIONS.md; change them only with the owner's explicit decision.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -39,7 +39,7 @@ for (const region of RETIRED_REGIONS) {
 if (!/schedule-kw\.com/.test(workflow)) failures.push("سير النشر لا يتحقق من الدومين الرسمي بعد النشر.");
 
 /* ٢. لا أمر يمسّ ربط الدومين في أي ملف من المستودع. */
-const SKIP = new Set(["node_modules", ".git", "dist", "AGENTS.md", "deploy-target-guard.mjs"]);
+const SKIP = new Set(["node_modules", ".git", "dist", "deploy-target-guard.mjs"]);
 const SCAN = /\.(ya?ml|sh|mjs|cjs|js|ts|json|py)$/;
 function walk(dir) {
   for (const name of readdirSync(dir)) {
@@ -48,14 +48,14 @@ function walk(dir) {
     const stat = statSync(path);
     if (stat.isDirectory()) walk(path);
     else if (SCAN.test(name) && stat.size < 2_000_000 && /domain-mappings/.test(readFileSync(path, "utf8"))) {
-      failures.push(`${path} يحوي أمر domain-mappings — ربط الدومين لا يُمسّ (AGENTS.md).`);
+      failures.push(`${path} يحوي أمر domain-mappings — ربط الدومين لا يُمسّ (docs/DELIVERY_OPERATIONS.md).`);
     }
   }
 }
 walk(".");
 
 if (failures.length) {
-  console.error("✗ حارس وجهة النشر:\n" + failures.map(f => "  - " + f).join("\n") + "\n\nاقرأ AGENTS.md.");
+  console.error("✗ حارس وجهة النشر:\n" + failures.map(f => "  - " + f).join("\n") + "\n\nاقرأ docs/DELIVERY_OPERATIONS.md.");
   process.exit(1);
 }
 console.log(`✓ حارس وجهة النشر: ${deploys.length} أمر نشر، كلها إلى ${OFFICIAL_PROJECT} وبالصورة وحدها؛ لا مساس بربط الدومين.`);
