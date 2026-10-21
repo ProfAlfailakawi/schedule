@@ -2748,7 +2748,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         </nav>
       ) : null}
       {error && collegeId && sectionId && termId ? (
-        <Notice>
+        <Notice onDismiss={() => setError(null)}>
           {error}
           {smartRetry ? (
             <div style={{ marginTop: 8 }}>
@@ -4242,39 +4242,50 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <div className="innovation-suite-head">
               <div>
                 <span className="surface-kicker">مختبر القرار</span>
-                <h2>مختبر القرار المتقدم</h2>
+                <h2>قرارات الجدول، بتجربة آمنة</h2>
                 <p>
-                  القواعد، غرفة الاجتماع، والتحسين الآلي كلها تعمل داخل النسخة التجريبية
-                  فقط. لا توجد هنا أي قناة نشر تلقائي.
+                  اختبر القواعد والبدائل قبل تطبيقها على الجدول.
                 </p>
               </div>
-              <LockKeyhole />
+              <span className="innovation-suite-mark" aria-label="تجربة آمنة"><LockKeyhole /></span>
             </div>
-            <div className="innovation-tabs">
+            <div className="innovation-tabs" role="group" aria-label="أدوات مختبر القرار">
               <button
+                type="button"
+                data-guide-ignore="اختيار لوحة القيود داخل مختبر القرار"
+                aria-pressed={innovationMode === "constraints"}
                 className={innovationMode === "constraints" ? "active" : ""}
                 onClick={() => setInnovationMode("constraints")}
               >
-                <SlidersHorizontal /> لوحة القيود{" "}
-                <b>{constraints.length}</b>
+                <SlidersHorizontal /><span>لوحة القيود</span>
+                <b aria-label={`${constraints.length} قاعدة`}>{constraints.length}</b>
               </button>
               <button
+                type="button"
+                data-guide-ignore="اختيار غرفة القرار داخل مختبر القرار"
+                aria-pressed={innovationMode === "war"}
                 className={innovationMode === "war" ? "active" : ""}
                 onClick={() => setInnovationMode("war")}
               >
-                <UsersRound /> غرفة القرار
+                <UsersRound /><span>غرفة القرار</span>
               </button>
               <button
+                type="button"
+                data-guide-ignore="اختيار التحسين الآلي داخل مختبر القرار"
+                aria-pressed={innovationMode === "autopilot"}
                 className={innovationMode === "autopilot" ? "active" : ""}
                 onClick={() => setInnovationMode("autopilot")}
               >
-                <WandSparkles /> التحسين الآلي
+                <WandSparkles /><span>التحسين الآلي</span>
               </button>
               <button
+                type="button"
+                data-guide-ignore="اختيار مختبر السياسات داخل مختبر القرار"
+                aria-pressed={innovationMode === "policy"}
                 className={innovationMode === "policy" ? "active" : ""}
                 onClick={() => setInnovationMode("policy")}
               >
-                <BarChart3 /> مختبر السياسات
+                <BarChart3 /><span>مختبر السياسات</span>
               </button>
             </div>
             {innovationMode === "constraints" ? (

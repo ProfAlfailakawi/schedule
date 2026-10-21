@@ -1244,14 +1244,26 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
 
 /* Twin / innovation suite */
 .twin-hero{padding:var(--s6);border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface)}
-.innovation-suite{padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface)}
-.innovation-suite-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s3)}
-.innovation-tabs{display:flex;gap:var(--s2);margin-top:var(--s4);flex-wrap:wrap}
+.innovation-suite{display:grid;gap:var(--s5);padding:clamp(var(--s4),3vw,var(--s6));border:1px solid var(--line);border-radius:var(--r-xl);background:linear-gradient(145deg,var(--surface),color-mix(in srgb,var(--accent-softer) 34%,var(--surface)))}
+.innovation-suite-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);padding:var(--s2) 0 var(--s4);border-bottom:1px solid var(--line)}
+.innovation-suite-head>div{min-width:0}
+.innovation-suite-head h2{margin:4px 0 0;font-size:clamp(var(--t-h2),2.3vw,32px);line-height:1.25}
+.innovation-suite-head p{margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.6}
+.innovation-suite-mark{display:grid;place-items:center;flex:none;width:54px;height:54px;border:1px solid color-mix(in srgb,var(--accent) 15%,var(--line));border-radius:18px;background:var(--accent-softer);color:var(--accent)}
+.innovation-suite-mark svg{width:25px;height:25px}
+.innovation-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s2);margin:0;padding:5px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface-2) 76%,transparent)}
 .innovation-tabs button{
-  min-height:36px;padding:0 var(--s3);border:1px solid var(--line);border-radius:var(--r-xs);
-  background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);
+  display:flex;align-items:center;justify-content:center;gap:var(--s2);min-width:0;min-height:48px;padding:var(--s2) var(--s3);border:1px solid transparent;border-radius:14px;
+  background:transparent;color:var(--muted);font-size:var(--t-sm);font-weight:600;white-space:nowrap;cursor:pointer;
 }
-.innovation-tabs button.active{background:var(--ink);border-color:var(--ink);color:var(--surface);font-weight:600}
+.innovation-tabs button:hover:not(.active){background:var(--surface);color:var(--ink)}
+.innovation-tabs button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 38%,transparent);outline-offset:2px}
+.innovation-tabs button svg{width:18px;height:18px;flex:none}
+.innovation-tabs button b{display:grid;place-items:center;min-width:22px;height:22px;padding:0 5px;border-radius:99px;background:var(--surface-2);color:var(--muted);font:600 var(--t-xs)/1 var(--font-mono)}
+.innovation-tabs button.active{background:var(--surface);border-color:var(--line);box-shadow:var(--shadow-sm);color:var(--accent);font-weight:700}
+.innovation-tabs button.active b{background:var(--accent-softer);color:var(--accent)}
+@media(max-width:760px){.innovation-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.innovation-tabs button{justify-content:flex-start;white-space:normal}}
+@media(max-width:420px){.innovation-suite-mark{width:44px;height:44px;border-radius:15px}.innovation-tabs button{min-height:44px;padding:var(--s2);font-size:var(--t-xs)}}
 .innovation-empty{padding:var(--s6);text-align:center;color:var(--muted);font-size:var(--t-sm)}
 
 .constraint-canvas,.war-room,.autopilot-lab,.twin-workbench,.twin-visual-board,
