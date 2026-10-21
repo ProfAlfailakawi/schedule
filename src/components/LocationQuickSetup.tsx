@@ -4,6 +4,7 @@ import type { AdCollege, AdSection, MasterBuilding, MasterRoom } from "../types"
 import { Badge, Field, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { officialCollegeSitePrefix, officialSiteLabel } from "../utils/locationCollegePrefixes";
 import { byArabic, sortByName } from "../utils/sorting";
+import { AR, countOf } from "../utils/arabicCount";
 
 type SetupData = { colleges: AdCollege[]; sections: AdSection[]; buildings: MasterBuilding[]; rooms: MasterRoom[] };
 const empty: SetupData = { colleges: [], sections: [], buildings: [], rooms: [] };
@@ -64,7 +65,7 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
     try {
       const result = await request("/api/admin/location-setup/rooms", { method: "POST", body: JSON.stringify({ buildingId: currentBuilding?.id, roomCodes: codes, sectionIds: roomSectionIds }) });
       setData(await request("/api/admin/location-setup") as SetupData); setRoomCodes(""); setAddRooms(false);
-      setNotice(`أُضيفت ${result.created} قاعة${roomSectionIds.length > 1 ? " مشتركة" : ""} إلى ${currentBuilding?.officialCode}`);
+      setNotice(`أُضيفت ${countOf(result.created, AR.room)}${roomSectionIds.length > 1 ? " مشتركة" : ""} إلى ${currentBuilding?.officialCode}`);
     } catch (e: any) { setError(e?.message || "تعذرت إضافة القاعات"); }
     finally { setBusy(false); }
   };
@@ -90,7 +91,7 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
 
     {addRooms ? <Surface className="location-quick-form"><form onSubmit={createRooms}><div><h2>قاعات {currentBuilding?.officialCode}</h2><p>أدخل الأرقام أو الرموز، مفصولة بفاصلة أو كل قاعة في سطر.</p></div><Field label="رموز القاعات"><textarea rows={3} value={roomCodes} onChange={event => setRoomCodes(event.target.value)} placeholder={"F01, F02, F03"} required/></Field><fieldset className="location-quick-section-picker"><legend>تخصيص القاعات للأقسام</legend><div>{sections.map(item => <label key={item.AdSectionId}><input type="checkbox" checked={roomSectionIds.includes(Number(item.AdSectionId))} onChange={event => setRoomSectionIds(current => event.target.checked ? [...new Set([...current, Number(item.AdSectionId)])] : current.filter(id => id !== Number(item.AdSectionId)))}/><span>{item.AdSectionName}</span></label>)}</div></fieldset><div className="location-quick-shared"><UsersRound/><span>{roomSectionIds.length > 1 ? <><strong>قاعة مشتركة</strong> · {roomSectionIds.map(id => sections.find(item => Number(item.AdSectionId) === id)?.AdSectionName).filter(Boolean).join("، ")}</> : "اختر قسمًا واحدًا، أو أكثر من قسم لتصبح القاعات مشتركة تلقائيًا."}</span></div><div className="location-quick-form-actions"><SecondaryButton type="button" data-guide-ignore="إغلاق نموذج إضافة قاعات" onClick={() => setAddRooms(false)}>إلغاء</SecondaryButton><PrimaryButton type="submit" data-guide-ignore="حفظ القاعات الجديدة" disabled={busy || demoReadOnly || !roomCodes.trim() || roomSectionIds.length === 0}>حفظ القاعات</PrimaryButton></div></form></Surface> : null}
 
-    <Surface className="location-quick-directory"><header><div><h2>{currentBuilding ? `${currentBuilding.officialCode} · القاعات` : "المباني والقاعات"}</h2><p>{loading ? "جارٍ تحميل السجل…" : `${buildings.length} مبنى · ${visibleRooms.length} قاعة ظاهرة`}</p></div><SecondaryButton type="button" data-guide-ignore="تحديث سجل المباني والقاعات" onClick={() => void load()}>تحديث</SecondaryButton></header>
+    <Surface className="location-quick-directory"><header><div><h2>{currentBuilding ? `${currentBuilding.officialCode} · القاعات` : "المباني والقاعات"}</h2><p>{loading ? "جارٍ تحميل السجل…" : `${countOf(buildings.length, AR.building)} · ${countOf(visibleRooms.length, AR.room)} ظاهرة`}</p></div><SecondaryButton type="button" data-guide-ignore="تحديث سجل المباني والقاعات" onClick={() => void load()}>تحديث</SecondaryButton></header>
       {!loading && !currentBuilding ? <div className="location-quick-empty"><Building2/><strong>اختر موقعًا لعرض مبانيه</strong></div> : null}
       {visibleRooms.length ? <div className="location-quick-room-list">{visibleRooms.map(room => <article key={room.id}><DoorOpen/><strong dir="ltr">{room.canonicalCode}</strong>{room.sectionIds.length > 1 ? <Badge>مشتركة</Badge> : null}<small>{!currentBuilding ? `${room.buildingCode} · ` : ""}{room.sectionIds.map(id => data.sections.find(item => Number(item.AdSectionId) === Number(id))?.AdSectionName).filter(Boolean).join(" · ") || "غير مخصصة"}</small></article>)}</div> : null}
       {!visibleRooms.length && !loading ? <div className="location-quick-empty"><DoorOpen/><strong>لا توجد قاعات مطابقة للفلاتر</strong><span>يمكنك إضافة قاعات من بطاقة المبنى المحدد.</span></div> : null}
