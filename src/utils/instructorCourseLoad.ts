@@ -67,5 +67,29 @@ export function instructorCourseLoad(
     })).sort((a, b) => byArabic(a.siteName, b.siteName)),
     courses: [...group.subjects.values()].sort(byArabic),
     courseCount: group.subjects.size, sectionCount: group.sections.size,
-  })).sort((a, b) => b.courseCount - a.courseCount || b.sites.length - a.sites.length || byArabic(a.instructorName, b.instructorName));
+  })).sort((a, b) => byArabic(a.instructorName, b.instructorName));
+}
+
+/** Resolve only the selected department's counterparts across official sites.
+ * A section code must be unique within each college; ambiguous duplicates are
+ * excluded instead of risking a cross-department schedule in a report. */
+export function departmentSiteScopes(
+  sections: ReadonlyArray<{ AdSectionId: number; AdCollegeId: number; AdSectionCode: string }>,
+  selectedSectionId: number,
+): Array<{ collegeId: number; sectionId: number }> {
+  const selected = sections.find(section => Number(section.AdSectionId) === Number(selectedSectionId));
+  const code = String(selected?.AdSectionCode || "").trim();
+  if (!selected || !code) return [];
+  const byCollege = new Map<number, typeof sections[number][]>();
+  for (const section of sections) {
+    if (String(section.AdSectionCode || "").trim() !== code) continue;
+    const collegeId = Number(section.AdCollegeId);
+    const matches = byCollege.get(collegeId) || [];
+    matches.push(section);
+    byCollege.set(collegeId, matches);
+  }
+  return [...byCollege.entries()]
+    .filter(([, matches]) => matches.length === 1)
+    .map(([collegeId, matches]) => ({ collegeId, sectionId: Number(matches[0].AdSectionId) }))
+    .filter(scope => scope.collegeId > 0 && scope.sectionId > 0);
 }

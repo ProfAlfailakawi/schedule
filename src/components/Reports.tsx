@@ -38,6 +38,7 @@ import { buildFairnessEngine } from "../utils/livingSchedule";
 import { weeklyLoadOf } from "../utils/instructorRequestVerdict";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
+import { departmentSiteScopes } from "../utils/instructorCourseLoad";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
 import VisitingBadge from "./VisitingBadge";
 import SubmissionDeadlines, { type DeadlineRow } from "./SubmissionDeadlines";
@@ -946,21 +947,27 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     sortByName(isPowerAdmin ? colleges : colleges.filter(c => baseScope.collegeIds.includes(Number(c.AdCollegeId))), (c: AdCollege) => c.AdCollegeName),
     row => optionKey(row.AdCollegeName), filters.collegeId, row => Number(row.AdCollegeId),
   ), [colleges, isPowerAdmin, baseScope.collegeIds.join("|"), filters.collegeId]);
-  /* هذا التقرير يتجاوز اختيار الحرم والقسم في الشريط، مع إبقاء صلاحيات
-     الحساب على الخادم. لا يُجلب إلا عند فتح عدسته ولفصلٍ واحد. */
-  const siteLoadCollegeIds = useMemo(() => (isPowerAdmin ? colleges : colleges.filter(college => baseScope.collegeIds.includes(Number(college.AdCollegeId))))
-    .map(college => Number(college.AdCollegeId)).filter(Boolean), [colleges, isPowerAdmin, baseScope.collegeIds.join("|")]);
-  const siteLoadCollegeKey = siteLoadCollegeIds.join("|");
+  /* تقرير العدالة مقيد بالقسم المختار: نظير القسم نفسه (رمز القسم) في كل
+     موقع رسمي، ويشمل البنين والبنات عند وجود القسم فيهما. لا نجلب بقية
+     أقسام الكلية حتى لو كان القارئ مشرفاً عاماً. */
+  const siteLoadScopes = useMemo(() => {
+    return departmentSiteScopes(sections, filters.sectionId);
+  }, [sections, filters.sectionId]);
+  const siteLoadScopeKey = siteLoadScopes.map(scope => `${scope.collegeId}:${scope.sectionId}`).join("|");
   useEffect(() => {
-    if (lens !== "courseLoad" || !filters.termId || !siteLoadCollegeIds.length) return;
+    if (lens !== "courseLoad" || !filters.termId || !siteLoadScopes.length) {
+      if (lens === "courseLoad") setSiteLoadRead({ termId: filters.termId, rows: [], denied: [], loading: false });
+      return;
+    }
     const controller = new AbortController();
     const termId = filters.termId;
     setSiteLoadRead({ termId, rows: [], denied: [], loading: true });
-    void Promise.all(siteLoadCollegeIds.map(async collegeId => {
+    void Promise.all(siteLoadScopes.map(async ({ collegeId, sectionId }) => {
       try {
-        const response = await fetch(`/api/schedules?termId=${termId}&collegeId=${collegeId}`, { signal: controller.signal });
+        const response = await fetch(`/api/schedules?termId=${termId}&collegeId=${collegeId}&sectionId=${sectionId}`, { signal: controller.signal });
         if (!response.ok) return { collegeId, rows: [] as FSchedule[], denied: true };
-        return { collegeId, rows: await response.json() as FSchedule[], denied: false };
+        const rows = await response.json() as FSchedule[];
+        return { collegeId, rows: rows.filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId), denied: false };
       } catch { return { collegeId, rows: [] as FSchedule[], denied: true }; }
     })).then(parts => {
       if (controller.signal.aborted) return;
@@ -968,7 +975,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         denied: parts.filter(part => part.denied).map(part => collegeById.get(part.collegeId)?.AdCollegeName || String(part.collegeId)), loading: false });
     }).catch(() => { if (!controller.signal.aborted) setSiteLoadRead({ termId, rows: [], denied: [], loading: false }); });
     return () => controller.abort();
-  }, [lens, filters.termId, siteLoadCollegeKey]);
+  }, [lens, filters.termId, siteLoadScopeKey, filters.sectionId]);
   const sectionOptions = useMemo(() => dedupeVisibleOptions(
     sortByName(sections.filter(s => (!filters.collegeId || s.AdCollegeId === filters.collegeId) && (isPowerAdmin || scopeState.sectionIds.includes(Number(s.AdSectionId)))), (s: AdSection) => s.AdSectionName),
     row => `${Number(row.AdCollegeId) || 0}|${optionKey(row.AdSectionName)}`, filters.sectionId, row => Number(row.AdSectionId),
@@ -2284,7 +2291,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             <b>{num(lens === "balance" ? Number(balance?.departments?.length || 0) : lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length)}</b>
             <span>{lens === "balance" ? nounFor(Number(balance?.departments?.length || 0), AR.department) : lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
             </> : null}
-            {lens === "courseLoad" ? <small>{termName} · كل المواقع المسموحة</small> : scopeLine ? <small>{scopeLine}</small> : null}
+            {lens === "courseLoad" ? <small>{termName} · {sectionName || "اختر القسم"} · المواقع التي يوجد فيها القسم</small> : scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           {!pending && (results.length || (lens === "courseLoad" && courseLoads.length) || (lens === "balance" && balance) || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
             {/* نشرة الميزان تُطبع قبل أول موعدٍ معتمد أيضاً (N14). */}
@@ -2300,10 +2307,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 <Printer aria-hidden="true" />
               </button>
             ) : null}
-            {!results.length && lens === "courseLoad" && courseLoads.length ? <button type="button" className="query-print-icon" data-guide-ignore="طباعة توزيع المواد بين المواقع المسموحة" onClick={() => printReport("courseLoad")} aria-label="طباعة توزيع المواد بين المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button> : null}
+            {!results.length && lens === "courseLoad" && filters.sectionId && courseLoads.length ? <button type="button" className="query-print-icon" data-guide-ignore="طباعة توزيع المواد بين المواقع" onClick={() => printReport("courseLoad")} aria-label="طباعة توزيع المواد بين المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button> : null}
             {results.length ? <>
               {lens === "courseLoad" ? (
-                <button type="button" className="query-print-icon" data-guide-ignore="طباعة توزيع المواد بين المواقع المسموحة" onClick={() => printReport("courseLoad")} disabled={siteLoadRead?.loading || !courseLoads.length} aria-label="طباعة توزيع المواد بين المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button>
+                <button type="button" className="query-print-icon" data-guide-ignore="طباعة توزيع المواد بين المواقع" onClick={() => printReport("courseLoad")} disabled={!filters.sectionId || siteLoadRead?.loading || !courseLoads.length} aria-label="طباعة توزيع المواد بين المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button>
               ) : lens === "instructor" ? (
                 <div className="query-report-action">
                   <SecondaryButton type="button" className="query-print-icon" data-guide-ignore="اختيار نطاق طباعة تقرير الأستاذ؛ قراءة فقط" aria-label="طباعة تقرير الأستاذ" aria-haspopup="menu" aria-expanded={scopeMenu === "instructor" || undefined} onClick={() => setScopeMenu(scopeMenu === "instructor" ? null : "instructor")} disabled={branchBusy} title="اختر نطاق تقرير الأستاذ للطباعة">
@@ -2927,7 +2934,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           )
         ) : lens === "courseLoad" ? (
           <div className="course-load-report">
-            <div className="course-load-intro"><span><BookOpen aria-hidden="true" /></span><div><strong>توزيع المواد بين المواقع</strong><small>كل المواقع المسموحة · المقرر يُحسب مرة في الإجمالي</small></div></div>
+            <div className="course-load-intro"><span><BookOpen aria-hidden="true" /></span><div><strong>توزيع المواد بين المواقع</strong><small>{sectionName ? `${sectionName} · المقرر يُحسب مرة في الإجمالي` : "اختر القسم لعرض أساتذته عبر المواقع"}</small></div></div>
+            {!filters.sectionId ? <div className="query-empty"><EmptyState title="اختر القسم أولاً" detail="يعرض التقرير أساتذة هذا القسم عبر المواقع الأخرى التي يوجد فيها القسم نفسه." /></div> : null}
             {siteLoadRead?.loading || siteLoadRead?.termId !== filters.termId ? <p role="status">يُجهّز توزيع المواقع…</p> : null}
             {siteLoadRead?.denied.length ? <p className="course-load-partial" role="status">البيانات جزئية: تعذرت قراءة {siteLoadRead.denied.join("، ")}</p> : null}
             {courseLoads.length ? <section className="course-load-college">
@@ -2939,8 +2947,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   <div className="course-load-meter" aria-label={countOf(person.courseCount, AR.course)}><i style={{ width: share(person.courseCount, courseLoadMax) }} /></div>
                   <div className="course-load-facts"><b>{countOf(person.courseCount, AR.course)}</b><small>{countOf(person.sectionCount, AR.section)}</small></div>
                 </article>
-              ))}</div>
-            </section> : !siteLoadRead?.loading ? <div className="query-empty"><EmptyState title="لا توجد مواد في المواقع المسموحة لهذا الفصل" /></div> : null}
+            ))}</div>
+            </section> : filters.sectionId && !siteLoadRead?.loading ? <div className="query-empty"><EmptyState title={`لا توجد مواد لقسم ${sectionName || "القسم المحدد"} في المواقع المعنية لهذا الفصل`} /></div> : null}
           </div>
         ) : lens === "roomInstructor" ? (
           <div className="room-teacher-report">
@@ -3127,8 +3135,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           roomDay={roomDay}
           balance={balance}
           visitingHistory={visibleVisitingHistory}
-          scopeLine={printKind === "courseLoad" ? [termName, "كل المواقع المسموحة"].filter(Boolean).join(" · ") : printCollegeOverride ? [termName, printCollegeOverride].filter(Boolean).join(" · ") : scopeLine}
-          collegeName={printKind === "courseLoad" ? "كل المواقع المسموحة" : printCollegeOverride || collegeName}
+          scopeLine={printKind === "courseLoad" ? [termName, sectionName, "المواقع التي يوجد فيها القسم"].filter(Boolean).join(" · ") : printCollegeOverride ? [termName, printCollegeOverride].filter(Boolean).join(" · ") : scopeLine}
+          collegeName={printKind === "courseLoad" ? sectionName || "القسم المحدد" : printCollegeOverride || collegeName}
           termName={termName}
           sectionName={sectionName}
           sectionCode={sectionCode}

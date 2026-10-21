@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { instructorCourseLoad } from "../src/utils/instructorCourseLoad";
+import { departmentSiteScopes, instructorCourseLoad } from "../src/utils/instructorCourseLoad";
 
 const instructors = new Map<number, any>([[1, { AdInstructorName: "د. سارة" }], [2, { AdInstructorName: "د. خالد" }]]);
 const colleges = new Map<number, any>([[5, { AdCollegeName: "كلية التربية الأساسية - بنات" }], [6, { AdCollegeName: "كلية التربية الأساسية - بنين" }], [7, { AdCollegeName: "كلية التربية الأساسية - بنات - الجهراء" }]]);
@@ -23,4 +23,17 @@ assert.deepEqual(Object.fromEntries(sara.sites.map(site => [site.collegeId, site
 assert(sara.sites.some(site => site.siteName.includes("الجهراء")));
 assert.deepEqual([result.find(x => x.instructorId === 2)?.courseCount, result.find(x => x.instructorId === 2)?.sites.length], [1, 1]);
 assert(result.every(x => x.instructorId !== 0));
+const siteScopes = departmentSiteScopes([
+  { AdSectionId: 101, AdCollegeId: 5, AdSectionCode: "09" },
+  { AdSectionId: 201, AdCollegeId: 6, AdSectionCode: "09" },
+  { AdSectionId: 301, AdCollegeId: 7, AdSectionCode: "09" },
+  { AdSectionId: 401, AdCollegeId: 8, AdSectionCode: "03" }, // other department
+  { AdSectionId: 402, AdCollegeId: 9, AdSectionCode: "09" },
+  { AdSectionId: 403, AdCollegeId: 9, AdSectionCode: "09" }, // ambiguous; exclude
+], 101);
+assert.deepEqual(siteScopes, [
+  { collegeId: 5, sectionId: 101 }, { collegeId: 6, sectionId: 201 },
+  { collegeId: 7, sectionId: 301 },
+]);
+assert.deepEqual(departmentSiteScopes([{ AdSectionId: 9, AdCollegeId: 1, AdSectionCode: "" }], 9), []);
 console.log("✓ توزيع المواد: الأستاذ مرة واحدة، مع البنين والبنات والجهراء وإجمالي بلا تكرار المواعيد");
