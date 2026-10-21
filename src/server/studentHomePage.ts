@@ -68,7 +68,8 @@ button,input{font:inherit;color:inherit}
 .mark{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.28em;color:var(--brass)}
 .term{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:var(--card);border:1px solid var(--line);font-size:12.5px;color:var(--dim)}
 .term .i{inline-size:14px;block-size:14px;color:var(--accent)}
-.topr{display:flex;align-items:center;gap:8px}
+.topr{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;min-inline-size:0}
+header.top{flex-wrap:wrap}
 .jrn{display:inline-flex;align-items:center;gap:6px;padding:5px 13px;border-radius:999px;background:var(--card);border:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--ink,inherit);text-decoration:none;transition:border-color .2s,transform .2s}
 .jrn:hover,.jrn:focus-visible{border-color:var(--brass);outline:none;transform:translateY(-1px)}
 .jrn .i{inline-size:15px;block-size:15px;color:var(--brass)}
