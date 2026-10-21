@@ -1,4 +1,5 @@
-# Cloud Run source payload only. Keep the AI Studio workspace complete, but deploy only source + compact bootstrap data.
+# Source-deploy ignore list for Cloud Run: the upload contains the application source and the compact bootstrap snapshot only.
+# Version control metadata, dependencies, build output, archives, logs and the uncompressed database snapshot are excluded.
 .git/
 !Dockerfile
 .github/

@@ -18,7 +18,8 @@ This is an operational/admin system for deterministic academic timetabling. Reli
 ## Deployment and CI
 
 - **Production Build:** \`npm run build\`
-- The project is configured with a strict CI pipeline that ensures all tests, typechecks, and builds pass before any merge. No automated deployments are configured; all deployments must be manual and verified.
+- The project is configured with a strict CI pipeline (`.github/workflows/ci.yml`) that ensures all tests, typechecks, and builds pass before any merge.
+- Deployment to the official Cloud Run service is defined in `.github/workflows/deploy-schedule.yml`. It runs automatically after the CI workflow completes successfully for a push to `main`, and can also be started manually with `workflow_dispatch`. It then verifies that the official domain serves the deployed build. See `docs/DELIVERY_OPERATIONS.md` and `docs/SAFE_DEPLOYMENT.md` before changing anything related to deployment.
 
 ## Recovery Documentation
 

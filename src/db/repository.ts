@@ -162,7 +162,7 @@ function decryptPasswordFromVault(stored?: string): string {
   } catch { return ""; }
 }
 
-// Compatibility hash used only to read the synthetic database created by the first AI Studio build.
+// Compatibility hash used only to read the legacy synthetic database created by the first build; see the scrypt note below.
 // New and migrated passwords use scrypt; production never stores plaintext passwords.
 function simpleHash(password: string): string {
   let hash = 0;

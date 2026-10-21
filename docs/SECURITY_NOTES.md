@@ -13,5 +13,5 @@
 - لأن شاشة `SystemUser` القديمة نفسها تعرض كلمة السر وتعيدها في Edit، تمت المحافظة على هذا الـWorkflow من دون الرجوع لتخزين Plain Text: قيمة العرض/التعديل محفوظة AES-256-GCM في `SystemUserPassVault` ومفتاح منفصل. Endpoint الذي يفكها محمي بصلاحية FormName 11، بينما Login/session endpoints يحذفان hash والـvault من الاستجابة.
 - في حزمة الاختبار الخاصة يوجد مفتاح `database/legacy-password-vault.key` حتى تعمل شاشة SystemUser القديمة فوراً. في الإنتاج انقل نفس المفتاح إلى Secret manager/`PASSWORD_VAULT_KEY` واحذف الملف من مساحة الكود بعد التأكد من إعداد السر.
 - IDs الجديدة في Firestore تُحجز عبر transaction-backed counters لتجنب التصادم.
-- Snapshot الحالي يحتوي PII حقيقية بناءً على طلب مالك النظام. لذلك `database/db.json` ومفتاح الخزنة موجودان في `.gitignore` ولا يجوز نشرهما في Repository عام أو AI Studio asset عام.
+- Snapshot الحالي يحتوي PII حقيقية بناءً على طلب مالك النظام. لذلك `database/db.json` ومفتاح الخزنة موجودان في `.gitignore` ولا يجوز نشرهما، ولا نشر أي قاعدة بيانات حقيقية أو أسرار أخرى، داخل أي Repository عام أو حزمة توزيع/أرشيف قابلة للوصول من خارج الجهات المصرّح لها.
 - لا يوجد service-account JSON أو SQL connection string أو `.bak` أو MDF/LDF داخل patch.
