@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ClipboardList, Layers, Users, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
 import { planGaps, studentGaps, type GapCourse, type GapItem, type GapPlan } from "../utils/sectionGap";
+import { sortByName } from "../utils/sorting";
 
 interface GapPayload {
   respondents: number; planImported: boolean; planSource: { fileName: string; importedAt: string } | null;
@@ -102,7 +103,8 @@ export function SectionGapBadge({ items, kind, open, onToggle }: { items: GapIte
 /** قائمةٌ قصيرة: اسم المقرر، وما بُني عليه الرقم، و«الموجود ← المطلوب». لا روابط ولا إدخال. */
 export function SectionGapPanel({ items, kind, onClose }: { items: GapItem[]; kind: GapKind; onClose: () => void }) {
   const [all, setAll] = useState(false);
-  const list = all ? items : items.slice(0, SHOWN);
+  const ordered = useMemo(() => sortByName(items, item => item.name), [items]);
+  const list = all ? ordered : ordered.slice(0, SHOWN);
   const { Icon, title } = KIND[kind];
   return (
     <section className="apb-gap" aria-label={title}>

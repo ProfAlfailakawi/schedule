@@ -33,6 +33,11 @@ const base = { courses: [course], instructorIds: new Set([7, 8]) };
   const configuredCourse={...course,MaxStudent:100,CourseRoomType:"مختبر حاسوب"};
   const review=computeScheduleDataReadiness({courses:[configuredCourse],instructorIds:new Set([7]),rows,rooms:[{...room("f13",40),roomType:"تدريسية"}]});
   check(review.roomFit.count===4&&review.roomFit.items.some(item=>item.kind==="capacity")&&review.roomFit.items.some(item=>item.kind==="room-type"),"يعرض تقدير التكدس واختلاف نوع القاعة للمخطط دون منع الجدول");
+  const alphabetical=computeScheduleDataReadiness({
+    courses:[{...course,AdCourseId:6,CourseCode:"212",CourseName:"ورشة انتاج",CourseRoomType:"مختبر"},{...course,AdCourseId:7,CourseCode:"112",CourseName:"التدريب الميداني",CourseRoomType:"مختبر"}],
+    instructorIds:new Set([7]),rows:[row(1,{AdCourseId:6}),row(2,{AdCourseId:7})],rooms:[{...room("f13",10),roomType:"تدريسية"}],
+  });
+  check(alphabetical.roomFit.items.map(item=>item.courseName).join("|")==="التدريب الميداني|التدريب الميداني|ورشة انتاج|ورشة انتاج","ملاحظات ملاءمة القاعات مرتبة أبجدياً باسم المقرر");
   const unknown=computeScheduleDataReadiness({courses:[configuredCourse],instructorIds:new Set([7]),rows,rooms:[room("f13",null)]});
   check(unknown.roomFit.unknownRoomCapacity===2&&!unknown.roomFit.items.some(item=>item.kind==="capacity"),"السعة غير المسجلة تُترك بلا حكم ولا تحذير زائف");
 }
