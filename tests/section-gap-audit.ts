@@ -3,6 +3,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { planGaps, studentGaps, type GapCourse, type GapPlan } from "../src/utils/sectionGap";
 import { SectionGapPanel, showQuickCompareBadge } from "../src/components/SectionGapNote";
+import { createDemoSandboxState, DEMO_TERM_CURRENT } from "../src/db/demoSandbox";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string, extra?: unknown) => {
@@ -10,6 +11,21 @@ const check = (ok: boolean, label: string, extra?: unknown) => {
   else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`, extra === undefined ? "" : JSON.stringify(extra)); }
 };
 const c = (id: number, code: string, capacity: number, existing: number, students: number): GapCourse => ({ id, code, name: `مقرر ${code}`, capacity, existing, students });
+
+/* الديمو يُظهر شارة «التخطيط 3» نفسها في شريط الجدول، من كشفٍ وقراراتٍ
+   تجريبية محفوظة في صندوقه، بدل الاكتفاء بنافذة المقارنة المنفصلة. */
+const demo = createDemoSandboxState();
+const demoStats = demo.registrationStats?.find(row => row.termId === DEMO_TERM_CURRENT);
+const demoWeek = demo.schedules.filter(row => Number(row.AdTermId) === DEMO_TERM_CURRENT);
+const demoCourses = demo.courses.map(course => ({
+  id: course.AdCourseId, code: course.CourseCode, name: course.CourseName,
+  capacity: course.MaxStudent || 0,
+  existing: new Set(demoWeek.filter(row => row.AdCourseId === course.AdCourseId).map(row => String(row.SCode))).size,
+  students: 0,
+}));
+const demoPlanning = planGaps(demoCourses, { accepted: demoStats?.accepted || {}, remaining: demoStats?.remaining || {}, history: {} });
+check(demoPlanning.length === 3 && demoStats?.remainingSource?.column === "unregistered" && !showQuickCompareBadge({ loaded: true, planImported: true, planItems: demoPlanning }),
+  "الجدول التجريبي: شارة التخطيط 3 وقائمتها من كشف المتبقي الوهمي", demoPlanning);
 
 /* رغبات الطلبة وحدها (إشارة «مساري»): ⌈الطلبة ÷ السعة⌉. 180÷30 = 6 والموجود 5 ← ناقصة 1؛ 90÷30 = 3 والموجود 3 ← كافية. */
 const byStudents = studentGaps([c(1, "101", 30, 5, 180), c(2, "102", 30, 3, 90), c(3, "103", 0, 0, 500), c(4, "104", 40, 0, 0), c(5, "105", 25, 1, 101)]);

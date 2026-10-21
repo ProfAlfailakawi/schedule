@@ -593,6 +593,19 @@ export function createDemoSandboxState(): DemoSandboxState {
 
   const now = new Date().toISOString();
   const extras = seedIntelligenceExtras(schedules, courses);
+  /* شارة «التخطيط» في جدول الديمو تحتاج قرارات تخطيط محفوظة، لا مجرد
+     نافذة الرفع. ثلاثة مقررات مفتوحة تُظهر القائمة نفسها التي يراها القسم
+     بعد رفع كشف المتبقي واختيار عدد الشعب. هذه الأرقام وهمية وفي الصندوق فقط. */
+  const sectionsByCourse = new Map<number, Set<string>>();
+  for (const row of schedules.filter(row => Number(row.AdTermId) === DEMO_TERM_CURRENT)) {
+    const id = Number(row.AdCourseId);
+    if (!sectionsByCourse.has(id)) sectionsByCourse.set(id, new Set());
+    sectionsByCourse.get(id)!.add(String(row.SCode));
+  }
+  const plannedCourses = [...sectionsByCourse].filter(([, sections]) => sections.size > 0).slice(0, 3);
+  const accepted = Object.fromEntries(plannedCourses.map(([id, sections], index) => [String(id), sections.size + (index === 0 ? 2 : 1)]));
+  const remaining = Object.fromEntries(plannedCourses.map(([id], index) => [String(id), [1315, 3, 268][index]]));
+  const planScope = `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${DEMO_TERM_CURRENT}`;
   return {
     users, formNames, formSecurity, collegeUserAssign,
     terms: demoTerms(new Date()),
@@ -613,6 +626,11 @@ export function createDemoSandboxState(): DemoSandboxState {
     departmentRooms: extras.departmentRooms, scheduleDecisionMemories: extras.memories,
     campusMobilityProfiles: extras.mobility, scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: seeded.approvals,
     locationBuildings: registry.buildings, locationRooms: registry.rooms,
-    registrationStats: [],
+    registrationStats: [{
+      id: planScope, scopeKey: planScope, collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID,
+      termId: DEMO_TERM_CURRENT, counts: {}, remaining, vacant: {}, accepted,
+      remainingSource: { fileName: "كشف المتبقي التجريبي.pdf", importedAt: now, column: "unregistered" },
+      updatedAt: now, updatedBy: "بيانات الديمو",
+    }],
   };
 }
