@@ -20,13 +20,34 @@ interface LoginProps {
   }) => void;
 }
 export default function Login({ onLoginSuccess }: LoginProps) {
+  const normalizeLogin = (value: unknown) => String(value || "").trim().toLocaleLowerCase();
+  const wasSeen = (value: unknown) => {
+    const login = normalizeLogin(value);
+    if (!login) return false;
+    try { return localStorage.getItem(`schedule-login-seen:${login}`) === "1"; } catch { return false; }
+  };
+  const rememberLogin = (value: unknown) => {
+    const login = normalizeLogin(value);
+    if (!login) return;
+    try { localStorage.setItem(`schedule-login-seen:${login}`, "1"); } catch { /* private mode */ }
+  };
   const [username, setUsername] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("username")?.slice(0, 200) || ""),
     [password, setPassword] = useState(""),
     [loading, setLoading] = useState(false),
     [error, setError] = useState<string | null>(null),
     [identityOpen, setIdentityOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("journey") === "1"),
     [demoLoading, setDemoLoading] = useState(false),
-    [demoEnabled, setDemoEnabled] = useState(false);
+    [demoEnabled, setDemoEnabled] = useState(false),
+    [knownLogin, setKnownLogin] = useState(() => {
+      if (typeof window === "undefined") return false;
+      const initial = new URLSearchParams(window.location.search).get("username")?.slice(0, 200) || "";
+      return wasSeen(initial);
+    });
+
+  const updateUsername = (value: string) => {
+    setUsername(value);
+    setKnownLogin(wasSeen(value));
+  };
 
   /* Chrome on iOS keeps its toolbars up on a page that cannot scroll, yet
      reports svh/dvh as if they were retracted — the "fixed" login is then
@@ -60,7 +81,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     const hash = window.location.hash;
     const invite = parseInvitationHash(hash);
     if (invite) {
-      setUsername(invite.username);
+      updateUsername(invite.username);
       setPassword(invite.password);
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
@@ -82,6 +103,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       const res = await fetch("/api/auth/demo", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "تعذر بدء البيئة التجريبية");
+      rememberLogin(data.user?.SystemUserLogin || data.user?.login || "demo");
       onLoginSuccess(data);
     } catch (err: any) { setError(err.message || "تعذر بدء البيئة التجريبية"); }
     finally { setDemoLoading(false); }
@@ -103,6 +125,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         data = await res.json();
       // A reference the reader can quote; the reason itself stays in the log.
       if (!res.ok) throw new Error(data.ref ? `${data.error} (مرجع: ${data.ref})` : (data.error || "خطأ في تسجيل الدخول"));
+      rememberLogin(data.user?.SystemUserLogin || data.user?.login || username);
       onLoginSuccess(data);
     } catch (err: any) {
       setError(err.message || "خطأ في تسجيل الدخول");
@@ -151,7 +174,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <div className="apex-access-head">
             <span>دخول آمن</span>
             <div className="apex-access-title-row">
-              <strong>أهلاً بعودتك</strong>
+              <strong>{knownLogin ? "أهلاً بعودتك" : "مرحباً بك"}</strong>
               {/* A quiet, named door. The old version pulsed three rings next
                   to the password field — an animation competing with the one
                   thing this screen exists for. The journey deserves a name,
@@ -168,7 +191,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 <span>الرحلة</span>
               </button>
             </div>
-            <p>أكمل من حيث توقفت</p>
+            <p>{knownLogin ? "أكمل من حيث توقفت" : "سجّل دخولك للبدء"}</p>
           </div>
           {error ? (
             <div className="login-error">
@@ -181,7 +204,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 autoFocus
                 autoComplete="username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => updateUsername(e.target.value)}
                 disabled={loading}
                 required
               />
