@@ -2935,12 +2935,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           )
         ) : lens === "courseLoad" ? (
           <div className="course-load-report">
-            <div className="course-load-intro"><span><BookOpen aria-hidden="true" /></span><div><strong>توزيع المواد بين المواقع</strong><small>{sectionName ? `${sectionName} · المقرر يُحسب مرة في الإجمالي` : "اختر القسم لعرض أساتذته عبر المواقع"}</small></div></div>
+            <div className="course-load-intro"><span><BookOpen aria-hidden="true" /></span><div><strong>توزيع المواد بين المواقع</strong>{sectionName ? <small>{sectionName}</small> : null}</div></div>
             {!filters.sectionId ? <div className="query-empty"><EmptyState title="اختر القسم أولاً" detail="يعرض التقرير أساتذة هذا القسم عبر المواقع الأخرى التي يوجد فيها القسم نفسه." /></div> : null}
             {siteLoadRead?.loading || siteLoadRead?.termId !== filters.termId ? <p role="status">يُجهّز توزيع المواقع…</p> : null}
             {siteLoadRead?.denied.length ? <p className="course-load-partial" role="status">البيانات جزئية: تعذرت قراءة {siteLoadRead.denied.join("، ")}</p> : null}
             {courseLoads.length ? <section className="course-load-college">
-              <header><div><Landmark aria-hidden="true" /><h3>{countOf(courseLoads.length, AR.instructor)}</h3></div><span>مرتّبون بحسب عدد المواد</span></header>
+              <header><div><Landmark aria-hidden="true" /><h3>{countOf(courseLoads.length, AR.instructor)}</h3></div></header>
               <div className="course-load-list">{courseLoads.map(person => (
                 <article key={person.instructorId} className={`course-load-row${expandedCourseLoadIds.has(person.instructorId) ? " is-expanded" : ""}`}>
                   <div className="course-load-person"><span className="course-load-avatar"><UserRound aria-hidden="true" /></span><div className="course-load-person-content"><button type="button" data-guide-ignore="إظهار توزيع مواد الأستاذ حسب الحرم" className="course-load-person-toggle report-instructor-with-badge" aria-expanded={expandedCourseLoadIds.has(person.instructorId)} aria-controls={`course-load-details-${person.instructorId}`} onClick={() => setExpandedCourseLoadIds(previous => { const next = new Set(previous); if (next.has(person.instructorId)) next.delete(person.instructorId); else next.add(person.instructorId); return next; })}>{person.instructorName}{isVisitingInstructor(person.instructorId) ? <VisitingBadge compact /> : null}<ChevronDown aria-hidden="true" className="course-load-person-chevron" /></button>{expandedCourseLoadIds.has(person.instructorId) ? <div id={`course-load-details-${person.instructorId}`} className="course-load-detail-list" role="list">{person.courseLocations.flatMap(course => course.sites.map(site => <div key={`${course.courseName}-${site.collegeId}`} className="course-load-detail-item" role="listitem"><span className="course-load-detail-course"><BookOpen aria-hidden="true" />{course.courseName}</span><span className="course-load-detail-sections"><ClipboardList aria-hidden="true" /><b>{num(site.sectionCount)}</b><small>{nounFor(site.sectionCount, AR.section)}</small></span><span className="course-load-detail-site"><Building2 aria-hidden="true" />{site.siteName}</span></div>))}</div> : null}</div></div>
@@ -4124,7 +4124,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     return <div className="print-report print-wide print-query-report print-course-load-report">
       {pages.map((page, index) => <section className="print-explicit-page" key={`course-load-${index}`}>
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
-        <div className="print-query-summaryline"><span>{countOf(list.length, AR.instructor)}</span><span>المقرر يُحسب مرة في الإجمالي؛ ويظهر في كل موقع يدرّس فيه</span></div>
+        <div className="print-query-summaryline"><span>{countOf(list.length, AR.instructor)}</span></div>
         <table className="print-room-teacher-table print-course-load-table"><thead><tr><th>الأستاذ</th><th>المواقع وعدد المواد</th><th>الإجمالي</th></tr></thead><tbody>{page.map(person => <tr key={person.instructorId}>
           <th>{person.instructorName}{visitingIds.has(person.instructorId) ? " · منتدب" : ""}</th>
           <td>{person.sites.map(site => <span className="print-course-load-site" key={site.collegeId}><strong>{site.siteName}</strong> {countOf(site.courseCount, AR.course)}<small>{site.courses.join(" · ")}</small></span>)}</td>
