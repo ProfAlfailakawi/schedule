@@ -13,10 +13,11 @@ export default function SectionScheduleHours({header,demoReadOnly=false}:{header
   const [startTime,setStartTime]=useState("08:00"),[endTime,setEndTime]=useState("20:00");
   const [busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[notice,setNotice]=useState<{text:string;bad?:boolean}|null>(null);
   useEffect(()=>{void fetch("/api/colleges").then(r=>r.json()).then((rows:College[])=>{const sorted=sortByName(rows||[],row=>row.AdCollegeName);setColleges(sorted);setCollegeId(current=>current||Number(sorted[0]?.AdCollegeId||0));}).catch(()=>setNotice({text:"تعذر تحميل الكليات",bad:true}));},[]);
-  const loadCollege=async(id:number)=>{
+  const loadCollege=async(id:number,preserveSelection=false)=>{
     if(!id)return;setLoading(true);setNotice(null);
     try{const response=await fetch(`/api/admin/section-schedule-windows?collegeId=${id}`,{cache:"no-store"});const data=await response.json();if(!response.ok)throw new Error(data.error||"تعذر تحميل الأقسام");
-      setSections(data.sections||[]);setSelected([]);setStartTime("08:00");setEndTime("20:00");
+      setSections(data.sections||[]);
+      if(!preserveSelection){setSelected([]);setStartTime("08:00");setEndTime("20:00");}
     }catch(error:any){setSections([]);setNotice({text:error.message||"تعذر تحميل إعدادات الأقسام",bad:true});}finally{setLoading(false);}
   };
   useEffect(()=>{void loadCollege(collegeId);},[collegeId]);
@@ -35,7 +36,9 @@ export default function SectionScheduleHours({header,demoReadOnly=false}:{header
     if(demoReadOnly||!collegeId||!selected.length)return;
     setBusy(true);setNotice(null);
     try{const response=await fetch("/api/admin/section-schedule-windows",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionIds:selected,startTime,endTime})});const data=await response.json();if(!response.ok)throw new Error(data.error||"تعذر حفظ أوقات الدوام");
-      await loadCollege(collegeId);
+      // Keep the edited departments selected so the refreshed fields show the
+      // values the server just saved instead of snapping back to 08:00–20:00.
+      await loadCollege(collegeId,true);
       const outside=Number(data.outOfWindowAppointments||0);
       setNotice({text:`حُفظ وقت الدوام لـ ${countOf(Number(data.updated||0),AR.section)}.${outside?` يوجد ${countOf(outside,AR.appointment)} قائم خارج النطاق الجديد؛ لم يتغير تلقائيًا.`:""}`});
     }catch(error:any){setNotice({text:error.message||"تعذر حفظ أوقات الدوام",bad:true});}finally{setBusy(false);}
