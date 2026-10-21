@@ -42,9 +42,10 @@ export function configureRuntimeEnvironment(): string {
     process.env.AUTO_IMPORT_LEGACY_DATA = "false";
   }
 
-  // Auto-inject Firebase configuration if present. In Cloud Run the AI Studio
-  // applet config is authoritative; locally, explicit environment variables keep
-  // their existing precedence for development/testing.
+  // Auto-inject Firebase configuration if present. On Cloud Run the bundled
+  // firebase-applet-config.json takes precedence over any existing
+  // FIREBASE_PROJECT_ID / FIREBASE_DATABASE_ID values; in local development
+  // explicit environment variables take precedence and the file is only a fallback.
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(firebaseConfigPath)) {
     try {

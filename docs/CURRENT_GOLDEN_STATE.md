@@ -65,7 +65,6 @@
 
 ## ملفات الحماية الرئيسية
 
-- `docs/AI_REVIEW_PROMPT.md` — البرومت الإلزامي لأي مراجعة/تعديل مستقبلي.
 - `docs/PDF_IMPORT_GOLDEN_BASELINE.md`
 - `docs/CURRENT_GOLDEN_STATE.md`
 - `tests/fixtures/authority-import-golden.json`
