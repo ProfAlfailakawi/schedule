@@ -493,6 +493,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
   const [siteLoadRead, setSiteLoadRead] = useState<{ termId: number; rows: FSchedule[]; denied: string[]; loading: boolean } | null>(null);
+  const [expandedCourseLoadIds, setExpandedCourseLoadIds] = useState<Set<number>>(() => new Set());
   /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده («accepted» | «historical»)، من ترويسة
      الخادم. فارغةٌ لغير العميدين. */
   const [finality, setFinality] = useState<Record<string, "accepted" | "historical">>({});
@@ -2942,7 +2943,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               <header><div><Landmark aria-hidden="true" /><h3>{countOf(courseLoads.length, AR.instructor)}</h3></div><span>مرتّبون بحسب عدد المواد</span></header>
               <div className="course-load-list">{courseLoads.map(person => (
                 <article key={person.instructorId} className="course-load-row">
-                  <div className="course-load-person"><span className="course-load-avatar"><UserRound aria-hidden="true" /></span><div><strong className="report-instructor-with-badge">{person.instructorName}{isVisitingInstructor(person.instructorId) ? <VisitingBadge compact /> : null}</strong><small>{person.courses.join(" · ")}</small></div></div>
+                  <div className="course-load-person"><span className="course-load-avatar"><UserRound aria-hidden="true" /></span><div className="course-load-person-content"><button type="button" data-guide-ignore="إظهار مواد الأستاذ ومواقعه" className="course-load-person-toggle report-instructor-with-badge" aria-expanded={expandedCourseLoadIds.has(person.instructorId)} aria-controls={`course-load-details-${person.instructorId}`} onClick={() => setExpandedCourseLoadIds(previous => { const next = new Set(previous); if (next.has(person.instructorId)) next.delete(person.instructorId); else next.add(person.instructorId); return next; })}>{person.instructorName}{isVisitingInstructor(person.instructorId) ? <VisitingBadge compact /> : null}<ChevronDown aria-hidden="true" className="course-load-person-chevron" /></button><span id={`course-load-details-${person.instructorId}`} className="course-load-person-details" hidden={!expandedCourseLoadIds.has(person.instructorId)}><span className="course-load-person-courses"><i>المواد:</i> {person.courses.join(" · ")}</span><span className="course-load-person-sites"><i>الحرم:</i> {person.sites.map(site => site.siteName).join(" · ")}</span></span></div></div>
                   <div className="course-load-sites">{person.sites.map(site => <span key={site.collegeId} title={`${site.courses.join(" · ")} · ${countOf(site.sectionCount, AR.section)}`}><Building2 aria-hidden="true" />{site.siteName}<b>{num(site.courseCount)}</b></span>)}</div>
                   <div className="course-load-meter" aria-label={countOf(person.courseCount, AR.course)}><i style={{ width: share(person.courseCount, courseLoadMax) }} /></div>
                   <div className="course-load-facts"><b>{countOf(person.courseCount, AR.course)}</b><small>{countOf(person.sectionCount, AR.section)}</small></div>

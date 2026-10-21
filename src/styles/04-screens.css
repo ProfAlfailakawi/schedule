@@ -2637,3 +2637,41 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 .so-warn{margin:0;color:var(--warning);font-size:12px;font-weight:700}
 .btn.so-destroy{background:transparent;border:1.5px solid var(--warning);color:var(--warning)}
 .btn.so-destroy:hover{background:var(--warning-soft)}
+.location-quick-setup{--lqs-ink:var(--ink,#173f37);--lqs-accent:var(--accent,#16745f);gap:18px}
+.location-quick-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:16px}
+.location-quick-filters .field{margin:0}
+.location-quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.location-quick-actions>.surface{display:flex;align-items:center;gap:14px;padding:18px}
+.location-quick-actions>.surface>div{display:grid;gap:4px;flex:1;min-width:0}
+.location-quick-actions>.surface>div strong{color:var(--lqs-ink);font-size:1.05rem}
+.location-quick-actions>.surface>div small{color:var(--muted);line-height:1.5}
+.location-quick-icon{display:grid;place-items:center;flex:0 0 48px;inline-size:48px;block-size:48px;border-radius:15px;background:color-mix(in srgb,var(--lqs-accent) 12%,white);color:var(--lqs-accent)}
+.location-quick-icon svg{inline-size:23px;block-size:23px}
+.location-quick-form{padding:20px}
+.location-quick-form form{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.65fr);align-items:end;gap:14px}
+.location-quick-form form>div:first-child{grid-column:1/-1}
+.location-quick-form h2,.location-quick-directory h2{margin:0;color:var(--lqs-ink);font-size:1.1rem}
+.location-quick-form p,.location-quick-directory p{margin:4px 0 0;color:var(--muted)}
+.location-quick-preview{align-self:center;padding:10px 14px;border-radius:12px;background:var(--surface-muted,#f3f5f2);color:var(--lqs-ink);font-weight:750;letter-spacing:.08em;text-align:center}
+.location-quick-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+.location-quick-form textarea{width:100%;resize:vertical}
+.location-quick-section-picker{grid-column:1/-1;min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:12px}
+.location-quick-section-picker legend{padding-inline:5px;color:var(--muted);font-size:.9rem}
+.location-quick-section-picker>div{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:7px}
+.location-quick-section-picker label{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.location-quick-section-picker input{accent-color:var(--lqs-accent)}
+.location-quick-notice{padding:11px 14px;border:1px solid color-mix(in srgb,var(--lqs-accent) 25%,white);border-radius:12px;background:color-mix(in srgb,var(--lqs-accent) 8%,white);color:var(--lqs-ink)}
+.location-quick-shared{grid-column:1/-1;display:flex;align-items:center;gap:9px;padding:12px;border-radius:12px;background:color-mix(in srgb,var(--lqs-accent) 8%,white);color:var(--muted)}
+.location-quick-shared svg{flex:none;color:var(--lqs-accent)}
+.location-quick-shared strong{color:var(--lqs-ink)}
+.location-quick-directory{padding:18px}
+.location-quick-directory>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.location-quick-room-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px}
+.location-quick-room-list article{display:grid;grid-template-columns:20px auto auto;align-items:center;gap:8px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.location-quick-room-list article>svg{inline-size:18px;color:var(--lqs-accent)}
+.location-quick-room-list article>strong{font-size:1rem;color:var(--lqs-ink)}
+.location-quick-room-list article>small{grid-column:2/-1;color:var(--muted);line-height:1.4}
+.location-quick-empty{display:grid;justify-items:center;gap:7px;padding:34px 12px;color:var(--muted);text-align:center}
+.location-quick-empty svg{inline-size:28px;block-size:28px;color:var(--lqs-accent)}
+.location-quick-empty strong{color:var(--lqs-ink)}
+@media(max-width:760px){.location-quick-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.location-quick-actions{grid-template-columns:1fr}.location-quick-form form{grid-template-columns:1fr}.location-quick-form form>div:first-child,.location-quick-form-actions,.location-quick-shared{grid-column:1}.location-quick-preview{justify-self:stretch}}
