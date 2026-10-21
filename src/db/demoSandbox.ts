@@ -9,11 +9,12 @@ import { roleDefinition, type AcademicRole } from "../utils/academicRoles";
 import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurricula";
 
 /*
- * ── الصندوق التجريبي: كليةٌ واحدة، قسمٌ واحد، سنةٌ واحدة ─────────────────────
+ * ── الصندوق التجريبي: كليةٌ واحدة، وعدة أقسام لعرض استعارة القاعات ─────────
  *
  * يُعرض الديمو على الأقسام، وكلُّ ما يحتاجه العارض أن يجد «كلَّ شيء» في مكانٍ
- * واحد: كلية التربية الأساسية ← قسم تكنولوجيا التعليم ← 2026/2027. لا كلياتٌ
- * وأقسامٌ وسنواتٌ متفرقة يضيع فيها المشهد. وحالاتُ دورة الاعتماد تتوزّع على
+ * واضح: كلية التربية الأساسية ← قسم تكنولوجيا التعليم ← 2026/2027. تظهر إلى
+ * جانبه أقسامٌ تجريبية قليلة لشرح استعارة القاعات، من دون تشتيت بقية المشهد.
+ * وحالاتُ دورة الاعتماد تتوزّع على
  * الفصول الثلاثة نفسها لتُرى كلُّها بلا تنقّل بين أقسام:
  *
  *   • الأول 2026/2027 (الجاري):  اعتُمد ثم أرجعه التسجيل بملاحظات مفتوحة
@@ -29,6 +30,7 @@ import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurri
 export const DEMO_COLLEGE_ID = 1;
 export const DEMO_SECTION_ID = 1;
 export const DEMO_TERM_CURRENT = 1;
+export const DEMO_TERM_SECOND = 2;
 export const DEMO_COLLEGE_NAME = "كلية التربية الأساسية";
 export const DEMO_SECTION_NAME = "تكنولوجيا التعليم";
 
@@ -37,6 +39,8 @@ const colleges: AdCollege[] = [
 ];
 const sections: AdSection[] = [
   { AdSectionId: DEMO_SECTION_ID, AdCollegeId: DEMO_COLLEGE_ID, AdSectionCode: "09", AdSectionName: DEMO_SECTION_NAME },
+  { AdSectionId: 2, AdCollegeId: DEMO_COLLEGE_ID, AdSectionCode: "10", AdSectionName: "التربية الفنية (تجريبي)" },
+  { AdSectionId: 3, AdCollegeId: DEMO_COLLEGE_ID, AdSectionCode: "11", AdSectionName: "التصميم التعليمي (تجريبي)" },
 ];
 
 /* اثنا عشر أستاذاً للقسم، وأربعة منتدبون من أقسامٍ أخرى (13–16). */
@@ -101,6 +105,7 @@ const DEMO_BUILDINGS: readonly DemoBuildingSeed[] = [
   { prefix: "901", siteLetter: "A", number: "01", collegeId: DEMO_COLLEGE_ID, name: "مبنى تكنولوجيا التعليم", rooms: [
     ["101", [1], "قاعة ذكية 40 مقعدًا"], ["102", [1], "قاعة محاضرات 35 مقعدًا"], ["103", [1], "قاعة نقاش 30 مقعدًا"],
     ["104", [1], "قاعة محاضرات 45 مقعدًا"], ["L01", [1], "مختبر حاسب"], ["S01", [1], "استوديو إنتاج"],
+    ["201", [2], "قاعة قسم التربية الفنية 35 مقعدًا"], ["202", [3], "قاعة قسم التصميم التعليمي 30 مقعدًا"],
   ] },
   { prefix: "901", siteLetter: "A", number: "02", collegeId: DEMO_COLLEGE_ID, name: "مبنى القاعات المركزية", rooms: [
     ["301", [1], "قاعة كبرى 120 مقعدًا"], ["302", [1], "قاعة كبرى 100 مقعد"],
@@ -301,6 +306,7 @@ function demoTerms(now: Date): AdTerm[] {
   start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // الأحد
   return [
     { AdTermId: DEMO_TERM_CURRENT, AdTermName: "الفصل الأول 2026/2027", AdTermStart: start.toISOString().slice(0, 10), AdTermWeeks: 15, AdTermSubmissionDeadline: new Date(now.getTime() + 7 * day).toISOString().slice(0, 10) },
+    { AdTermId: DEMO_TERM_SECOND, AdTermName: "الفصل الثاني 2026/2027", AdTermStart: new Date(now.getTime() + 110 * day).toISOString().slice(0, 10), AdTermWeeks: 15, AdTermSubmissionDeadline: new Date(now.getTime() + 125 * day).toISOString().slice(0, 10) },
   ];
 }
 
@@ -670,13 +676,27 @@ export function createDemoSandboxState(): DemoSandboxState {
       collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID, instructorIds: [...DEMO_VISITING_INSTRUCTOR_IDS], updatedAt: now,
     }],
     departmentRooms: extras.departmentRooms, scheduleDecisionMemories: extras.memories,
-    campusMobilityProfiles: extras.mobility, scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: seeded.approvals,
+    campusMobilityProfiles: extras.mobility, scheduleShareLinks: [], hallBarterRequests: [{
+      id: "demo-hall-barter-pending-1", createdAt: now, updatedAt: now,
+      AdTermId: DEMO_TERM_CURRENT, buildingId: demoBuildingId(DEMO_BUILDINGS[1]), roomId: demoRoomId(DEMO_BUILDINGS[1], "301"),
+      roomCode: demoBuildingCode(DEMO_BUILDINGS[1]), roomHall: "301", day: "fwednesday", startTime: "17:00", endTime: "18:00",
+      requesterCollegeId: DEMO_COLLEGE_ID, requesterSectionId: 2, requesterUserId: 15, requesterName: "رئيس قسم التربية الفنية",
+      ownerCollegeId: DEMO_COLLEGE_ID, ownerSectionId: DEMO_SECTION_ID,
+      confidence: 0, historyTerms: 0, status: "pending",
+    }], scheduleApprovals: seeded.approvals,
     locationBuildings: registry.buildings, locationRooms: registry.rooms,
-    registrationStats: [{
-      id: planScope, scopeKey: planScope, collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID,
-      termId: DEMO_TERM_CURRENT, counts: {}, remaining, vacant: {}, accepted,
-      remainingSource: { fileName: "كشف المتبقي التجريبي.pdf", importedAt: now, column: "unregistered" },
-      updatedAt: now, updatedBy: "بيانات الديمو",
-    }],
+    registrationStats: [
+      {
+        id: planScope, scopeKey: planScope, collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID,
+        termId: DEMO_TERM_CURRENT, counts: {}, remaining, vacant: {}, accepted,
+        remainingSource: { fileName: "كشف المتبقي التجريبي.pdf", importedAt: now, column: "unregistered" },
+        updatedAt: now, updatedBy: "بيانات الديمو",
+      },
+      {
+        id: `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${DEMO_TERM_SECOND}`, scopeKey: `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${DEMO_TERM_SECOND}`,
+        collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID, termId: DEMO_TERM_SECOND,
+        counts: {}, remaining: {}, vacant: {}, accepted: {}, updatedAt: now, updatedBy: "بيانات الديمو",
+      },
+    ],
   };
 }
