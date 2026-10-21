@@ -575,10 +575,27 @@ export function createDemoSandboxState(): DemoSandboxState {
      اعتماد النسخة الأولى، فتظهران بوضوح في تقرير الديمو كمقررات محذوفة. */
   const demoDeletedIds = new Set<number>();
   const deletedCourseIds = new Set<number>();
+  /* لا نحذف صفوف المرساة التي صنعتها plantConflicts ولا الصفوف المتعارضة معها؛
+     فهي مشهد مستقل لشرح معالجة التعارضات في الديمو. */
+  const conflictRows = first.filter(row => String(row.fdetail || "").includes(DEMO_CONFLICT_MARK));
+  const protectedConflictIds = new Set<number>();
+  for (const conflict of conflictRows) {
+    for (const row of first) {
+      const sameSlot = row.fstarttime === conflict.fstarttime
+        && Boolean(row.fsunday) === Boolean(conflict.fsunday)
+        && Boolean(row.fmonday) === Boolean(conflict.fmonday)
+        && Boolean(row.ftuesday) === Boolean(conflict.ftuesday)
+        && Boolean(row.fwednesday) === Boolean(conflict.fwednesday)
+        && Boolean(row.fthursday) === Boolean(conflict.fthursday);
+      if (sameSlot && (row.roomId === conflict.roomId || row.AdInstructorId === conflict.AdInstructorId)) {
+        protectedConflictIds.add(Number(row.id));
+      }
+    }
+  }
   for (const baselineRow of acceptedFirst) {
     const currentRow = first.find(row => Number(row.id) === Number(baselineRow.id));
     const courseId = Number(baselineRow.AdCourseId);
-    if (!currentRow || String(currentRow.fdetail || "").includes(DEMO_CONFLICT_MARK) || deletedCourseIds.has(courseId)) continue;
+    if (!currentRow || protectedConflictIds.has(Number(currentRow.id)) || deletedCourseIds.has(courseId)) continue;
     demoDeletedIds.add(Number(currentRow.id));
     deletedCourseIds.add(courseId);
     if (demoDeletedIds.size === 2) break;
