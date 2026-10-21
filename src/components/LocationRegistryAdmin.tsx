@@ -1,5 +1,5 @@
 import React, { Fragment, useEffect, useMemo, useState } from "react";
-import { Building2, Check, CheckCircle2, ChevronDown, CircleAlert, Database, DoorOpen, Info, Pencil, Plus, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
+import { Building2, CheckCircle2, ChevronDown, CircleAlert, Database, DoorOpen, Info, Pencil, Plus, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
 import type { AdCollege, AdSection, LocationMigrationRun, LocationReviewCase, MasterBuilding, MasterRoom } from "../types";
 import { Badge, Field, Notice, PrimaryButton, SecondaryButton, Surface, useDialogDismiss } from "./ui";
 import { buildingNumberLabel, normalizeCollegeName, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "../utils/locationCollegePrefixes";
@@ -63,7 +63,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   useDialogDismiss(Boolean(editEntity) && !aliasEditor, () => setEditEntity(null));
   const [newBuilding,setNewBuilding]=useState({collegeId:0,officialCode:"",siteName:"",branchName:""});
   const [newRoom,setNewRoom]=useState({buildingId:"",canonicalCode:"",capacity:"",roomType:""});
-  const [roomTypes,setRoomTypes]=useState<string[]>(["تدريسية","مختبر","مختبر حاسوب"]),[newRoomType,setNewRoomType]=useState(""),[renamingRoomType,setRenamingRoomType]=useState<string|null>(null),[renamedRoomType,setRenamedRoomType]=useState("");
+  const [roomTypes,setRoomTypes]=useState<string[]>(["تدريسية","مختبر","مختبر حاسوب"]);
   const [showBuildingCreate,setShowBuildingCreate]=useState(false),[showRoomCreate,setShowRoomCreate]=useState(false);
   const [migrationPreview,setMigrationPreview]=useState<any>(null);
   const [workspaceTab,setWorkspaceTab]=useState<"registry"|"migration">("registry");
@@ -190,8 +190,6 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
     catch(e:any){setError(e.message);return false;}
     finally{mutating.current-=1;setBusy(false);setPendingNote(null);}
   };
-  const addRoomType=async()=>{const name=newRoomType.normalize("NFKC").trim();if(!name)return;const ok=await mutate("/api/admin/location-room-types",{method:"POST",body:JSON.stringify({name})},`أُضيف نوع القاعة «${name}»`);if(ok)setNewRoomType("");};
-  const renameRoomType=async(oldName:string)=>{const name=renamedRoomType.normalize("NFKC").trim();if(!name)return;setBusy(true);setError(null);setMessage(null);try{const result=await json(`/api/admin/location-room-types/${encodeURIComponent(oldName)}`,{method:"PUT",body:JSON.stringify({name})});setRoomTypes(result.types||[]);setRenamingRoomType(null);setRenamedRoomType("");setMessage(`تم تغيير «${oldName}» إلى «${name}» وتحديث ${countOf(Number(result.updatedRooms||0),AR.room)} و${countOf(Number(result.updatedCourses||0),AR.course)} مرتبطة.`);await load();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
   const selectedIds=(e:React.ChangeEvent<HTMLSelectElement>)=>Array.from(e.target.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((o:HTMLOptionElement)=>Number(o.value)).filter(Boolean);
   const saveAlias=async()=>{if(!aliasEditor?.value.trim())return;const value=aliasEditor.value.trim();const next=[...aliasEditor.currentAliases,{value,normalized:value.toUpperCase().replace(/\s+/g,""),confidence:"CONFIRMED",source:"ADMIN",evidence:["اعتماد يدوي من مدير النظام"]}];const ok=await mutate(`/api/admin/location-registry/${aliasEditor.kind==="building"?"buildings":"rooms"}/${encodeURIComponent(aliasEditor.id)}`,{method:"PUT",body:JSON.stringify({aliases:next})},"تمت إضافة الصيغة التاريخية");if(ok)setAliasEditor(null);};
   const previewMigration=async()=>{setBusy(true);setError(null);try{setMigrationPreview(await json("/api/admin/location-registry/migration/preview"));}catch(e:any){setError(e.message);}finally{setBusy(false);}};
@@ -215,12 +213,6 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
       <p>اختر المبنى ثم أدر قاعاته. التعديلات تُحفظ في السجل الرسمي. «الصيغة التاريخية» كتابة قديمة لنفس المكان لفهم بيانات السنوات السابقة فقط، ولا تظهر للمستخدم العادي.</p>
     </details>
 
-    <Surface className="location-type-manager">
-      <div className="location-type-manager-heading"><span><DoorOpen/></span><div><h2>أنواع القاعات</h2><p>أضف النوع مرة واحدة، ثم اختره عند تعريف القاعة أو ربط المقرر.</p></div></div>
-      <div className="location-type-list">{roomTypes.map(type=><div className="location-type-row" key={type}>{renamingRoomType===type?<><input aria-label={`الاسم الجديد لنوع ${type}`} value={renamedRoomType} maxLength={60} autoFocus onChange={event=>setRenamedRoomType(event.target.value)}/><SecondaryButton type="button" data-guide-ignore="تغيير اسم نوع قاعة" disabled={!renamedRoomType.trim()||busy||demoReadOnly} onClick={()=>void renameRoomType(type)}><Check/>حفظ الاسم</SecondaryButton><button type="button" data-guide-ignore="إلغاء تغيير اسم نوع القاعة" className="location-type-cancel" onClick={()=>{setRenamingRoomType(null);setRenamedRoomType("");}}>إلغاء</button></>:<><strong>{type}</strong><button type="button" data-guide-ignore="إدارة أنواع القاعات" className="location-type-edit" disabled={busy||demoReadOnly} aria-label={`تغيير اسم ${type}`} onClick={()=>{setRenamingRoomType(type);setRenamedRoomType(type);}}><Pencil/>تغيير الاسم</button></>}</div>)}</div>
-      <div className="location-type-add"><input aria-label="نوع قاعة جديد" placeholder="مثال: مختبر كيمياء" value={newRoomType} maxLength={60} onChange={event=>setNewRoomType(event.target.value)}/><PrimaryButton type="button" data-guide-ignore="إضافة نوع قاعة" disabled={!newRoomType.trim()||busy||demoReadOnly} onClick={()=>void addRoomType()}><Plus/>إضافة نوع</PrimaryButton></div>
-      <small className="location-type-hint">تغيير الاسم يحدّث القاعات والمقررات التي تستخدمه.</small>
-    </Surface>
 
     {(() => {
       /* Readings that are zero sit in one quiet collapsed row (their real counts in the summary); the full captions open beneath. */

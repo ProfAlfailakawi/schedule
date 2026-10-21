@@ -58,6 +58,7 @@ import {
   X,
 } from "lucide-react";
 import { DnaCount, DnaStatusHeader } from "./dna";
+import CourseRoomTypeBadge from "./CourseRoomTypeBadge";
 import {
   Badge,
   EmptyState,
@@ -6457,6 +6458,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const i = instructorById.get(r.AdInstructorId);
     const code = c?.CourseCode || r.AdCourseName || "—";
     const title = r.AdCourseName || c?.CourseName || code;
+    const roomType = String(c?.CourseRoomType || "").trim();
     const label = { text: title, shortened: false };
     const who = i?.AdInstructorName || "بدون أستاذ";
     const place = cleanWeekPlaceLabel(placeOf(r));
@@ -6535,13 +6537,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             data-code-row={denseCodeRow}
             data-terminal-stack={denseIdentityMode === "double" && mins(r.fstarttime) >= 19 * 60 ? "true" : undefined}
           >
-            <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
+            <span className="week-course-title-wrap"><strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong><CourseRoomTypeBadge type={roomType} compact/></span>
             <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
             <em className="week-code" dir="ltr">{code}</em>
           </div>
         ) : (
           <>
-            <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
+            <span className="week-course-title-wrap"><strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong><CourseRoomTypeBadge type={roomType} compact/></span>
             <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
             <small className="week-when"><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>{place ? <i>{place}</i> : null}</small>
             <em className="week-code" dir="ltr">{code}</em>
@@ -6609,7 +6611,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       r.fstarttime, r.fendtime, r.AdRoomCode, r.AdRoomHall, r.AdCourseName,
       r.fsunday, r.fmonday, r.ftuesday, r.fwednesday, r.fthursday,
       // what the row resolves to
-      code, title, who, placeOf(r), hueFor(code, title, i?.AdInstructorName, placeOf(r)),
+      code, title, String(c?.CourseRoomType||""), who, placeOf(r), hueFor(code, title, i?.AdInstructorName, placeOf(r)),
       // geometry and layout mode
       d.key, widthShare, denseIdentityMode,
       denseWeekStrips ? weekStripCodeRow(r, title, String(code), denseIdentityMode) : "headline",

@@ -4,6 +4,7 @@ import { resolveScopeSelection, singleDepartmentOf, type ScopeAssignmentLike } f
 import { BookOpen, Building2, GraduationCap, Trash2 } from "lucide-react";
 import { sortByName, byArabic } from "../utils/sorting";
 import CurriculumPlans from "./CurriculumPlans";
+import CourseRoomTypeBadge from "./CourseRoomTypeBadge";
 import { sectionLabels } from "../utils/sectionLabel";
 import { decimalText, numericText } from "../utils/digits";
 import type { AdSection } from "../types";
@@ -635,7 +636,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
                   onClick={() => setSelectedId(x.AdCourseId)}
                   className={activeId === x.AdCourseId ? "selected" : ""}
                   icon={<BookOpen />}
-                  title={x.CourseName}
+                  title={<span className="course-room-type-line"><span>{x.CourseName}</span><CourseRoomTypeBadge type={x.CourseRoomType}/></span>}
                   subtitle={<span className="record-path"><Building2 />{sec(x.AdSectionId)} <i className="record-path-dot" aria-hidden="true" /> {coll(x.AdCollegeId)}</span>}
                   meta={<><MetaPill label="الرقم الأكاديمي" value={x.CourseCode} /><MetaPill label="الوحدات" value={x.CourseCredit} /><MetaPill label="الساعات" value={x.CourseHours} />{(() => { const tag = planTagOf(x); return tag ? <span className={`course-plan-tag is-${tag.key}`}>{tag.key === "shared" ? "مشترك" : tag.label}</span> : null; })()}</>}
                 />
@@ -657,7 +658,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
             <>
               <div className="academic-inspector-icon"><BookOpen /></div>
               <span className="surface-kicker">تفاصيل المقرر</span>
-              <h2>{selected.CourseName}</h2>
+              <h2 className="course-room-type-line"><span>{selected.CourseName}</span><CourseRoomTypeBadge type={selected.CourseRoomType}/></h2>
               <p>{sec(selected.AdSectionId)} · {coll(selected.AdCollegeId)}</p>
               <div className="inspector-facts inspector-facts-pairs">
                 <article><span>الوحدات</span><b>{selected.CourseCredit}</b></article>

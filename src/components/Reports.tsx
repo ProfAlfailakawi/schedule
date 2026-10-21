@@ -41,6 +41,7 @@ import InstructorPicker from "./InstructorPicker";
 import { departmentSiteScopes } from "../utils/instructorCourseLoad";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
 import VisitingBadge from "./VisitingBadge";
+import CourseRoomTypeBadge from "./CourseRoomTypeBadge";
 import SubmissionDeadlines, { type DeadlineRow } from "./SubmissionDeadlines";
 import { inboxAudience } from "../utils/inboxAudience";
 import { usePageAwake } from "../utils/pageAwake";
@@ -1937,7 +1938,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         aria-label={`تفاصيل ${pickedCourse?.CourseName || selectedResult.AdCourseName || "الموعد"}`}
       >
         <header>
-          <div><small>تفاصيل الموعد</small><strong>{pickedCourse?.CourseName || selectedResult.AdCourseName || "—"}</strong></div>
+          <div><small>تفاصيل الموعد</small><div className="course-room-type-line"><strong>{pickedCourse?.CourseName || selectedResult.AdCourseName || "—"}</strong><CourseRoomTypeBadge type={pickedCourse?.CourseRoomType} compact/></div></div>
           <span className="occupancy-pick-count">الشعبة {selectedResult.SCode || "—"}</span>
           <button type="button" onClick={() => setSelectedResultId(null)} aria-label="إغلاق التفاصيل" title="إغلاق"><X aria-hidden="true" /></button>
         </header>
@@ -2419,7 +2420,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 >
                   <span className="lens-index">{String(index + 1).padStart(2, "0")}</span>
                   <div className="lens-main">
-                    <strong>{row.CourseNameSnapshot || row.AdCourseName || course?.CourseName}</strong>
+                    <div className="course-room-type-line"><strong>{row.CourseNameSnapshot || row.AdCourseName || course?.CourseName}</strong><CourseRoomTypeBadge type={course?.CourseRoomType} compact/></div>
                     <div className="lens-tags">
                       <span className="code-chip">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</span>
                       <span>{row.SCode}</span>
@@ -2476,7 +2477,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                     <article key={`${day.key}-${row.id}`}>
                       <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                       <div>
-                        <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
+                        <div className="course-room-type-line"><strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong><CourseRoomTypeBadge type={courseById.get(row.AdCourseId)?.CourseRoomType} compact/></div>
                         <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                       </div>
                       <small>
