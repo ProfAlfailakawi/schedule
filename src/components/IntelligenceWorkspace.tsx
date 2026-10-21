@@ -4242,7 +4242,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <div className="innovation-suite-head">
               <div>
                 <span className="surface-kicker">مختبر القرار</span>
-                <h2>قرارات الجدول، بتجربة آمنة</h2>
+                <h2>مختبر القرار المتقدم</h2>
                 <p>
                   اختبر القواعد والبدائل قبل تطبيقها على الجدول.
                 </p>

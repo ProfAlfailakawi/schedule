@@ -55,7 +55,7 @@ check('المحاكاة محلية والإجراءات ترجع لمصدرها 
 check('إغلاق خطأ مركز الذكاء يمسحه من الحالة ومختبر القرار يملأ عرضه بأدواته',()=>{
  const ui=readFileSync('src/components/IntelligenceWorkspace.tsx','utf8'), css=readFileSync('src/styles/06-intelligence.css','utf8');
  assert(ui.includes('<Notice onDismiss={() => setError(null)}>'));
- assert(ui.includes('قرارات الجدول، بتجربة آمنة'));
+ assert(ui.includes('مختبر القرار المتقدم'));
  assert.match(css,/\.innovation-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(4/);
  assert.match(css,/\.innovation-tabs button\.active\s*\{[^}]*box-shadow/);
  const labStart=ui.indexOf('{twinCard === "lab" ? ('), labEnd=ui.indexOf('{scenario && twinCard === "board"',labStart), lab=ui.slice(labStart,labEnd);
