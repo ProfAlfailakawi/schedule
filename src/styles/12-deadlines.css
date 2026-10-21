@@ -588,8 +588,8 @@
 .pr-import-actions{display:flex;gap:8px;flex-wrap:wrap}
 .pr-import-actions label{cursor:pointer;display:inline-flex;align-items:center}
 .pr-import-result{display:grid;gap:8px}
-.pr-sheet-result{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 12px;border-radius:var(--r-sm);border:1px solid color-mix(in srgb,var(--success,#3f7f67) 45%,var(--line));background:color-mix(in srgb,var(--success,#3f7f67) 8%,var(--surface))}
-.pr-sheet-result>svg{flex:none;width:20px;height:20px;color:var(--success,#3f7f67)}
+.pr-sheet-result{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 12px;border-radius:var(--r-sm);border:1px solid color-mix(in srgb,var(--success) 45%,var(--line));background:color-mix(in srgb,var(--success) 8%,var(--surface))}
+.pr-sheet-result>svg{flex:none;width:20px;height:20px;color:var(--success)}
 .pr-sheet-result>span{display:inline-flex;align-items:center;gap:5px;font-weight:700}
 .pr-sheet-result>span svg{width:15px;height:15px}
 .pr-sheet-result small{color:var(--muted)}

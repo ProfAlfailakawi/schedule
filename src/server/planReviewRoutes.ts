@@ -18,6 +18,7 @@ import { TECHNOLOGY_EDUCATION_CURRICULA } from "../data/technologyEducationCurri
 import { compareCurriculumReference, isTechnologyEducation, referenceCodeKey } from "../utils/curriculumReference";
 import { AR, countOf } from "../utils/arabicCount";
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 import type { Express, Request, RequestHandler, Response } from "express";
 import { DuplicateResourceError, RuleDraftConflict, Repository } from "../db/repository";
 import type { AdCourse, CurriculumRuleSet, ElectiveGroup } from "../types";
@@ -137,6 +138,8 @@ export function referenceSnapshotFor(sections: any[], courses: AdCourse[]) {
 export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): void {
   const fail = (res: Response, status: number, error: string, extra: Record<string, unknown> = {}) => res.status(status).json({ error, ...extra });
   const roleId = (req: any): string => roleDefinition(req.user?.Role).id;
+  /* رفعُ صحيفة يقرأ ملفاً كاملاً ويكتب في الكتالوج: حدٌّ سخيٌّ يمنع حلقةً من شغل الخادم. */
+  const sheetLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "ملفاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد الرفع." } });
 
   /** من يرى الصحيفة: صاحبُ نطاقها بصفةٍ تفتح الشاشة، أو إدارةُ النظام. */
   const canSee = (req: any, plan: Plan) =>
@@ -510,7 +513,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
   /* ── رفع «الخطة الدراسية» (صحيفة التخرج) لقسمٍ واحد: يُطبَّق مباشرةً، والقسم يعتمد بعدها ──────
      الحساب الرئيسي وحده. لا يُقبل إلا كشفُ الكلية والقسم المختارين (checkSheetScope) وقبل أي كتابة؛
      وتؤخذ مقررات القسم وحدها برقمها (105)، وتُصحَّح أسماؤها، ولا تُمسّ السعة أبداً. */
-  app.post("/api/plan-review/sheet/import", deps.requireAuth, express.raw({ type: "application/octet-stream", limit: PLAN_PDF_MAX_BYTES + 4096 }), async (req: Request, res: Response) => {
+  app.post("/api/plan-review/sheet/import", sheetLimit, deps.requireAuth, express.raw({ type: "application/octet-stream", limit: PLAN_PDF_MAX_BYTES + 4096 }), async (req: Request, res: Response) => {
     if (!deps.isRootAdmin(req)) { fail(res, 403, "رفع الصحيفة للحساب الرئيسي وحده."); return; }
     const reject = (kind: string, message: string) => { res.status(422).json({ error: message, rejection: { kind, message } }); };
     const sectionId = Number(req.query.sectionId);
