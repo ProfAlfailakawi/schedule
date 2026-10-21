@@ -40,19 +40,19 @@ export default function SectionScheduleHours({header,demoReadOnly=false}:{header
       setNotice({text:`حُفظ وقت الدوام لـ ${countOf(Number(data.updated||0),AR.section)}.${outside?` يوجد ${countOf(outside,AR.appointment)} قائم خارج النطاق الجديد؛ لم يتغير تلقائيًا.`:""}`});
     }catch(error:any){setNotice({text:error.message||"تعذر حفظ أوقات الدوام",bad:true});}finally{setBusy(false);}
   };
-  return <div className="content-stack admin-page">
+  return <div className="content-stack admin-page section-schedule-hours">
     {header}<PageTitle eyebrow="إدارة النظام · للمدير الرئيسي فقط" subtitle="كل قسم يبدأ افتراضيًا من ٨:٠٠ صباحًا إلى ٨:٠٠ مساءً. يمكن ضبط عدة أقسام معًا.">أوقات الدوام للأقسام</PageTitle>
     {notice?<Notice>{notice.text}</Notice>:null}
     {demoReadOnly?<Notice>الإعدادات للعرض في الديمو، والحفظ معطّل.</Notice>:null}
     <Surface className="form-card smart-form">
-      <div className="form-grid">
+      <div className="form-grid section-hours-time-grid">
         <label className="field"><span>الكلية</span><select value={collegeId||""} onChange={event=>setCollegeId(Number(event.target.value))}><option value="">اختر كلية</option>{colleges.map(college=><option key={college.AdCollegeId} value={college.AdCollegeId}>{college.AdCollegeName}</option>)}</select></label>
-        <label className="field"><span>بداية الدوام</span><input type="time" value={startTime} onChange={event=>setStartTime(event.target.value)} /></label>
-        <label className="field"><span>نهاية الدوام</span><input type="time" value={endTime} onChange={event=>setEndTime(event.target.value)} /></label>
+        <label className="field"><span>بداية الدوام</span><input type="time" dir="ltr" lang="en" value={startTime} onChange={event=>setStartTime(event.target.value)} /></label>
+        <label className="field"><span>نهاية الدوام</span><input type="time" dir="ltr" lang="en" value={endTime} onChange={event=>setEndTime(event.target.value)} /></label>
       </div>
-      <div className="form-intro"><span><Clock3 /></span><div><strong>تطبيق النطاق على الأقسام</strong><p>عند تحديد الكل يشمل التغيير كل أقسام الكلية. وإلا يطبق على الأقسام المحددة فقط.</p></div><SecondaryButton type="button" data-guide-target="section-hours-select-all" disabled={!sections.length} onClick={toggleAll}><CheckCheck />{allSelected?"إلغاء تحديد الكل":"تحديد الكل"}</SecondaryButton></div>
-      {loading?<p role="status">يجري تحميل أقسام الكلية…</p>:sections.length?<div className="section-hours-list">{sections.map(section=><label key={section.AdSectionId} className="section-hours-row"><input type="checkbox" checked={selected.includes(section.AdSectionId)} onChange={event=>setSelected(current=>event.target.checked?[...current,section.AdSectionId]:current.filter(id=>id!==section.AdSectionId))}/><span>{section.AdSectionName}</span><small>{section.startTime}–{section.endTime}</small></label>)}</div>:<p>لا توجد أقسام في الكلية المحددة.</p>}
-      {selectedSections.length?<p className="muted-note">سيُطبّق الوقت على {selectedSections.map(section=>section.AdSectionName).join("، ")}.</p>:null}
+      <div className="section-hours-intro"><span className="section-hours-clock"><Clock3 /></span><div><strong>تطبيق النطاق على الأقسام</strong><p>يمكنك تغيير وقت عدة أقسام معًا. «تحديد الكل» يشمل أقسام الكلية المختارة.</p></div><SecondaryButton type="button" data-guide-target="section-hours-select-all" disabled={!sections.length} onClick={toggleAll}><CheckCheck />{allSelected?"إلغاء تحديد الكل":"تحديد الكل"}</SecondaryButton></div>
+      {loading?<p role="status">يجري تحميل أقسام الكلية…</p>:sections.length?<div className="section-hours-list">{sections.map(section=><label key={section.AdSectionId} className="section-hours-row"><input type="checkbox" checked={selected.includes(section.AdSectionId)} onChange={event=>setSelected(current=>event.target.checked?[...current,section.AdSectionId]:current.filter(id=>id!==section.AdSectionId))}/><span>{section.AdSectionName}</span><small dir="ltr">{section.startTime}–{section.endTime}</small></label>)}</div>:<p>لا توجد أقسام في الكلية المحددة.</p>}
+      {selectedSections.length?<p className="muted-note">سيُطبّق النطاق على {countOf(selectedSections.length,AR.section)}.</p>:null}
       <div className="form-actions"><PrimaryButton type="button" data-guide-target="section-hours-save" disabled={busy||demoReadOnly||!selected.length||endTime<=startTime} onClick={()=>void save()}><Save />{busy?"جارٍ الحفظ…":"حفظ وقت الدوام"}</PrimaryButton></div>
     </Surface>
   </div>;
