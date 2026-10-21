@@ -614,6 +614,7 @@ ok('212 the root location UI accepts a complete official building code such as 0
    and 'buildingNumber:parsedNewBuildingCode?.buildingNumber' in location_admin)
 
 quick_setup=(ROOT/'src/components/LocationQuickSetup.tsx').read_text()
+repository=(ROOT/'src/db/repository.ts').read_text()
 admin_users=(ROOT/'src/components/AdminUsers.tsx').read_text()
 app_source=(ROOT/'src/App.tsx').read_text()
 ok('212a the lightweight add-buildings-and-rooms icon lives inside System Administration and is root-admin-only',
@@ -694,11 +695,18 @@ ok('222 the root-admin quick location screen can edit buildings and rooms and so
    and 'app.delete("/api/admin/location-setup/buildings/:id", requirePermission(7), requireRootAdmin' in server
    and 'app.delete("/api/admin/location-setup/rooms/:id", requirePermission(7), requireRootAdmin' in server
    and 'action:"DELETE"' in server
-   and 'await Repository.upsertLocationRooms(inactiveRooms)' in server
+   and 'await Repository.archiveLocationBuilding(inactiveBuilding,inactiveRooms)' in server
+   and 'archiveLocationBuilding: async (building: MasterBuilding, rooms: MasterRoom[])' in repository
+   and 'await batch.commit()' in repository
    and 'onClick={() => startBuildingEdit(currentBuilding)}' in quick_setup
    and 'onClick={() => void deleteBuilding(currentBuilding)}' in quick_setup
    and 'onClick={() => startRoomEdit(room)}' in quick_setup
    and 'onClick={() => void deleteRoom(room)}' in quick_setup
    and 'مع الاحتفاظ بسجل المواعيد القديمة' in quick_setup)
+ok('223 soft-deleted rooms disappear immediately and building deletion removes its rooms and building in one saved action',
+   'data.rooms.filter(room => room.active &&' in quick_setup
+   and 'buildings: current.buildings.filter(item => item.id !== building.id), rooms: current.rooms.filter(room => room.buildingId !== building.id)' in quick_setup
+   and 'rooms: current.rooms.filter(item => item.id !== room.id)' in quick_setup
+   and 'await Repository.archiveLocationBuilding(inactiveBuilding,inactiveRooms)' in server)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
