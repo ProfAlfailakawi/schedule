@@ -16,6 +16,7 @@ import TermFrozenRibbon, { TermFrozenContext } from "./TermFrozenRibbon";
 import { termIsFrozen } from "../utils/termSequence";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
+import { compareArabic } from "../utils/arabicText";
 import ApplyProposal, { postScheduleProposal, postWhatIf } from "./ApplyProposal";
 import SemesterReadiness, { type Insight, type QualityCell } from "./SemesterReadiness";
 import { writeSharedScope } from "../utils/sharedScope";
@@ -283,7 +284,8 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
   const registered = outcome.courses.reduce((s, c) => s + c.registered, 0), stuck = outcome.courses.reduce((s, c) => s + c.stuck, 0);
   const total = registered + stuck;
   const okPct = total ? Math.round((registered / total) * 100) : 0;
-  const worst = outcome.courses.filter(c => c.stuck > 0).slice(0, 8);
+  /* كلُّ مقررٍ فيه متعثّرون، مرتّباً أبجدياً (اسمُه ثم رمزُه) كبقية قوائم المقررات: القارئ يبحث عن مقررٍ بعينه لا عن «الأسوأ». */
+  const worst = outcome.courses.filter(c => c.stuck > 0).sort((a, b) => compareArabic(a.name, b.name) || a.code.localeCompare(b.code, "en", { numeric: true }));
   const share = outcome.answered !== null && predictedStudents ? Math.round((outcome.answered / predictedStudents) * 100) : 0;
   return (
     <section className="sm-list sm-out">

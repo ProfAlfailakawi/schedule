@@ -1,8 +1,9 @@
 /**
  * ── حسابات القيادة: العمداء والتسجيل ──────────────────────────────────────────
  *
- *   خمسة حسابات، واحد لكل صفة، وكلٌّ منها على كل الكليات والأقسام:
+ *   سبعة حسابات، وكلٌّ منها على كل الكليات والأقسام:
  *   عميد الكلية · العميد المساعد · عميد التسجيل · رئيس التسجيل · موظف التسجيل
+ *   · المسجل العام (بصفة عميد التسجيل) · الإرشاد العام (بصفة مرشد القسم، على كل أقسام الكليات)
  *
  * تُنشأ موقوفةً وبلا كلمة سر؛ يضعها المدير ويفعّل الحساب من شاشة المستخدمين.
  * آمنٌ لإعادة التشغيل: الحساب القائم لا يُمسّ.
@@ -30,6 +31,8 @@ const byLogin = new Map(users.map(u => [String(u.SystemUserLogin).toLowerCase(),
 
 /* حساب واحد لكل صفة، يغطي كل الكليات والأقسام (صفٌّ بقسم صفر = الكلية كلها). */
 const everyCollege = (colleges as any[]).map(c => ({ AdCollegeId: Number(c.AdCollegeId), AdSectionId: 0 }));
+/* مرشدُ القسم يُعيَّن بأقسامٍ حقيقية (الصفرُ لا يُفسَّر «كليةً كاملة» إلا للصفات الكلّية)، فالإرشاد العام صفٌّ لكل قسمٍ في كل كلية. */
+const everySection = ((await Repository.getSections()) as any[]).map(x => ({ AdCollegeId: Number(x.AdCollegeId), AdSectionId: Number(x.AdSectionId) }));
 type Plan = { login: string; name: string; role: any; assigns: Array<{ AdCollegeId: number; AdSectionId: number }> };
 const plans: Plan[] = [
   { login: "dean", name: "عميد الكلية", role: "dean", assigns: everyCollege },
@@ -37,6 +40,8 @@ const plans: Plan[] = [
   { login: "registrardean", name: "عميد التسجيل", role: "registrarDean", assigns: everyCollege },
   { login: "registrarhead", name: "رئيس التسجيل", role: "registrarHead", assigns: everyCollege },
   { login: "registrarstaff", name: "موظف التسجيل", role: "registrarStaff", assigns: everyCollege },
+  { login: "registrargeneral", name: "المسجل العام", role: "registrarDean", assigns: everyCollege },
+  { login: "advisorgeneral", name: "الإرشاد العام", role: "advisor", assigns: everySection },
 ];
 
 /* الحسابات الثمانية «لكل كلية» التي أنشأها الإصدار الأول من هذا السكربت: لم يُفعَّل
@@ -58,11 +63,11 @@ for (const p of plans) {
     const have = new Set(current.map(a => `${Number(a.AdCollegeId)}:${Number(a.AdSectionId)}`));
     const missing = p.assigns.filter(a => !have.has(`${a.AdCollegeId}:${a.AdSectionId}`));
     if (!missing.length) { console.log(`  = ${p.login} موجود وكامل النطاق`); continue; }
-    console.log(`  ~ ${p.login}: توسيع +${missing.length} كلية`);
+    console.log(`  ~ ${p.login}: توسيع +${missing.length} نطاقاً`);
     if (APPLY) await Repository.saveUserAssigns(Number(existing.SystemUserId), [...current.map(a => ({ AdCollegeId: Number(a.AdCollegeId), AdSectionId: Number(a.AdSectionId) })), ...missing]);
     continue;
   }
-  console.log(`  + ${p.login}  ${p.name}  [${p.role}] — ${p.assigns.length} كلية`);
+  console.log(`  + ${p.login}  ${p.name}  [${p.role}] — ${p.assigns.length} نطاقاً`);
   if (!APPLY) continue;
   const user = await Repository.createUser({
     Name: p.name, SystemUserLogin: p.login, SystemUserPass: "",
