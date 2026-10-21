@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+import { resolveFirestoreTarget, type AppletFirebaseConfig } from "./firestoreTarget";
 
 /**
  * Loads runtime configuration without depending on a writable application directory.
@@ -46,24 +47,19 @@ export function configureRuntimeEnvironment(): string {
   // applet config is authoritative; locally, explicit environment variables keep
   // their existing precedence for development/testing.
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
+  let fbConfig: AppletFirebaseConfig | null = null;
   if (fs.existsSync(firebaseConfigPath)) {
     try {
-      const fbConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
-      if (runningOnCloudRun) {
-        if (fbConfig.projectId) process.env.FIREBASE_PROJECT_ID = String(fbConfig.projectId);
-        if (fbConfig.firestoreDatabaseId) process.env.FIREBASE_DATABASE_ID = String(fbConfig.firestoreDatabaseId);
-      } else {
-        if (fbConfig.projectId && !process.env.FIREBASE_PROJECT_ID) {
-          process.env.FIREBASE_PROJECT_ID = fbConfig.projectId;
-        }
-        if (fbConfig.firestoreDatabaseId && !process.env.FIREBASE_DATABASE_ID) {
-          process.env.FIREBASE_DATABASE_ID = fbConfig.firestoreDatabaseId;
-        }
-      }
+      fbConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
     } catch(e) {
       console.error("Failed to parse firebase-applet-config.json", e);
     }
   }
+  const target = resolveFirestoreTarget({ env: process.env, fileConfig: fbConfig, runningOnCloudRun });
+  if (target.projectId) process.env.FIREBASE_PROJECT_ID = target.projectId;
+  if (target.databaseId) process.env.FIREBASE_DATABASE_ID = target.databaseId;
+  for (const warning of target.warnings) console.warn(`[firestore-target] ${warning}`);
+  if (runningOnCloudRun) console.log(`[firestore-target] project=${target.projectId || "(unset)"} database=${target.databaseId || "(unset)"} source=${target.source}`);
 
   return process.env.SCHEDULE_PRIVATE_DIR;
 }

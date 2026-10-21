@@ -10,6 +10,7 @@ import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldPath, FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { Firestore, WriteBatch } from "firebase-admin/firestore";
 import { gzipSync, gunzipSync } from "zlib";
+import { assertExplicitProductionTarget } from "../server/firestoreTarget";
 import { defaultPrivateDirectory, isCloudRunRuntime, materializePackagedSnapshotOnce, packagedSnapshotPath, readJsonSnapshot } from "./snapshot";
 import {
   ScheduleApproval,
@@ -775,6 +776,9 @@ export async function initDatabase() {
 
   if (mode === "firestore") {
     try {
+      if (isCloudRunRuntime()) {
+        assertExplicitProductionTarget({ projectId: process.env.FIREBASE_PROJECT_ID, databaseId: process.env.FIREBASE_DATABASE_ID });
+      }
       if (getApps().length === 0) {
         if (process.env.FIRESTORE_EMULATOR_HOST) {
           console.log(`Connecting to Firestore Emulator at ${process.env.FIRESTORE_EMULATOR_HOST}`);
