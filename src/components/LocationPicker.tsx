@@ -3,6 +3,7 @@ import type { FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { PENDING_ROOM, compareLocationCodes, roomGroups } from "../utils/locationRegistry";
 import { buildingNumberLabel, officialSiteLabel } from "../utils/locationCollegePrefixes";
 import { AlertTriangle } from "lucide-react";
+import { AR, countOf } from "../utils/arabicCount";
 
 type LocationValue=Pick<FSchedule,"AdRoomCode"|"AdRoomHall"|"buildingId"|"roomId"|"locationStatus"|"sourceBuildingText"|"sourceRoomText">;
 type PickerRoom=MasterRoom&{
@@ -136,7 +137,7 @@ export default function LocationPicker({collegeId,sectionId,termId,value,onChang
   const selectedRoom=rooms.find(room=>room.id===value.roomId);
   const fitNotes:string[]=[];
   if(selectedRoom&&courseRoomType&&selectedRoom.roomType&&selectedRoom.roomType!==courseRoomType)fitNotes.push(`نوع المقرر «${courseRoomType}» والقاعة «${selectedRoom.roomType}»`);
-  if(selectedRoom&&seatsNeeded>0&&Number(selectedRoom.capacity)>0&&Number(selectedRoom.capacity)<seatsNeeded)fitNotes.push(`السعة المسجلة ${Number(selectedRoom.capacity).toLocaleString("ar-KW-u-nu-latn")} مقعدًا، مقابل سعة مقرر ${Number(seatsNeeded).toLocaleString("ar-KW-u-nu-latn")}`);
+  if(selectedRoom&&seatsNeeded>0&&Number(selectedRoom.capacity)>0&&Number(selectedRoom.capacity)<seatsNeeded)fitNotes.push(`سعة القاعة ${countOf(Number(selectedRoom.capacity),AR.seat)}، والمطلوب للمقرر ${countOf(Number(seatsNeeded),AR.seat)}`);
   const locationPending=value.locationStatus==="PENDING_ROOM";
   const chooseBuilding=(id:string)=>{const b=buildings.find(x=>x.id===id);onChange({buildingId:b?.id,roomId:undefined,AdRoomCode:b?.officialCode||"",AdRoomHall:"",locationStatus:undefined});};
   const chooseRoom=(id:string)=>{if(id===PENDING_ROOM){onChange({roomId:undefined,AdRoomHall:"",locationStatus:"PENDING_ROOM"});return;}const r=rooms.find(x=>x.id===id);onChange({roomId:r?.id,AdRoomHall:r?.canonicalCode||"",locationStatus:r?"VERIFIED":undefined});};

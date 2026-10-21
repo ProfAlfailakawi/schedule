@@ -34,6 +34,12 @@ try {
     };
     const Q = "collegeId=1&sectionId=1&termId=1";
 
+    /* الديمو يزرع كشفاً تجريبياً افتراضياً. نفرغه قبل حالة «لا كشف مرفوع» حتى
+       يختبر هذا المسار تحديداً، مع إبقاء رغبات الطلبة التجريبية كما هي. */
+    await call("PUT", "/api/registration-stats", {
+      collegeId: 1, sectionId: 1, termId: 1, remaining: {}, accepted: {}, remainingSource: null,
+    });
+
     const before = await call("GET", `/api/schedules/section-gap?${Q}`);
     check(before.status === 200 && before.body.courses.length > 0 && before.body.respondents > 0 && before.body.planImported === false, "القراءة تعمل: مقرراتُ القسم وطلبةٌ أجابوا ولا كشف مرفوع", { status: before.status, respondents: before.body?.respondents });
 

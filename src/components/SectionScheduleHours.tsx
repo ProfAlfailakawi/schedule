@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CheckCheck, Clock3, Save } from "lucide-react";
 import { PageTitle, PrimaryButton, SecondaryButton, Surface, Notice } from "./ui";
 import { sortByName } from "../utils/sorting";
+import { AR, countOf } from "../utils/arabicCount";
 
 type College = { AdCollegeId:number; AdCollegeName:string };
 type Section = { AdSectionId:number; AdSectionName:string; AdSectionCode:string; start:number; end:number; startTime:string; endTime:string };
@@ -36,7 +37,7 @@ export default function SectionScheduleHours({header,demoReadOnly=false}:{header
     try{const response=await fetch("/api/admin/section-schedule-windows",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionIds:selected,startTime,endTime})});const data=await response.json();if(!response.ok)throw new Error(data.error||"تعذر حفظ أوقات الدوام");
       await loadCollege(collegeId);
       const outside=Number(data.outOfWindowAppointments||0);
-      setNotice({text:`حُفظ وقت الدوام لـ ${data.updated} أقسام.${outside?` يوجد ${outside} موعدًا قائمًا خارج النطاق الجديد؛ لم يتغير تلقائيًا.`:""}`});
+      setNotice({text:`حُفظ وقت الدوام لـ ${countOf(Number(data.updated||0),AR.section)}.${outside?` يوجد ${countOf(outside,AR.appointment)} قائم خارج النطاق الجديد؛ لم يتغير تلقائيًا.`:""}`});
     }catch(error:any){setNotice({text:error.message||"تعذر حفظ أوقات الدوام",bad:true});}finally{setBusy(false);}
   };
   return <div className="content-stack admin-page">

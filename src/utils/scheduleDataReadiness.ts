@@ -8,6 +8,7 @@
  */
 import { SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { isPendingRoom } from "./locationRegistry";
+import { AR, countOf } from "./arabicCount";
 
 export interface DataGapItem { kind: string; id: string; label: string; fields: string[] }
 export interface DataReadinessInput {
@@ -62,7 +63,7 @@ export function computeScheduleDataReadiness({ rows, courses, instructorIds, roo
       else if(course){
         const sectionCount=Math.max(1,sectionsByCourse.get(courseId)?.size||1);
         const estimatedSeats=Number(course.MaxStudent)>0?Math.ceil(Number(course.MaxStudent)/sectionCount):0;
-        if(estimatedSeats>0&&Number(room.capacity)>0&&estimatedSeats>Number(room.capacity))fitIssues.push({kind:"capacity",scheduleId:String(row.id),label,room:`${row.AdRoomCode||room.buildingCode}/${row.AdRoomHall||room.canonicalCode}`,detail:`تقديريًا ${estimatedSeats} مقعدًا مقابل سعة ${Number(room.capacity)}.`});
+        if(estimatedSeats>0&&Number(room.capacity)>0&&estimatedSeats>Number(room.capacity))fitIssues.push({kind:"capacity",scheduleId:String(row.id),label,room:`${row.AdRoomCode||room.buildingCode}/${row.AdRoomHall||room.canonicalCode}`,detail:`تقديريًا ${countOf(estimatedSeats,AR.seat)} مقابل سعة ${countOf(Number(room.capacity),AR.seat)}.`});
         else if(estimatedSeats>0&&!Number(room.capacity))unknownRoomCapacity++;
         const requiredType=String(course.CourseRoomType||"").trim(),actualType=String(room.roomType||"").trim();
         if(requiredType&&actualType&&requiredType!==actualType)fitIssues.push({kind:"room-type",scheduleId:String(row.id),label,room:`${row.AdRoomCode||room.buildingCode}/${row.AdRoomHall||room.canonicalCode}`,detail:`المقرر يفضّل ${requiredType} والقاعة من نوع ${actualType}.`});
