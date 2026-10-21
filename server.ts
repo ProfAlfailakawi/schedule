@@ -3134,7 +3134,7 @@ app.put("/api/admin/section-schedule-windows",requirePermission(7),requireRootAd
   const sections:AdSection[]=await Repository.getSectionsByCollege(collegeId),sectionById=new Map<number,AdSection>(sections.map((section:AdSection):[number,AdSection]=>[Number(section.AdSectionId),section]));
   if(sectionIds.some(id=>!sectionById.has(id))){res.status(400).json({error:"بعض الأقسام المختارة لا تتبع الكلية المحددة."});return;}
   await Promise.all(sectionIds.map(id=>Repository.setSectionScheduleDayWindow(id,startTime,endTime)));
-  sectionIds.forEach(id=>sectionScheduleWindowCache.delete(id));
+  sectionIds.forEach(id=>sectionScheduleWindowCache.delete(dataContextCacheKey(id)));
   const selectedIds=new Set(sectionIds),terms=sortTermsNewestServer(await Repository.getTerms()),termId=Number(currentTermId(terms as any)||terms[0]?.AdTermId||0),rows=termId?await Repository.getSchedulesByScope({collegeId,termId}):[];
   const outOfWindowAppointments=rows.filter(row=>selectedIds.has(Number(row.AdSectionId))&&(!withinScheduleDay(timeToMinutes(row.fstarttime),timeToMinutes(row.fendtime),{startTime,endTime}))).length;
   res.json({success:true,updated:sectionIds.length,startTime,endTime,outOfWindowAppointments});
@@ -4039,11 +4039,11 @@ const SCHEDULE_DAY_KEYS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"
  */
 const scheduleOverlap=(aStart:string,aEnd:string,bStart:string,bEnd:string)=>
   clockRangesOverlap(aStart,aEnd,bStart,bEnd);
-const sectionScheduleWindowCache=new Map<number,{expiresAt:number;startTime:string;endTime:string}>();
+const sectionScheduleWindowCache=new Map<string,{expiresAt:number;startTime:string;endTime:string}>();
 async function sectionScheduleWindow(sectionId:number){
-  const cached=sectionScheduleWindowCache.get(sectionId);if(cached&&cached.expiresAt>Date.now())return cached;
+  const cacheKey=dataContextCacheKey(sectionId),cached=sectionScheduleWindowCache.get(cacheKey);if(cached&&cached.expiresAt>Date.now())return cached;
   const section=await Repository.getSectionById(sectionId),bounds=scheduleDayWindowMinutes(section);
-  const value={expiresAt:Date.now()+30_000,startTime:bounds.startTime,endTime:bounds.endTime};sectionScheduleWindowCache.set(sectionId,value);return value;
+  const value={expiresAt:Date.now()+30_000,startTime:bounds.startTime,endTime:bounds.endTime};sectionScheduleWindowCache.set(cacheKey,value);return value;
 }
 async function schedulePayloadIssues(row:any){const issues:string[]=[];if(!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))issues.push("يجب اختيار يوم واحد على الأقل للمحاضرة");if(row?.fstarttime&&row?.fendtime){
   /* An impossible clock is refused before it is measured. `timeToMinutes` answers

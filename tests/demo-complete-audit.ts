@@ -221,7 +221,9 @@ function p5Findings() {
     && readiness.includes('"أيام المحاضرة"') && readiness.includes('"عضو هيئة التدريس"') && readiness.includes('"وقت بداية ونهاية صحيح"'),
     "فحصٌ موحّد قبل التوقيع يكشف حقول المقرر والشعبة والأستاذ والموعد والقاعة الناقصة");
   const getApproval = server.slice(server.indexOf('app.get("/api/approvals"'), server.indexOf('app.get("/api/approvals/term"'));
-  check(getApproval.includes("dataReadiness: await scheduleDataReadiness"), "شريط الاعتماد يستلم نواقص البيانات لنطاق القسم نفسه");
+  check(getApproval.includes("await scheduleDataReadiness(collegeId,sectionId,termId,rows)")
+    && getApproval.includes("dataReadiness: plannerReadiness")
+    && getApproval.includes("const plannerReadiness="), "شريط الاعتماد يستلم نواقص البيانات لنطاق القسم نفسه مع إخفاء تنبيهات القاعات عن غير المخطط");
   /* القاعدة الجديدة (2026-09-27، قرار المالك): نواقص البيانات إشعارٌ لا يمنع التوقيع — حُدّث الفحص القديم الذي كان يُلزم بالبوابة. */
   check(!sign.includes("scheduleDataReadiness") && !sign.includes("data-readiness"), "التوقيع لا تحجبه نواقص البيانات — لا يمنعه إلا تعارضٌ ماديّ");
   check(sign.indexOf("blockingSummaryFor(") > staleAt && sign.indexOf("canSign(") > sign.indexOf("blockingSummaryFor("), "ويبقى المانع المادّي يُسأل قبل التوقيع");
