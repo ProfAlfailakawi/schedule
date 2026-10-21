@@ -316,17 +316,8 @@ const pathByView: Record<View, string> = {
   ads: "/System/Ads",
   about: "/Public/Aboutus",
 };
-/**
- * ── كل صفةٍ تفتح على شاشتها ─────────────────────────────────────────────────
- *
- * العميد على ميزان الأقسام، والتسجيل على الوارد، والقسم على جدوله. ولوحةُ
- * البداية لمن لا شاشةَ تخصّه.
- */
-function landingViewFor(role: { landing: string }): View {
-  if (role.landing === "changes") return "scheduleChanges";
-  if (role.landing === "balance") return "reportDepartment";
-  if (role.landing === "schedules") return "schedules";
-  if (role.landing === "registration") return "studentRegistration";
+/** بعد تسجيل الدخول يبدأ كل مستخدم من لوحة التحكم، مهما كانت صفته. */
+function landingViewFor(): View {
   return "dashboard";
 }
 
@@ -1329,23 +1320,10 @@ export default function App() {
           setScopes(Array.isArray(data.scopes) ? data.scopes : []);
           const restoredRole: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
           setSessionRole(restoredRole);
-          /**
-           * ── الشاشة الافتتاحية تصمد أمام إعادة التحميل ───────────────────
-           *
-           * كانت تُطبَّق عند تسجيل الدخول وحده. وأكثرُ ما يفعله الناس ليس
-           * تسجيلَ دخول: هو فتحُ صفحةٍ محفوظة، أو ضغطُ زرّ التحديث. فكان
-           * العميد يُوضع على شاشته مرّةً في اليوم، ويُعاد إلى لوحةٍ ليست له
-           * في كل مرّةٍ بعدها.
-           *
-           * والقيد مقصود: من فتح عنواناً بعينه أراده، فلا يُنقل عنه. وإنما
-           * يُوجَّه من وصل إلى الجذر بلا وجهة.
-           */
+          /* اترك الرابط المباشر الذي أعاد المستخدم إليه، واجعل الجذر يطابق
+             الشاشة الافتراضية: لوحة التحكم. */
           if (!viewByPath.has(window.location.pathname.toLowerCase())) {
-            const landing = landingViewFor(restoredRole);
-            if (landing !== "dashboard") {
-              setActiveView(landing);
-              window.history.replaceState({}, "", pathByView[landing] || pathByView.dashboard);
-            }
+            window.history.replaceState({}, "", pathByView.dashboard);
           }
           setDataMode(data.data || null);
           setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin") } : null);
@@ -1630,7 +1608,7 @@ export default function App() {
     setSessionRole(role);
     setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin") } : null);
     setDataMode(data.data || null);
-    const landingView = landingViewFor(role);
+    const landingView = landingViewFor();
     setActiveView(landingView);
     window.history.replaceState({}, "", pathByView[landingView] || pathByView.dashboard);
   };
