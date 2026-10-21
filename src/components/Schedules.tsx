@@ -10386,6 +10386,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                           {c?.CourseCode || "—"}
                         </span>
                         <strong>{s.AdCourseName || c?.CourseName || ""}</strong>
+                        <CourseRoomTypeBadge type={c?.CourseRoomType} compact />
                         {liveNow.running.has(s.id) ? (
                           <span className="agenda-live-tag">جارية الآن</span>
                         ) : liveNow.next === s.id ? (
