@@ -67,7 +67,7 @@ export function instructorCourseLoad(
     })).sort((a, b) => byArabic(a.siteName, b.siteName)),
     courses: [...group.subjects.values()].sort(byArabic),
     courseCount: group.subjects.size, sectionCount: group.sections.size,
-  })).sort((a, b) => b.courseCount - a.courseCount || b.sites.length - a.sites.length || byArabic(a.instructorName, b.instructorName));
+  })).sort((a, b) => byArabic(a.instructorName, b.instructorName));
 }
 
 /** Resolve only the selected department's counterparts across official sites.
