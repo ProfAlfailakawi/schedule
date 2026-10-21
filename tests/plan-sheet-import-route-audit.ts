@@ -1,0 +1,94 @@
+/**
+ * مسار رفع الصحيفة على مستودعٍ حقيقي بالصحيفة الحقيقية (تكنولوجيا التعليم 2026):
+ * الحساب الرئيسي وحده، قسمٌ آخر يُرفض قبل أي كتابة، مقررات القسم وحدها برقمها، الاسم يُصحَّح،
+ * السعة لا تُمسّ، والرفع المتكرر لا يغيّر شيئاً.
+ */
+import fs from "fs";
+import os from "os";
+import path from "path";
+import express from "express";
+import type { AddressInfo } from "net";
+
+let passed = 0, failed = 0;
+const check = (ok: boolean, label: string, detail?: unknown) => {
+  if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); }
+  else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`, detail ?? ""); }
+};
+
+(async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-sheet-import-"));
+  fs.writeFileSync(path.join(dir, "db.json"), JSON.stringify({
+    users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [],
+    colleges: [{ AdCollegeId: 1, AdCollegeCode: "012", AdCollegeName: "كلية التربية الأساسية - بنات" }],
+    sections: [
+      { AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "01", AdSectionName: "قسم أصول التربية" },
+      { AdSectionId: 13, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم المواد التأسيسية" },
+    ],
+    instructors: [], schedules: [], rooms: [], courseTransitions: [],
+    courses: [{ AdCourseId: 301, AdCollegeId: 1, AdSectionId: 21, CourseCode: "105", CourseName: "أسس تكنولوجيا التعلم", CourseCredit: 3, CourseHours: 3, MaxStudent: 60 }],
+    curriculumPlans: [], curriculumPlanCourses: [],
+  }), { mode: 0o600 });
+  process.env.NODE_ENV = "test"; process.env.DATA_MODE = "demo"; process.env.SCHEDULE_PRIVATE_DIR = dir;
+  const quiet = console.warn; console.warn = () => {};
+  const { Repository, initDatabase } = await import("../src/db/repository");
+  const { registerPlanReviewRoutes } = await import("../src/server/planReviewRoutes");
+  await initDatabase();
+  console.warn = quiet;
+
+  const USERS: Record<string, any> = {
+    root: { user: { SystemUserId: 1, Role: "committeeChair", Name: "المدير", IsAdminUser: true }, scopes: [], permissions: [7] },
+    other: { user: { SystemUserId: 2, Role: "committeeChair", Name: "مسؤول", IsAdminUser: true }, scopes: [], permissions: [7] },
+  };
+  const app = express();
+  app.use(express.json());
+  app.use((req: any, _res, next) => { const who = USERS[String(req.headers["x-who"] || "")]; if (who) { req.user = who.user; req.scopes = who.scopes; req.permissions = who.permissions; } next(); });
+  registerPlanReviewRoutes(app, {
+    requireAuth: (req: any, res, next) => (req.user ? next() : res.status(401).json({ error: "سجّل الدخول" })),
+    isScopeAllowed: () => true, isPowerUser: req => Boolean(req.user?.IsAdminUser), isRootAdmin: req => Number(req.user?.SystemUserId) === 1,
+    hasPermission: () => true, actorName: req => String(req.user?.Name || ""),
+  });
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const pdf = fs.readFileSync("tests/fixtures/plans/tech-edu-2026.pdf");
+  const upload = async (who: string, sectionId: number, body: Buffer = pdf) => {
+    const res = await fetch(`${base}/api/plan-review/sheet/import?sectionId=${sectionId}`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body });
+    return { status: res.status, json: await res.json().catch(() => ({})) as any };
+  };
+  try {
+    const before = JSON.stringify(await Repository.getCourses());
+    check((await upload("other", 21)).status === 403, "غير الحساب الرئيسي: ٤٠٣");
+    const wrongDept = await upload("root", 11);
+    check(wrongDept.status === 422 && ["noCode", "department"].includes(wrongDept.json.rejection?.kind), "قسم آخر يُرفض", wrongDept.json);
+    const foundations = await upload("root", 13);
+    check(foundations.status === 422, "قسمٌ برمزٍ ليس رمز الهيئة يُرفض", foundations.json);
+    check((await upload("root", 21, Buffer.from("not a pdf"))).status === 422, "ملفٌ ليس PDF يُرفض");
+    check(JSON.stringify(await Repository.getCourses()) === before, "الرفض لم يكتب شيئاً");
+
+    const first = await upload("root", 21);
+    check(first.status === 200 && first.json.ok === true, "الرفع يُقبل للقسم الصحيح", first.json);
+    const courses = (await Repository.getCourses()).filter(row => Number(row.AdSectionId) === 21);
+    check(courses.length === 27, `٢٧ مقرراً للقسم (${courses.length})`);
+    check(courses.every(row => /^\d{2,3}$/.test(String(row.CourseCode))), "الرموز المحفوظة رقم المقرر وحده");
+    const c105 = courses.find(row => row.CourseCode === "105")!;
+    check(c105.CourseName !== "أسس تكنولوجيا التعلم" && c105.MaxStudent === 60, `الاسم صُحّح من الصحيفة والسعة بقيت ٦٠ (${c105.CourseName})`);
+    check(courses.filter(row => row.CourseCode !== "105").every(row => Number(row.MaxStudent) === 0), "السعة لم تُوضع للجدد");
+    check(first.json.created === 26 && first.json.updated === 1, `جديد ٢٦ ومصحَّح ١ (${first.json.created}/${first.json.updated})`);
+    check(first.json.otherDepartments === 37, `مقررات الأقسام الأخرى لم تُؤخذ (${first.json.otherDepartments})`);
+    const plans = await Repository.getCurriculumPlans(21);
+    check(plans.some(plan => plan.status === "active") && plans.some(plan => plan.code === "LEGACY"), "صحيفة فعّالة جديدة و«السابقة» محفوظة");
+    const links = (await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === first.json.planId);
+    check(links.length === 27, `٢٧ مقرراً في الصحيفة (${links.length})`);
+    const draft = await Repository.getRuleSet(first.json.planId).catch(() => undefined);
+    const drafts = await Repository.listRuleDrafts();
+    const mine = drafts.find(row => row.planId === first.json.planId);
+    check(!!mine && mine.status === "review" && mine.rules.length === 27, `مسوّدة قواعد بـ٢٧ قاعدة للمراجعة (${mine?.rules.length})`);
+    void draft;
+
+    const second = await upload("root", 21);
+    check(second.status === 200 && second.json.created === 0 && second.json.updated === 0 && second.json.linked === 0 && second.json.planCreated === false, "الرفع المتكرر لا يغيّر شيئاً", second.json);
+    check((await Repository.getCurriculumPlans(21)).length === plans.length, "لا صحيفة جديدة عند التكرار");
+  } finally { server.close(); }
+  console.log(`\n${passed} passed, ${failed} failed`);
+  if (failed) process.exit(1);
+})();
