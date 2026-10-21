@@ -1,4 +1,0 @@
-metadata.json
-cookies.txt
-test-auth-proj.mjs
-assets/.aistudio/

@@ -35,7 +35,7 @@ export interface PlanSheetDeps {
   template: string;
 }
 
-/* الدومين الرسمي الثابت (AGENTS.md)؛ لا متغيّرَ بيئةٍ يغيّره، فلا يحمل QR مطبوعٌ عنواناً آخر. */
+/* الدومين الرسمي الثابت؛ لا متغيّرَ بيئةٍ يغيّره، فلا يحمل QR مطبوعٌ عنواناً آخر. */
 const OFFICIAL_ORIGIN = "https://schedule-kw.com";
 const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const tail = (code: string) => (/^\d{7}$/.test(code) ? code.slice(-3) : code);

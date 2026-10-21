@@ -306,8 +306,8 @@ ok('115 visiting badge is present in import, schedule, reports and final schedul
 ok('116 schedule and report time ranges are kept as one visual value', 'formatScheduleTimeRange(row.fstarttime, row.fendtime)' in reports and 'white-space:nowrap' in (ROOT/'src/styles/05-schedule.css').read_text() and 'white-space:nowrap' in (ROOT/'src/styles/06-intelligence.css').read_text())
 ok('117 change log has a dedicated print action and print sheet', 'طباعة تقرير التعديلات' in schedules_src and 'change-log-print-host' in schedules_src and 'تقرير التعديلات' in schedules_src and 'data-print-kind="change-log"' not in schedules_src and 'root.dataset.printKind="change-log"' in schedules_src)
 ok('118 current golden stage is documented for future maintainers', 'اسم المقرر ورقم الشعبة في معاينة الاستيراد **هويتان مقفلتان**' in golden_state and 'Badge صغيرة `منتدب`' in golden_state and 'تقرير تعديلات قابل للطباعة' in golden_state)
-ai_review_prompt=(ROOT/'docs/AI_REVIEW_PROMPT.md').read_text()
-ok('119 maintenance review prompt is embedded in the project and linked from golden state', 'لا تعِد البناء' in ai_review_prompt and 'عدم التخمين' in ai_review_prompt and 'docs/AI_REVIEW_PROMPT.md' in golden_state)
+delivery_ops=(ROOT/'docs/DELIVERY_OPERATIONS.md').read_text()
+ok('119 operational maintenance guidance is kept in the engineering handover document', 'Never delete, recreate, move' in delivery_ops and 'A normal release changes the image only' in delivery_ops and 'CURRICULUM_SHEET_RULES.md' in delivery_ops)
 
 # Graduate-proof + report-availability invariants added after the Golden stage.
 reports_src=(ROOT/'src/components/Reports.tsx').read_text()
