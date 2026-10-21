@@ -210,7 +210,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
  const awaitedSignals=useRef(new Set<string>());
  signals.forEach(item=>{if(item.awaiting)awaitedSignals.current.add(item.key);});
 
- return <div className="content-stack dashboard-page command-deck visual-minimal">
+ return <div className="content-stack dashboard-page command-deck visual-minimal schedule-atlas-home">
   <header className="deck-bar" aria-label="ملخص الحساب والنطاق الحالي">
    <span className="deck-avatar" aria-hidden="true">{user?.Name?.trim()?.charAt(0)||"م"}</span>
    <div className="deck-identity">
