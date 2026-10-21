@@ -1,4 +1,5 @@
 import { authorityCourseCodeMatches } from "./authorityAcademicCodes";
+import { termSeasonOf } from "./termSequence";
 
 /**
  * ── كشفُ «المتبقي» من عمادة التسجيل ─────────────────────────────────────────
@@ -871,4 +872,28 @@ export function readReportHeader(text: string): { department?: string; season?: 
   const years = named ? [Math.min(Number(named[2]), Number(named[3])), Math.max(Number(named[2]), Number(named[3]))] as [number, number]
     : coded ? [Number(coded[1]), Number(coded[1]) + 1] as [number, number] : undefined;
   return { ...(department ? { department } : {}), ...(season ? { season } : {}), ...(years ? { years } : {}), ...(branch ? { branch } : {}) };
+}
+
+export type RemainingReportTermRelation = "selected" | "previous" | "mismatch" | "unknown";
+
+/** A current registration report may be missing while registration is being prepared.
+ * In that case the immediately preceding regular-semester report is the intended proxy:
+ * first ← previous year's second, second ← same year's first, summer ← same year's second.
+ */
+export function remainingReportTermRelation(headerText: string, selectedTermName: string): RemainingReportTermRelation {
+  const printed = readReportHeader(headerText);
+  const selectedSeason = termSeasonOf(selectedTermName);
+  const selectedYears = String(selectedTermName || "").match(/(\d{4})\s*\/\s*(\d{4})/);
+  if (!printed.season || !printed.years || !selectedSeason || !selectedYears) return "unknown";
+  const selectedStart = Number(selectedYears[1]), selectedEnd = Number(selectedYears[2]);
+  const selectedSeasonKey = selectedSeason === "الأول" ? "first" : selectedSeason === "الثاني" ? "second" : "summer";
+  if (printed.season === selectedSeasonKey && printed.years[0] === selectedStart && printed.years[1] === selectedEnd) return "selected";
+  const allowedPrevious = selectedSeason === "الثاني"
+    ? { season: "first", start: selectedStart, end: selectedEnd }
+    : selectedSeason === "الصيفي"
+      ? { season: "second", start: selectedStart, end: selectedEnd }
+      : { season: "second", start: selectedStart - 1, end: selectedEnd - 1 };
+  return printed.season === allowedPrevious.season && printed.years[0] === allowedPrevious.start && printed.years[1] === allowedPrevious.end
+    ? "previous"
+    : "mismatch";
 }

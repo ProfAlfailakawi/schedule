@@ -5,7 +5,7 @@
 import fs from "fs";
 import {
   assessRemainingImport, detectReportDepartment, imageOrientationRefusal, imageSize,
-  confirmReportDepartment, HEADER_DIGITS_MARK, manualRemainingValue, planRemainingApply, readRemainingReport, remainingOf, remainingValues, type ReportCell,
+  confirmReportDepartment, HEADER_DIGITS_MARK, manualRemainingValue, planRemainingApply, readRemainingReport, remainingOf, remainingValues, remainingReportTermRelation, type ReportCell,
 } from "../src/utils/remainingReport";
 import { readReportCells } from "../src/utils/documentOcr";
 import { suggestSectionCount } from "../src/utils/sectionCountSuggestion";
@@ -34,6 +34,14 @@ const page = (shift: number, rows: Row[]): ReportCell[] => [
 const catalogue = ["102", "120", "201", "254", "255", "310"].map((code, index) => ({ id: index + 1, code: `0101${code}` }));
 const header = "الفصل الدراسي : 202420\nرمز القسم العلمي 0101 التربيه الاسلاميه";
 const context = { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: header };
+
+/* كشف الفصل السابق هو مرجع طبيعي للتخطيط، لكن الفصل الأقدم لا يُسند للفصل الحالي. */
+check(remainingReportTermRelation("الفصل الدراسي الثاني 2026/2027", "الفصل الثاني 2026/2027") === "selected", "كشف الفصل المختار يُقبل");
+check(remainingReportTermRelation("الفصل الدراسي الأول 2026/2027", "الفصل الثاني 2026/2027") === "previous", "الفصل الثاني يقبل إحصائية الفصل الأول من السنة نفسها");
+check(remainingReportTermRelation("الفصل الدراسي الثاني 2025/2026", "الفصل الأول 2026/2027") === "previous", "الفصل الأول يقبل إحصائية الفصل الثاني من السنة السابقة");
+check(remainingReportTermRelation("الفصل الدراسي الثاني 2026/2027", "الفصل الصيفي 2026/2027") === "previous", "الفصل الصيفي يقبل إحصائية الفصل الثاني من السنة نفسها");
+check(remainingReportTermRelation("الفصل الدراسي الأول 2025/2026", "الفصل الثاني 2026/2027") === "mismatch", "الكشف الأقدم من فصلٍ واحد لا يُقبل كمرجع للفصل الحالي");
+check(remainingReportTermRelation("رمز القسم العلمي 0101", "الفصل الثاني 2026/2027") === "unknown", "غياب فصل مقروء لا يرفض الكشف بالتخمين");
 
 /* ── كشفٌ واضح بصفحتين ── */
 const clear = [

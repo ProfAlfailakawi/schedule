@@ -158,7 +158,7 @@ import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseS
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { isAssignableInstructor } from "./src/utils/instructorStatus";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL, readReportCells } from "./src/utils/documentOcr";
-import { assessRemainingImport, blankSpots, columnKind, imageOrientationRefusal, readRemainingReport, readReportHeader } from "./src/utils/remainingReport";
+import { assessRemainingImport, blankSpots, columnKind, imageOrientationRefusal, readRemainingReport, readReportHeader, remainingReportTermRelation } from "./src/utils/remainingReport";
 import { computeTermForecast } from "./src/utils/termForecast";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
@@ -15561,12 +15561,13 @@ async function remainingContext(collegeId: number, sectionId: number, termId: nu
    فأرقامه تخصّ فصلاً آخر وتفسد الخطة. ما لم تُقرأ ترويستُه يبقى على مساره (الممسوح يُراجَع). */
 function remainingTermRefusal(headerText: string, termName: string): { error: string; termMismatch: { sheet: string; chosen: string } } | null {
   const header = readReportHeader(headerText);
-  const season = REMAINING_SEASONS[String(termSeasonOf(termName) || "")];
-  const years = termName.match(/(\d{4})\s*\/\s*(\d{4})/);
-  /* فصلٌ بلا موسمٍ يُقرأ من اسمه (اسمٌ غير معتاد عدّله مسؤول) لا يُبنى عليه رفض: لا خلافَ يمكن إثباته، فيبقى الكشف قابلاً للمراجعة. */
-  if (header.season && header.years && (season || years) && ((season && header.season !== season) || (years && Number(years[1]) !== header.years[0]))) {
+  const relation = remainingReportTermRelation(headerText, termName);
+  /* الكشف المختار أو الأقرب قبله يُقبل: الثاني يستفيد من الأول في السنة نفسها،
+     والأول من الثاني في السنة السابقة، والصيفي من الثاني في السنة نفسها.
+     الفصول الأقدم أو الأبعد تبقى مرفوضة حتى لا تُنسب إحصائية بعيدة للفصل الحالي. */
+  if (relation === "mismatch" && header.season && header.years) {
     const sheet = `الفصل ${REMAINING_SEASON_NAMES[header.season]} ${header.years[0]}/${header.years[1]}`;
-    return { error: `الكشف لفصلٍ آخر: هو كشف ${sheet}، وأنت تخطط «${termName}». ارفع كشف هذا الفصل — لم يُستورد شيء.`, termMismatch: { sheet, chosen: termName } };
+    return { error: `الكشف لفصلٍ غير مرتبط بالفصل المختار: هو كشف ${sheet}، وأنت تخطط «${termName}». اختر كشف الفصل السابق مباشرةً — لم يُستورد شيء.`, termMismatch: { sheet, chosen: termName } };
   }
   return null;
 }
