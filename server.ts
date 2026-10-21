@@ -4162,6 +4162,9 @@ type HallCampusGender = "male" | "female" | null;
 function hallCampusGender(name: unknown): HallCampusGender {
   const value=String(name||"").trim().toLocaleLowerCase("ar");
   if(!value)return null;
+  /* اسم الكلية في صندوق العرض عامّ، بينما القاعات التعليمية التجريبية
+     تمثل مسار البنات؛ لا نضعف هذا الإغلاق في بيانات الإنتاج. */
+  if(Repository.isDemoRequest()&&value==="كلية التربية الأساسية")return "female";
   if(/بنات|إناث|اناث|طالبات|girls?|women|female/.test(value))return "female";
   if(/بنين|ذكور|طلاب|boys?|men|male/.test(value))return "male";
   return null;
@@ -15120,6 +15123,24 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     Repository.getCourseTransitions(sectionId).catch(() => []),
   ]);
   const term = terms.find(row => Number(row.AdTermId) === termId);
+  const currentRemaining = stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : null;
+  /* إن كان الفصل الثاني جارياً ولم يصل كشفه بعد، يستفيد التخطيط من كشف
+     الفصل الأول من السنة الدراسية نفسها. لا تُنسخ أرقام الشعب المختارة أو
+     الشواغر، ولا يُحفظ كشف الفصل الأول في سجل الفصل الثاني. */
+  const firstSemesterFallback = currentRemaining == null
+    ? (() => {
+        const name = String(term?.AdTermName || "");
+        const years = name.match(/(\d{4})\s*\/\s*(\d{4})/);
+        if (!years || termSeasonOf(name) !== "الثاني") return null;
+        const year = `${years[1]}/${years[2]}`;
+        const firstTerm = terms.find(candidate => Number(candidate.AdTermId) !== termId
+          && termSeasonOf(candidate.AdTermName) === "الأول"
+          && String(candidate.AdTermName || "").match(/\d{4}\s*\/\s*\d{4}/)?.[0]?.replace(/\s/g, "") === year);
+        return firstTerm ? { term: firstTerm, promise: Repository.getRegistrationStats(collegeId, sectionId, Number(firstTerm.AdTermId)) } : null;
+      })()
+    : null;
+  const firstSemesterStats = firstSemesterFallback ? await firstSemesterFallback.promise : null;
+  const useFirstSemesterFallback = Boolean(firstSemesterFallback && firstSemesterStats?.remainingSource?.column === "unregistered");
   /* التاريخ الحقيقي لا تقويمٌ مفترض: يُرجَع في الفصول السابقة من الأحدث حتى
      يُوجد ٣ فصولٍ من الموسم نفسه فيها جدولٌ للقسم، و٣ فصولٍ أخرى بوزنٍ أخفّ.
      كانت النافذة «٣ سنوات» فتقع على فصولٍ بلا بيانات (٢٠٢٢–٢٠٢٦) فتقول «لا
@@ -15201,9 +15222,12 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
     /* «الذين لم يسجلوا» (المتبقي الإجمالي) وحده مدخلُ التخطيط؛ ما حُفظ بعمودٍ آخر («المقاعد المتبقية» أو بلا وسم) يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
     /* لا متبقٍّ سالب (ما حُفظ سالباً قبل اعتماد الصفر يُعرض صفراً). */
-    remaining: stats?.remainingSource?.column === "unregistered" ? Object.fromEntries(Object.entries(stats.remaining || {}).map(([key, value]) => [key, Math.max(0, Number(value) || 0)])) : {},
+    remaining: currentRemaining ?? (useFirstSemesterFallback
+      ? Object.fromEntries(Object.entries(firstSemesterStats!.remaining || {}).map(([key, value]) => [key, Math.max(0, Number(value) || 0)])) : {}),
     vacant: stats?.remainingSource?.column === "unregistered" ? stats.vacant || {} : {},
-    remainingSource: stats?.remainingSource?.column === "unregistered" ? stats.remainingSource : null,
+    remainingSource: stats?.remainingSource?.column === "unregistered" ? stats.remainingSource
+      : useFirstSemesterFallback ? firstSemesterStats!.remainingSource : null,
+    remainingSourceTerm: useFirstSemesterFallback ? String(firstSemesterFallback!.term.AdTermName || "") : "",
     legacyRemaining: stats?.remainingSource?.column !== "unregistered" && Object.keys(stats?.remaining || {}).length
       ? { values: stats!.remaining, fileName: stats!.remainingSource?.fileName || "", importedAt: stats!.remainingSource?.importedAt || "" } : null,
     accepted: stats?.accepted || {},

@@ -214,11 +214,11 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
 /* ── B-demo: الصندوقُ كليةٌ واحدة وقسمٌ واحد — لا حسابَ متعدّد المواقع ──────── */
 {
   const state = createDemoSandboxState();
-  check(state.colleges.length === 1 && state.sections.length === 1, "B-demo كليةٌ واحدة وقسمٌ واحد");
+  check(state.colleges.length === 1 && state.sections.length === 3, "B-demo كليةٌ واحدة وثلاثة أقسام افتراضية لعرض استعارة القاعات");
   check(DEMO_SWITCH_ACCOUNTS.every(account => account.SystemUserId !== 18) && demoActiveRoleKey(16, "committeeChair") === "committeeChair",
     "B-demo الشريط يبدّل بين الصفات وحدها");
   check(state.collegeUserAssign.filter(row => row.SystemUserId !== 1 && row.AdSectionId > 0).every(row => row.AdCollegeId === 1 && row.AdSectionId === 1),
-    "B-demo كلُّ نطاقٍ على القسم الوحيد");
+    "B-demo حسابات الأقسام محصورة بالقسم الأصلي رغم أقسام عرض الاستعارة");
 }
 
 /* ── D: «إخفاء الفارغ» — أيقونةٌ أو عدّادٌ أو مرشّحٌ لا يحمل شيئاً لا يُعرض ──────

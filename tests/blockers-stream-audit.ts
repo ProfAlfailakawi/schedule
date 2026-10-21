@@ -212,7 +212,7 @@ await (async () => {
   check(clashes.length >= 1 && clashes.length <= 2, `B15 تعارضٌ أو اثنان مقصودان في الفصل الأول (${clashes.length})`);
   check(clashes.every(c => [c.rowId, c.otherId].some(id => /حالة تجريبية مقصودة/.test(String(demo.schedules.find(r => r.id === id)?.fdetail || "")))),
     "B15 وكل تعارضٍ مقصود مشروحٌ في ملاحظة موعده");
-  check(demo.terms.length === 1 && demo.sections.length === 1, "B15 فصلٌ واحد وقسمٌ واحد");
+  check(demo.terms.length === 2 && demo.sections.length === 3, "B15 الفصلان الدراسيان وثلاثة أقسام لعرض الديمو");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
