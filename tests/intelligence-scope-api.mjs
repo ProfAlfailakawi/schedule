@@ -5,9 +5,9 @@ const target=new URL(base); assert(['localhost','127.0.0.1','::1'].includes(targ
 const login=await fetch(base+'/api/auth/demo',{method:'POST'});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];const identity=await login.json();
 let passed=0;function check(label,ok){assert(ok,label);passed++;console.log('✓ '+label);}
 async function request(path,body){const res=await fetch(base+path,{headers:{Cookie:cookie,...(body?{'Content-Type':'application/json'}:{})},...(body?{method:'POST',body:JSON.stringify(body)}:{})});const data=await res.json();assert.equal(res.status,200,`${path}: ${JSON.stringify(data)}`);return data;}
-const sections=await request('/api/sections');check('قسمٌ واحد في التجربة (تكنولوجيا التعليم)',sections.length===1);
+const sections=await request('/api/sections');check('الأقسام التجريبية الثلاثة لعرض استعارة القاعات',sections.length===3&&sections.some(s=>s.AdSectionId===1&&s.AdSectionName==='تكنولوجيا التعليم'));
 /* العائلة متعدّدة المواقع تُختبر على المنطق مباشرةً (visiting-family / approval-scope / intelligence-reading-scope)؛ هنا القراءاتُ عبر الخادم على القسم الوحيد. */
-const family=sections;
+const family=sections.filter(s=>s.AdSectionId===1);
 const current=family[0], context={collegeId:current.AdCollegeId,sectionId:current.AdSectionId,termId:1};const query=new URLSearchParams(context);
 const local=await request('/api/intelligence/overview?'+query);const all=await request('/api/intelligence/overview?'+query+'&analysisScope=department');
 check('القراءة المحلية تعرض كلية واحدة',local.family.length===1&&local.readingRows.every(r=>r.AdCollegeId===context.collegeId));
