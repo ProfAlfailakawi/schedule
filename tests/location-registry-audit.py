@@ -613,6 +613,28 @@ ok('212 the root location UI accepts a complete official building code such as 0
    and 'officialCode:e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,7)' in location_admin
    and 'buildingNumber:parsedNewBuildingCode?.buildingNumber' in location_admin)
 
+quick_setup=(ROOT/'src/components/LocationQuickSetup.tsx').read_text()
+admin_users=(ROOT/'src/components/AdminUsers.tsx').read_text()
+app_source=(ROOT/'src/App.tsx').read_text()
+ok('212a the lightweight add-buildings-and-rooms icon lives inside System Administration and is root-admin-only',
+   'rootAdmin ? { value: "roomSetup", label: "إضافة مبانٍ وقاعات"' in admin_users
+   and 'case "roomSetup":' in app_source
+   and 'user.IsRootAdmin && allowed.admin' in app_source
+   and 'mode === "roomSetup"' in admin_users)
+ok('212b quick room setup filters site/department/building/shared rooms and supports batch room entry',
+   'label="الحرم / الموقع"' in quick_setup
+   and 'label="القسم"' in quick_setup
+   and 'label="المبنى"' in quick_setup
+   and '<legend>تخصيص القاعات للأقسام</legend>' in quick_setup
+   and 'المشتركة فقط' in quick_setup
+   and 'roomCodes.split(/[' in quick_setup
+   and 'roomSectionIds.length > 1' in quick_setup)
+ok('212c quick setup APIs return a small directory and validate ownership/same-site sharing on the server',
+   'app.get("/api/admin/location-setup", requirePermission(7), requireRootAdmin' in server
+   and 'app.post("/api/admin/location-setup/rooms", requirePermission(7), requireRootAdmin' in server
+   and 'sections.some(section=>sectionIds.includes(Number(section.AdSectionId))&&!officialCollegeIds.includes(Number(section.AdCollegeId)))' in server
+   and 'res.json({buildings:registry.buildings,rooms:registry.rooms,colleges,sections})' in server)
+
 ok('213 the location registry phone layout overrides the late desktop important grid and keeps every control inside the viewport',
    'سجل المواقع على الهاتف: لا يخرج شيء من إطار الشاشة' in index_css
    and '.location-admin-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))!important' in index_css

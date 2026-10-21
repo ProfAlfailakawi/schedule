@@ -6866,6 +6866,45 @@ app.get("/api/admin/location-registry", requirePermission(7), requirePowerAdmin,
   const normalizedRegistry={...registry,rooms:registry.rooms.map(room=>({...room,shared:room.sectionIds.length>1,sharedConfidence:room.sectionIds.length>1?"CONFIRMED":room.sharedConfidence}))};
   res.json({...normalizedRegistry,reviewCases,runs,health:registryHealth(normalizedRegistry,rows,reviewCases),pending,colleges,sections,terms});
 });
+/* Small, root-admin-only directory for the simple location entry screen.
+   Unlike the forensic registry console this omits schedules, review cases,
+   migration history, terms and instructors. */
+app.get("/api/admin/location-setup", requirePermission(7), requireRootAdmin, async (_req:AuthenticatedRequest,res:Response)=>{
+  const [registry,colleges,sections]=await Promise.all([readLocationRegistry(),Repository.getColleges(),Repository.getSections()]);
+  res.json({buildings:registry.buildings,rooms:registry.rooms,colleges,sections});
+});
+app.post("/api/admin/location-setup/buildings", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0);
+  const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+  const college=colleges.find(item=>Number(item.AdCollegeId)===collegeId);
+  const prefix=officialCollegeSitePrefix(college?.AdCollegeName);
+  if(!collegeId||!college||!prefix){res.status(400).json({error:"اختر موقعًا له كود رسمي مثبت."});return;}
+  if(sectionId&&!sections.some(item=>Number(item.AdSectionId)===sectionId&&Number(item.AdCollegeId)===collegeId)){res.status(400).json({error:"القسم المختار لا يتبع الموقع المحدد."});return;}
+  const officialCode=officialBuildingCode(prefix,req.body?.buildingNumber);
+  const parsed=officialCode?parseOfficialBuildingCode(officialCode,prefix):null;
+  if(!parsed){res.status(400).json({error:`رقم المبنى غير صالح. مثال: ${prefix}01`});return;}
+  const registry=await readLocationRegistry();
+  if(registry.buildings.some(item=>item.officialCode===parsed.officialCode)){res.status(409).json({error:"هذا المبنى موجود بالفعل."});return;}
+  const now=new Date().toISOString();
+  const row:MasterBuilding={id:`building_${parsed.officialCode}`,officialCode:parsed.officialCode,sitePrefix:prefix,prefix:/^[0-9]{3}[A-Z]$/.test(prefix)?prefix.slice(0,3):prefix,siteLetter:/[A-Z]$/.test(prefix)?prefix.slice(-1):"",buildingNumber:parsed.buildingNumber,siteName:college.AdCollegeName,branchName:college.AdCollegeName,description:"",active:true,aliases:[],collegeIds:[collegeId],sectionIds:sectionId?[sectionId]:[],historicalUsageCount:0,roomCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[`إضافة من واجهة المدير الرئيسي. Prefix الموقع ${prefix} + رقم المبنى ${parsed.buildingNumber}.`],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now};
+  await Repository.upsertLocationBuildings([row]);invalidateLocationRegistry();res.status(201).json(row);
+});
+app.post("/api/admin/location-setup/rooms", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
+  const [registry,colleges,sections]=await Promise.all([readLocationRegistry(),Repository.getColleges(),Repository.getSections()]);
+  const building=registry.buildings.find(item=>item.id===String(req.body?.buildingId||"")&&item.active&&item.confidence==="CONFIRMED");
+  if(!building){res.status(400).json({error:"اختر مبنى رسميًا وفعالًا."});return;}
+  const officialCollegeIds=officialBuildingCollegeIds(building,colleges);
+  const sectionIds=locationIdList(req.body?.sectionIds);
+  if(!sectionIds.length||sections.some(section=>sectionIds.includes(Number(section.AdSectionId))&&!officialCollegeIds.includes(Number(section.AdCollegeId)))||sectionIds.some(id=>!sections.some(section=>Number(section.AdSectionId)===id))){res.status(400).json({error:"اختر قسمًا واحدًا على الأقل من أقسام الموقع نفسه."});return;}
+  const rawCodes=Array.isArray(req.body?.roomCodes)?req.body.roomCodes:[];
+  const codes=[...new Set(rawCodes.map((value:unknown)=>String(value||"").normalize("NFKC").trim().toUpperCase().replace(/\s+/g,"")).filter(Boolean))];
+  if(!codes.length||codes.length>100||codes.some((code:string)=>code===PENDING_ROOM||isInvalidLocationToken(code)||!/^[A-Z0-9]{1,12}$/.test(code)||!/[0-9]/.test(code))){res.status(400).json({error:"أدخل من 1 إلى 100 رمز قاعة صالح، وكل رمز يتضمن رقمًا."});return;}
+  const existing=new Set(registry.rooms.filter(room=>room.buildingId===building.id).map(room=>room.canonicalCode));
+  if(codes.some((code:string)=>existing.has(code))){res.status(409).json({error:"يوجد رمز واحد أو أكثر مسبقًا في هذا المبنى. أزل الموجود ثم أعد الحفظ."});return;}
+  const now=new Date().toISOString();
+  const rows:MasterRoom[]=codes.map((code:string)=>({id:`room_${building.officialCode}_${code.replace(/[^A-Z0-9]/g,"_")}`,buildingId:building.id,buildingCode:building.officialCode,canonicalCode:code,active:true,aliases:[],collegeIds:officialCollegeIds,sectionIds,primarySectionIds:sectionIds,shared:sectionIds.length>1,sharedConfidence:"CONFIRMED",historicalUsageCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[sectionIds.length>1?`إضافة من واجهة المدير الرئيسي كقاعة مشتركة بين ${sectionIds.map(id=>sections.find(section=>Number(section.AdSectionId)===id)?.AdSectionName).filter(Boolean).join("، ")}.`:"إضافة من واجهة المدير الرئيسي للقسم المحدد."],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now}));
+  await Repository.upsertLocationRooms(rows);invalidateLocationRegistry();res.status(201).json({created:rows.length,rooms:rows});
+});
 app.post("/api/admin/location-registry/buildings", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const collegeIds=locationIdList(req.body?.collegeIds);
   if(collegeIds.length!==1){res.status(400).json({error:"اختر كلية/موقعًا واحدًا للمبنى الجديد حتى لا تصبح هويته ملتبسة."});return;}
