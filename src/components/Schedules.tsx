@@ -1119,6 +1119,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const sectionId=Number(form.AdSectionId||filterSection||0);
     return scheduleDayWindowMinutes(sections.find(section=>Number(section.AdSectionId)===sectionId));
   },[sections,form.AdSectionId,filterSection]);
+  useEffect(() => {
+    setStartTimeLimitNotice("");
+    setEndTimeLimitNotice("");
+  }, [activeScheduleWindow.startTime, activeScheduleWindow.endTime]);
   const scopedTerms = useScopedTerms<AdTerm>(terms, filterCollege, filterSection, filterTerm, setFilterTerm);
   const [agendaNarrow, setAgendaNarrow] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 760px)").matches);
   useEffect(() => {
@@ -3192,6 +3196,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
      same one the quick-add card opens on, instead of leaving the editor with a
      bare native time input. */
   const [timeCounterOpen, setTimeCounterOpen] = useState(false);
+  const [startTimeLimitNotice, setStartTimeLimitNotice] = useState("");
+  const [endTimeLimitNotice, setEndTimeLimitNotice] = useState("");
   const timeCounterAnchor = useRef<HTMLDivElement | null>(null);
   /**
    * Three proposed placements, ranked.
@@ -8781,7 +8787,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           min={activeScheduleWindow.startTime}
           max={activeScheduleWindow.endTime}
                       value={form.fstarttime}
+                      onOutOfRange={(limit) => {
+                        const boundary = limit === "max" ? activeScheduleWindow.endTime : activeScheduleWindow.startTime;
+                        setStartTimeLimitNotice(`الحد ${limit === "max" ? "الأعلى" : "الأدنى"} لهذا القسم ${scheduleClockForDisplay(boundary)}.`);
+                      }}
                       onChange={(e) => {
+                        setStartTimeLimitNotice("");
                         setScheduleTouched(true);
                         const start = e.target.value;
                         setForm((p) => ({ ...p, fstarttime: start, fendtime: autoEndFor(p, start) }));
@@ -8799,6 +8810,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       <Clock3 aria-hidden="true" />
                     </button>
                   </div>
+                  {startTimeLimitNotice ? <small className="schedule-time-limit-note" role="status">{startTimeLimitNotice}</small> : null}
                   {timeCounterOpen ? (
                     <TimeCounterPopover
                       anchor={timeCounterAnchor.current}
@@ -8822,13 +8834,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           min={activeScheduleWindow.startTime}
           max={activeScheduleWindow.endTime}
                       value={form.fendtime}
+                      onOutOfRange={(limit) => {
+                        const boundary = limit === "max" ? activeScheduleWindow.endTime : activeScheduleWindow.startTime;
+                        setEndTimeLimitNotice(`الحد ${limit === "max" ? "الأعلى" : "الأدنى"} لهذا القسم ${scheduleClockForDisplay(boundary)}.`);
+                      }}
                       onChange={(e) => {
+                        setEndTimeLimitNotice("");
                         setScheduleTouched(true);
                         setForm((p) => ({ ...p, fendtime: e.target.value }));
                       }}
                       required
                     />
                   </div>
+                  {endTimeLimitNotice ? <small className="schedule-time-limit-note" role="status">{endTimeLimitNotice}</small> : null}
                 </Field>
                 <LocationPicker
                   collegeId={Number(form.AdCollegeId||0)}

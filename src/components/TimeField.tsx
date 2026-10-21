@@ -34,9 +34,10 @@ type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "value" 
   max?: string;
   step?: number;
   onChange: (event: { target: { value: string } }) => void;
+  onOutOfRange?: (limit: "min" | "max", attempted: string, boundary: string) => void;
 };
 
-export function TimeField({ value, onChange, min = SCHEDULE_DAY_START_TIME, max = SCHEDULE_DAY_END_TIME, step: _step, className, onBlur, ...rest }: Props) {
+export function TimeField({ value, onChange, onOutOfRange, min = SCHEDULE_DAY_START_TIME, max = SCHEDULE_DAY_END_TIME, step: _step, className, onBlur, ...rest }: Props) {
   const [text, setText] = useState(value || "");
   const [bad, setBad] = useState(false);
   const focused = useRef(false);
@@ -52,6 +53,14 @@ export function TimeField({ value, onChange, min = SCHEDULE_DAY_START_TIME, max 
     const clock = normalizeClock(digits, min, max);
     setBad(!clock);
     if (clock) onChange({ target: { value: clock } });
+    else {
+      const attempted = `${digits.slice(0, 2)}:${digits.slice(2)}`;
+      const hour = Number(digits.slice(0, 2)), minute = Number(digits.slice(2));
+      if (hour <= 23 && minute <= 59) {
+        if (attempted < min) onOutOfRange?.("min", attempted, min);
+        else if (attempted > max) onOutOfRange?.("max", attempted, max);
+      }
+    }
   };
 
   return (
