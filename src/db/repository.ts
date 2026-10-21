@@ -6577,6 +6577,21 @@ export const Repository = {
     }
     const map=new Map((db.locationRooms||[]).map(x=>[x.id,x]));rows.forEach(x=>map.set(x.id,{...map.get(x.id),...x}));db.locationRooms=[...map.values()];saveDatabase();await markRegistrationRunsStale();
   },
+  archiveLocationBuilding: async (building: MasterBuilding, rooms: MasterRoom[]): Promise<void> => {
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      if(rooms.length>499)throw new Error("المبنى يحتوي على عدد قاعات يتجاوز حد الحذف الآمن.");
+      const batch=firestoreDb.batch();
+      batch.set(firestoreDb.collection("locationBuildings").doc(building.id),building,{merge:true});
+      rooms.forEach(room=>batch.set(firestoreDb!.collection("locationRooms").doc(room.id),room,{merge:true}));
+      await batch.commit();
+      await markRegistrationRunsStale();
+      return;
+    }
+    const buildingMap=new Map((db.locationBuildings||[]).map(row=>[row.id,row]));
+    buildingMap.set(building.id,{...buildingMap.get(building.id),...building});db.locationBuildings=[...buildingMap.values()];
+    const roomMap=new Map((db.locationRooms||[]).map(row=>[row.id,row]));rooms.forEach(room=>roomMap.set(room.id,{...roomMap.get(room.id),...room}));db.locationRooms=[...roomMap.values()];
+    saveDatabase();await markRegistrationRunsStale();
+  },
   getLocationReviewCases: async (): Promise<LocationReviewCase[]> => {
     if(firestoreDb&&!demoSandboxContext.getStore()){const snap=await firestoreDb.collection("locationReviewCases").get();return snap.docs.map(d=>d.data() as LocationReviewCase);}
     return [...(db.locationReviewCases||[])];
