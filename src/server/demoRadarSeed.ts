@@ -7,7 +7,7 @@
  *     تخرّجٍ لكل قسم. ولقسم «علم البيانات» تعديلٌ على قاعدةٍ **قيد المراجعة** فوق نسخته المعتمدة
  *     (فتظهر أيقونةُ «مراجعة الصحيفة» والمعتمدةُ قائمةٌ لا تتأثر). وفي كل صحيفةٍ مقرّرٌ مطلوبٌ لا يُطرح
  *     هذا الفصل (مشروع التخرج) ومقرّراتٌ ضيّقةُ السعة، فلا يُفتح الرادارُ على أصفار.
- *   • ٣٢٠ ملفَّ طالبٍ وهمي بإنجازاتٍ ورغباتٍ، وتواريخُ طلبةٍ للفصل بجولةٍ جارية.
+ *   • ٦٤ ملفَّ طالبٍ وهمي بإنجازاتٍ ورغباتٍ؛ ثمانيةٌ لكلّ نمطٍ لعرض المزايا دون حمولةٍ كبيرة.
  *   • رادارٌ مشغَّل بالمحرّك نفسه (تذاكرُ وملخّص)، وأجوبةُ «هل سجلت؟» لبعضهم، وحالاتٌ مسمّاة في كل قسمٍ
  *     بقراراتٍ مختلفة (تنتظر اللجنة، سلّمتها، سُجّلت، رُدّت، لم توافق اللجنة) تصل «كشف التسجيل».
  *   • (قصصُ بقية الأقسام في الفصل الجاري، والفصلُ السابق «للعرض فقط»، في demoPreviousTermSeed.ts.)
@@ -34,6 +34,7 @@ export const demoStudentName = (index: number): string => `${index % 2 === 0 ? "
  */
 export const DEMO_STUDENT_ARCHETYPES = ["new", "early", "mid", "advanced", "graduating", "graduated", "blocked", "struggling"] as const;
 export type DemoStudentArchetype = typeof DEMO_STUDENT_ARCHETYPES[number];
+export const DEMO_STUDENT_TOTAL = 64;
 export const demoArchetypeOf = (index: number, sectionCount: number): DemoStudentArchetype =>
   DEMO_STUDENT_ARCHETYPES[Math.floor(index / Math.max(1, sectionCount)) % DEMO_STUDENT_ARCHETYPES.length];
 /** المقرراتُ المنجزة لنمطٍ في صحيفة قسمه (مرتّبة بالمستوى). */
@@ -53,8 +54,8 @@ export function demoPassedFor(kind: DemoStudentArchetype, courses: readonly AdCo
 
 /** القسمُ الوحيد في الصندوق. */
 export const DEMO_RADAR_SECTION_IDS: readonly number[] = [1];
-/** مجموعُ مقاعد أول مقرّرين مطروحين في الفصل (المزدحمان). */
-export const DEMO_TIGHT_SEATS = [6, 9] as const;
+/** مجموعُ المقاعد المحدود لأوائل المقررات المطروحة؛ مناسبٌ لحجم عينة الديمو. */
+export const DEMO_TIGHT_SEATS = [1, 2, 3, 4, 5] as const;
 
 const addDaysISO = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
@@ -95,10 +96,10 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
   const ownCodes = (ref: typeof newRef) => new Set(ref.groups.flatMap(group => group.courses.map(course => referenceCodeKey(course.code))).filter(code => idByCode.has(code)));
   const newCodes = ownCodes(newRef), oldCodes = ownCodes(oldRef);
 
-  /* السعة: أول مقرّرين مطروحين هذا الفصل ضيّقا السعة، يزدحم عليهما الطلبة فيمتلئان (فيظهر «مقرراتٌ تمتلئ»). */
+  /* السعة: مقرراتٌ قليلةٌ بمقاعد محسوبة على حجم العينة، كي تظهر ميزة الازدحام دون تضخيم عدد الطلبة. */
   const offered = [...new Set(termRows.map(row => Number(row.AdCourseId)))]
     .map(id => catalogue.find(course => Number(course.AdCourseId) === id)!).filter(Boolean);
-  for (const [at, course] of offered.slice(0, 2).entries()) {
+  for (const [at, course] of offered.slice(0, DEMO_TIGHT_SEATS.length).entries()) {
     const offerings = Math.max(1, new Set(termRows.filter(row => Number(row.AdCourseId) === Number(course.AdCourseId)).map(row => String(row.SCode))).size);
     await Repository.updateCourse(Number(course.AdCourseId), collegeId, sectionId, course.CourseCode, course.CourseName,
       Number(course.CourseCredit) || 3, Number(course.CourseHours) || 3, Math.ceil(DEMO_TIGHT_SEATS[at] / offerings));
@@ -146,7 +147,7 @@ export async function seedDemoRadar(opts: { sealIdentity: (value: string) => Pro
 
   /* ── ملفّاتُ الطلبة ── */
   const fps: Array<{ fp: string; sectionId: number; kind: DemoStudentArchetype }> = [];
-  const total = 320;
+  const total = DEMO_STUDENT_TOTAL;
   for (let i = 0; i < total; i += 1) {
     /* نحو 70٪ على الصحيفة الجديدة، والباقون على القديمة (الانتقالية). */
     const onLegacy = Boolean(legacy) && i % 10 >= 7;

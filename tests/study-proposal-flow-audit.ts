@@ -7,6 +7,7 @@
  * كلُّ سيناريو يختبر قاعدةً من قواعد الميزة لا نصّاً في الشيفرة.
  */
 import { spawn, type ChildProcess } from "child_process";
+import { waitForDemoSeed } from "./helpers/demoSeed";
 
 const BASE = process.env.PROPOSAL_TEST_BASE || "http://localhost:3000";
 let passed = 0, failed = 0;
@@ -43,7 +44,7 @@ async function ensureServer() {
 async function login(): Promise<string> {
   for (let i = 0; i < 8; i++) {
     const r = await http("POST", "/api/auth/demo", {});
-    if (r.status === 200 && r.cookie) return r.cookie;
+    if (r.status === 200 && r.cookie) { await waitForDemoSeed(BASE, r.cookie); return r.cookie; }
     await new Promise(res => setTimeout(res, 15000));
   }
   throw new Error("تعذّر الدخول التجريبي");
@@ -70,8 +71,8 @@ async function main() {
   const roomFields = { AdRoomCode: room.AdRoomCode, AdRoomHall: room.AdRoomHall, buildingId: room.buildingId, roomId: room.roomId, locationStatus: "VERIFIED" };
   /* قاعةٌ مختلفة لكل شعبةٍ يصنعها الاختبار، فلا يتعارض الاختبار بقاعةٍ مع نفسه. */
   const distinctRooms = [...new Map(base.filter(r => r.roomId && r.roomId !== room.roomId).map(r => [r.roomId, { AdRoomCode: r.AdRoomCode, AdRoomHall: r.AdRoomHall, buildingId: r.buildingId, roomId: r.roomId, locationStatus: "VERIFIED" }])).values()];
-  let roomCursor = 0;
-  const freshRoom = () => distinctRooms[roomCursor++ % distinctRooms.length];
+  let roomIndex = 0;
+  const freshRoom = () => distinctRooms[roomIndex++ % distinctRooms.length];
   const courses = (await A("GET", "/api/courses")).json as any[];
   const course = (code: string) => courses.find(c => c.CourseCode === code);
   const salemRows = base.filter(r => r.AdInstructorId === salem.AdInstructorId);

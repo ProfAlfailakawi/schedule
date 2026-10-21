@@ -181,8 +181,13 @@ async function p4Stories() {
     "(c) طلبا أستاذين يحكم عليهما النظام نفسُه: واحدٌ ينتظر، وآخرُ رُفض ببدائل");
   check(seed.includes("Repository.saveDegreeRule({ ...rule, degreeUnits: 130"), "(d) قاعدةُ تخرّج الصحيفة القديمة محفوظةٌ قبل إنشاء الصحائف (وللجديدة قاعدتُها في seedDemoRadar)");
   const demoRoute = body('app.post("/api/auth/demo"');
-  check(demoRoute.includes("await seedDemoStories()"), "تُبذر القصصُ عند دخول التجربة");
-  check(body('app.post("/api/demo/reset"').includes("seedDemoStories()"), "وعند إعادة ضبط الصندوق");
+  check(demoRoute.includes("scheduleDemoExtras(sessionId)") && !demoRoute.includes("await seedDemoRadar"), "الدخول يفتح الصندوق ثم يجهّز القصص والرادار في الخلفية");
+  const extras = server.slice(server.indexOf("function scheduleDemoExtras("), server.indexOf("async function seedDemoStories("));
+  check(extras.includes("Repository.withDemoSandbox(sessionId") && extras.includes("seedDemoStories") && extras.includes("seedDemoRadar(") && extras.includes("seedDemoMasariDemand"),
+    "كل بيانات العرض الثقيلة تُزرع داخل جلسة الديمو نفسها بعد الدخول");
+  check(extras.includes("demoSeedJobs") && extras.includes('demoSeedStatus.set(sessionId, "ready")'), "إعادة الضبط والبذر المتزامن مرتّبان لكل جلسة ويظهر اكتمال التجهيز");
+  check(body('app.post("/api/demo/reset"').includes("scheduleDemoExtras(sessionId)"), "إعادة ضبط الصندوق تعيد تجهيز أمثلة العرض بالخلفية");
+  check(body('app.get("/api/demo/seed-status"').includes('demoSeedStatus.get(sessionId)'), "حالة تجهيز بيانات الديمو متاحة لجلسة العرض فقط");
 
   const hint = body("async function demoPageHint(");
   check(hint.includes('if (!Repository.isDemoRequest()) return "";'), "تلميحُ الرقم الوهمي لا يُكتب خارج البيئة التجريبية أبداً");

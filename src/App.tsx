@@ -597,7 +597,7 @@ export default function App() {
   /* ── صفات البيئة التجريبية ─────────────────────────────────────────────────
    * قائمةُ الصفات التي يبدّل بينها شريط الديمو، والصفةُ الحاضرة الآن. تصل من
    * الخادم مع حمولة الجلسة، وتغيب تماماً خارج البيئة التجريبية. */
-  const [demoInfo, setDemoInfo] = useState<{ roles: Array<{ role: string; label: string }>; activeRole: string } | null>(null);
+  const [demoInfo, setDemoInfo] = useState<{ roles: Array<{ role: string; label: string }>; activeRole: string; seedStatus: "preparing" | "ready" | "failed" } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   /* ── البيئة التجريبية تفتح على نطاقٍ مختار ───────────────────────────────────
    * مديرُ التجربة يرى الكليات كلَّها فلا نطاقَ يُفترض له، فكانت شاشات الجدول
@@ -1327,7 +1327,7 @@ export default function App() {
             window.history.replaceState({}, "", pathByView.dashboard);
           }
           setDataMode(data.data || null);
-          setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin") } : null);
+          setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin"), seedStatus: data.demo.seedStatus || "ready" } : null);
         }
       } catch {
         setHealth(navigator.onLine ? "reconnecting" : "offline");
@@ -1599,7 +1599,7 @@ export default function App() {
     permissions: number[];
     scopes: any[];
     data?: { mode: string; real: boolean };
-    demo?: { roles?: Array<{ role: string; label: string }>; activeRole?: string };
+    demo?: { roles?: Array<{ role: string; label: string }>; activeRole?: string; seedStatus?: "preparing" | "ready" | "failed" };
   }) => {
     setUser(data.user);
     try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
@@ -1607,7 +1607,7 @@ export default function App() {
     setScopes(data.scopes || []);
     const role: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
     setSessionRole(role);
-    setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin") } : null);
+    setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin"), seedStatus: data.demo.seedStatus || "preparing" } : null);
     setDataMode(data.data || null);
     const landingView = landingViewFor();
     setActiveView(landingView);
@@ -1650,6 +1650,30 @@ export default function App() {
     setEntityFavorites(safeStorage.json(`schedule-entity-favorites-${user.SystemUserId}`, []));
     if (!onboardingSeen(key => safeStorage.get(key), user.SystemUserId, sessionRole.id)) setOnboardingStep(0);
   }, [user?.SystemUserId, sessionRole.id]);
+  useEffect(() => {
+    if (!user?.IsDemo || demoInfo?.seedStatus !== "preparing") return;
+    let active = true;
+    let timer: number | undefined;
+    const checkSeed = async () => {
+      try {
+        const response = await fetch("/api/demo/seed-status", { cache: "no-store" });
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 404) {
+            setDemoInfo(current => current ? { ...current, seedStatus: "failed" } : current);
+            if (timer !== undefined) window.clearInterval(timer);
+          }
+          return;
+        }
+        const result = await response.json();
+        if (!active || !["ready", "failed"].includes(result.status)) return;
+        setDemoInfo(current => current ? { ...current, seedStatus: result.status } : current);
+        if (timer !== undefined) window.clearInterval(timer);
+      } catch { /* A temporary network interruption leaves the next check scheduled. */ }
+    };
+    void checkSeed();
+    timer = window.setInterval(() => void checkSeed(), 2000);
+    return () => { active = false; if (timer !== undefined) window.clearInterval(timer); };
+  }, [user?.IsDemo, demoInfo?.seedStatus]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
@@ -2360,8 +2384,10 @@ export default function App() {
           </button>
         </div>
         {user.IsDemo ? (
-          <div className="demo-rail-chip" role="status" aria-label="بيئة تجريبية معزولة">
+          <div className="demo-rail-chip" aria-label="بيئة تجريبية معزولة">
             <FlaskConical aria-hidden="true" /><span>تجريبي</span><i aria-hidden="true" />
+            {demoInfo?.seedStatus === "preparing" ? <small className="demo-seed-status" role="status">يُجهَّز العرض</small> : null}
+            {demoInfo?.seedStatus === "failed" ? <small className="demo-seed-status demo-seed-status--error" role="status">بعض أمثلة العرض لم تكتمل</small> : null}
             <a className="demo-student-link" href="/me/demo" target="_blank" rel="noopener" title="افتح «مساري» كما يراه طالب، ببياناتٍ افتراضية"
               data-guide-ignore="رابطٌ خاصّ ببيئة Demo يفتح تجربة «مساري» للطالب في صندوقٍ معزول ببيانات وهمية">
               <GraduationCap aria-hidden="true" /><span>جرّب كطالب</span>

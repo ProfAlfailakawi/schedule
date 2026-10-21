@@ -13,6 +13,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { spawn } from "child_process";
+import { waitForDemoSeed } from "./helpers/demoSeed";
 import { slotTimeGroups } from "../src/utils/slotTimeGroups";
 
 let passed = 0, failed = 0;
@@ -65,6 +66,7 @@ try {
     if (!ready) throw new Error("الخادم لم يبدأ");
     const login = await fetch(BASE + "/api/auth/demo", { method: "POST" });
     const cookie = ((login.headers as any).getSetCookie?.() as string[] || []).map(c => c.split(";")[0]).join("; ");
+    await waitForDemoSeed(BASE, cookie);
     const call = async (method: string, url: string, body?: unknown) => {
       const response = await fetch(BASE + url, { method, headers: { cookie, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json().catch(() => null) as any };

@@ -1844,6 +1844,7 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
 .demo-role-switch-label{font-size:12px;font-weight:700;opacity:.75}
 .demo-role-switch>select{max-width:none;min-width:0;flex:1 1 auto;text-overflow:ellipsis;min-height:26px;padding:2px 6px;border:1px solid color-mix(in srgb,#b78a3a 40%,transparent);border-radius:8px;background:color-mix(in srgb,#8a641c 16%,var(--nav));color:#e6d3a6;font-size:12px;font-weight:700;cursor:pointer}
 .demo-role-switch>select:focus-visible{outline:2px solid #b78a3a;outline-offset:1px}
+.demo-seed-status{display:inline-flex;align-items:center;gap:6px;margin-inline-start:2px;padding:3px 8px;border:1px solid color-mix(in srgb,#55b99a 28%,transparent);border-radius:999px;background:color-mix(in srgb,#55b99a 10%,var(--nav));color:#bfe5d9;font-size:11px;font-weight:700;white-space:nowrap;order:1}.demo-seed-status::before{content:"";width:6px;height:6px;border-radius:50%;background:#55b99a;box-shadow:0 0 0 3px color-mix(in srgb,#55b99a 14%,transparent);animation:demo-seed-pulse 1.5s ease-in-out infinite}.demo-seed-status--error{border-color:color-mix(in srgb,#e88f83 38%,transparent);background:color-mix(in srgb,#e88f83 12%,var(--nav));color:#f3b4ab}.demo-seed-status--error::before{background:#e88f83;animation:none}@keyframes demo-seed-pulse{50%{opacity:.45;transform:scale(.82)}}
 
 /* V13 — Journey owns the complete visual stack while it is open.
    بورصة القاعات is the other full-screen destination and gets the same

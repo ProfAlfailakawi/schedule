@@ -15,6 +15,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { spawn } from "child_process";
+import { waitForDemoSeed } from "./helpers/demoSeed";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string, extra?: unknown) => {
@@ -35,8 +36,11 @@ try {
     let ready = false;
     for (let i = 0; i < 120 && !ready; i += 1) { ready = await up(); if (!ready) await new Promise(r => setTimeout(r, 1000)); }
     if (!ready) throw new Error("الخادم لم يبدأ");
+    const loginStartedAt = Date.now();
     const login = await fetch(BASE + "/api/auth/demo", { method: "POST" });
+    check(login.status === 200 && Date.now() - loginStartedAt < 6000, "T0 الدخول التجريبي سريع ولا ينتظر تجهيز أمثلة العرض", { status: login.status, elapsedMs: Date.now() - loginStartedAt });
     const cookie = ((login.headers as any).getSetCookie?.() as string[] || []).map(c => c.split(";")[0]).join("; ");
+    await waitForDemoSeed(BASE, cookie);
     /* حدودُ التقارير الثقيلة تردّ 429 لمن يقرأ كثيراً: يُنتظر ثم يُعاد بدل أن يُحسب فراغاً. */
     const call = async (url: string, init: RequestInit = {}): Promise<{ status: number; json: any }> => {
       for (let attempt = 0; ; attempt += 1) {
@@ -49,14 +53,14 @@ try {
     const get = async (url: string) => (await call(url)).json as any;
 
     const summary = await get("/api/simulation/summary");
-    check(summary.canRun === true && summary.run?.population === 320 && summary.run.students + summary.run.defaulted === 320 && summary.run.rounds === 3 && summary.courses.length >= 20, "T1 يفصل المشاركين عن الملفات غير المشاركة في ٣٢٠ ملفاً", summary.run);
+    check(summary.canRun === true && summary.run?.population === 64 && summary.run.students + summary.run.defaulted === 64 && summary.run.rounds === 3 && summary.courses.length >= 20, "T1 يفصل المشاركين عن الملفات غير المشاركة في ٦٤ ملفاً", summary.run);
     check(summary.run.windows.reduce((a: number, b: number) => a + b, 0) === summary.run.students && summary.run.projected?.students === summary.run.defaulted && summary.phase?.namesVisible === true, "T1 نوافذ الرغبات الفعلية لا تضم غير المشاركين، وتوقعهم منفصل", summary.run);
     /* تغيّر قصدُ العرض: كلُّ قسمٍ بقواعدَ معتمدة وخطةٍ كاملة (كان «بعضها بقواعد وبعضها لا»). */
     check(summary.run.withoutRules === 0 && summary.run.capacity.unknown === 0 && summary.run.dataQuality.excluded === 0, "T1 كلُّ الصحائف بقواعد معتمدة: لا «بلا قواعد» ولا «غير معلوم» ولا ملفاتٍ مستبعدة", { w: summary.run.withoutRules, c: summary.run.capacity, q: summary.run.dataQuality });
     check(summary.run.capacity.canReach12To14 + summary.run.capacity.canReach15 > 0 && summary.run.capacity.below12 > 0, "T1 للرادار أطيافٌ: من يبلغ 12 وحدة ومن لا يبلغها", summary.run.capacity);
     check(summary.run.capacity.canReach15 > 0 && summary.run.capacity.canReach12To14 > 0, "T1 نطاقُ «15 وحدة» غيرُ صفر (مقرّراتٌ مطروحةٌ بوحداتٍ تُبلغ سقف 15) وبجانبه نطاقُ 12–14", summary.run.capacity);
     const full = summary.courses.filter((c: any) => c.unmet?.full > 0), notOffered = summary.courses.filter((c: any) => c.unmet?.["not-offered"] > 0);
-    check(full.length >= 3 && notOffered.length >= 5, `T1 عدّادا «مقرراتٌ تمتلئ» و«مطلوبةٌ ولا تُطرح» غير صفرين (${full.length} و${notOffered.length})`);
+    check(full.length >= 2 && notOffered.length >= 5, `T1 عدّادا «مقرراتٌ تمتلئ» و«مطلوبةٌ ولا تُطرح» ظاهران (${full.length} و${notOffered.length})`);
     const sectionsWithDemand = new Set(summary.courses.filter((c: any) => c.wanted > 0).map((c: any) => `${c.collegeId}:${c.sectionId}`));
     check(sectionsWithDemand.size === 1, `T1 للقسم الوحيد طلبٌ في الرادار (${sectionsWithDemand.size})`);
     const outcome = await get("/api/simulation/outcome");

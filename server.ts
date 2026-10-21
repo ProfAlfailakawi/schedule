@@ -2168,7 +2168,8 @@ function demoSessionPayload(user: any, permissions: number[], scopes: any[]) {
     user: { ...safeSystemUser(user), IsRootAdmin: isAdmin, IsDemo: true },
     role: roleDescriptor(user), permissions, scopes, data: "demo",
     /* الصفاتُ كلّها ثم الحسابُ المتعدّد المواقع (DEMO_SWITCH_ACCOUNTS). */
-    demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_SWITCH_ACCOUNTS, activeRole },
+    demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_SWITCH_ACCOUNTS, activeRole,
+      seedStatus: demoSeedStatus.get(Repository.currentDemoSessionId()) || "preparing" },
   };
 }
 
@@ -2197,6 +2198,38 @@ async function readDemoIdentity(userId: number) {
  * كلُّ الأسماء والأرقام وهمية (generateSyntheticCivilId).
  */
 const DEMO_STORY_SCOPE = { collegeId: 1, sectionId: 1, termId: 1 } as const;
+const demoSeedJobs = new Map<string, Promise<void>>();
+const demoSeedStatus = new Map<string, "preparing" | "ready" | "failed">();
+
+/** The core sandbox is ready at login; the larger showcase stories are prepared
+ *  in the background so building 64 synthetic student profiles never holds
+ *  the sign-in response open. Jobs are serialized per session so a reset cannot
+ *  race an older seed and leave the replacement sandbox half-populated. */
+function scheduleDemoExtras(sessionId: string): void {
+  demoSeedStatus.set(sessionId, "preparing");
+  const previous = demoSeedJobs.get(sessionId) || Promise.resolve();
+  const job = previous.catch(() => undefined).then(() => Repository.withDemoSandbox(sessionId, async () => {
+    const failures: string[] = [];
+    const run = async (name: string, seed: () => Promise<void>) => {
+      try { await seed(); }
+      catch (error) { failures.push(name); console.error(`[demo] seeding ${name} failed:`, error); }
+    };
+    await run("stories", seedDemoStories);
+    await run("radar", () => seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() }));
+    await run("Masari demand", seedDemoMasariDemand);
+    if (failures.length) throw new Error(`Demo seed incomplete: ${failures.join(", ")}`);
+  }));
+  const tracked = job.then(() => {
+    if (demoSeedJobs.get(sessionId) === tracked) demoSeedStatus.set(sessionId, "ready");
+  }).catch(error => {
+    if (demoSeedJobs.get(sessionId) === tracked) demoSeedStatus.set(sessionId, "failed");
+    console.error("[demo] showcase preparation failed:", error);
+  }).finally(() => {
+    if (demoSeedJobs.get(sessionId) === tracked) demoSeedJobs.delete(sessionId);
+  });
+  demoSeedJobs.set(sessionId, tracked);
+}
+
 async function seedDemoStories(): Promise<void> {
   if (!Repository.isDemoRequest()) return;
   const { collegeId, sectionId, termId } = DEMO_STORY_SCOPE;
@@ -2360,19 +2393,12 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
   try {
     const payload = await Repository.withDemoSandbox(sessionId, async () => {
       await Repository.createSession(sessionId, ROOT_ADMIN_USER_ID, DEMO_SESSION_TTL_MS);
-      /* القصصُ زينةٌ للتجربة لا شرطٌ لها: تعذّرُها يُسجَّل ولا يمنع الدخول. */
-      await seedDemoStories().catch(error => console.error("[demo] seeding stories failed:", error));
-      /* الرادارُ عرضٌ مستقلّ عن قصص الشاشة الأخرى: لا ينبغي أن تمنع قصةٌ
-         متعثرةٌ تهيئةَ بياناته في الديمو. يُبذر حصراً داخل صندوق هذه الجلسة. */
-      await seedDemoRadar({ sealIdentity: sealStudentIdentity, today: kuwaitDateISO() })
-        .catch(error => console.error("[demo] seeding radar failed:", error));
-      await seedDemoMasariDemand()
-        .catch(error => console.error("[demo] seeding Masari demand failed:", error));
       const identity = await readDemoIdentity(ROOT_ADMIN_USER_ID);
       return demoSessionPayload(identity.user, identity.permissions, identity.scopes);
     });
     res.setHeader("Set-Cookie", `session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
     res.json(payload);
+    scheduleDemoExtras(sessionId);
   } catch (error) {
     await Repository.withDemoSandbox(sessionId, () => Repository.deleteSession(sessionId)).catch(() => undefined);
     res.status(500).json({ error: error instanceof Error ? error.message : "تعذر بدء البيئة التجريبية" });
@@ -2573,11 +2599,16 @@ app.post("/api/demo/reset", requireAuth, async (req: AuthenticatedRequest, res: 
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
   if (!sessionId || !Repository.resetDemoSandbox(sessionId, DEMO_SESSION_TTL_MS)) { res.status(401).json({ error: DEMO_SESSION_GONE }); return; }
-  /* الصندوقُ الجديد يبدأ بقصصه كما بدأ الأول. */
-  await Repository.withDemoSandbox(sessionId, () => seedDemoStories()).catch(error => console.error("[demo] seeding stories failed:", error));
   forgetAuthSession(sessionId);
   await Repository.refreshSession(sessionId, DEMO_SESSION_TTL_MS);
   res.json({ success: true });
+  scheduleDemoExtras(sessionId);
+});
+
+app.get("/api/demo/seed-status", requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
+  const sessionId = getCookies(req)["session_id"];
+  res.json({ status: (sessionId && demoSeedStatus.get(sessionId)) || "ready" });
 });
 
 /**

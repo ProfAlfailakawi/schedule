@@ -571,6 +571,21 @@ export function createDemoSandboxState(): DemoSandboxState {
   for (const [rows, picks] of [[first, [[6, 13], [9, 14], [12, 15]]]] as const) {
     for (const [at, instructorId] of picks) if (rows[at]) rows[at].AdInstructorId = instructorId;
   }
+  /* لقطةٌ ترويجيةٌ لتغييرات الجدول: شعبتان من مقررين مختلفين حُذفتا بعد
+     اعتماد النسخة الأولى، فتظهران بوضوح في تقرير الديمو كمقررات محذوفة. */
+  const demoDeletedIds = new Set<number>();
+  const deletedCourseIds = new Set<number>();
+  for (const baselineRow of acceptedFirst) {
+    const currentRow = first.find(row => Number(row.id) === Number(baselineRow.id));
+    const courseId = Number(baselineRow.AdCourseId);
+    if (!currentRow || String(currentRow.fdetail || "").includes(DEMO_CONFLICT_MARK) || deletedCourseIds.has(courseId)) continue;
+    demoDeletedIds.add(Number(currentRow.id));
+    deletedCourseIds.add(courseId);
+    if (demoDeletedIds.size === 2) break;
+  }
+  for (let index = first.length - 1; index >= 0; index -= 1) {
+    if (demoDeletedIds.has(Number(first[index].id))) first.splice(index, 1);
+  }
   const schedules = [...first];
 
   /* أسماءُ الشاشات كما في academicRoles.ts (2…17). الرقمان 1 و13 غير موصوفين هناك فسُمّيا بما اختاره المالك (تجريبي فقط). */

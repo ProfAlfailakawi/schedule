@@ -7,8 +7,9 @@
  *     لكشف التسجيل بقراراتٍ مختلفة.
  */
 import { Repository } from "../src/db/repository";
-import { createDemoSandboxState } from "../src/db/demoSandbox";
-import { DEMO_RADAR_SECTION_IDS, DEMO_STUDENT_ARCHETYPES, demoArchetypeOf, demoStudentName, seedDemoRadar } from "../src/server/demoRadarSeed";
+import { createDemoSandboxState, DEMO_TERM_CURRENT } from "../src/db/demoSandbox";
+import { DEMO_RADAR_SECTION_IDS, DEMO_STUDENT_ARCHETYPES, DEMO_STUDENT_TOTAL, demoArchetypeOf, demoStudentName, seedDemoRadar } from "../src/server/demoRadarSeed";
+import { diffSchedules } from "../src/utils/scheduleDiff";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) passed++; else failed++; console.log(ok ? `\x1b[32m✓ ${label}\x1b[0m` : `\x1b[31m✗ ${label}\x1b[0m`); };
@@ -17,9 +18,14 @@ const check = (ok: boolean, label: string) => { if (ok) passed++; else failed++;
 const NEUTRAL = /^(طالب تجريبي|طالبة تجريبية|عضو هيئة تدريس تجريبي) \d+$/;
 const state = createDemoSandboxState();
 check(state.instructors.length >= 16 && state.instructors.every(p => NEUTRAL.test(p.AdInstructorName)), "أساتذة الصندوق بأسماء محايدة مرقّمة");
-check(Array.from({ length: 320 }, (_, i) => demoStudentName(i)).every(n => NEUTRAL.test(n)), "أسماء الطلبة محايدة وحتمية");
+check(Array.from({ length: DEMO_STUDENT_TOTAL }, (_, i) => demoStudentName(i)).every(n => NEUTRAL.test(n)), "أسماء الطلبة محايدة وحتمية");
 const FAMILY = /(الصباح|العتيبي|الرشيدي|المطيري|العنزي|الكندري|الدوسري|الهاجري|الشمري|الفضلي|العجمي|الخالدي)/;
 check(!FAMILY.test(JSON.stringify(state.instructors)) && !FAMILY.test(JSON.stringify(state.users)), "لا لقبَ عائلةٍ في أساتذة الصندوق ولا حساباته");
+const acceptedDemoVersion = state.scheduleVersions.find(version => version.id === "demo-ver-t1-accepted");
+const currentDemoRows = state.schedules.filter(row => Number(row.AdTermId) === DEMO_TERM_CURRENT);
+const demoChanges = diffSchedules(acceptedDemoVersion?.rows, currentDemoRows);
+const removedDemoCourses = new Set(demoChanges.entries.filter(entry => entry.kind === "removed").map(entry => Number(entry.row.AdCourseId)));
+check(removedDemoCourses.size >= 2, `تغييرات الجدول في الديمو تعرض مقررين محذوفين على الأقل (${removedDemoCourses.size})`);
 
 /* ── 2: الزرع ── */
 const id = `demo_cases_${Date.now()}`;
@@ -30,7 +36,7 @@ await Repository.withDemoSandbox(id, async () => {
   const profiles = await Repository.listStudentProfiles();
   const sections = (await Repository.getSections() as any[]).filter(r => DEMO_RADAR_SECTION_IDS.includes(Number(r.AdSectionId)));
   check(sections.length === 1, `قسمٌ واحد في الرادار (${sections.length})`);
-  check(profiles.length === 320, `٣٢٠ ملفاً مبذوراً (${profiles.length})`);
+  check(profiles.length === DEMO_STUDENT_TOTAL, `٦٤ ملفاً مبذوراً (${profiles.length})`);
   const termForNeeds = (await Repository.getTerms())[0];
   const needsAll = await Repository.getStudentNeedsForTerm(Number(termForNeeds.AdTermId));
   for (const sec of sections) {
@@ -53,7 +59,7 @@ await Repository.withDemoSandbox(id, async () => {
     check(sectionNeeds.length >= 3, `القسم ${sec.AdSectionCode}: حالاتٌ مسمّاة لكشف التسجيل (${sectionNeeds.length})`);
   }
   for (const kind of DEMO_STUDENT_ARCHETYPES) {
-    const idx = Array.from({ length: 320 }, (_, i) => i).filter(i => demoArchetypeOf(i, sections.length) === kind);
+    const idx = Array.from({ length: DEMO_STUDENT_TOTAL }, (_, i) => i).filter(i => demoArchetypeOf(i, sections.length) === kind);
     check(idx.length >= sections.length, `نمط «${kind}» حاضر في كل قسم (${idx.length})`);
   }
   const graduated = profiles.filter(p => !p.wishes && p.passedCourseIds.length > 0);
