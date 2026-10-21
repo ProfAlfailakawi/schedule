@@ -149,7 +149,7 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
   { id: "list", label: "الكل", hint: "كل مواعيد النطاق في قائمة واحدة", icon: <LayoutList /> },
   { id: "week", label: "الأسبوع", hint: "الأسبوع كشبكة أيام وأوقات", icon: <CalendarDays /> },
   { id: "instructor", label: "الأساتذة", hint: "مواعيد كل أستاذ وحمله الأسبوعي", icon: <UserRound /> },
-  { id: "courseLoad", label: "توزيع المواد بين المواقع", hint: "مواد كل أستاذ في البنين والبنات والجهراء وبقية المواقع", icon: <BookOpen /> },
+  { id: "courseLoad", label: "المواد × المواقع", hint: "مواد كل أستاذ في البنين والبنات والجهراء وبقية المواقع", icon: <BookOpen /> },
   { id: "room", label: "القاعات", hint: "ما تشغله كل قاعة ومتى تفرغ", icon: <Building2 /> },
   { id: "roomInstructor", label: "القاعات والأساتذة", hint: "كل قاعة ومبناها وأساتذتها، وكل أستاذ والقاعات التي يدرّس فيها", icon: <Landmark /> },
   { id: "matrix", label: "القاعات × الأوقات", hint: "شبكة تقاطع كل قاعة مع كل وقت", icon: <Table2 /> },
@@ -1631,7 +1631,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     const root = document.documentElement;
     const originalTitle = document.title;
     const reportTitles: Record<Exclude<PrintKind, null>, string> = {
-      list: "نتائج الاستعلام", week: "الأسبوع", instructor: "تقرير الأستاذ", courseLoad: "توزيع المواد بين المواقع", room: "إشغال القاعات والفراغات", roomInstructor: "القاعات والأساتذة",
+      list: "نتائج الاستعلام", week: "الأسبوع", instructor: "تقرير الأستاذ", courseLoad: "المواد × المواقع", room: "إشغال القاعات والفراغات", roomInstructor: "القاعات والأساتذة",
       matrix: "القاعات والأوقات", time: "الأوقات", visiting: "المنتدبون — الفصل الحالي",
       visitingHistory: "المنتدبون — كل الفصول", fairness: "عدالة توزيع العبء", balance: "ميزان الأقسام",
       comprehensive: "تقرير الجدول الشامل", "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
@@ -2300,10 +2300,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 <Printer aria-hidden="true" />
               </button>
             ) : null}
-            {!results.length && lens === "courseLoad" && courseLoads.length ? <button type="button" className="query-print-icon" data-guide-ignore="طباعة توزيع المواد بين المواقع المسموحة" onClick={() => printReport("courseLoad")} aria-label="طباعة توزيع المواد بين المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button> : null}
+            {!results.length && lens === "courseLoad" && courseLoads.length ? <button type="button" className="query-print-icon" data-guide-ignore="طباعة المواد × المواقع المسموحة" onClick={() => printReport("courseLoad")} aria-label="طباعة المواد × المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button> : null}
             {results.length ? <>
               {lens === "courseLoad" ? (
-                <button type="button" className="query-print-icon" data-guide-ignore="طباعة توزيع المواد بين المواقع المسموحة" onClick={() => printReport("courseLoad")} disabled={siteLoadRead?.loading || !courseLoads.length} aria-label="طباعة توزيع المواد بين المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button>
+                <button type="button" className="query-print-icon" data-guide-ignore="طباعة المواد × المواقع المسموحة" onClick={() => printReport("courseLoad")} disabled={siteLoadRead?.loading || !courseLoads.length} aria-label="طباعة المواد × المواقع" title="طباعة التقرير"><Printer aria-hidden="true" /></button>
               ) : lens === "instructor" ? (
                 <div className="query-report-action">
                   <SecondaryButton type="button" className="query-print-icon" data-guide-ignore="اختيار نطاق طباعة تقرير الأستاذ؛ قراءة فقط" aria-label="طباعة تقرير الأستاذ" aria-haspopup="menu" aria-expanded={scopeMenu === "instructor" || undefined} onClick={() => setScopeMenu(scopeMenu === "instructor" ? null : "instructor")} disabled={branchBusy} title="اختر نطاق تقرير الأستاذ للطباعة">
@@ -2927,7 +2927,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           )
         ) : lens === "courseLoad" ? (
           <div className="course-load-report">
-            <div className="course-load-intro"><span><BookOpen aria-hidden="true" /></span><div><strong>توزيع المواد بين المواقع</strong><small>كل المواقع المسموحة · المقرر يُحسب مرة في الإجمالي</small></div></div>
+            <div className="course-load-intro"><span><BookOpen aria-hidden="true" /></span><div><strong>المواد × المواقع</strong><small>كل المواقع المسموحة · المقرر يُحسب مرة في الإجمالي</small></div></div>
             {siteLoadRead?.loading || siteLoadRead?.termId !== filters.termId ? <p role="status">يُجهّز توزيع المواقع…</p> : null}
             {siteLoadRead?.denied.length ? <p className="course-load-partial" role="status">البيانات جزئية: تعذرت قراءة {siteLoadRead.denied.join("، ")}</p> : null}
             {courseLoads.length ? <section className="course-load-college">
@@ -3786,7 +3786,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     list: "نتائج الاستعلام",
     week: "الأسبوع",
     instructor: "الأساتذة",
-    courseLoad: "توزيع المواد بين المواقع",
+    courseLoad: "المواد × المواقع",
     room: "إشغال القاعات والفراغات",
     roomInstructor: "القاعات والأساتذة",
     matrix: "القاعات × الأوقات",
