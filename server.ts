@@ -6906,13 +6906,7 @@ app.delete("/api/admin/location-setup/buildings/:id", requirePermission(7), requ
   const affectedRooms=registry.rooms.filter(room=>room.buildingId===current.id&&room.active);
   const inactiveRooms=affectedRooms.map(room=>({...room,active:false,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(room.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"DELETE",before:{active:room.active},after:{active:false},note:`إيقاف مع حذف المبنى ${current.officialCode}.`}]}));
   const inactiveBuilding:MasterBuilding={...current,active:false,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"DELETE",before:{active:current.active},after:{active:false},note:"إيقاف المبنى وقاعاته مع حفظ سجل الاستخدام التاريخي."}]};
-  try{
-    if(inactiveRooms.length)await Repository.upsertLocationRooms(inactiveRooms);
-    await Repository.upsertLocationBuildings([inactiveBuilding]);
-  }catch(error){
-    await Promise.all([Repository.upsertLocationBuildings([current]),...(affectedRooms.length?[Repository.upsertLocationRooms(affectedRooms)]:[])]);
-    throw error;
-  }
+  await Repository.archiveLocationBuilding(inactiveBuilding,inactiveRooms);
   invalidateLocationRegistry();res.json({building:inactiveBuilding,deactivatedRoomCount:inactiveRooms.length});
 });
 app.post("/api/admin/location-setup/rooms", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{

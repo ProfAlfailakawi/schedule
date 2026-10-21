@@ -47,7 +47,7 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
   const sections = useMemo<AdSection[]>(() => sortByName(data.sections.filter((item: AdSection) => !collegeId || Number(item.AdCollegeId) === collegeId), (item: AdSection) => item.AdSectionName), [data.sections, collegeId]);
   const buildings = useMemo(() => data.buildings.filter(item => item.active && item.confidence === "CONFIRMED" && (!collegeId || item.collegeIds.includes(collegeId)) && (!sectionId || !item.sectionIds.length || item.sectionIds.includes(sectionId))), [data.buildings, collegeId, sectionId]);
   const currentBuilding = buildings.find(item => item.id === buildingId);
-  const visibleRooms = useMemo(() => data.rooms.filter(room => (!collegeId || room.collegeIds.includes(collegeId)) && (!sectionId || !room.sectionIds.length || room.sectionIds.includes(sectionId)) && (statusFilter === "all" || room.sectionIds.length > 1) && (!currentBuilding || room.buildingId === currentBuilding.id)).sort((a, b) => byArabic(a.canonicalCode, b.canonicalCode)), [data.rooms, collegeId, sectionId, statusFilter, currentBuilding?.id]);
+  const visibleRooms = useMemo(() => data.rooms.filter(room => room.active && (!collegeId || room.collegeIds.includes(collegeId)) && (!sectionId || !room.sectionIds.length || room.sectionIds.includes(sectionId)) && (statusFilter === "all" || room.sectionIds.length > 1) && (!currentBuilding || room.buildingId === currentBuilding.id)).sort((a, b) => byArabic(a.canonicalCode, b.canonicalCode)), [data.rooms, collegeId, sectionId, statusFilter, currentBuilding?.id]);
   const prefix = officialCollegeSitePrefix(colleges.find(item => Number(item.AdCollegeId) === collegeId)?.AdCollegeName);
 
   useEffect(() => { if (buildingId && !buildings.some(item => item.id === buildingId)) setBuildingId(""); }, [buildings, buildingId]);
@@ -92,7 +92,7 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
     setBusy(true); setError(""); setNotice("");
     try {
       const result = await request(`/api/admin/location-setup/buildings/${encodeURIComponent(building.id)}`, { method: "DELETE" });
-      setBuildingId(""); setEditingBuilding(null); setNotice(`حُذف المبنى ${building.officialCode} وأُوقفت ${countOf(result.deactivatedRoomCount, AR.room)} تابعة له.`); await load();
+      setBuildingId(""); setEditingBuilding(null); setData(current => ({ ...current, buildings: current.buildings.filter(item => item.id !== building.id), rooms: current.rooms.filter(room => room.buildingId !== building.id) })); setNotice(`حُذف المبنى ${building.officialCode} وأُوقفت ${countOf(result.deactivatedRoomCount, AR.room)} تابعة له.`);
     } catch (e: any) { setError(e?.message || "تعذر حذف المبنى"); }
     finally { setBusy(false); }
   };
@@ -114,7 +114,7 @@ export default function LocationQuickSetup({ header, demoReadOnly = false }: { h
     setBusy(true); setError(""); setNotice("");
     try {
       await request(`/api/admin/location-setup/rooms/${encodeURIComponent(room.id)}`, { method: "DELETE" });
-      setEditingRoom(null); setNotice(`حُذفت القاعة ${room.canonicalCode} وحُفظ سجلها التاريخي.`); await load();
+      setEditingRoom(null); setData(current => ({ ...current, rooms: current.rooms.filter(item => item.id !== room.id) })); setNotice(`حُذفت القاعة ${room.canonicalCode} وحُفظ سجلها التاريخي.`);
     } catch (e: any) { setError(e?.message || "تعذر حذف القاعة"); }
     finally { setBusy(false); }
   };
