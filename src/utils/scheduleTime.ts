@@ -11,9 +11,21 @@ export const SCHEDULE_SLOT_MINUTES = 30;
 export const SCHEDULE_DAY_START_TIME = "08:00";
 export const SCHEDULE_DAY_END_TIME = "20:00";
 
-export function withinScheduleDay(start: number, end: number): boolean {
+export type ScheduleDayWindow = { startTime?: string | null; endTime?: string | null; scheduleDayStartTime?: string | null; scheduleDayEndTime?: string | null };
+export function scheduleDayWindowMinutes(window?: ScheduleDayWindow | null): { start: number; end: number; startTime: string; endTime: string } {
+  const rawStart=window?.startTime??window?.scheduleDayStartTime,rawEnd=window?.endTime??window?.scheduleDayEndTime;
+  const startTime = isValidClock(rawStart) ? normalizeClock(rawStart) : SCHEDULE_DAY_START_TIME;
+  const endTime = isValidClock(rawEnd) ? normalizeClock(rawEnd) : SCHEDULE_DAY_END_TIME;
+  const start = Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3, 5));
+  const end = Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3, 5));
+  if (end <= start) return { start: SCHEDULE_DAY_START, end: SCHEDULE_DAY_END, startTime: SCHEDULE_DAY_START_TIME, endTime: SCHEDULE_DAY_END_TIME };
+  return { start, end, startTime, endTime };
+}
+
+export function withinScheduleDay(start: number, end: number, window?: ScheduleDayWindow | null): boolean {
+  const bounds = scheduleDayWindowMinutes(window);
   return Number.isFinite(start) && Number.isFinite(end) &&
-    start >= SCHEDULE_DAY_START && end <= SCHEDULE_DAY_END && end > start;
+    start >= bounds.start && end <= bounds.end && end > start;
 }
 
 

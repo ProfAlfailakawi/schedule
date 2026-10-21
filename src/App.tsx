@@ -241,7 +241,7 @@ const reportViews: ReportMode[] = [
   "reportTime",
   "reportRoomTime",
 ];
-const adminViews: AdminMode[] = ["users", "permissions", "scopes", "audit", "locations", "roomSetup", "backup"];
+const adminViews: AdminMode[] = ["users", "permissions", "scopes", "audit", "locations", "roomSetup", "sectionHours", "backup"];
 const academicViews: AcademicTab[] = ["terms", "colleges", "sections", "instructors", "courses"];
 /** Permission id that unlocks each academic catalogue. */
 const ACADEMIC_PERM: Record<AcademicTab, number> = {
@@ -306,6 +306,7 @@ const pathByView: Record<View, string> = {
   audit: "/System/AuditLog",
   locations: "/System/Locations",
   roomSetup: "/System/LocationSetup",
+  sectionHours: "/System/SectionHours",
   backup: "/System/Backup",
   scheduleChanges: "/FSchedule/Changes",
   instructorRequests: "/FSchedule/InstructorRequests",
@@ -1998,6 +1999,10 @@ export default function App() {
       case "roomSetup":
         return user.IsRootAdmin && allowed.admin ? (
           <AdminUsers mode="roomSetup" onNavigate={adminGo} permissions={permissions} rootAdmin demoReadOnly={Boolean(user.IsDemo)} />
+        ) : unauthorized();
+      case "sectionHours":
+        return user.IsRootAdmin && allowed.admin ? (
+          <AdminUsers mode="sectionHours" onNavigate={adminGo} permissions={permissions} rootAdmin demoReadOnly={Boolean(user.IsDemo)} />
         ) : unauthorized();
       case "backup":
         return user.IsRootAdmin ? (

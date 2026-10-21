@@ -116,6 +116,8 @@ const DEMO_HALLS: readonly DemoHall[] = DEMO_BUILDINGS.flatMap(b => b.rooms.map(
 })));
 const hallsForSection = (sectionId: number) => DEMO_HALLS.filter(h => h.sectionIds.includes(sectionId));
 const isLabHall = (hall: DemoHall) => /^(L|S)\d/.test(hall.hall);
+const demoRoomType = (hall: DemoHall) => hall.hall.startsWith("L") ? "مختبر حاسوب" : hall.hall.startsWith("S") ? "استوديو إنتاج" : "تدريسية";
+const demoRoomCapacity = (hall: DemoHall) => Number(hall.description.match(/(\d+)\s*مقعد/)?.[1] || 0) || null;
 function hallFields(hall: DemoHall): Partial<FSchedule> {
   return { buildingId: hall.buildingId, roomId: hall.roomId, AdRoomCode: hall.code, AdRoomHall: hall.hall, locationStatus: "VERIFIED" };
 }
@@ -138,6 +140,7 @@ function demoLocationRegistry(schedules: FSchedule[]): { buildings: MasterBuildi
   });
   const rooms: MasterRoom[] = DEMO_HALLS.map(h => ({
     id: h.roomId, buildingId: h.buildingId, buildingCode: h.code, canonicalCode: h.hall, active: true, aliases: [],
+    roomType: demoRoomType(h), capacity: demoRoomCapacity(h),
     collegeIds: [h.collegeId], sectionIds: [...h.sectionIds], primarySectionIds: [...h.sectionIds],
     shared: h.sectionIds.length > 1, sharedConfidence: "CONFIRMED",
     historicalUsageCount: usage("roomId", h.roomId), firstTermId: 1, lastTermId: 1,
@@ -549,6 +552,17 @@ export function createDemoSandboxState(): DemoSandboxState {
   /* الفصل الأول يُبنى نظيفاً، وتُحفظ صورتُه — هي ما قُبل — ثم تُزرع فيه التعارضات
      المقصودة (تعديلٌ بعد القبول). والثاني فيه المخالفات اللائحية. والصيفيُّ نظيف. */
   const first = placeTerm(DEMO_TERM_CURRENT, courses, 1);
+  /* مشهدٌ ترويجيٌّ واحد ومقصود: مقررٌ يفضّل مختبر الحاسوب، وقاعته الحالية
+     تدريسيةٌ أصغر من تقدير سعة الشعبة. يرى المخطط التحذير والبدائل في الجدول؛
+     لا تُعرض أرقام السعة في الواجهات العامة. */
+  const demoFitCourse=first.map(row=>courses.find(course=>Number(course.AdCourseId)===Number(row.AdCourseId))).find((course):course is AdCourse=>Boolean(course&&Number(course.MaxStudent)>40&&OFFERINGS[DEMO_TERM_CURRENT]?.find(([code])=>code===course.CourseCode)?.[1]===1));
+  const demoFitRow=demoFitCourse?first.find(row=>Number(row.AdCourseId)===Number(demoFitCourse.AdCourseId)):undefined;
+  if(demoFitCourse&&demoFitRow){
+    demoFitCourse.CourseRoomType="مختبر حاسوب";
+    const occupied=(hall:DemoHall)=>first.some(row=>row!==demoFitRow&&row.roomId===hall.roomId&&["fsunday","fmonday","ftuesday","fwednesday","fthursday"].some(day=>Boolean((row as any)[day])&&Boolean((demoFitRow as any)[day])&&Number(row.fstarttime.replace(":",""))<Number(demoFitRow.fendtime.replace(":",""))&&Number(row.fendtime.replace(":",""))>Number(demoFitRow.fstarttime.replace(":",""))));
+    const hall=DEMO_HALLS.find(item=>demoRoomType(item)==="تدريسية"&&Number(demoRoomCapacity(item)||0)<Number(demoFitCourse.MaxStudent)&&!occupied(item));
+    if(hall)Object.assign(demoFitRow,hallFields(hall));
+  }
   const acceptedFirst = structuredClone(first);
   plantConflicts(first);
   /* مخالفتان لائحيتان تُضافان بعد القبول (مراجعةٌ لا منع)، فيُقرأ تقريرُ الجدول بكشفهما. */

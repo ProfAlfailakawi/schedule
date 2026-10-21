@@ -122,6 +122,9 @@ export interface AdSection {
   AdCollegeId: number;
   AdSectionCode: string;
   AdSectionName: string;
+  /** Per-section teaching-day window; omitted means the institutional default (08:00–20:00). */
+  scheduleDayStartTime?: string;
+  scheduleDayEndTime?: string;
 }
 
 export interface AdInstructor {
@@ -159,6 +162,8 @@ export interface AdCourse {
   CourseCredit: number;
   CourseHours: number;
   MaxStudent: number;
+  /** Optional room category that best fits this course (planner guidance only). */
+  CourseRoomType?: string;
 }
 
 /** Academic curriculum version for one scientific section. */
@@ -373,6 +378,8 @@ export interface MasterRoom {
   canonicalCode: string;
   /** Verified seat count used by the registration schedule rehearsal. Missing means unknown. */
   capacity?: number | null;
+  /** Optional private planning category, such as classroom, lab, or computer lab. */
+  roomType?: string;
   active: boolean;
   aliases: LocationRegistryAlias[];
   collegeIds: number[];

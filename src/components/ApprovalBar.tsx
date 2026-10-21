@@ -65,7 +65,7 @@ interface Payload {
   escalatedNotes?: number;
   /** أيُعرض «طلب تمديد» الآن: قرب الموعد أو بعده، ولا طلبَ قائم. */
   canRequestExtension?: boolean;
-  dataReadiness?: { ready: boolean; count: number; items: Array<{ kind: string; id: string; label: string; fields: string[] }> };
+  dataReadiness?: { ready: boolean; count: number; items: Array<{ kind: string; id: string; label: string; fields: string[] }>; roomFit?: { count:number; unknownRoomCapacity:number; items:Array<{kind:string;label:string;room:string;detail:string}> } };
 }
 
 interface Props {
@@ -543,7 +543,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
     <section className="apb-data-readiness" data-ready={state.dataReadiness.ready || undefined} aria-label="بيانات تحتاج استكمالاً">
       <header>
         <span className="apb-dr-ic">{state.dataReadiness.ready ? <Check aria-hidden="true" /> : <ListChecks aria-hidden="true" />}</span>
-        <strong>{state.dataReadiness.ready ? "البيانات مكتملة" : `${countOf(state.dataReadiness.count, AR.item)} ناقصة · لا تمنع التوقيع`}</strong>
+        <strong>{state.dataReadiness.ready ? (state.dataReadiness.roomFit?.count ? "ملاحظات تخطيطية · لا تمنع التوقيع" : "البيانات مكتملة") : `${countOf(state.dataReadiness.count, AR.item)} ناقصة · لا تمنع التوقيع`}</strong>
         <button type="button" className="apb-dr-close" aria-label="إغلاق القائمة" onClick={() => setReadinessOpen(false)} data-guide-ignore="إغلاق قائمة البيانات الناقصة"><X aria-hidden="true" /></button>
       </header>
       {!state.dataReadiness.ready ? (() => {
@@ -607,6 +607,11 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           </>
         );
       })() : null}
+      {state.dataReadiness.roomFit?.count ? <div className="apb-room-fit-review" aria-label="مراجعة ملاءمة القاعات للمخطط">
+        <header><AlertTriangle aria-hidden="true"/><b>{countOf(state.dataReadiness.roomFit.count, AR.appointment)} تحتاج مراجعة ملاءمة</b><small>للمخطط فقط · لا تمنع الاعتماد</small></header>
+        <ul>{state.dataReadiness.roomFit.items.map((item,index)=><li key={`${item.kind}:${item.label}:${index}`}><span><b>{item.label}</b><small>{item.room} · {item.detail}</small></span></li>)}</ul>
+        {state.dataReadiness.roomFit.unknownRoomCapacity ? <small className="apb-room-fit-unknown">سعة {countOf(state.dataReadiness.roomFit.unknownRoomCapacity, AR.room)} غير مسجلة؛ تُركت بلا حكم.</small> : null}
+      </div> : null}
     </section>
   ) : null;
 
@@ -659,14 +664,14 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             وهي إشعارٌ لا يمنع التوقيع (قاعدة 2026-09-27: لا يمنعه إلا تعارضٌ ماديّ):
             لونها كهرماني لا أحمر، واسمها «بيانات ناقصة» لا «مانع».
             الضغط يفتح قائمتها وفي كل بندٍ فعلٌ يقفز إلى مكان إصلاحه. */}
-        {state.dataReadiness && !state.dataReadiness.ready ? (
+        {state.dataReadiness && (!state.dataReadiness.ready || Boolean(state.dataReadiness.roomFit?.count)) ? (
           <button type="button" className="apb-badge apb-data-btn" data-tone="warning" aria-expanded={readinessOpen}
-            title={`${countOf(state.dataReadiness.count, AR.item)} ناقصة · لا تمنع التوقيع. اضغط للقائمة.`}
+            title={`${state.dataReadiness.roomFit?.count ? `${countOf(state.dataReadiness.roomFit.count, AR.appointment)} ملاحظات ملاءمة` : `${countOf(state.dataReadiness.count, AR.item)} بيانات ناقصة`} · لا تمنع التوقيع. اضغط للتفاصيل.`}
             onClick={() => setReadinessOpen(open => !open)}
             data-guide-ignore="قائمة البيانات الناقصة قبل التوقيع — تفتح قائمةً بكل بندٍ وفعلُه">
             <ListChecks aria-hidden="true" />
-            <b>{state.dataReadiness.count.toLocaleString("ar-KW-u-nu-latn")}</b>
-            <span>بيانات ناقصة</span>
+            <b>{(state.dataReadiness.roomFit?.count || state.dataReadiness.count).toLocaleString("ar-KW-u-nu-latn")}</b>
+            <span>{state.dataReadiness.roomFit?.count ? "ملاءمة القاعات" : "بيانات ناقصة"}</span>
             <ChevronDown aria-hidden="true" className="apb-data-chev" />
           </button>
         ) : null}

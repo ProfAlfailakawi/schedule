@@ -179,6 +179,7 @@ import {
   SCHEDULE_DAY_START,
   SCHEDULE_DAY_START_TIME,
   SCHEDULE_SLOT_MINUTES,
+  scheduleDayWindowMinutes,
   withinScheduleDay,
 } from "../utils/scheduleTime";
 export type ScheduleMode = "schedule" | "copy";
@@ -1113,6 +1114,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
      */
     [rowsScope, setRowsScope] = useState(""),
     [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
+  const activeScheduleWindow = useMemo(() => {
+    const sectionId=Number(form.AdSectionId||filterSection||0);
+    return scheduleDayWindowMinutes(sections.find(section=>Number(section.AdSectionId)===sectionId));
+  },[sections,form.AdSectionId,filterSection]);
   const scopedTerms = useScopedTerms<AdTerm>(terms, filterCollege, filterSection, filterTerm, setFilterTerm);
   const [agendaNarrow, setAgendaNarrow] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 760px)").matches);
   useEffect(() => {
@@ -3122,7 +3127,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   const quickConflict = (draft: QuickDraft, day: DayKey): string | null => {
     const from = mins(draft.start), to = mins(draft.end);
     if (to <= from) return "وقت النهاية يجب أن يكون بعد وقت البداية.";
-    if (!withinScheduleDay(from, to)) return `الوقت خارج اليوم الدراسي (${formatScheduleTimeRange(SCHEDULE_DAY_START_TIME, SCHEDULE_DAY_END_TIME)}).`;
+    const window=scheduleDayWindowMinutes(sections.find(section=>Number(section.AdSectionId)===Number(filterSection)));
+    if (!withinScheduleDay(from, to, window)) return `الوقت خارج اليوم الدراسي (${formatScheduleTimeRange(window.startTime, window.endTime)}).`;
     const busy = rows.find(r =>
       Boolean((r as any)[day]) &&
       mins(r.fstarttime) < to && mins(r.fendtime) > from &&
@@ -3323,11 +3329,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   const editorSupplementalReview = useMemo(() => editorReviewFindings.filter(finding => !isDecision1912Finding(finding)), [editorReviewFindings]);
   const timeRangeInvalid = Boolean(form.fstarttime&&form.fendtime)&&mins(form.fendtime)<=mins(form.fstarttime);
   const outsideTeachingDay = Boolean(form.fstarttime && form.fendtime) && !timeRangeInvalid &&
-    !withinScheduleDay(mins(form.fstarttime), mins(form.fendtime));
+    !withinScheduleDay(mins(form.fstarttime), mins(form.fendtime),activeScheduleWindow);
   const validationIssues=[
     !selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",
     timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":"",
-    outsideTeachingDay?`وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}.`:"",
+    outsideTeachingDay?`وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(activeScheduleWindow.startTime)} و${scheduleClockForDisplay(activeScheduleWindow.endTime)}.`:"",
   ].filter(Boolean);
   const blockingConflicts=conflicts.filter(isBlockingConflict);
   const editorTimingNote = historicalTimingNote(form);
@@ -5713,7 +5719,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    * the missing cards appear.
    */
   const gridWindow = useMemo(() => {
-    let start = SCHEDULE_DAY_START, end = SCHEDULE_DAY_END;
+    const bounds=scheduleDayWindowMinutes(sections.find(section=>Number(section.AdSectionId)===Number(filterSection)));
+    let start = bounds.start, end = bounds.end;
     for (const row of weekRows as FSchedule[]) {
       const from = mins(row.fstarttime), to = mins(row.fendtime);
       if (Number.isFinite(from) && from < start) start = from;
@@ -5722,7 +5729,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const snapDown = (value: number) => Math.floor(value / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES;
     const snapUp = (value: number) => Math.ceil(value / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES;
     return { start: Math.max(0, snapDown(start)), end: Math.min(24 * 60, snapUp(end)) };
-  }, [weekRows]);
+  }, [weekRows,sections,filterSection]);
   /** Where the line sits inside a day column, in pixels from its top. */
   const nowOffset = useMemo(() => {
     if (!todayKey || !termIsRunning) return null;
@@ -6221,10 +6228,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       .filter(duration => Number.isFinite(duration) && duration > 0);
     const minDuration = durations.length ? Math.min(...durations) : 50;
     const hourWidth = readableWeekStripHourWidth(minDuration);
-    // 20:00 is a hard visual boundary. Readability is solved vertically by the
-    // adaptive identity card, never by borrowing pixels beyond the lecture's
-    // actual end time.
-    const visualEnd = SCHEDULE_DAY_END;
+    // The configured section end is the default ruler boundary; legacy rows
+    // outside it still expand the scale so they remain visible for review.
+    const visualEnd = gridWindow.end;
     const terminalPad = 0;
     // Only the final academic hour gets a little more paper. 19:00–20:00 is
     // 14px wider than the other hours, but 20:00 stays a hard boundary.
@@ -8770,8 +8776,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     <TimeField
                       data-guide-editor-field="time"
                      
-                      min={SCHEDULE_DAY_START_TIME}
-                      max={SCHEDULE_DAY_END_TIME}
+          min={activeScheduleWindow.startTime}
+          max={activeScheduleWindow.endTime}
                       value={form.fstarttime}
                       onChange={(e) => {
                         setScheduleTouched(true);
@@ -8797,6 +8803,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       start={form.fstarttime || SCHEDULE_DAY_START_TIME}
                       end={form.fendtime || form.fstarttime || SCHEDULE_DAY_START_TIME}
                       preferredDuration={expectedDurationForSelection(form)}
+                      minTime={activeScheduleWindow.startTime}
+                      maxTime={activeScheduleWindow.endTime}
                       onChange={(next) => {
                         setScheduleTouched(true);
                         setForm((p) => ({ ...p, fstarttime: next.start, fendtime: next.end }));
@@ -8809,8 +8817,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <div className="schedule-time-control" dir="ltr">
                     <TimeField
                      
-                      min={SCHEDULE_DAY_START_TIME}
-                      max={SCHEDULE_DAY_END_TIME}
+          min={activeScheduleWindow.startTime}
+          max={activeScheduleWindow.endTime}
                       value={form.fendtime}
                       onChange={(e) => {
                         setScheduleTouched(true);
@@ -8825,6 +8833,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   sectionId={Number(form.AdSectionId||0)}
                   termId={Number(form.AdTermId||0)}
                   value={form}
+                  courseRoomType={String(courseById.get(Number(form.AdCourseId||0))?.CourseRoomType||"")}
+                  seatsNeeded={Number(courseById.get(Number(form.AdCourseId||0))?.MaxStudent||0)}
                   onChange={(patch)=>{setScheduleTouched(true);setForm(current=>({...current,...patch}));}}
                   showRaw={editor==="edit"}
                   hallAction={hallAvailabilityReady && Number(form.AdSectionId||0) ? (

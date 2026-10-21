@@ -8668,3 +8668,4 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
   .qc-wheel-track{height:150px;padding-block:52px}
   .qc-wheel-cell{min-height:44px}
 }
+.room-fit-note{display:flex;align-items:flex-start;gap:.45rem;margin:.45rem 0 0;padding:.55rem .7rem;border:1px solid #e8d6a9;border-radius:12px;background:#fbf6e9;color:#70551a;font-size:.82rem;line-height:1.55}.room-fit-note svg{width:1rem;height:1rem;flex:none;margin-top:.15rem}

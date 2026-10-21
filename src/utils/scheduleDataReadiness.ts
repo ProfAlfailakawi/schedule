@@ -23,6 +23,10 @@ export function computeScheduleDataReadiness({ rows, courses, instructorIds, roo
   const courseById = new Map(courses.map(course => [Number(course.AdCourseId), course]));
   const roomById = new Map(registryRooms.map(room => [String(room.id), room]));
   const missing = new Map<string, DataGapItem>();
+  const sectionsByCourse=new Map<number,Set<string>>();
+  for(const row of scheduleRows){const id=Number(row.AdCourseId||0);if(!id)continue;const set=sectionsByCourse.get(id)||new Set<string>();set.add(String(row.SCode||row.id));sectionsByCourse.set(id,set);}
+  const fitIssues:Array<{kind:"capacity"|"room-type";scheduleId:string;label:string;room:string;detail:string}>=[];
+  let unknownRoomCapacity=0;
   for (const row of scheduleRows) {
     const courseId = Number(row.AdCourseId || 0), course = courseById.get(courseId);
     const label = `${course?.CourseCode || "موعد"} · ${course?.CourseName || row.AdCourseName || "مقرر"} · شعبة ${row.SCode || "—"}`;
@@ -55,8 +59,16 @@ export function computeScheduleDataReadiness({ rows, courses, instructorIds, roo
     } else {
       const room = roomById.get(roomId);
       if (!room) missing.set(`room:${roomId}`, { kind: "room", id: roomId, label: `قاعة ${row.AdRoomHall || roomId}`, fields: ["تأكيد ربط القاعة في سجل المواقع"] });
+      else if(course){
+        const sectionCount=Math.max(1,sectionsByCourse.get(courseId)?.size||1);
+        const estimatedSeats=Number(course.MaxStudent)>0?Math.ceil(Number(course.MaxStudent)/sectionCount):0;
+        if(estimatedSeats>0&&Number(room.capacity)>0&&estimatedSeats>Number(room.capacity))fitIssues.push({kind:"capacity",scheduleId:String(row.id),label,room:`${row.AdRoomCode||room.buildingCode}/${row.AdRoomHall||room.canonicalCode}`,detail:`تقديريًا ${estimatedSeats} مقعدًا مقابل سعة ${Number(room.capacity)}.`});
+        else if(estimatedSeats>0&&!Number(room.capacity))unknownRoomCapacity++;
+        const requiredType=String(course.CourseRoomType||"").trim(),actualType=String(room.roomType||"").trim();
+        if(requiredType&&actualType&&requiredType!==actualType)fitIssues.push({kind:"room-type",scheduleId:String(row.id),label,room:`${row.AdRoomCode||room.buildingCode}/${row.AdRoomHall||room.canonicalCode}`,detail:`المقرر يفضّل ${requiredType} والقاعة من نوع ${actualType}.`});
+      }
     }
   }
   const items = [...missing.values()];
-  return { ready: items.length === 0, count: items.length, items };
+  return { ready: items.length === 0, count: items.length, items, roomFit:{count:fitIssues.length,unknownRoomCapacity,items:fitIssues.slice(0,40)} };
 }

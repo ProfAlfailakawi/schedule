@@ -1,9 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  SCHEDULE_DAY_END,
-  SCHEDULE_DAY_START,
-  scheduleClockForDisplay,
-} from "../utils/scheduleTime";
+import { scheduleClockForDisplay } from "../utils/scheduleTime";
 
 /**
  * ── عدّاد الوقت المشترك ─────────────────────────────────────────────────────
@@ -95,17 +91,22 @@ export function TimeWheels({
   end,
   onChange,
   preferredDuration,
+  minTime = "08:00",
+  maxTime = "20:00",
 }: {
   start: string;
   end: string;
   onChange: (next: { start: string; end: string }) => void;
   preferredDuration?: number;
+  minTime?: string;
+  maxTime?: string;
 }) {
   const from = minutesOf(start);
   const span = Math.max(30, minutesOf(end) - from);
+  const minimum = minutesOf(minTime), maximum = minutesOf(maxTime);
   const hours = useMemo(
-    () => Array.from({ length: 12 }, (_, i) => 8 + i).filter((h) => h * 60 < SCHEDULE_DAY_END),
-    [],
+    () => Array.from({ length: Math.max(1, Math.floor(maximum / 60) - Math.floor(minimum / 60) + 1) }, (_, i) => Math.floor(minimum / 60) + i).filter((h) => h * 60 <= maximum),
+    [minimum, maximum],
   );
   const minuteSteps = useMemo(() => Array.from({ length: 12 }, (_, i) => i * 5), []);
   /* The lengths the regulation actually gives: 50 minutes on Sun/Tue/Thu and 80
@@ -113,13 +114,13 @@ export function TimeWheels({
   const spans = [50, 80, 100, 120, 150, 180];
 
   const setStart = (minutes: number) => {
-    const clamped = Math.min(Math.max(minutes, SCHEDULE_DAY_START), SCHEDULE_DAY_END - 30);
+    const clamped = Math.min(Math.max(minutes, minimum), maximum - 30);
     const learned = Number(preferredDuration || 0);
     const duration = learned > 0 ? learned : span;
-    onChange({ start: timeOf(clamped), end: timeOf(Math.min(SCHEDULE_DAY_END, clamped + duration)) });
+    onChange({ start: timeOf(clamped), end: timeOf(Math.min(maximum, clamped + duration)) });
   };
   const setSpan = (length: number) =>
-    onChange({ start: timeOf(from), end: timeOf(Math.min(SCHEDULE_DAY_END, from + length)) });
+    onChange({ start: timeOf(from), end: timeOf(Math.min(maximum, from + length)) });
 
   return (
     <div className="qc-wheels">
@@ -167,6 +168,8 @@ export function TimeCounterPopover({
   onChange,
   onClose,
   preferredDuration,
+  minTime,
+  maxTime,
 }: {
   anchor: HTMLElement | null;
   start: string;
@@ -174,6 +177,8 @@ export function TimeCounterPopover({
   onChange: (next: { start: string; end: string }) => void;
   onClose: () => void;
   preferredDuration?: number;
+  minTime?: string;
+  maxTime?: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState<{ left: number; top: number } | null>(null);
@@ -220,7 +225,7 @@ export function TimeCounterPopover({
       style={box ? { left: box.left, top: box.top } : { left: -9999, top: -9999 }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <TimeWheels start={start} end={end} onChange={onChange} preferredDuration={preferredDuration} />
+      <TimeWheels start={start} end={end} onChange={onChange} preferredDuration={preferredDuration} minTime={minTime} maxTime={maxTime} />
     </div>
   );
 }

@@ -68,6 +68,8 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
     [credit, setCredit] = useState(""),
     [hours, setHours] = useState(""),
     [capacity, setCapacity] = useState(""),
+    [courseRoomType, setCourseRoomType] = useState(""),
+    [roomTypeOptions, setRoomTypeOptions] = useState<string[]>(["تدريسية", "مختبر", "مختبر حاسوب"]),
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
     [receipt, setReceipt] = useState<string | null>(null),
@@ -110,6 +112,16 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
   };
 
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (!sectionId) return;
+    let alive = true;
+    fetch(`/api/location-room-types?collegeId=${Number(collegeId || 0)}&sectionId=${Number(sectionId)}`)
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(data => { if (alive && Array.isArray(data.types)) setRoomTypeOptions(data.types); })
+      .catch(() => { if (alive) setRoomTypeOptions(["تدريسية", "مختبر", "مختبر حاسوب"]); });
+    return () => { alive = false; };
+  }, [collegeId, sectionId]);
 
   /*
    * Reading the legacy catalogue before curriculum setup remains intentionally
@@ -179,6 +191,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
       setCredit("");
       setHours("");
       setCapacity("");
+      setCourseRoomType("");
       setError(null);
       setCurriculumTarget(null);
       setBootstrapOk(false);
@@ -211,6 +224,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
       setCredit(String(x.CourseCredit ?? ""));
       setHours(String(x.CourseHours ?? ""));
       setCapacity(String(x.MaxStudent ?? ""));
+      setCourseRoomType(String(x.CourseRoomType || ""));
       setError(null);
       setCurriculumTarget(null);
       setMode("edit");
@@ -242,6 +256,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
     setCredit(String(intent.credit ?? ""));
     setHours(String(intent.hours ?? ""));
     setCapacity("");
+    setCourseRoomType("");
     setMode("create");
   }, [items, sections, colleges]);
 
@@ -305,6 +320,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
               CourseCredit: Number(credit),
               CourseHours: Number(hours),
               MaxStudent: Number(capacity || 0),
+              CourseRoomType: courseRoomType,
             }),
           },
         ),
@@ -535,6 +551,13 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
             </Field>
             <Field label="السعة">
               <input inputMode="numeric" value={capacity} onChange={(e) => numeric(e.target.value, setCapacity)} aria-label="السعة القصوى للطلبة" />
+            </Field>
+            <Field label="نوع القاعة المناسب (اختياري)">
+              <select value={courseRoomType} onChange={event => setCourseRoomType(event.target.value)} aria-label="نوع القاعة المناسب للمقرر">
+                <option value="">بلا تفضيل</option>
+                {courseRoomType&&!roomTypeOptions.includes(courseRoomType)?<option value={courseRoomType}>{courseRoomType}</option>:null}
+                {roomTypeOptions.map(type => <option key={type} value={type}>{type}</option>)}
+              </select>
             </Field>
           </div>
           <FormActions

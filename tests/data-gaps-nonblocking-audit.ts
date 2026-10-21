@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { canSign, emptyApproval } from "../src/utils/approvalWorkflow";
 import { approvalBlockerSummary } from "../src/utils/scheduleBlockers";
 import { computeScheduleDataReadiness } from "../src/utils/scheduleDataReadiness";
+import { createDemoSandboxState } from "../src/db/demoSandbox";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 let passed = 0, failed = 0;
@@ -25,6 +26,25 @@ const row = (id: number, o: Record<string, unknown> = {}) => ({
   fsunday: true, ftuesday: true, fstarttime: "08:00", fendtime: "09:15", roomId: "f13", buildingId: "012", AdRoomCode: "012", AdRoomHall: "F13", ...o,
 }) as any;
 const base = { courses: [course], instructorIds: new Set([7, 8]) };
+
+/* 0) ملاءمة القاعة مراجعة تخطيطية لا مانع اعتماد، والسعة المجهولة تبقى مجهولة. */
+{
+  const rows=[row(1,{SCode:"1"}),row(2,{SCode:"2",ftuesday:false,fwednesday:true})];
+  const configuredCourse={...course,MaxStudent:100,CourseRoomType:"مختبر حاسوب"};
+  const review=computeScheduleDataReadiness({courses:[configuredCourse],instructorIds:new Set([7]),rows,rooms:[{...room("f13",40),roomType:"تدريسية"}]});
+  check(review.roomFit.count===4&&review.roomFit.items.some(item=>item.kind==="capacity")&&review.roomFit.items.some(item=>item.kind==="room-type"),"يعرض تقدير التكدس واختلاف نوع القاعة للمخطط دون منع الجدول");
+  const unknown=computeScheduleDataReadiness({courses:[configuredCourse],instructorIds:new Set([7]),rows,rooms:[room("f13",null)]});
+  check(unknown.roomFit.unknownRoomCapacity===2&&!unknown.roomFit.items.some(item=>item.kind==="capacity"),"السعة غير المسجلة تُترك بلا حكم ولا تحذير زائف");
+}
+
+/* 0ب) الديمو يضم مشهداً جاهزاً لشرح فحص النوع والسعة في الجدول، بلا تفعيل في إدارة النظام. */
+{
+  const demo=createDemoSandboxState();
+  const rows=demo.schedules.filter(item=>Number(item.AdTermId)===1&&Number(item.AdSectionId)===1);
+  const review=computeScheduleDataReadiness({courses:demo.courses,instructorIds:new Set(demo.instructors.map(item=>Number(item.AdInstructorId))),rows,rooms:demo.locationRooms});
+  check(rows.some(item=>{const c=demo.courses.find(course=>Number(course.AdCourseId)===Number(item.AdCourseId));const r=demo.locationRooms.find(room=>room.id===item.roomId);return c?.CourseRoomType==="مختبر حاسوب"&&r?.roomType==="تدريسية";}),"الديمو يجهّز في الجدول مقرراً مختبرياً بقاعة تدريسية لشرح التنبيه الترويجي");
+  check(review.roomFit.items.some(item=>item.kind==="room-type")&&review.roomFit.items.some(item=>item.kind==="capacity"),"مشهد الديمو يعرض ملاحظتي النوع والتكدس للمخطط قبل الاعتماد");
+}
 
 /* 1) نواقص بلا تعارضٍ ماديّ: يُوقَّع. */
 {

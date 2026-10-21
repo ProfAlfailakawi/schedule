@@ -269,6 +269,7 @@ interface DBState {
   notificationSeen?: Array<{ userId: number; ids: string[]; updatedAt: string }>;
   locationBuildings?: MasterBuilding[];
   locationRooms?: MasterRoom[];
+  locationRoomTypes?: string[];
   locationReviewCases?: LocationReviewCase[];
   locationMigrationLogs?: LocationMigrationLog[];
   locationMigrationRuns?: LocationMigrationRun[];
@@ -294,7 +295,7 @@ let baseDb: DBState = {
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
   scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], publishedPlanSheets: [], registrationTickets: [], registrationRuns: [], registrationOutcomes: [],
-  locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
+  locationBuildings: [], locationRooms: [], locationRoomTypes: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
 type DemoSandboxRecord = { state: DBState; expiresAt: number };
@@ -3096,7 +3097,7 @@ export const Repository = {
       const docRef = firestoreDb.collection("sections").doc(`section_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("القسم غير موجود");
-      const updated = { AdSectionId: id, AdCollegeId: collegeId, AdSectionCode: code, AdSectionName: name };
+      const updated = { ...doc.data(), AdSectionId: id, AdCollegeId: collegeId, AdSectionCode: code, AdSectionName: name } as AdSection;
       await docRef.set(updated);
       invalidateScheduleRelationCache();
       await markRegistrationRunsStale();
@@ -3104,9 +3105,28 @@ export const Repository = {
     }
     const idx = db.sections.findIndex(s => s.AdSectionId === id);
     if (idx === -1) throw new Error("القسم غير موجود");
-    db.sections[idx] = { AdSectionId: id, AdCollegeId: collegeId, AdSectionCode: code, AdSectionName: name };
+    db.sections[idx] = { ...db.sections[idx], AdSectionId: id, AdCollegeId: collegeId, AdSectionCode: code, AdSectionName: name };
     saveDatabase();
     return db.sections[idx];
+  },
+
+  setSectionScheduleDayWindow: async (id: number, startTime: string, endTime: string): Promise<AdSection> => {
+    invalidateReference(REFERENCE_KEYS.sections);
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const docRef = firestoreDb.collection("sections").doc(`section_${id}`);
+      const doc = await docRef.get();
+      if (!doc.exists) throw new Error("القسم غير موجود");
+      const updated = { ...doc.data(), scheduleDayStartTime: startTime, scheduleDayEndTime: endTime } as AdSection;
+      await docRef.set(updated);
+      invalidateScheduleRelationCache();
+      return updated;
+    }
+    const section = db.sections.find(row => Number(row.AdSectionId) === Number(id));
+    if (!section) throw new Error("القسم غير موجود");
+    section.scheduleDayStartTime = startTime;
+    section.scheduleDayEndTime = endTime;
+    saveDatabase();
+    return section;
   },
 
   deleteSection: async (id: number): Promise<void> => {
@@ -3282,7 +3302,8 @@ export const Repository = {
     hours: number,
     maxStudent: number,
     /** false: كتالوجٌ فحسب — لا يُربط بالصحيفة الفعالة (التطبيق المرجعي يربط ما يشاء صراحةً). */
-    attachToActive = true
+    attachToActive = true,
+    courseRoomType = ""
   ): Promise<AdCourse> => {
     /* اسمٌ منسوخٌ من PDF يُحفظ حروفاً عادية لا «أشكال عرض» — لكل طريق كتابة. */
     name = normalizeArabicText(name);
@@ -3297,7 +3318,8 @@ export const Repository = {
         CourseName: name,
         CourseCredit: credit,
         CourseHours: hours,
-        MaxStudent: maxStudent
+        MaxStudent: maxStudent,
+        ...(courseRoomType.trim() ? { CourseRoomType: courseRoomType.trim() } : {})
       };
       /* The course code is unique within its department, and that uniqueness is
          claimed in the same transaction that writes the record. Two identical
@@ -3341,7 +3363,8 @@ export const Repository = {
       CourseName: name,
       CourseCredit: credit,
       CourseHours: hours,
-      MaxStudent: maxStudent
+      MaxStudent: maxStudent,
+      ...(courseRoomType.trim() ? { CourseRoomType: courseRoomType.trim() } : {})
     };
     db.courses.push(newCourse);
     saveDatabase();
@@ -3358,7 +3381,8 @@ export const Repository = {
     name: string,
     credit: number,
     hours: number,
-    maxStudent: number
+    maxStudent: number,
+    courseRoomType?: string
   ): Promise<AdCourse> => {
     /* اسمٌ منسوخٌ من PDF يُحفظ حروفاً عادية لا «أشكال عرض» — لكل طريق كتابة. */
     name = normalizeArabicText(name);
@@ -3375,7 +3399,8 @@ export const Repository = {
         CourseName: name,
         CourseCredit: credit,
         CourseHours: hours,
-        MaxStudent: maxStudent
+        MaxStudent: maxStudent,
+        ...((courseRoomType===undefined?String(doc.data()?.CourseRoomType||""):courseRoomType).trim() ? { CourseRoomType: (courseRoomType===undefined?String(doc.data()?.CourseRoomType||""):courseRoomType).trim() } : {})
       };
       await docRef.set(updated);
       invalidateScheduleRelationCache();
@@ -3384,6 +3409,7 @@ export const Repository = {
     }
     const idx = db.courses.findIndex(c => c.AdCourseId === id);
     if (idx === -1) throw new Error("المقرر غير موجود");
+    const previousRoomType=String(db.courses[idx].CourseRoomType||"");
     db.courses[idx] = {
       AdCourseId: id,
       AdCollegeId: collegeId,
@@ -3392,7 +3418,8 @@ export const Repository = {
       CourseName: name,
       CourseCredit: credit,
       CourseHours: hours,
-      MaxStudent: maxStudent
+      MaxStudent: maxStudent,
+      ...((courseRoomType===undefined?previousRoomType:courseRoomType).trim() ? { CourseRoomType: (courseRoomType===undefined?previousRoomType:courseRoomType).trim() } : {})
     };
     saveDatabase();
     await markRegistrationRunsStale();
@@ -6546,6 +6573,37 @@ export const Repository = {
   },
 
   // Canonical building/room registry -------------------------------------------------
+  getLocationRoomTypes: async (): Promise<string[]> => {
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      const doc=await firestoreDb.collection("adSettings").doc("locationRoomTypes").get();
+      return Array.isArray(doc.data()?.types)?doc.data()!.types.map((value:unknown)=>String(value||"").normalize("NFKC").trim()).filter(Boolean):[];
+    }
+    return [...(db.locationRoomTypes||[])];
+  },
+  setLocationRoomTypes: async (types:string[]): Promise<void> => {
+    const normalized=[...new Set(types.map(value=>String(value||"").normalize("NFKC").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ar"));
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      await firestoreDb.collection("adSettings").doc("locationRoomTypes").set({types:normalized,updatedAt:new Date().toISOString()});
+      return;
+    }
+    db.locationRoomTypes=normalized;saveDatabase();
+  },
+  renameCourseRoomType: async (oldName:string,newName:string): Promise<number> => {
+    invalidateReference(REFERENCE_KEYS.courses);
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      const snap=await firestoreDb.collection("courses").where("CourseRoomType","==",oldName).get();
+      for(let i=0;i<snap.docs.length;i+=400){const batch=firestoreDb.batch();snap.docs.slice(i,i+400).forEach(doc=>batch.set(doc.ref,{CourseRoomType:newName},{merge:true}));await batch.commit();}
+      if(snap.size)await markRegistrationRunsStale();
+      return snap.size;
+    }
+    let count=0;
+    db.courses=(db.courses||[]).map(course=>{
+      if(String(course.CourseRoomType||"").normalize("NFKC").trim()!==oldName)return course;
+      count++;return {...course,CourseRoomType:newName};
+    });
+    if(count){saveDatabase();await markRegistrationRunsStale();}
+    return count;
+  },
   getLocationBuildings: async (): Promise<MasterBuilding[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap=await firestoreDb.collection("locationBuildings").get();

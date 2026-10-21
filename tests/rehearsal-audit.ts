@@ -14,6 +14,7 @@ import {
 import { buildNotifications, pendingExtensionRequest, type CenterScope } from "../src/utils/notificationCenter";
 import { judgeRequest, type VerdictContext } from "../src/utils/instructorRequestVerdict";
 import { movementAttribution } from "../src/utils/movementAttribution";
+import { firstInstructorEditAt, movementAfterInstructorEdit } from "../src/utils/instructorMovementWindow";
 import type { AdCourse, AdInstructor, FSchedule, ScheduleApproval } from "../src/types";
 
 let passed = 0, failed = 0;
@@ -231,6 +232,21 @@ const block = (source: string, start: string, end = "\napp.") => {
     "R7: الحركةُ تُنسب إلى اللقطة السابقة لا اللاحقة");
   check(movement.includes('shareDayIndexes(row).map(index => SHARE_DAY_NAMES[index]).filter(Boolean).join(" · ")'),
     "R7: وأيامُ المحاضرة كلُّها تُذكر، لا أولُها");
+  const requests = [{ submittedAt: "2026-09-25T17:41:00.000Z" }, { submittedAt: "2026-09-26T09:00:00.000Z" }];
+  check(firstInstructorEditAt(requests) === Date.parse("2026-09-25T17:41:00.000Z"),
+    "R7: بداية الحركة أول إرسالٍ من الأستاذ");
+  const visible = movementAfterInstructorEdit([
+    { at: "2026-09-25T17:40:56.000Z", text: "رفع رئيس الجدول" },
+    { at: "2026-09-25T17:41:00.000Z", text: "أول تعديل للأستاذ" },
+    { at: "2026-09-25T17:44:00.000Z", text: "قرار القسم" },
+  ], requests);
+  check(visible.length === 2 && visible[0].text === "أول تعديل للأستاذ",
+    "R7: لا تظهر حركة الرفع أو تجهيز الجدول قبل أول تعديلٍ من الأستاذ");
+  check(movementAfterInstructorEdit([{ at: "2026-09-25T17:44:00.000Z", text: "رفع الجدول" }], []).length === 0,
+    "R7: لا حركة في البطاقة قبل أن يرسل الأستاذ طلب تعديل");
+  const card = block(server, "async function buildStaffCard", 'app.get("/api/share"');
+  check(card.includes("movementAfterInstructorEdit([") && card.includes("], requestRows).sort("),
+    "R7: قيد البداية مطبّق في بطاقة الأستاذ وحدها");
 }
 
 /* ══ R8: الجلسةُ التجريبية المفقودة تُسمّى باسمها ═════════════════════════════════

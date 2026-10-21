@@ -2677,3 +2677,20 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 .location-quick-empty svg{inline-size:28px;block-size:28px;color:var(--lqs-accent)}
 .location-quick-empty strong{color:var(--lqs-ink)}
 @media(max-width:760px){.location-quick-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.location-quick-actions{grid-template-columns:1fr}.location-quick-form form{grid-template-columns:1fr}.location-quick-form form>div:first-child,.location-quick-form-actions,.location-quick-shared{grid-column:1}.location-quick-preview{justify-self:stretch}}
+
+.location-type-manager{--lqs-ink:var(--ink,#173f37);--lqs-accent:var(--accent,#16745f);display:grid;gap:14px;margin-block:14px;padding:18px 20px}
+.location-type-manager-heading{display:flex;align-items:center;gap:12px}
+.location-type-manager-heading>span{display:grid;place-items:center;inline-size:42px;block-size:42px;flex:none;border-radius:13px;background:color-mix(in srgb,var(--lqs-accent) 11%,white);color:var(--lqs-accent)}
+.location-type-manager-heading h2{margin:0;color:var(--lqs-ink);font-size:1.05rem}
+.location-type-manager-heading p{margin:3px 0 0;color:var(--muted);font-size:.9rem}
+.location-type-list{display:flex;flex-wrap:wrap;gap:8px}
+.location-type-row{display:flex;align-items:center;gap:8px;min-height:38px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.location-type-row strong{font-size:.9rem;color:var(--lqs-ink)}
+.location-type-edit,.location-type-cancel{display:inline-flex;align-items:center;gap:4px;padding:5px 8px;border:0;border-radius:8px;background:color-mix(in srgb,var(--lqs-accent) 8%,white);color:var(--lqs-accent);font:inherit;font-size:.78rem;cursor:pointer}
+.location-type-edit svg{inline-size:14px;block-size:14px}
+.location-type-edit:disabled{opacity:.55;cursor:not-allowed}
+.location-type-row input,.location-type-add input{min-width:150px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font:inherit}
+.location-type-add{display:flex;align-items:center;gap:8px;max-width:520px}
+.location-type-add input{flex:1;min-width:0}
+.location-type-hint{color:var(--muted);font-size:.82rem}
+@media(max-width:600px){.location-type-manager{padding:15px}.location-type-add{align-items:stretch;flex-direction:column;max-width:none}.location-type-add>*{width:100%}.location-type-row{max-width:100%;flex-wrap:wrap}}
