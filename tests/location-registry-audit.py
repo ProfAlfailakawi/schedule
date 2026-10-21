@@ -49,6 +49,18 @@ ok('11 pending system state', 'PENDING_ROOM' in loc and 'return ""' in loc)
 server=(ROOT/'server.ts').read_text()
 ok('12 ordinary add room unavailable UI/backend', 'إضافة القاعات محصورة بمدير النظام' in server)
 ok('13 admin backend protected', 'app.post("/api/admin/location-registry/rooms", requirePermission(7), requirePowerAdmin' in server)
+room_create=server[server.index('app.post("/api/admin/location-registry/rooms"'):server.index('app.put("/api/admin/location-registry/rooms/:id"')]
+room_update=server[server.index('app.put("/api/admin/location-registry/rooms/:id"'):server.index('app.put("/api/admin/location-registry/review/:id"')]
+quick_create=server[server.index('app.post("/api/admin/location-setup/rooms"'):server.index('app.delete("/api/admin/location-setup/rooms/:id"')]
+room_admin=(ROOT/'src/components/LocationRegistryAdmin.tsx').read_text()
+quick_setup=(ROOT/'src/components/LocationQuickSetup.tsx').read_text()
+ok('13a room capacity optional and validated on create', 'capacityRaw=req.body?.capacity' in room_create and 'capacity>5000' in room_create and '...(capacity===undefined?{}:{capacity})' in room_create)
+ok('13b room capacity editable and clearable', 'capacityRaw=req.body?.capacity' in room_update and 'capacity:roomCapacity??null' in room_update)
+ok('13c capacity available in room create and edit forms', 'عدد الطلبة (اختياري)' in room_admin and 'الحد الأقصى للطلبة (اختياري)' in room_admin)
+ok('13d quick setup applies optional capacity to batch-created rooms', 'عدد الطلبة في كل قاعة (اختياري)' in quick_setup and 'capacity: roomCapacity === "" ? undefined : Number(roomCapacity)' in quick_setup and 'capacityRaw=req.body?.capacity' in quick_create and '...(capacity===undefined?{}:{capacity})' in quick_create)
+ok('13e quick setup can edit capacity per room', 'capacity: room.capacity == null ? "" : String(room.capacity)' in quick_setup and 'capacity: roomDraft.capacity === "" ? null : Number(roomDraft.capacity)' in quick_setup)
+review_layout=(ROOT/'src/styles/05-schedule.css').read_text()
+ok('13f review counts and labels stay together on one line', '.review-sheet.visual-minimal .spread-keys span{align-items:center;white-space:nowrap}' in review_layout and 'grid-template-columns:repeat(4,minmax(0,1fr))' in review_layout)
 imp=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
 ok('14 import unknown blocks', 'locationStatus !== "PENDING_ROOM"' in imp and 'buildingId' in imp and 'roomId' in imp)
 ok('15 unknown building blocks', 'اختر مبنى رسميًا من سجل المباني' in (ROOT/'src/server/locationRegistryEngine.ts').read_text())
