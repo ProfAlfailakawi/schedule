@@ -33,6 +33,16 @@ check(byStudents.map(g => g.id).join() === "5,1", "الطلب ÷ السعة: ‎
 check(byStudents.every(g => g.basis === "students"), "إشارة الطلبة: الأساس طلب الطلبة");
 check(!byStudents.some(g => g.id === 3 || g.id === 4), "سعةٌ مجهولة أو طلبٌ صفر ← لا اقتراح مختلق");
 
+const alphaPanel = renderToStaticMarkup(React.createElement(SectionGapPanel, {
+  items: [
+    { id: 1, code: "212", name: "ورشة انتاج", existing: 1, required: 3, extra: 2, basis: "plan", demand: 20 },
+    { id: 2, code: "112", name: "مقدمة في تكنولوجيا التعليم", existing: 1, required: 2, extra: 1, basis: "plan", demand: 20 },
+    { id: 3, code: "491", name: "التدريب الميداني", existing: 1, required: 4, extra: 3, basis: "plan", demand: 20 },
+  ], kind: "plan", onClose: () => {},
+}));
+check(alphaPanel.indexOf("التدريب الميداني") < alphaPanel.indexOf("مقدمة في تكنولوجيا التعليم") && alphaPanel.indexOf("مقدمة في تكنولوجيا التعليم") < alphaPanel.indexOf("ورشة انتاج"),
+  "قائمة الشعب تُعرض أبجدياً باسم المقرر، دون تغيير حساب الأولوية");
+
 /* «مساري» لا شأن له بالتخطيط: بلا مختارٍ ولا كشف لا اقتراح ولو كان الطلبة آلافاً، ومع التخطيط لا يدخل الطلبة في الحساب. */
 check(planGaps([c(1, "101", 30, 1, 5000)], null).length === 0 && planGaps([c(1, "101", 30, 1, 5000)], { remaining: {}, accepted: {}, history: {} }).length === 0, "التخطيط: بلا مختارٍ ولا كشف لا شيء ولو كان طلبة «مساري» كثيرين");
 const plan: GapPlan = { remaining: { "1": 100 }, accepted: { "1": 7, "2": 1 }, history: {} };
