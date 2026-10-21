@@ -4247,7 +4247,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   اختبر القواعد والبدائل قبل تطبيقها على الجدول.
                 </p>
               </div>
-              <span className="innovation-suite-mark" aria-label="تجربة آمنة"><LockKeyhole /></span>
+              <span className="innovation-suite-status">تجربة آمنة</span>
             </div>
             <div className="innovation-tabs" role="group" aria-label="أدوات مختبر القرار">
               <button
@@ -4257,7 +4257,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 className={innovationMode === "constraints" ? "active" : ""}
                 onClick={() => setInnovationMode("constraints")}
               >
-                <SlidersHorizontal /><span>لوحة القيود</span>
+                <span>لوحة القيود</span>
                 <b aria-label={`${constraints.length} قاعدة`}>{constraints.length}</b>
               </button>
               <button
@@ -4267,7 +4267,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 className={innovationMode === "war" ? "active" : ""}
                 onClick={() => setInnovationMode("war")}
               >
-                <UsersRound /><span>غرفة القرار</span>
+                <span>غرفة القرار</span>
               </button>
               <button
                 type="button"
@@ -4276,7 +4276,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 className={innovationMode === "autopilot" ? "active" : ""}
                 onClick={() => setInnovationMode("autopilot")}
               >
-                <WandSparkles /><span>التحسين الآلي</span>
+                <span>التحسين الآلي</span>
               </button>
               <button
                 type="button"
@@ -4285,14 +4285,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 className={innovationMode === "policy" ? "active" : ""}
                 onClick={() => setInnovationMode("policy")}
               >
-                <BarChart3 /><span>مختبر السياسات</span>
+                <span>مختبر السياسات</span>
               </button>
             </div>
             {innovationMode === "constraints" ? (
               <div className="constraint-canvas">
                 <div className="constraint-builder">
                   <div className="constraint-builder-copy">
-                    <Dna />
                     <div>
                       <strong>حوّل قواعد القسم البشرية إلى قيود مفهومة</strong>
                       <span>
@@ -4345,7 +4344,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </Field>
                     ) : constraintDraft.type === "department_day_off" ? (
                       <div className="constraint-rule-note">
-                        <CalendarClock />
                         <span>
                           <strong>قاعدة على القسم كله</strong>
                           <small>
@@ -4456,7 +4454,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </Field>
                     ) : null}
                     <PrimaryButton onClick={createConstraint} disabled={busy}>
-                      <Save /> أضف القاعدة
+                      أضف القاعدة
                     </PrimaryButton>
                   </div>
                 </div>
@@ -4503,7 +4501,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           onClick={() => deleteConstraint(c)}
                           title="حذف القاعدة"
                         >
-                          <Trash2 />
+                          حذف
                         </button>
                       </article>
                     ))
@@ -4520,9 +4518,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="war-room">
                 <div className="war-control">
                   <div>
-                    <span className="war-mark">
-                      <UsersRound />
-                    </span>
                     <strong>غرفة قرار اللجنة</strong>
                     <p>
                       اختر المشكلة، ثم اعرض ثلاثة حلول على اللجنة جنباً إلى جنب.
@@ -4555,7 +4550,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </select>
                     </Field>
                     <PrimaryButton onClick={runWarRoom} disabled={warBusy}>
-                      {warBusy ? <RefreshCw /> : <Play />}
                       {warBusy ? "أبني السيناريوهات…" : "افتح غرفة القرار"}
                     </PrimaryButton>
                   </div>
@@ -4639,7 +4633,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                 saveOptionAsDraft(o, `خيار اللجنة ${o.rank}`)
                               }
                             >
-                              <Save /> اختيار اللجنة <ChevronLeft className="visual-inline-arrow" aria-hidden="true" /> مسودة
+                              اختيار اللجنة · مسودة
                             </PrimaryButton>
                           </div>
                         </article>
@@ -4657,7 +4651,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             {innovationMode === "policy" ? (
               <div className="policy-lab">
                 <div className="policy-lab-head">
-                  <span className="policy-orb"><BarChart3 /></span>
                   <div><strong>اختبر السياسة قبل إصدارها</strong><p>{isPowerAdmin ? "الجامعة أو القسم · آخر 10 سنوات كمرجع" : "قسمك · آخر 10 سنوات كمرجع"}</p></div>
                   <Badge tone="success">محاكاة فقط</Badge>
                 </div>
@@ -4675,12 +4668,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {policyDraft.type==="no_classes_after"?<Field label="آخر وقت"><TimeField value={policyDraft.time} onChange={e=>setPolicyDraft((p:any)=>({...p,time:e.target.value}))} /></Field>:null}
                   {policyDraft.type==="growth"?<Field label="النمو %"><input type="number" min="1" max="100" value={policyDraft.growth} onChange={e=>setPolicyDraft((p:any)=>({...p,growth:Number(e.target.value)||1}))} /></Field>:null}
                   <Field label="النطاق"><select value={policyDraft.scope} onChange={e=>{setPolicyResult(null);setPolicyDraft((p:any)=>({...p,scope:e.target.value}));}}><option value="department">هذه الكلية</option>{hasMultipleDepartmentColleges ? <option value="family">كل كليات القسم</option> : null}{isPowerAdmin?<option value="university">الجامعة</option>:null}</select></Field>
-                  <PrimaryButton onClick={runPolicy} disabled={policyBusy||(policyDraft.type==="close_building"&&!policyDraft.building.trim())}>{policyBusy?<RefreshCw/>:<Play/>}{policyBusy?"أحاكي…":"اختبر"}</PrimaryButton>
+                  <PrimaryButton onClick={runPolicy} disabled={policyBusy||(policyDraft.type==="close_building"&&!policyDraft.building.trim())}>{policyBusy?"أحاكي…":"اختبر"}</PrimaryButton>
                 </div>
                 {policyResult?<div className="policy-result">
                   <div className="policy-result-hero"><strong>{Number(policyResult.affected||0).toLocaleString("ar-KW-u-nu-latn")}</strong><span>{policyDraft.type==="growth"?"موعد/شعبة إضافية تقديرياً":"موعداً سيتأثر"}</span><i style={{["--policy-share" as any]:`${Math.min(100,Number(policyResult.share||0))}%`}} /></div>
                   <div className="policy-metrics"><article><b>{policyResult.share}%</b><span>الحالي</span></article><article><b>{policyResult.historicalShare}%</b><span>تاريخياً</span></article><article><b>{policyResult.impact?.sections||0}</b><span>{nounFor(policyResult.impact?.sections||0, AR.department)}</span></article><article><b>{policyResult.impact?.instructors||0}</b><span>{nounFor(policyResult.impact?.instructors||0, AR.instructor)}</span></article></div>
-                  <p>{policyResult.summary}</p><small><ShieldCheck /> {policyResult.guardrail}</small>
+                  <p>{policyResult.summary}</p><small>{policyResult.guardrail}</small>
                 </div>:<div className="innovation-empty">اختر سياسة واحدة. سترى أثرها على الواقع الحالي وعلى التاريخ قبل أن تتحول إلى قاعدة.</div>}
               </div>
             ) : null}
@@ -4688,9 +4681,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="autopilot-lab">
                 <div className="autopilot-command">
                   <div>
-                    <span className="autopilot-orb">
-                      <WandSparkles />
-                    </span>
                     <div>
                       <strong>تحسين آلي ببوابة بشرية</strong>
                       <p>
@@ -4705,7 +4695,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     placeholder="مثال: قلل الفراغات، لا تغيّر الأيام…"
                   />
                   <div className="autopilot-guard">
-                    <ShieldCheck />
                     <span>
                       لا يغيّر الأيام ولا القاعات في هذا الإصدار الآمن، ولا يملك
                       endpoint للنشر.
@@ -4714,7 +4703,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       onClick={runAutopilot}
                       disabled={autopilotBusy || !autopilotGoal.trim()}
                     >
-                      {autopilotBusy ? <RefreshCw /> : <Sparkles />}
                       {autopilotBusy ? "أجرب السيناريوهات…" : "شغّل التحسين الآلي"}
                     </PrimaryButton>
                   </div>
@@ -4767,7 +4755,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                 openScheduleWorkspace("حُفظت الخطة التلقائية كمسودة فقط. أنت الآن في الجدول الحقيقي للمراجعة.");
                               }}
                             >
-                              <Save /> احفظ كمسودة
+                              احفظ كمسودة
                             </PrimaryButton>
                           </div>
                         </article>

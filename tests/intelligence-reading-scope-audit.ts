@@ -58,5 +58,8 @@ check('إغلاق خطأ مركز الذكاء يمسحه من الحالة وم
  assert(ui.includes('قرارات الجدول، بتجربة آمنة'));
  assert.match(css,/\.innovation-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(4/);
  assert.match(css,/\.innovation-tabs button\.active\s*\{[^}]*box-shadow/);
+ const labStart=ui.indexOf('{twinCard === "lab" ? ('), labEnd=ui.indexOf('{scenario && twinCard === "board"',labStart), lab=ui.slice(labStart,labEnd);
+ for(const tool of ['لوحة القيود','غرفة القرار','التحسين الآلي','مختبر السياسات']) assert(lab.includes(tool));
+ assert.doesNotMatch(lab,/<(?:LockKeyhole|SlidersHorizontal|UsersRound|WandSparkles|BarChart3|Dna|CalendarClock|Save|Trash2|ShieldCheck|RefreshCw|Play|Sparkles|ChevronLeft)\b/);
 });
 console.log(`Intelligence reading scope: ${passed} checks passed`);
