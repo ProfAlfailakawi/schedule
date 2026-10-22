@@ -34,7 +34,7 @@ const EXPECTED: Record<string, [string, number]> = {
     check(correctedNames(ownCourses(plan, key)).fixes.every(fix => fix.after !== fix.before), `${file}: كل تصحيح اسمٍ يغيّر الاسم فعلاً`);
   }
   /* قديمتان بصيغٍ مختلفة: متطلبٌ بقوسٍ و«أو» ملتصقتين (الرياضيات)، وبرنامجٌ بلا ترويسة قسمٍ مألوفة */
-  for (const [file, dept, count] of [["ba-0105-2017", "05", 19], ["ba-0110-2024", "21", 11]] as const) {
+  for (const [file, dept, count] of [["ba-0105-2017", "05", 19], ["ba-0110-2024", "21", 11], ["ba-0102-1996", "02", 25]] as const) {
     const plan = parsePlanItems(await extractPlanItems(fs.readFileSync(`tests/fixtures/plans/graduation-old/${file}.pdf`)));
     check(!isNewSheet(plan) && blockingWarnings(plan).length === 0 && dominantDepartment(plan) === dept && ownCourses(plan, sheetKey(plan)).length === count, `${file}: صحيفة قديمة تُقرأ بلا مانع (${count} مقرراً)`);
   }
