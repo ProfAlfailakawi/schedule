@@ -38,8 +38,18 @@ export interface SheetScope {
 const stripSection = (name: string) => String(name || "").replace(/^\s*قسم\s+/, "").replace(/\s*[·\-–—|].*$/, "").trim();
 const matchKey = (text: string) => arabicMatchKey(stripSection(text));
 
-/** تحذيراتُ القارئ التي لا تمنع: متطلبٌ لا تحويه الصحيفة (يُقرأ بقسمٍ آخر). كل ما سواها يمنع، فقراءةٌ لا تطابق حسابها لا تُكتب. */
-const isHarmless = (warning: string) => /^متطلب \S+ في \S+ ليس في الخطة$/.test(warning);
+/** تحذيراتُ القارئ التي لا تمنع: متطلبٌ لا تحويه الصحيفة (يُقرأ بقسمٍ آخر). */
+const isOutsidePrereq = (warning: string) => /^متطلب \S+ في \S+ ليس في الخطة$/.test(warning);
+/** مجاميعُ مطبوعةٌ لا تطابق مجموع مقرراتها: سهوٌ في الصحيفة نفسها (وُجد في صحائف الكلية الحقيقية)، لا في القراءة. */
+const isPrintedArithmetic = (warning: string) => /^(مجموعة «.*»: |قسم «.*»: مجموع مجموعاته |مجموع الأقسام )/.test(warning);
+
+/** ما يمنع الكتابة من تحذيرات القراءة: سطرٌ لم يُفهم، وحداتٌ مفقودة، رمزٌ مكرر… أما المجاميع المطبوعة فتُعرض ملاحظةً. */
+export function blockingWarnings(plan: Pick<ParsedPlan, "warnings">): string[] {
+  return plan.warnings.filter(warning => !isOutsidePrereq(warning) && !isPrintedArithmetic(warning));
+}
+export function printedTotalsNotes(plan: Pick<ParsedPlan, "warnings">): string[] {
+  return plan.warnings.filter(isPrintedArithmetic).map(warning => `في الصحيفة المطبوعة: ${warning}`);
+}
 
 /** الرمز الأكثر تكراراً للقسم بين مقررات الصحيفة: هو قسمها (المقررات الخدمية لأقسامٍ أخرى أقل عدداً). */
 export function dominantDepartment(plan: Pick<ParsedPlan, "courses">, field: "dept" | "college" = "dept"): string {
@@ -53,9 +63,9 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
   if (!plan.courses.length || !plan.college || !plan.department) {
     return { kind: "unreadable", message: "لم تُقرأ الكلية أو القسم أو المقررات من الملف. ارفع «الخطة الدراسية» PDF كما تطبعها SWRCAPP (نصاً لا صورة)." };
   }
-  const blocking = plan.warnings.filter(warning => !isHarmless(warning));
+  const blocking = blockingWarnings(plan);
   if (blocking.length) {
-    return { kind: "unverified", message: "القراءة لا تطابق حسابها (المجاميع أو الرموز)، فلم تُكتب: " + blocking.slice(0, 3).join(" · "), warnings: blocking };
+    return { kind: "unverified", message: "القراءة غير مطمئنة (سطر لم يُفهم أو وحدات ناقصة)، فلم تُكتب: " + blocking.slice(0, 3).join(" · "), warnings: blocking };
   }
   const sectionKey = scope.departmentKey.replace(/\D/g, "");
   if (!/^\d{4}$/.test(sectionKey)) {
@@ -68,7 +78,8 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
   const nameDiffers = matchKey(stripSection(scope.sectionName)) !== matchKey(plan.department)
     && !matchKey(scope.sectionName).includes(matchKey(plan.department)) && !matchKey(plan.department).includes(matchKey(scope.sectionName));
   const codeDiffers = sheetDept !== deptCode;
-  if (collegeDiffers || nameDiffers || codeDiffers) {
+  /* الرمزان (كلية+قسم) هما الحَكَم؛ اختلافُ تسمية القسم وحده («معلم الحاسب» و«حاسوب») لا يرفض، ويُذكر ملاحظة. */
+  if (collegeDiffers || codeDiffers) {
     const fields: SheetMismatch["fields"] = [...(collegeDiffers ? ["college" as const] : []), ...(nameDiffers || codeDiffers ? ["department" as const] : [])];
     const mismatch: SheetMismatch = {
       fields,
@@ -81,6 +92,12 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
   }
   if (!ownCourses(plan, sectionKey).length) return { kind: "empty", message: "لا مقررات لهذا القسم في الصحيفة." };
   return null;
+}
+
+/** اسمُ القسم في الصحيفة يخالف اسمه عندنا والرمزان يطابقان: ملاحظةٌ تُعرض ولا ترفض. */
+export function departmentNameNote(plan: Pick<ParsedPlan, "department">, scope: Pick<SheetScope, "sectionName">): string {
+  const a = matchKey(scope.sectionName), b = matchKey(plan.department);
+  return a === b || a.includes(b) || b.includes(a) ? "" : `اسم القسم في الصحيفة «${stripSection(plan.department)}» غير اسمه عندنا «${stripSection(scope.sectionName)}»؛ طابق الرمز (كلية وقسم) فقُبلت.`;
 }
 
 /** مقررات القسم وحده: رمز القسم والكلية في رمز المقرر. */

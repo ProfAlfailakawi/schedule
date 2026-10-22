@@ -7,7 +7,7 @@ import { extractPlanItems } from "../src/server/planPdfExtract";
 import { parsePlanItems, type ParsedPlan } from "../src/utils/planPdfParser";
 import { correctCourseName } from "../src/utils/courseNameCorrection";
 import { buildReferenceRules } from "../src/utils/referenceApply";
-import { checkSheetScope, correctedNames, dominantDepartment, ownCourses, sheetToReference, storedCode } from "../src/utils/planSheetImport";
+import { checkSheetScope, correctedNames, departmentNameNote, dominantDepartment, ownCourses, sheetToReference, storedCode } from "../src/utils/planSheetImport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -22,6 +22,11 @@ const load = async (name: string): Promise<ParsedPlan> => parsePlanItems(await e
 
   /* ── الأسماء ── */
   check(correctCourseName("التوجيه والإرشاد").name === "التوجيه والإرشاد", "«التوجيه» لا تُغيَّر");
+  for (const keep of ["تجويد القرآن الكريم وحفظه (2)", "تأثيث المنزل وأجهزته", "نظم القوى الكهربائية", "المستوى الأول", "فقه العبادات في الإسلام", "الله"]) {
+    check(correctCourseName(keep).name === keep, `كلمةٌ صحيحة لا تُمسّ: ${keep}`);
+  }
+  check(correctCourseName("مقدمه فى الحاسوب").name === "مقدمة في الحاسوب" && correctCourseName("أوعيه المعلومات").name === "أوعية المعلومات", "الأخطاء المعروفة تُصحَّح من القاموس");
+  check(correctCourseName("الذكاء الإصطناعي في التعليم").name === "الذكاء الاصطناعي في التعليم" && correctCourseName("نظرية الدوائرالكهربائية").name === "نظرية الدوائر الكهربائية", "همزة زائدة وكلمتان ملتصقتان");
   check(correctCourseName("لغة انجليزية (1)").name === "لغة إنجليزية (1)", "همزة «إنجليزية»");
   check(correctCourseName("المستوى الاول").name === "المستوى الأول", "همزة «الأول»");
   for (const raw of ["لغة انجليزية(1)", "تدريب ميداني", "اسس التربية"]) {
@@ -44,10 +49,14 @@ const load = async (name: string): Promise<ParsedPlan> => parsePlanItems(await e
   check(college?.kind === "college" && college.mismatch?.fields.includes("college") === true, "كليةٌ أخرى تُرفض");
   const noCode = checkSheetScope(plan, { ...scope, departmentKey: "" });
   check(noCode?.kind === "noCode", "قسمٌ بلا رمز هيئة لا يُتحقَّق منه فيُرفض");
+  check(checkSheetScope(plan, { ...scope, sectionName: "قسم الوسائل التعليمية" }) === null, "تسمية مختلفة والرمزان يطابقان: تُقبل");
+  check(departmentNameNote(plan, { sectionName: "قسم الوسائل التعليمية" }).includes("طابق الرمز") && departmentNameNote(plan, scope) === "", "ملاحظة التسمية تظهر عند الاختلاف فقط");
   const wrongCode = checkSheetScope(plan, { ...scope, departmentKey: "0120" });
   check(wrongCode?.kind === "departmentCode", "اسم القسم يطابق ورمزه لا يطابق: يُرفض");
   check(checkSheetScope({ ...plan, courses: [] }, scope)?.kind === "unreadable", "ملفٌ بلا مقررات مقروءة يُرفض");
-  check(checkSheetScope({ ...plan, warnings: ["مجموع الوحدات لا يطابق"] }, scope)?.kind === "unverified", "قراءةٌ لا تطابق حسابها لا تُكتب");
+  check(checkSheetScope({ ...plan, warnings: ["سطرٌ لم يُفهم: «x»"] }, scope)?.kind === "unverified", "سطرٌ لم يُفهم: لا تُكتب");
+  check(checkSheetScope({ ...plan, warnings: ["مقرر 0109105: لم تُقرأ الوحدات"] }, scope)?.kind === "unverified", "وحداتٌ مفقودة: لا تُكتب");
+  check(checkSheetScope({ ...plan, warnings: ["قسم «مقررات مهنية»: مجموع مجموعاته 35 والمطبوع 36"] }, scope) === null, "مجموعٌ مطبوع لا يطابق: تُقبل وتُذكر ملاحظة");
   check(checkSheetScope({ ...plan, warnings: ["متطلب 0101102 في 0109105 ليس في الخطة"] }, scope) === null, "تحذير المتطلب الخارجي لا يمنع");
 
   /* ── المرجع والقواعد ── */

@@ -88,6 +88,7 @@ type ColumnName = keyof typeof COLUMNS;
 const unmirror = (text: string): string => text.replace(/[()]/g, ch => (ch === "(" ? ")" : "("));
 const clean = (text: string): string => unmirror(String(text || "").normalize("NFKC")).replace(/\s+/g, " ").trim();
 const CODE = /^(\d{2,3}) (\d{2}) (\d{2})$/;
+const STRAY_CODE = /^\d{2,3} \d{2} \+\d{2}$/;
 const inBand = (value: number, band: readonly [number, number]) => value >= band[0] && value <= band[1];
 
 /** «105 09 01» تُطبع رقماً فقسماً فكلية (من اليسار): رقم المقرر 105، القسم 09، الكلية 01. */
@@ -163,9 +164,23 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
   /* مجموعةُ «أ أو ب» المفتوحة: أسطرُ «أو» المتتالية تُضاف إليها فلا تنقسم إلى (أ أو ب) و ج. */
   let openAny: string[] | null = null;
   let groupIndex = 0;
+  let pending: { course: PlanCourse; group: PlanGroup; unitsMissing: boolean; hoursMissing: boolean } | null = null;
+  const pendingAll: Array<NonNullable<typeof pending>> = [];
 
+  /* «تربية عملية» و«التربية العملية» عنوانٌ واحد. */
+  const sameTitle = (a: string, b: string) => a.replace(/ال/g, "").replace(/\s+/g, "") === b.replace(/ال/g, "").replace(/\s+/g, "");
   const openGroup = (name: string, units: number | null) => {
     if (!section) { warnings.push(`مجموعة «${name}» قبل أي قسم`); return; }
+    /* «تربية عملية (7) وحدة» تُطبع مرتين متتاليتين: الأولى عنوان قسمٍ بلا رقم، والثانية مجموعته.
+       فالمجموعةُ الفارغة المكرَّرة ترتفع إلى قسمٍ جديد، ولا تُحسب مجموعتين. */
+    if (group && group.sectionNo === section.no && sameTitle(group.name, name) && group.units === units && group.offeredUnits === 0) {
+      const no = Math.max(0, ...plan.sections.map(item => item.no)) + 1;
+      const own: PlanSection = { no, name, units };
+      plan.sections.push(own);
+      section = own; groupIndex = 1;
+      group.sectionNo = no; group.id = `s${no}g1`;
+      return;
+    }
     groupIndex += 1;
     const kind: PlanGroupKind = /اختيارية|إختيارية/.test(name) ? "elective" : /التدريب/.test(name) ? "training" : "mandatory";
     group = { id: `s${section.no}g${groupIndex}`, sectionNo: section.no, name, kind, units, offeredUnits: 0 };
@@ -187,14 +202,16 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
         /* رأس الجدول يتكرر تحت كل مجموعة */
         if (/رمز المقرر/.test(text) && /اسم المقرر/.test(text)) continue;
         const first = line.items[0]?.str || "";
-        if (/^-\d\b|^\d-/.test(first) || (/^-?\d-?$/.test(first) && line.items.length > 1)) {
-          const m = text.replace(/\(\d+\)\s*وحدة/, "").match(/-?(\d)-?\s*(.+)$/);
+        if (/^-\d\b|^\d-|^\d\.\s*\S/.test(first) || (/^-?\d[-.]?$/.test(first) && line.items.length > 1)) {
+          const m = text.replace(/\(\d+\)\s*وحدة/, "").match(/-?(\d)[-.]?\s*(.+)$/);
           const no = m ? Number(m[1]) : plan.sections.length + 1;
           section = { no, name: (m?.[2] || "").trim(), units: unitsOf(text) };
           plan.sections.push(section);
           group = null; current = null; openAny = null; groupIndex = 0;
           continue;
         }
+        /* «453 10 +01 تدريب ميداني (2)»: صدى سطرٍ سبق (تقسيم الصفحة)، لا مقرر جديد. */
+        if (line.items.some(item => STRAY_CODE.test(item.str))) continue;
         const codeItems = line.items.filter(item => CODE.test(item.str));
         const course = codeItems.find(item => inBand(item.x, band.code));
         const prereqs = codeItems.filter(item => inBand(item.x, band.prereq));
@@ -214,8 +231,6 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
           const ids = toCode(printed.college, printed.dept, printed.number);
           const units = unitsItem ? Number(unitsItem.str) : NaN;
           const hours = hoursItem ? Number(hoursItem.str) : NaN;
-          if (!Number.isFinite(units)) warnings.push(`مقرر ${ids.code}: لم تُقرأ الوحدات`);
-          if (!Number.isFinite(hours)) warnings.push(`مقرر ${ids.code}: لم تُقرأ الساعات`);
           openAny = null;
           current = {
             ...ids, college: printed.college, dept: printed.dept, number: printed.number, name,
@@ -226,6 +241,18 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
           };
           plan.courses.push(current);
           group!.offeredUnits += current.units;
+          /* الساعات قد تنزل سطراً تحت المقرر: تُلحَق به إن جاءت، وإلا حُذِّر في النهاية. */
+          pending = { course: current, group: group!, unitsMissing: !Number.isFinite(units), hoursMissing: !Number.isFinite(hours) };
+          pendingAll.push(pending);
+        }
+
+        /* رقمٌ وحيد في عمود الوحدات/الساعات تحت مقررٍ ناقص: تتمّة سطره. */
+        if (!course && pending && (pending.unitsMissing || pending.hoursMissing) && line.items.every(item => /^\d{1,2}$/.test(item.str) && (inBand(centre(item), band.units) || inBand(centre(item), band.hours)))) {
+          for (const item of line.items) {
+            if (pending.unitsMissing && inBand(centre(item), band.units)) { pending.course.units = Number(item.str); pending.course.zeroCredit = pending.course.units === 0; pending.group.offeredUnits += pending.course.units; pending.unitsMissing = false; }
+            else if (pending.hoursMissing && inBand(centre(item), band.hours)) { pending.course.hours = Number(item.str); pending.hoursMissing = false; }
+          }
+          continue;
         }
 
         /* المتطلبات: على سطر المقرر نفسه، أو أسطرٍ تحته بلا رمز مقرر */
@@ -266,6 +293,11 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
       }
     }
   });
+
+  for (const item of pendingAll) {
+    if (item.unitsMissing) warnings.push(`مقرر ${item.course.code}: لم تُقرأ الوحدات`);
+    if (item.hoursMissing) warnings.push(`مقرر ${item.course.code}: لم تُقرأ الساعات`);
+  }
 
   /* ── الفحص بالحساب: كلُّ ما طُبع يجب أن يساوي ما قُرئ ── */
   const byKey = new Map<string, PlanCourse>();

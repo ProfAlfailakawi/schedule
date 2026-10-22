@@ -27,7 +27,7 @@
     "test:outcome-story": "tsx tests/outcome-story-audit.ts",
     "test:registration-causes": "tsx tests/registration-causes-audit.ts",
     "test:plan-pdf": "tsx tests/plan-pdf-audit.ts",
-    "test:plan-sheet-import": "tsx tests/plan-sheet-import-audit.ts && tsx tests/plan-sheet-import-route-audit.ts",
+    "test:plan-sheet-import": "tsx tests/plan-sheet-import-audit.ts && tsx tests/plan-sheet-import-route-audit.ts && tsx tests/plan-sheet-real-audit.ts",
     "test:plan-review": "tsx tests/plan-review-audit.ts && tsx tests/department-course-catalog-audit.ts",
     "test:plan-sheet": "tsx tests/plan-sheet-audit.ts",
     "test:program-provision": "tsx tests/program-provision-audit.ts",
