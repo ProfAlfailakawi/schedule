@@ -7,7 +7,7 @@ import { extractPlanItems } from "../src/server/planPdfExtract";
 import { parsePlanItems, type ParsedPlan } from "../src/utils/planPdfParser";
 import { correctCourseName } from "../src/utils/courseNameCorrection";
 import { buildReferenceRules } from "../src/utils/referenceApply";
-import { checkSheetScope, correctedNames, sheetSectionName, dominantDepartment, ownCourses, sheetToReference, storedCode } from "../src/utils/planSheetImport";
+import { checkSheetScope, correctedNames, sheetSectionCode, sheetSectionName, dominantDepartment, ownCourses, sheetToReference, storedCode } from "../src/utils/planSheetImport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -52,12 +52,13 @@ const load = async (name: string): Promise<ParsedPlan> => parsePlanItems(await e
   check(other?.kind === "department" && other.mismatch?.fields.includes("department") === true, "قسمٌ آخر يُرفض");
   const college = checkSheetScope(plan, { ...scope, collegeName: "كلية العلوم الإدارية", departmentKey: "0209" });
   check(college?.kind === "college" && college.mismatch?.fields.includes("college") === true, "كليةٌ أخرى تُرفض");
-  const noCode = checkSheetScope(plan, { ...scope, departmentKey: "" });
-  check(noCode?.kind === "noCode", "قسمٌ بلا رمز هيئة لا يُتحقَّق منه فيُرفض");
-  check(checkSheetScope(plan, { ...scope, sectionName: "قسم الوسائل التعليمية" }) === null, "تسمية مختلفة والرمزان يطابقان: تُقبل");
-  check(sheetSectionName(plan, "قسم الوسائل التعليمية") === "قسم تكنولوجيا التعليم" && sheetSectionName(plan, "الوسائل") === "تكنولوجيا التعليم" && sheetSectionName(plan, "قسم تكنولوجيا التعليم") === "", "اسم القسم يؤخذ من الصحيفة بنمط تسميته، ولا يتغير إن طابق")
-  const wrongCode = checkSheetScope(plan, { ...scope, departmentKey: "0120" });
-  check(wrongCode?.kind === "departmentCode", "اسم القسم يطابق ورمزه لا يطابق: يُرفض");
+  /* الصحيفة هي المعتمدة: يكفي أن يطابق الاسمُ أو الرمز، ويُصحَّح الآخر إليها؛ المرفوض ما خالفها اسماً ورمزاً معاً. */
+  check(checkSheetScope(plan, { ...scope, departmentKey: "" }) === null, "قسمٌ بلا رمز مسجَّل واسمه يطابق: يُقبل");
+  check(checkSheetScope(plan, { ...scope, departmentKey: "0120" }) === null, "اسمه يطابق ورمزه خطأ يدوي: يُقبل");
+  check(sheetSectionCode(plan, "20") === "09" && sheetSectionCode(plan, "0120") === "0109" && sheetSectionCode(plan, "09") === "" && sheetSectionCode(plan, "009") === "", "رمز القسم يُصحَّح إلى رمز الصحيفة بنمط رمزه");
+  check(checkSheetScope(plan, { ...scope, sectionName: "قسم الوسائل التعليمية" }) === null, "رمزه يطابق واسمه مختلف: يُقبل");
+  check(sheetSectionName(plan, "قسم الوسائل التعليمية") === "قسم تكنولوجيا التعليم" && sheetSectionName(plan, "الوسائل") === "تكنولوجيا التعليم" && sheetSectionName(plan, "قسم تكنولوجيا التعليم") === "", "اسم القسم يؤخذ من الصحيفة بنمط تسميته، ولا يتغير إن طابق");
+  check(checkSheetScope(plan, { ...scope, sectionName: "قسم المواد التأسيسية", departmentKey: "0142" })?.kind === "department", "اسمٌ ورمزٌ يخالفان الصحيفة معاً: يُرفض");
   check(checkSheetScope({ ...plan, courses: [] }, scope)?.kind === "unreadable", "ملفٌ بلا مقررات مقروءة يُرفض");
   check(checkSheetScope({ ...plan, warnings: ["سطرٌ لم يُفهم: «x»"] }, scope)?.kind === "unverified", "سطرٌ لم يُفهم: لا تُكتب");
   check(checkSheetScope({ ...plan, warnings: ["مقرر 0109105: لم تُقرأ الوحدات"] }, scope)?.kind === "unverified", "وحداتٌ مفقودة: لا تُكتب");

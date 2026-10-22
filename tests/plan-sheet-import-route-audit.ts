@@ -24,6 +24,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
       { AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم الوسائل التعليمية" },
       { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "01", AdSectionName: "قسم أصول التربية" },
       { AdSectionId: 13, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم المواد التأسيسية" },
+      { AdSectionId: 14, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم تكنولوجيا التعليم" },
     ],
     instructors: [], schedules: [], rooms: [], courseTransitions: [],
     courses: [{ AdCourseId: 301, AdCollegeId: 1, AdSectionId: 21, CourseCode: "105", CourseName: "أسس تكنولوجيا التعلم", CourseCredit: 3, CourseHours: 3, MaxStudent: 60 }],
@@ -59,11 +60,14 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     const before = JSON.stringify(await Repository.getCourses());
     check((await upload("other", 21)).status === 403, "غير الحساب الرئيسي: ٤٠٣");
     const wrongDept = await upload("root", 11);
-    check(wrongDept.status === 422 && ["noCode", "department"].includes(wrongDept.json.rejection?.kind), "قسم آخر يُرفض", wrongDept.json);
+    check(wrongDept.status === 422 && wrongDept.json.rejection?.kind === "department", "قسم آخر يُرفض", wrongDept.json);
     const foundations = await upload("root", 13);
-    check(foundations.status === 422, "قسمٌ برمزٍ ليس رمز الهيئة يُرفض", foundations.json);
+    check(foundations.status === 422 && foundations.json.rejection?.kind === "department", "قسم اسمه ورمزه يخالفان الصحيفة يُرفض", foundations.json);
     check((await upload("root", 21, Buffer.from("not a pdf"))).status === 422, "ملفٌ ليس PDF يُرفض");
     check(JSON.stringify(await Repository.getCourses()) === before, "الرفض لم يكتب شيئاً");
+
+    const wrongManualCode = await upload("root", 14);
+    check(wrongManualCode.status === 200 && wrongManualCode.json.recoded?.before === "142" && wrongManualCode.json.recoded?.after === "09" && (await Repository.getSections()).find(row => Number(row.AdSectionId) === 14)?.AdSectionCode === "09", "رمزٌ كُتب يدوياً خطأً واسمه يطابق: يُقبل ويُصحَّح إلى رمز الصحيفة", wrongManualCode.json);
 
     const first = await upload("root", 21);
     check(first.status === 200 && first.json.ok === true, "الرفع يُقبل للقسم الصحيح", first.json);

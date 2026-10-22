@@ -30,9 +30,9 @@ import {
 import { buildReferenceRules, planReferenceApplication, splitFrozenUpdates } from "../utils/referenceApply";
 import { collegeBranchRoot } from "../utils/branchScope";
 import { rowsToDrafts, type ImportPlan, type RuleImportRow } from "../utils/curriculumRulesImport";
-import { authorityDepartmentCode } from "../utils/authorityAcademicCodes";
+import { academicDigits, authorityDepartmentCode } from "../utils/authorityAcademicCodes";
 import { branchAudience } from "../utils/referenceApply";
-import { checkSheetScope, correctedNames, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
+import { checkSheetScope, correctedNames, sheetKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
 import { parsePlanItems } from "../utils/planPdfParser";
 import { extractPlanItems, PLAN_PDF_MAX_BYTES } from "./planPdfExtract";
 
@@ -529,21 +529,24 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     try { sheet = parsePlanItems(await extractPlanItems(body)); }
     catch (error) { reject("unreadable", error instanceof Error && /[؀-ۿ]/.test(error.message) ? error.message : "تعذّرت قراءة الملف. ارفع «الخطة الدراسية» PDF كما تطبعها SWRCAPP."); return; }
     const departmentKey = authorityDepartmentCode(college?.AdCollegeCode, target.AdSectionCode);
-    const rejection = checkSheetScope(sheet, { collegeName: String(college?.AdCollegeName || ""), sectionName: String(target.AdSectionName || ""), departmentKey });
+    const rejection = checkSheetScope(sheet, { collegeName: String(college?.AdCollegeName || ""), collegeCode: academicDigits(college?.AdCollegeCode).slice(0, 2), sectionName: String(target.AdSectionName || ""), departmentKey });
     if (rejection) { res.status(422).json({ error: rejection.message, rejection }); return; }
 
     const by = deps.actorName(req);
-    /* اسم القسم من الصحيفة المعتمدة، بعد قبول الرمزين. */
+    /* اسم القسم ورمزه من الصحيفة المعتمدة (ما كُتب يدوياً يُصحَّح إليها)، بعد قبول الكلية والقسم. */
     const renamedTo = sheetSectionName(sheet, String(target.AdSectionName || ""));
+    const recodedTo = sheetSectionCode(sheet, String(target.AdSectionCode || ""));
     const renamed = renamedTo ? { before: String(target.AdSectionName || ""), after: renamedTo } : null;
-    if (renamed) await Repository.updateSection(sid, cid, String(target.AdSectionCode || ""), renamed.after);
+    const recoded = recodedTo ? { before: String(target.AdSectionCode || ""), after: recodedTo } : null;
+    if (renamed || recoded) await Repository.updateSection(sid, cid, recoded?.after ?? String(target.AdSectionCode || ""), renamed?.after ?? String(target.AdSectionName || ""));
+    const departmentKeyOfSheet = sheetKey(sheet);
     const branch = collegeBranchRoot(colleges as any[], cid);
-    const inBranch = ownCourses(sheet, departmentKey).filter(course => !(course.girlsOnly && branch && branchAudience(branch) !== "girls"));
+    const inBranch = ownCourses(sheet, departmentKeyOfSheet).filter(course => !(course.girlsOnly && branch && branchAudience(branch) !== "girls"));
     const { names, fixes } = correctedNames(inBranch);
     const { reference, notes } = sheetToReference(sheet, inBranch, names);
     const numberOf = (code: unknown) => Number(referenceCodeKey(code).slice(-3));
     const report: { updated: number; created: number; linked: number; unchanged: number; otherDepartments: number; girlsOnlySkipped: number; rules: number; groups: number } =
-      { updated: 0, created: 0, linked: 0, unchanged: 0, otherDepartments: sheet.courses.length - ownCourses(sheet, departmentKey).length, girlsOnlySkipped: ownCourses(sheet, departmentKey).length - inBranch.length, rules: 0, groups: 0 };
+      { updated: 0, created: 0, linked: 0, unchanged: 0, otherDepartments: sheet.courses.length - ownCourses(sheet, departmentKeyOfSheet).length, girlsOnlySkipped: ownCourses(sheet, departmentKeyOfSheet).length - inBranch.length, rules: 0, groups: 0 };
 
     /* الصحيفة الفعّالة للقسم؛ وإن لم توجد تُنشأ قبل أي تعديلٍ ليحفظ «السابقةُ» الكتالوجَ كما كان. */
     const livePlans = () => Repository.getCurriculumPlans(sid).then(rows => rows.filter(plan => !plan.virtual && plan.status === "active"));
@@ -609,8 +612,8 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     });
     report.rules = built.rules.length; report.groups = built.groups.length;
     notes.push(...built.notes.slice(0, 20));
-    res.locals.auditChanges = `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()}: ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${renamed ? `، تسمية القسم «${renamed.before}» ← «${renamed.after}»` : ""}`;
-    res.json({ ok: true, renamed, program: sheet.program, planId: plan.id, planName: plan.name, planCreated, ...report, nameFixes: fixes, notes: notes.slice(0, 30) });
+    res.locals.auditChanges = `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()}: ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${renamed ? `، تسمية القسم «${renamed.before}» ← «${renamed.after}»` : ""}${recoded ? `، رمز القسم ${recoded.before || "—"} ← ${recoded.after}` : ""}`;
+    res.json({ ok: true, renamed, recoded, program: sheet.program, planId: plan.id, planName: plan.name, planCreated, ...report, nameFixes: fixes, notes: notes.slice(0, 30) });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */

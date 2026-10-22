@@ -15,7 +15,7 @@ import { arabicMatchKey } from "./arabicText";
 import { correctCourseName } from "./courseNameCorrection";
 import type { ParsedPlan, PlanCourse } from "./planPdfParser";
 
-export type SheetRejectKind = "unreadable" | "unverified" | "noCode" | "college" | "department" | "departmentCode" | "empty";
+export type SheetRejectKind = "unreadable" | "unverified" | "college" | "department" | "empty";
 
 /** ما في الصحيفة وما المختار، للحقول المختلفة وحدها. */
 export interface SheetMismatch {
@@ -31,6 +31,8 @@ export interface SheetScope {
   collegeName: string;
   /** اسم القسم في النظام. */
   sectionName: string;
+  /** رمز الكلية بخانتين من رمز الكلية في النظام (011 ← 01)؛ فارغ إن لم يُعرف. */
+  collegeCode?: string;
   /** مفتاح القسم بصيغة الهيئة (كلية+قسم: 0109) كما في authorityDepartmentCode؛ فارغ إن لم يُسجَّل رمزه. */
   departmentKey: string;
 }
@@ -58,6 +60,9 @@ export function dominantDepartment(plan: Pick<ParsedPlan, "courses">, field: "de
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || "";
 }
 
+/** مفتاح قسم الصحيفة (كلية+قسم الغالبان بين مقرراتها): 0109. */
+export const sheetKey = (plan: Pick<ParsedPlan, "courses">) => `${dominantDepartment(plan, "college")}${dominantDepartment(plan)}`;
+
 /** هل تُقبل هذه الصحيفة لهذا القسم؟ null = تُقبل. لا يُكتب شيءٌ قبل أن تمرّ كل الفحوص. */
 export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejection | null {
   if (!plan.courses.length || !plan.college || !plan.department) {
@@ -67,30 +72,29 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
   if (blocking.length) {
     return { kind: "unverified", message: "القراءة غير مطمئنة (سطر لم يُفهم أو وحدات ناقصة)، فلم تُكتب: " + blocking.slice(0, 3).join(" · "), warnings: blocking };
   }
+  /* الصحيفة هي المعتمدة: ما كُتب يدوياً في النظام (رمز القسم أو اسمه) قد يكون خطأً. فيُقبل القسم إن طابق اسمُه
+     أو رمزُه ما في الصحيفة، ويُصحَّح الآخر إليها؛ ويُرفض إن خالفها اسماً ورمزاً معاً (كصحيفة أصول لقسم آخر). */
   const sectionKey = scope.departmentKey.replace(/\D/g, "");
-  if (!/^\d{4}$/.test(sectionKey)) {
-    return { kind: "noCode", message: `رمز قسم «${stripSection(scope.sectionName)}» في النظام ${scope.departmentKey ? `(${scope.departmentKey}) ليس رمز الهيئة (رقمان)` : "غير مسجّل"}، فلا يمكن التحقق أن الصحيفة له. اضبط رمز القسم في «الأقسام» كما في نظام العمادة.` };
-  }
-  const collegeCode = sectionKey.slice(0, 2), deptCode = sectionKey.slice(2);
-  const sheetDept = dominantDepartment(plan);
+  const known = /^\d{4}$/.test(sectionKey);
+  const collegeCode = scope.collegeCode || (known ? sectionKey.slice(0, 2) : ""), deptCode = known ? sectionKey.slice(2) : "";
+  const sheetDept = dominantDepartment(plan), sheetCollege = dominantDepartment(plan, "college");
   const collegeDiffers = !(matchKey(scope.collegeName).includes(matchKey(plan.college)) || matchKey(plan.college).includes(matchKey(scope.collegeName)))
-    || dominantDepartment(plan, "college") !== collegeCode;
-  const nameDiffers = matchKey(stripSection(scope.sectionName)) !== matchKey(plan.department)
-    && !matchKey(scope.sectionName).includes(matchKey(plan.department)) && !matchKey(plan.department).includes(matchKey(scope.sectionName));
-  const codeDiffers = sheetDept !== deptCode;
-  /* الرمزان (كلية+قسم) هما الحَكَم؛ اختلافُ تسمية القسم وحده («معلم الحاسب» و«حاسوب») لا يرفض، ويُذكر ملاحظة. */
-  if (collegeDiffers || codeDiffers) {
-    const fields: SheetMismatch["fields"] = [...(collegeDiffers ? ["college" as const] : []), ...(nameDiffers || codeDiffers ? ["department" as const] : [])];
+    || (Boolean(collegeCode) && sheetCollege !== collegeCode);
+  const nameMatches = matchKey(stripSection(scope.sectionName)) === matchKey(plan.department)
+    || matchKey(scope.sectionName).includes(matchKey(plan.department)) || matchKey(plan.department).includes(matchKey(scope.sectionName));
+  const codeMatches = Boolean(deptCode) && sheetDept === deptCode;
+  if (collegeDiffers || (!nameMatches && !codeMatches)) {
+    const fields: SheetMismatch["fields"] = [...(collegeDiffers ? ["college" as const] : []), ...(!nameMatches && !codeMatches ? ["department" as const] : [])];
     const mismatch: SheetMismatch = {
       fields,
       sheet: { college: plan.college, department: plan.department, departmentCode: sheetDept },
       chosen: { college: scope.collegeName, department: stripSection(scope.sectionName), departmentCode: deptCode },
     };
-    const kind: SheetRejectKind = collegeDiffers ? "college" : nameDiffers ? "department" : "departmentCode";
-    const what = collegeDiffers && (nameDiffers || codeDiffers) ? "الكلية والقسم" : collegeDiffers ? "الكلية" : "القسم";
-    return { kind, mismatch, message: `الصحيفة ليست لما اخترت: هي لـ${[collegeDiffers ? plan.college : "", `قسم «${plan.department}» (${sheetDept})`].filter(Boolean).join("، ")}، والمختار ${[collegeDiffers ? scope.collegeName : "", `قسم «${stripSection(scope.sectionName)}» (${deptCode})`].filter(Boolean).join("، ")}. اختر ${what} الصحيح أو ارفع الصحيفة الصحيحة.` };
+    const kind: SheetRejectKind = collegeDiffers ? "college" : "department";
+    const what = collegeDiffers && fields.includes("department") ? "الكلية والقسم" : collegeDiffers ? "الكلية" : "القسم";
+    return { kind, mismatch, message: `الصحيفة ليست لما اخترت: هي لـ${[collegeDiffers ? plan.college : "", `قسم «${plan.department}» (${sheetDept})`].filter(Boolean).join("، ")}، والمختار ${[collegeDiffers ? scope.collegeName : "", `قسم «${stripSection(scope.sectionName)}»${deptCode ? ` (${deptCode})` : ""}`].filter(Boolean).join("، ")}. اختر ${what} الصحيح أو ارفع الصحيفة الصحيحة.` };
   }
-  const own = ownCourses(plan, sectionKey);
+  const own = ownCourses(plan, sheetKey(plan));
   if (!own.length) return { kind: "empty", message: "لا مقررات لهذا القسم في الصحيفة." };
   const numbers = own.map(course => Number(course.number));
   if (new Set(numbers).size !== numbers.length) return { kind: "unverified", message: "رقم مقرر يتكرر بين رمزين فرعيين للقسم: لا يمكن حفظه برقمه وحده." };
@@ -106,6 +110,13 @@ export function sheetSectionName(plan: Pick<ParsedPlan, "department">, currentNa
   if (!b || a === b) return "";
   const bare = stripSection(plan.department);
   return /^\s*قسم\s/.test(currentName) ? `قسم ${bare}` : bare;
+}
+
+/** رمز القسم من الصحيفة بنمط رمزه الحالي (أربع خانات إن كان بالهيئة، وإلا خانتان)؛ فارغ إن طابق. */
+export function sheetSectionCode(plan: Pick<ParsedPlan, "courses">, currentCode: string): string {
+  const dept = dominantDepartment(plan), current = String(currentCode || "").replace(/\D/g, "");
+  const next = /^\d{4}$/.test(current) ? sheetKey(plan) : dept;
+  return current && current.replace(/^0+(?=\d)/, "") === next.replace(/^0+(?=\d)/, "") ? "" : (dept ? next : "");
 }
 
 /** أقسامٌ تشمل صحيفتُها رمزاً فرعياً ثانياً هو منها (الكهرباء 72 والإلكترونيات 73): كلُّه من الصحيفة. */

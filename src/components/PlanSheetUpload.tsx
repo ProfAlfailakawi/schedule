@@ -14,13 +14,13 @@ interface Rejection {
 }
 interface Outcome {
   renamed: { before: string; after: string } | null;
+  recoded: { before: string; after: string } | null;
   planId: string; planName: string; planCreated: boolean; created: number; updated: number; linked: number; unchanged: number; rules: number;
 }
 
 const SHORT: Record<string, { icon: typeof FileX2; title: string; hint: string }> = {
   unreadable: { icon: FileX2, title: "الملف غير مقروء", hint: "ارفع PDF «الخطة الدراسية» من SWRCAPP" },
   unverified: { icon: ShieldAlert, title: "القراءة لا تطابق حسابها", hint: "أرسل الملف لفحصه" },
-  noCode: { icon: SearchX, title: "رمز القسم غير مسجّل", hint: "اضبطه في «الأقسام» كما في العمادة" },
   empty: { icon: SearchX, title: "لا مقررات لهذا القسم", hint: "في الصحيفة" },
 };
 
@@ -96,6 +96,7 @@ export default function PlanSheetUpload({ sections, sectionId, onDone }: { secti
           <span title="رُبطت بالصحيفة"><Link2 aria-hidden="true" /> {outcome.linked}</span>
           <small>{outcome.planName} · بانتظار اعتماد القسم</small>
           {outcome.renamed ? <small><GraduationCap aria-hidden="true" size={14} /> {outcome.renamed.before} ← {outcome.renamed.after}</small> : null}
+          {outcome.recoded ? <small>رمز القسم {outcome.recoded.before || "—"} ← {outcome.recoded.after}</small> : null}
         </div>
       ) : null}
     </section>

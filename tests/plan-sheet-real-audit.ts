@@ -28,7 +28,7 @@ const EXPECTED: Record<string, [string, number]> = {
     check(dominantDepartment(plan) === dept, `${file}: رمز القسم ${dept}`);
     check(checkSheetScope(plan, scope) === null && blockingWarnings(plan).length === 0, `${file}: تُقبل لقسمها`);
     check(ownCourses(plan, key).length === count, `${file}: ${count} مقرراً للقسم`);
-    check(checkSheetScope(plan, { ...scope, departmentKey: "0199" })?.kind === "departmentCode", `${file}: تُرفض لقسمٍ آخر`);
+    check(checkSheetScope(plan, { ...scope, sectionName: "قسم أصول التربية", departmentKey: "0199" })?.kind === "department", `${file}: تُرفض لقسمٍ آخر (اسماً ورمزاً)`);
     check(checkSheetScope(plan, { ...scope, collegeName: "كلية العلوم الإدارية", departmentKey: `02${dept}` })?.kind === "college", `${file}: تُرفض لكليةٍ أخرى`);
     check(correctedNames(ownCourses(plan, key)).fixes.every(fix => fix.after !== fix.before), `${file}: كل تصحيح اسمٍ يغيّر الاسم فعلاً`);
   }
