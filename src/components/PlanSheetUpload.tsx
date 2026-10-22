@@ -13,6 +13,7 @@ interface Rejection {
   mismatch?: { fields: Array<"college" | "department">; sheet: { college?: string; department?: string; departmentCode?: string }; chosen: { college?: string; department?: string; departmentCode?: string } };
 }
 interface Outcome {
+  renamed: { before: string; after: string } | null;
   planId: string; planName: string; planCreated: boolean; created: number; updated: number; linked: number; unchanged: number; rules: number;
   nameFixes: Array<{ code: string; before: string; after: string }>; notes: string[];
 }
@@ -95,6 +96,7 @@ export default function PlanSheetUpload({ sections, sectionId, onDone }: { secti
           <span title="مقررات صُحّحت"><PencilLine aria-hidden="true" /> {outcome.updated}</span>
           <span title="رُبطت بالصحيفة"><Link2 aria-hidden="true" /> {outcome.linked}</span>
           <small>{outcome.planName} · بانتظار اعتماد القسم</small>
+          {outcome.renamed ? <small><GraduationCap aria-hidden="true" size={14} /> {outcome.renamed.before} ← {outcome.renamed.after}</small> : null}
           {outcome.nameFixes.length ? (
             <details><summary>أسماء صُحّحت ({outcome.nameFixes.length})</summary>
               <ul>{outcome.nameFixes.map(f => <li key={f.code}><b>{f.code}</b> {f.before} ← {f.after}</li>)}</ul>

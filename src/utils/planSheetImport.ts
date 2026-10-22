@@ -90,20 +90,32 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
     const what = collegeDiffers && (nameDiffers || codeDiffers) ? "الكلية والقسم" : collegeDiffers ? "الكلية" : "القسم";
     return { kind, mismatch, message: `الصحيفة ليست لما اخترت: هي لـ${[collegeDiffers ? plan.college : "", `قسم «${plan.department}» (${sheetDept})`].filter(Boolean).join("، ")}، والمختار ${[collegeDiffers ? scope.collegeName : "", `قسم «${stripSection(scope.sectionName)}» (${deptCode})`].filter(Boolean).join("، ")}. اختر ${what} الصحيح أو ارفع الصحيفة الصحيحة.` };
   }
-  if (!ownCourses(plan, sectionKey).length) return { kind: "empty", message: "لا مقررات لهذا القسم في الصحيفة." };
+  const own = ownCourses(plan, sectionKey);
+  if (!own.length) return { kind: "empty", message: "لا مقررات لهذا القسم في الصحيفة." };
+  const numbers = own.map(course => Number(course.number));
+  if (new Set(numbers).size !== numbers.length) return { kind: "unverified", message: "رقم مقرر يتكرر بين رمزين فرعيين للقسم: لا يمكن حفظه برقمه وحده." };
   return null;
 }
 
-/** اسمُ القسم في الصحيفة يخالف اسمه عندنا والرمزان يطابقان: ملاحظةٌ تُعرض ولا ترفض. */
-export function departmentNameNote(plan: Pick<ParsedPlan, "department">, scope: Pick<SheetScope, "sectionName">): string {
-  const a = matchKey(scope.sectionName), b = matchKey(plan.department);
-  return a === b || a.includes(b) || b.includes(a) ? "" : `اسم القسم في الصحيفة «${stripSection(plan.department)}» غير اسمه عندنا «${stripSection(scope.sectionName)}»؛ طابق الرمز (كلية وقسم) فقُبلت.`;
+/**
+ * اسمُ القسم يُؤخذ من الصحيفة المعتمدة: إن خالف ما عندنا («معلم الحاسب» و«حاسوب») ردّ الاسم الجديد
+ * (بنمط التسمية الحالي: «قسم …» إن كان اسمه الحالي بها)، وإلا فارغاً. بعد قبول الرمزين فقط.
+ */
+export function sheetSectionName(plan: Pick<ParsedPlan, "department">, currentName: string): string {
+  const a = matchKey(currentName), b = matchKey(plan.department);
+  if (!b || a === b) return "";
+  const bare = stripSection(plan.department);
+  return /^\s*قسم\s/.test(currentName) ? `قسم ${bare}` : bare;
 }
 
-/** مقررات القسم وحده: رمز القسم والكلية في رمز المقرر. */
+/** أقسامٌ تشمل صحيفتُها رمزاً فرعياً ثانياً هو منها (الكهرباء 72 والإلكترونيات 73): كلُّه من الصحيفة. */
+export const DEPARTMENT_EXTRA_CODES: Readonly<Record<string, readonly string[]>> = { "72": ["73"] };
+
+/** مقررات القسم وحده: رمز القسم والكلية في رمز المقرر (ومعها رموزه الفرعية إن وُجدت). */
 export function ownCourses(plan: Pick<ParsedPlan, "courses">, departmentKey: string): PlanCourse[] {
   const key = departmentKey.replace(/\D/g, "");
-  return plan.courses.filter(course => course.college === key.slice(0, 2) && course.dept === key.slice(2));
+  const depts = new Set([key.slice(2), ...(DEPARTMENT_EXTRA_CODES[key.slice(2)] || [])]);
+  return plan.courses.filter(course => course.college === key.slice(0, 2) && depts.has(course.dept));
 }
 
 /** ما يُحفظ في القسم رمزاً: رقم المقرر وحده كما طُبع («105»)، بلا رمز الكلية ولا القسم. */

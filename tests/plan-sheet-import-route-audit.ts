@@ -21,7 +21,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [],
     colleges: [{ AdCollegeId: 1, AdCollegeCode: "012", AdCollegeName: "كلية التربية الأساسية - بنات" }],
     sections: [
-      { AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم الوسائل التعليمية" },
       { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "01", AdSectionName: "قسم أصول التربية" },
       { AdSectionId: 13, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم المواد التأسيسية" },
     ],
@@ -67,6 +67,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
 
     const first = await upload("root", 21);
     check(first.status === 200 && first.json.ok === true, "الرفع يُقبل للقسم الصحيح", first.json);
+    check(first.json.renamed?.after === "قسم تكنولوجيا التعليم" && (await Repository.getSections()).find(row => Number(row.AdSectionId) === 21)?.AdSectionName === "قسم تكنولوجيا التعليم", "اسم القسم أُخذ من الصحيفة بنمط «قسم …»", first.json.renamed);
     const courses = (await Repository.getCourses()).filter(row => Number(row.AdSectionId) === 21);
     check(courses.length === 27, `٢٧ مقرراً للقسم (${courses.length})`);
     check(courses.every(row => /^\d{2,3}$/.test(String(row.CourseCode))), "الرموز المحفوظة رقم المقرر وحده");
@@ -86,7 +87,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     void draft;
 
     const second = await upload("root", 21);
-    check(second.status === 200 && second.json.created === 0 && second.json.updated === 0 && second.json.linked === 0 && second.json.planCreated === false, "الرفع المتكرر لا يغيّر شيئاً", second.json);
+    check(second.status === 200 && second.json.created === 0 && second.json.updated === 0 && second.json.linked === 0 && second.json.planCreated === false && second.json.renamed === null, "الرفع المتكرر لا يغيّر شيئاً", second.json);
     check((await Repository.getCurriculumPlans(21)).length === plans.length, "لا صحيفة جديدة عند التكرار");
   } finally { server.close(); }
   console.log(`\n${passed} passed, ${failed} failed`);

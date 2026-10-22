@@ -7,7 +7,7 @@ import { extractPlanItems } from "../src/server/planPdfExtract";
 import { parsePlanItems, type ParsedPlan } from "../src/utils/planPdfParser";
 import { correctCourseName } from "../src/utils/courseNameCorrection";
 import { buildReferenceRules } from "../src/utils/referenceApply";
-import { checkSheetScope, correctedNames, departmentNameNote, dominantDepartment, ownCourses, sheetToReference, storedCode } from "../src/utils/planSheetImport";
+import { checkSheetScope, correctedNames, sheetSectionName, dominantDepartment, ownCourses, sheetToReference, storedCode } from "../src/utils/planSheetImport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -42,6 +42,11 @@ const load = async (name: string): Promise<ParsedPlan> => parsePlanItems(await e
   check(own.every(course => /^\d{2,3}$/.test(storedCode(course)) && course.dept === "09" && course.college === "01"), "المحفوظ رقم المقرر وحده (105 لا 0109105)");
   check(own.some(course => storedCode(course) === "105"), "المقرر 105 موجود");
 
+  /* ── رمزٌ فرعي ثانٍ للقسم (الكهرباء 72 و73) ── */
+  const electricity = await load("graduation-2026/ba-0113");
+  check(ownCourses(electricity, "0172").length === 23 && ownCourses(electricity, "0172").some(course => course.dept === "73"), "الكهرباء: مقررات 72 و73 كلها من الصحيفة");
+  check(checkSheetScope({ ...electricity, courses: [...electricity.courses, { ...electricity.courses.find(course => course.dept === "72")!, dept: "73" }] }, { collegeName: scope.collegeName, sectionName: "تكنولوجيا الهندسة الكهربائية", departmentKey: "0172" })?.kind === "unverified", "رقم مكرر بين الرمزين الفرعيين: يُرفض");
+
   /* ── الرفض ── */
   const other = checkSheetScope(plan, { ...scope, sectionName: "أصول التربية", departmentKey: "0101" });
   check(other?.kind === "department" && other.mismatch?.fields.includes("department") === true, "قسمٌ آخر يُرفض");
@@ -50,7 +55,7 @@ const load = async (name: string): Promise<ParsedPlan> => parsePlanItems(await e
   const noCode = checkSheetScope(plan, { ...scope, departmentKey: "" });
   check(noCode?.kind === "noCode", "قسمٌ بلا رمز هيئة لا يُتحقَّق منه فيُرفض");
   check(checkSheetScope(plan, { ...scope, sectionName: "قسم الوسائل التعليمية" }) === null, "تسمية مختلفة والرمزان يطابقان: تُقبل");
-  check(departmentNameNote(plan, { sectionName: "قسم الوسائل التعليمية" }).includes("طابق الرمز") && departmentNameNote(plan, scope) === "", "ملاحظة التسمية تظهر عند الاختلاف فقط");
+  check(sheetSectionName(plan, "قسم الوسائل التعليمية") === "قسم تكنولوجيا التعليم" && sheetSectionName(plan, "الوسائل") === "تكنولوجيا التعليم" && sheetSectionName(plan, "قسم تكنولوجيا التعليم") === "", "اسم القسم يؤخذ من الصحيفة بنمط تسميته، ولا يتغير إن طابق")
   const wrongCode = checkSheetScope(plan, { ...scope, departmentKey: "0120" });
   check(wrongCode?.kind === "departmentCode", "اسم القسم يطابق ورمزه لا يطابق: يُرفض");
   check(checkSheetScope({ ...plan, courses: [] }, scope)?.kind === "unreadable", "ملفٌ بلا مقررات مقروءة يُرفض");
