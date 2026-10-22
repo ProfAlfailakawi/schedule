@@ -180,7 +180,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     await Repository.updateCourse(depA!.AdCourseId, depA!.AdCollegeId, depA!.AdSectionId, depA!.CourseCode, "اسم خطأ", 1, 1, 40);
     const fixedElsewhere = await upload("root", 51, english);
     const depAfter = (await Repository.getCourses()).find(row => Number(row.AdCourseId) === Number(depA!.AdCourseId))!;
-    check(fixedElsewhere.json.correctedOther === 1 && depAfter.CourseName === depA!.CourseName && depAfter.CourseCredit === depA!.CourseCredit && depAfter.CourseHours === depA!.CourseHours && depAfter.MaxStudent === 40, "مقررٌ قائم من قسم آخر خطأ اسمه ووحداته يُصحَّح من الجديدة والسعة كما هي", [fixedElsewhere.json.correctedOther, depAfter]);
+    check(fixedElsewhere.json.differsOther.length === 1 && depAfter.CourseName === "اسم خطأ" && depAfter.MaxStudent === 40, "مقرر قسمٍ آخر قائم يخالف الصحيفة: لا يصحّحه غير صحيفة قسمه، ويُذكر الفرق في التقرير", [fixedElsewhere.json.differsOther, depAfter]);
     const englishDraft = (await Repository.listRuleDrafts()).find(row => row.planId === secondEnglish.json.planId);
     const needy = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 51 && String(row.CourseCode) === "454");
     const rule = englishDraft?.rules.find(item => item.courseId === Number(needy?.AdCourseId));
