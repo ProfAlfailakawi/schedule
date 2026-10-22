@@ -27,6 +27,8 @@ interface ReportRow {
   program?: string; programName?: string; year?: number; era?: "new" | "old";
   tracks?: number; sites?: number; sections?: string[]; plan?: string; created?: number; updated?: number; linked?: number;
   nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[]; addedOther?: number; differsOther?: string[]; noDepartment?: string[]; rollover?: boolean;
+  /** ردّ الخادم كاملاً للمرور الأول (للمراجعة)، ومدة الطلب بالمللي ثانية، ورمز HTTP، وعدد المحاولات. */
+  server?: unknown; ms?: number; http?: number; attempts?: number;
 }
 /** ما يُحفظ في التقرير من ردّ الخادم لصحيفةٍ مقبولة. */
 const pick = (data: any): Partial<ReportRow> => ({
@@ -64,6 +66,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   const [reconcile, setReconcile] = useState<{ updated: number; ambiguous: string[] } | null>(null);
   const lastFile = useRef<File | null>(null);
   const batchFiles = useRef<File[]>([]);
+  const snapshot = useRef<unknown>(null);
   const upload = async (file: File | undefined, force = false) => {
     if (!file || !chosen) return;
     lastFile.current = file;
@@ -83,7 +86,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
      ما عُرف قسمه وما رُفض وما تُرك (قديمةٌ أقدمُ من أحدث لبرنامجها) كلُّه في تقريرٍ يُنزَّل للمراجعة. */
   const uploadAll = async (files: File[]) => {
     if (!files.length) return;
-    batchFiles.current = files;
+    batchFiles.current = files; snapshot.current = null;
     setBusy(true); setRejection(null); setError(""); setOutcome(null); setReconcile(null);
     const state = { phase: "read" as BatchPhase, done: 0, total: files.length, ok: 0, skipped: 0, failed: 0, prereqLinked: 0, prereqPrinted: 0 };
     const rows: ReportRow[] = files.map(file => ({ file: file.name, status: "rejected" }));
@@ -100,7 +103,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
         try {
           const response = await fetch(path, { method: "POST", credentials: "include", headers: { "content-type": "application/octet-stream" }, body });
           if ([429, 502, 503, 504].includes(response.status) && attempt < 2) { last = `HTTP ${response.status}`; continue; }
-          return { response, data: await response.json().catch(() => ({} as any)) };
+          return { response, data: await response.json().catch(() => ({} as any)), attempts: attempt + 1 };
         } catch (e: any) { last = `${e?.name || "خطأ"}: ${e?.message || ""}`.trim(); }
       }
       throw new Error(last || "انقطع الاتصال");
@@ -134,9 +137,11 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
     const accepted: number[] = [];
     for (const item of queue) {
       try {
-        const { response, data } = await post("/api/plan-review/sheet/import", files[item.index]);
-        if (response.ok) { accepted.push(item.index); state.ok += 1; last = { sectionId: Number(data.sectionId || 0), planId: String(data.planId || "") }; rows[item.index] = { ...rows[item.index], status: "ok", ...pick(data) }; }
-        else { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: data.rejection?.kind === "department" ? "لا قسم بهذا الاسم أو الرمز" : (SHORT[data.rejection?.kind]?.title || data.error || "تعذّر"), detail: data.rejection?.message || `HTTP ${response.status}` }; }
+        const began = performance.now();
+        const { response, data, attempts } = await post("/api/plan-review/sheet/import", files[item.index]);
+        const timing = { ms: Math.round(performance.now() - began), http: response.status, attempts };
+        if (response.ok) { accepted.push(item.index); state.ok += 1; last = { sectionId: Number(data.sectionId || 0), planId: String(data.planId || "") }; rows[item.index] = { ...rows[item.index], status: "ok", ...pick(data), ...timing, server: data }; }
+        else { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: data.rejection?.kind === "department" ? "لا قسم بهذا الاسم أو الرمز" : (SHORT[data.rejection?.kind]?.title || data.error || "تعذّر"), detail: data.rejection?.message || `HTTP ${response.status}`, ...timing, server: data }; }
       } catch (e: any) { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: "تعذّر الرفع", detail: String(e?.message || e) }; }
       state.done += 1; publish();
     }
@@ -166,6 +171,8 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
       state.done += 1; publish();
     }
     for (const index of accepted) { state.prereqLinked += rows[index].prereqLinked || 0; state.prereqPrinted += rows[index].prereqPrinted || 0; }
+    /* لقطةُ حال النظام بعد الرفع تُرفق بالتقرير: ما في كل قسمٍ من مقرراتٍ وصحائف. */
+    try { const response = await fetch("/api/plan-review/sheet/audit", { credentials: "include" }); snapshot.current = response.ok ? await response.json() : { error: `HTTP ${response.status}` }; } catch (e: any) { snapshot.current = { error: String(e?.message || e) }; }
     state.phase = "done"; publish();
     setBusy(false);
     if (state.ok && last.sectionId) onDone(last.sectionId, last.planId);
@@ -174,7 +181,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   /* تقريرُ الدفعة (ملفٌ يُنزَّل) للمراجعة: لكل ملفٍ ما دخل وأين وما رُفض ولماذا. */
   const downloadReport = () => {
     if (!batch) return;
-    const text = JSON.stringify({ generatedAt: new Date().toISOString(), summary: { ok: batch.ok, skipped: batch.skipped, failed: batch.failed, prereqLinked: batch.prereqLinked, prereqPrinted: batch.prereqPrinted, missingDepartments: missingDepartments(batch.rows), otherDepartmentCoursesCorrected: reconcile?.updated || 0, otherDepartmentCoursesNoMajority: reconcile?.ambiguous || [] }, files: batch.rows }, null, 1);
+    const text = JSON.stringify({ generatedAt: new Date().toISOString(), summary: { ok: batch.ok, skipped: batch.skipped, failed: batch.failed, prereqLinked: batch.prereqLinked, prereqPrinted: batch.prereqPrinted, missingDepartments: missingDepartments(batch.rows), client: { userAgent: navigator.userAgent, online: navigator.onLine, page: location.origin }, otherDepartmentCoursesCorrected: reconcile?.updated || 0, otherDepartmentCoursesNoMajority: reconcile?.ambiguous || [] }, files: batch.rows, system: snapshot.current }, null, 1);
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url; link.download = "تقرير-رفع-الصحف.json"; link.click();
