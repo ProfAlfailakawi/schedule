@@ -2419,6 +2419,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     else root.removeAttribute("data-colorblind");
     return () => root.removeAttribute("data-colorblind");
   }, [colorBlind]);
+  /* قسمٌ أُنهيت صحيفته السابقة: منتقي المقررات للفصل الجاري والقادم يعرض مقررات الجديدة وحدها،
+     وفي الفصول السابقة يعرض القديمة والجديدة معاً. */
+  const [endedPrevious, setEndedPrevious] = useState<{ sectionId: number; ids: Set<number> } | null>(null);
+  useEffect(() => {
+    const sid = Number(form.AdSectionId) || 0;
+    if (!sid) { setEndedPrevious(null); return; }
+    let alive = true;
+    void fetch(`/api/plan-review/previous-ended?sectionId=${sid}`, { credentials: "include" })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (alive) setEndedPrevious(data?.ended ? { sectionId: sid, ids: new Set<number>((data.courseIds || []).map(Number)) } : null); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [form.AdSectionId]);
+  const formTermIsPast = useMemo(() => {
+    const ordered = sortTermsNewest(terms);
+    const current = currentTermId(terms as any[]) || Number(ordered[0]?.AdTermId || 0);
+    const at = ordered.findIndex(term => Number(term.AdTermId) === Number(current));
+    const mine = ordered.findIndex(term => Number(term.AdTermId) === Number(form.AdTermId));
+    return at >= 0 && mine > at;
+  }, [terms, form.AdTermId]);
   const formSections = useMemo(
       () =>
         sortByName(sections.filter(
@@ -2427,8 +2447,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       [sections, form.AdCollegeId],
     ),
     formCourses = useMemo(
-      () => sortByName(courses.filter((c) => c.AdSectionId === form.AdSectionId), (c: AdCourse) => c.CourseName),
-      [courses, form.AdSectionId],
+      () => sortByName(courses.filter((c) => c.AdSectionId === form.AdSectionId
+        && (!endedPrevious || endedPrevious.sectionId !== Number(form.AdSectionId) || formTermIsPast || endedPrevious.ids.has(Number(c.AdCourseId)) || Number(c.AdCourseId) === Number(form.AdCourseId))), (c: AdCourse) => c.CourseName),
+      [courses, form.AdSectionId, form.AdCourseId, endedPrevious, formTermIsPast],
     ),
     courseNames = useMemo(
       () => Array.from(new Set<string>(formCourses.map((c) => c.CourseName))),

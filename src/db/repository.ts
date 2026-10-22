@@ -3636,6 +3636,17 @@ export const Repository = {
     if(!Array.isArray(db.curriculumPlans))db.curriculumPlans=[];const at=db.curriculumPlans.findIndex(row=>row.id===planId);if(at<0)throw new Error("الصحيفة غير موجودة");db.curriculumPlans[at]=updated;saveDatabase();await markRegistrationRunsStale();return updated;
   },
 
+  /** يعيد صحيفةً مؤرشفة إلى «السابقة» (التراجع عن إنهائها). */
+  restoreCurriculumPlan: async (planId:string, sectionId:number): Promise<CurriculumPlan> => {
+    const plans=await Repository.getCurriculumPlans(sectionId),plan=plans.find(row=>row.id===planId);
+    if(!plan)throw new Error("الصحيفة غير موجودة");
+    if(plan.status!=="archived")return plan;
+    const {archivedAt:_archivedAt,archivedBy:_archivedBy,...rest}=plan;
+    const updated:CurriculumPlan={...rest,status:"transition"};
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);await markRegistrationRunsStale();return updated;}
+    if(!Array.isArray(db.curriculumPlans))db.curriculumPlans=[];const at=db.curriculumPlans.findIndex(row=>row.id===planId);if(at<0)throw new Error("الصحيفة غير موجودة");db.curriculumPlans[at]=updated;saveDatabase();await markRegistrationRunsStale();return updated;
+  },
+
   getOperationalCourseIds: async (sectionId:number): Promise<Set<number>> => {
   const courses=await Repository.getCoursesBySection(sectionId);
   const plans=await Repository.getCurriculumPlans(sectionId);
