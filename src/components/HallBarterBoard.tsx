@@ -363,7 +363,7 @@ export default function HallBarterBoard({
                       <li key={row.id} className={`hall-barter-log-row status-${row.status}`}>
                         <span className={`hall-barter-log-dir ${row.incoming ? "in" : "out"}`}>{row.incoming ? "وارد" : "صادر"}</span>
                         <span className="hall-barter-log-with">{row.incoming ? row.requesterSectionName : row.ownerSectionName}</span>
-                        <span className="hall-barter-log-window" dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)} · {row.roomCode}/{row.roomHall}</span>
+                        <span className="hall-barter-log-window">{row.dayLabel} · <bdi dir="ltr">{formatScheduleTimeRange(row.startTime, row.endTime)}</bdi> · <bdi dir="ltr">{row.roomCode}/{row.roomHall}</bdi></span>
                         <span className={`hall-barter-log-status status-${row.status}`}>{statusLabel(row.status)}{row.status === "cancelled" && row.cancelReason ? <em className="hall-barter-log-reason"> · {row.cancelReason}</em> : null}</span>
                         <span className="hall-barter-log-date" dir="ltr">{fmtDate(row.createdAt)}</span>
                       </li>
