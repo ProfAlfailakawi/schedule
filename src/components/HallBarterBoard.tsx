@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeftRight,
   Building2,
@@ -317,7 +318,7 @@ export default function HallBarterBoard({
 
   /* مفتوحةً تملك الشاشةَ كلَّها، فهي حوارٌ يُعلن ذلك: قارئُ الشاشة يعرف أن ما خلفها
      معطَّل، والجرسُ يتنحّى عن زاويتها — وكان يجلس على زرّ إغلاقها تماماً. */
-  return (
+  const boardNode = (
     <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} role={open ? "dialog" : undefined} aria-modal={open ? "true" : undefined} aria-label="استعارة القاعات بين الأقسام">
       {open ? <button type="button" className="hall-barter-screen-close" onClick={() => setOpen(false)} aria-label="إغلاق استعارة القاعات" title="إغلاق استعارة القاعات" data-guide-ignore="زر إغلاق شاشة استعارة القاعات فقط؛ لا ينفذ ميزة تشغيلية ولا يحتاج خطوة إرشادية مستقلة"><X aria-hidden="true" /></button> : null}
       <button type="button" className="hall-barter-summary" onClick={() => setOpen(value => !value)} aria-expanded={open}>
@@ -518,4 +519,9 @@ export default function HallBarterBoard({
       </PrintPortal>
     </section>
   );
+  /* مفتوحةً تُرسم تحت <body> لا داخل صفحة الجدول: `position:fixed` يقيس من أقرب أبٍ
+     له تحويل أو قصّ، وفي سفاري بقي أحد آباء الصفحة (صفحة الجدول المتحرّكة عند الدخول)
+     حاوياً لها فخرجت من مساحة المحتوى وظهر الشريط الجانبي وقُصّ الطرف الأيمن. تحت
+     <body> لا أبَ يحبسها، فتملك الشاشة كلّها أياً كان المتصفح. */
+  return open && typeof document !== "undefined" ? createPortal(boardNode, document.body) : boardNode;
 }
