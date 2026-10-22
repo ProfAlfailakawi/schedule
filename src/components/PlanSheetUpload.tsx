@@ -21,6 +21,7 @@ interface Outcome {
 const SHORT: Record<string, { icon: typeof FileX2; title: string; hint: string }> = {
   unreadable: { icon: FileX2, title: "الملف غير مقروء", hint: "ارفع PDF «الخطة الدراسية» من SWRCAPP" },
   unverified: { icon: ShieldAlert, title: "القراءة لا تطابق حسابها", hint: "أرسل الملف لفحصه" },
+  order: { icon: SearchX, title: "لا صحيفة سابقة للقسم", hint: "ارفع القديمة قبل الجديدة" },
   empty: { icon: SearchX, title: "لا مقررات لهذا القسم", hint: "في الصحيفة" },
 };
 
@@ -95,8 +96,6 @@ export default function PlanSheetUpload({ sections, sectionId, onDone }: { secti
           <span title="مقررات صُحّحت"><PencilLine aria-hidden="true" /> {outcome.updated}</span>
           <span title="رُبطت بالصحيفة"><Link2 aria-hidden="true" /> {outcome.linked}</span>
           <small>{outcome.planName} · بانتظار اعتماد القسم</small>
-          {outcome.renamed ? <small><GraduationCap aria-hidden="true" size={14} /> {outcome.renamed.before} ← {outcome.renamed.after}</small> : null}
-          {outcome.recoded ? <small>رمز القسم {outcome.recoded.before || "—"} ← {outcome.recoded.after}</small> : null}
         </div>
       ) : null}
     </section>

@@ -15,7 +15,7 @@ import { arabicMatchKey } from "./arabicText";
 import { correctCourseName } from "./courseNameCorrection";
 import type { ParsedPlan, PlanCourse } from "./planPdfParser";
 
-export type SheetRejectKind = "unreadable" | "unverified" | "college" | "department" | "empty";
+export type SheetRejectKind = "unreadable" | "unverified" | "college" | "department" | "empty" | "order";
 
 /** ما في الصحيفة وما المختار، للحقول المختلفة وحدها. */
 export interface SheetMismatch {
@@ -59,6 +59,10 @@ export function dominantDepartment(plan: Pick<ParsedPlan, "courses">, field: "de
   for (const course of plan.courses) counts.set(course[field], (counts.get(course[field]) || 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || "";
 }
+
+/** الصحيفة الجديدة تبدأ من هذه السنة؛ ما قبلها قديمةٌ تدخل «الصحيفة السابقة» ولا تمسّ الفعّالة. */
+export const NEW_PLAN_FROM_YEAR = 2026;
+export const isNewSheet = (plan: Pick<ParsedPlan, "startYear">) => plan.startYear >= NEW_PLAN_FROM_YEAR;
 
 /** مفتاح قسم الصحيفة (كلية+قسم الغالبان بين مقرراتها): 0109. */
 export const sheetKey = (plan: Pick<ParsedPlan, "courses">) => `${dominantDepartment(plan, "college")}${dominantDepartment(plan)}`;

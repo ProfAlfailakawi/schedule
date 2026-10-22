@@ -32,7 +32,7 @@ import { collegeBranchRoot } from "../utils/branchScope";
 import { rowsToDrafts, type ImportPlan, type RuleImportRow } from "../utils/curriculumRulesImport";
 import { academicDigits, authorityDepartmentCode } from "../utils/authorityAcademicCodes";
 import { branchAudience } from "../utils/referenceApply";
-import { checkSheetScope, correctedNames, sheetKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
+import { checkSheetScope, correctedNames, isNewSheet, sheetKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
 import { parsePlanItems } from "../utils/planPdfParser";
 import { extractPlanItems, PLAN_PDF_MAX_BYTES } from "./planPdfExtract";
 
@@ -534,8 +534,10 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
 
     const by = deps.actorName(req);
     /* اسم القسم ورمزه من الصحيفة المعتمدة (ما كُتب يدوياً يُصحَّح إليها)، بعد قبول الكلية والقسم. */
-    const renamedTo = sheetSectionName(sheet, String(target.AdSectionName || ""));
-    const recodedTo = sheetSectionCode(sheet, String(target.AdSectionCode || ""));
+    /* القديمة تدخل «الصحيفة السابقة» وحدها: لا تسمّي القسم ولا تغيّر رمزه ولا تمسّ مقرراً قائماً (الكتالوج مشترك مع الجديدة). */
+    const isNew = isNewSheet(sheet);
+    const renamedTo = isNew ? sheetSectionName(sheet, String(target.AdSectionName || "")) : "";
+    const recodedTo = isNew ? sheetSectionCode(sheet, String(target.AdSectionCode || "")) : "";
     const renamed = renamedTo ? { before: String(target.AdSectionName || ""), after: renamedTo } : null;
     const recoded = recodedTo ? { before: String(target.AdSectionCode || ""), after: recodedTo } : null;
     if (renamed || recoded) await Repository.updateSection(sid, cid, recoded?.after ?? String(target.AdSectionCode || ""), renamed?.after ?? String(target.AdSectionName || ""));
@@ -548,12 +550,15 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     const report: { updated: number; created: number; linked: number; unchanged: number; otherDepartments: number; girlsOnlySkipped: number; rules: number; groups: number } =
       { updated: 0, created: 0, linked: 0, unchanged: 0, otherDepartments: sheet.courses.length - ownCourses(sheet, departmentKeyOfSheet).length, girlsOnlySkipped: ownCourses(sheet, departmentKeyOfSheet).length - inBranch.length, rules: 0, groups: 0 };
 
-    /* الصحيفة الفعّالة للقسم؛ وإن لم توجد تُنشأ قبل أي تعديلٍ ليحفظ «السابقةُ» الكتالوجَ كما كان. */
-    const livePlans = () => Repository.getCurriculumPlans(sid).then(rows => rows.filter(plan => !plan.virtual && plan.status === "active"));
-    let plan = (await livePlans())[0], planCreated = false;
+    /* الجديدة تدخل الصحيفة الفعّالة (وتُنشأ إن لم توجد قبل أي تعديلٍ ليحفظ «السابقةُ» الكتالوجَ كما كان)،
+       والقديمة تدخل «الصحيفة السابقة». لا تختلط إحداهما بالأخرى. */
+    const livePlans = () => Repository.getCurriculumPlans(sid).then(rows => rows.filter(item => !item.virtual && item.status !== "archived"));
+    const wanted = (rows: Awaited<ReturnType<typeof livePlans>>) => rows.find(item => item.status === (isNew ? "active" : "transition"));
+    let plan = wanted(await livePlans()), planCreated = false;
+    if (!plan && !isNew && (await livePlans()).length) { reject("order", "لا صحيفة سابقة للقسم. ارفع القديمة قبل الجديدة."); return; }
     if (!plan) {
       await Repository.createCurriculumPlan({ collegeId: cid, sectionId: sid, name: `الصحيفة الجديدة ${sheet.semesterLabel || sheet.startYear || ""}`.trim(), by });
-      plan = (await livePlans())[0]; planCreated = true;
+      plan = wanted(await livePlans()); planCreated = true;
     }
     if (!plan) { fail(res, 500, "تعذّر إنشاء صحيفة للقسم."); return; }
 
@@ -567,7 +572,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       if (!row) {
         try { await Repository.createCourse(cid, sid, storedCode(course), name, course.units, course.hours, 0, false); report.created += 1; }
         catch (error) { if (error instanceof DuplicateResourceError) notes.push(`الرمز ${storedCode(course)} مستعمل في القسم؛ لم يُنشأ.`); else throw error; }
-      } else if (String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours) {
+      } else if (isNew && (String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours)) {
         await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, course.units, course.hours, Number(row.MaxStudent) || 0);
         report.updated += 1;
       } else report.unchanged += 1;
@@ -613,7 +618,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     report.rules = built.rules.length; report.groups = built.groups.length;
     notes.push(...built.notes.slice(0, 20));
     res.locals.auditChanges = `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()}: ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${renamed ? `، تسمية القسم «${renamed.before}» ← «${renamed.after}»` : ""}${recoded ? `، رمز القسم ${recoded.before || "—"} ← ${recoded.after}` : ""}`;
-    res.json({ ok: true, renamed, recoded, program: sheet.program, planId: plan.id, planName: plan.name, planCreated, ...report, nameFixes: fixes, notes: notes.slice(0, 30) });
+    res.json({ ok: true, era: isNew ? "new" : "old", renamed, recoded, program: sheet.program, planId: plan.id, planName: plan.name, planCreated, ...report, nameFixes: fixes, notes: notes.slice(0, 30) });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */

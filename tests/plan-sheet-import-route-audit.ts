@@ -25,10 +25,11 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
       { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "01", AdSectionName: "قسم أصول التربية" },
       { AdSectionId: 13, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم المواد التأسيسية" },
       { AdSectionId: 14, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 15, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
     ],
     instructors: [], schedules: [], rooms: [], courseTransitions: [],
     courses: [{ AdCourseId: 301, AdCollegeId: 1, AdSectionId: 21, CourseCode: "105", CourseName: "أسس تكنولوجيا التعلم", CourseCredit: 3, CourseHours: 3, MaxStudent: 60 }],
-    curriculumPlans: [], curriculumPlanCourses: [],
+    curriculumPlans: [{ id: "p15", AdCollegeId: 1, AdSectionId: 15, name: "فعّالة", status: "active", createdAt: "2026-01-01" }], curriculumPlanCourses: [],
   }), { mode: 0o600 });
   process.env.NODE_ENV = "test"; process.env.DATA_MODE = "demo"; process.env.SCHEDULE_PRIVATE_DIR = dir;
   const quiet = console.warn; console.warn = () => {};
@@ -52,6 +53,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
   const server = app.listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const pdf = fs.readFileSync("tests/fixtures/plans/tech-edu-2026.pdf");
+  const oldPdf = fs.readFileSync("tests/fixtures/plans/tech-edu-2010.pdf");
   const upload = async (who: string, sectionId: number, body: Buffer = pdf) => {
     const res = await fetch(`${base}/api/plan-review/sheet/import?sectionId=${sectionId}`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body });
     return { status: res.status, json: await res.json().catch(() => ({})) as any };
@@ -93,6 +95,19 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     const second = await upload("root", 21);
     check(second.status === 200 && second.json.created === 0 && second.json.updated === 0 && second.json.linked === 0 && second.json.planCreated === false && second.json.renamed === null, "الرفع المتكرر لا يغيّر شيئاً", second.json);
     check((await Repository.getCurriculumPlans(21)).length === plans.length, "لا صحيفة جديدة عند التكرار");
+
+    /* ── الصحيفة القديمة: «السابقة» وحدها، لا تمسّ الفعّالة ولا ما صُحِّح من المقررات ── */
+    const namesBefore = new Map((await Repository.getCourses()).filter(row => Number(row.AdSectionId) === 21).map(row => [row.AdCourseId, `${row.CourseName}|${row.CourseCredit}|${row.CourseHours}`] as const));
+    const activeLinksBefore = (await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === first.json.planId).length;
+    const legacy = await upload("root", 21, oldPdf);
+    check(legacy.status === 200 && legacy.json.era === "old" && legacy.json.planName === "الصحيفة السابقة" && legacy.json.planId !== first.json.planId, "القديمة تدخل «الصحيفة السابقة» لا الفعّالة", legacy.json);
+    check(legacy.json.updated === 0 && legacy.json.renamed === null && legacy.json.recoded === null, "القديمة لا تعدّل مقرراً قائماً ولا تسمّي القسم");
+    const afterCourses = (await Repository.getCourses()).filter(row => Number(row.AdSectionId) === 21);
+    check([...namesBefore].every(([id, text]) => { const row = afterCourses.find(item => item.AdCourseId === id)!; return `${row.CourseName}|${row.CourseCredit}|${row.CourseHours}` === text; }), "أسماء ووحدات المقررات القائمة كما صحّحتها الجديدة");
+    check((await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === first.json.planId).length === activeLinksBefore, "الصحيفة الفعّالة لم تتغيّر");
+    check((await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === legacy.json.planId).length >= 29, "مقررات القديمة (٢٩) في «السابقة»");
+    const orderless = await upload("root", 15, oldPdf);
+    check(orderless.status === 422 && orderless.json.rejection?.kind === "order", "قسم فعّالته وحدها: القديمة تُرفض (ارفع القديمة قبل الجديدة)", orderless.json);
   } finally { server.close(); }
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
