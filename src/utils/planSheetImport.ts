@@ -74,8 +74,15 @@ const MIN_UMBRELLA_COURSES = 10;
 const isUmbrellaSheet = (plan: Pick<ParsedPlan, "department">) => UMBRELLA_DEPARTMENTS.some(name => arabicMatchKey(name) === matchKey(plan.department));
 const countOfDept = (plan: Pick<ParsedPlan, "courses">, dept: string) => plan.courses.filter(course => course.dept === dept).length;
 
+/**
+ * رمز قسم الصحيفة: الغالب بين رموز مقرراتها؛ إلا برامج التربية الخاصة (BA-012…) المطبوعة باسم «علم النفس»
+ * فقسمُها المختص رمزه 19 مهما غلب غيرُه من مقررات التخصص الأول (إسلامية، رياضيات…).
+ */
+export const authorityDept = (plan: Pick<ParsedPlan, "courses" | "department" | "program">): string =>
+  isUmbrellaSheet(plan) && /^BA-012\d/i.test(plan.program) && countOfDept(plan, "19") >= MIN_UMBRELLA_COURSES ? "19" : dominantDepartment(plan);
+
 /** مفتاح قسم الصحيفة (كلية+قسم الغالبان بين مقرراتها): 0109. */
-export const sheetKey = (plan: Pick<ParsedPlan, "courses">) => `${dominantDepartment(plan, "college")}${dominantDepartment(plan)}`;
+export const sheetKey = (plan: Pick<ParsedPlan, "courses" | "department" | "program">) => `${dominantDepartment(plan, "college")}${authorityDept(plan)}`;
 
 /** اسمُ القسم المختار يطابق اسم قسم الصحيفة (احتواءً)، بلا اعتبارٍ للرمز. */
 export const sheetNameMatches = (plan: Pick<ParsedPlan, "department">, sectionName: string): boolean => {
@@ -87,7 +94,7 @@ export const sheetNameMatches = (plan: Pick<ParsedPlan, "department">, sectionNa
 export function sheetOwnKey(plan: ParsedPlan, scope: Pick<SheetScope, "departmentKey" | "sectionName" | "collegeCode">): { key: string; umbrella: boolean } {
   const sectionKey = scope.departmentKey.replace(/\D/g, "");
   const known = /^\d{4}$/.test(sectionKey), deptCode = known ? sectionKey.slice(2) : "";
-  const sheetDept = dominantDepartment(plan);
+  const sheetDept = authorityDept(plan);
   const nameMatches = matchKey(stripSection(scope.sectionName)) === matchKey(plan.department) || matchKey(scope.sectionName).includes(matchKey(plan.department)) || matchKey(plan.department).includes(matchKey(scope.sectionName));
   if (!nameMatches && !(deptCode && sheetDept === deptCode) && isUmbrellaSheet(plan) && deptCode && countOfDept(plan, deptCode) >= MIN_UMBRELLA_COURSES) {
     return { key: `${dominantDepartment(plan, "college")}${deptCode}`, umbrella: true };
@@ -96,7 +103,7 @@ export function sheetOwnKey(plan: ParsedPlan, scope: Pick<SheetScope, "departmen
 }
 
 /** هل تُقبل هذه الصحيفة لهذا القسم؟ null = تُقبل. لا يُكتب شيءٌ قبل أن تمرّ كل الفحوص. */
-export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejection | null {
+export function checkSheetScope(plan: ParsedPlan, scope: SheetScope, opts: { force?: boolean } = {}): SheetRejection | null {
   if (!plan.courses.length || !plan.college || !plan.department) {
     return { kind: "unreadable", message: "لم تُقرأ الكلية أو القسم أو المقررات من الملف. ارفع «الخطة الدراسية» PDF كما تطبعها SWRCAPP (نصاً لا صورة)." };
   }
@@ -109,14 +116,15 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
   const sectionKey = scope.departmentKey.replace(/\D/g, "");
   const known = /^\d{4}$/.test(sectionKey);
   const collegeCode = scope.collegeCode || (known ? sectionKey.slice(0, 2) : ""), deptCode = known ? sectionKey.slice(2) : "";
-  const sheetDept = dominantDepartment(plan), sheetCollege = dominantDepartment(plan, "college");
+  const sheetDept = authorityDept(plan), sheetCollege = dominantDepartment(plan, "college");
   const collegeDiffers = !(matchKey(scope.collegeName).includes(matchKey(plan.college)) || matchKey(plan.college).includes(matchKey(scope.collegeName)))
     || (Boolean(collegeCode) && sheetCollege !== collegeCode);
   const nameMatches = matchKey(stripSection(scope.sectionName)) === matchKey(plan.department)
     || matchKey(scope.sectionName).includes(matchKey(plan.department)) || matchKey(plan.department).includes(matchKey(scope.sectionName));
   const codeMatches = Boolean(deptCode) && sheetDept === deptCode;
   const umbrella = !nameMatches && !codeMatches && isUmbrellaSheet(plan) && Boolean(deptCode) && countOfDept(plan, deptCode) >= MIN_UMBRELLA_COURSES;
-  if (collegeDiffers || (!nameMatches && !codeMatches && !umbrella)) {
+  /* force: اختار المسؤول هذا القسم صراحةً بعد أن رأى الاختلاف؛ الكلية تبقى شرطاً. */
+  if (collegeDiffers || (!opts.force && !nameMatches && !codeMatches && !umbrella)) {
     const fields: SheetMismatch["fields"] = [...(collegeDiffers ? ["college" as const] : []), ...(!nameMatches && !codeMatches ? ["department" as const] : [])];
     const mismatch: SheetMismatch = {
       fields,
@@ -140,14 +148,15 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
  */
 export function sheetSectionName(plan: Pick<ParsedPlan, "department">, currentName: string): string {
   const a = matchKey(currentName), b = matchKey(plan.department);
-  if (!b || a === b) return "";
+  /* اسم «علم النفس/علم التربية» قسمٌ إداري لا اسم القسم المختص: لا يُسمّى به. */
+  if (!b || a === b || isUmbrellaSheet(plan)) return "";
   const bare = stripSection(plan.department);
   return /^\s*قسم\s/.test(currentName) ? `قسم ${bare}` : bare;
 }
 
 /** رمز القسم من الصحيفة بنمط رمزه الحالي (أربع خانات إن كان بالهيئة، وإلا خانتان)؛ فارغ إن طابق. */
-export function sheetSectionCode(plan: Pick<ParsedPlan, "courses">, currentCode: string): string {
-  const dept = dominantDepartment(plan), current = String(currentCode || "").replace(/\D/g, "");
+export function sheetSectionCode(plan: Pick<ParsedPlan, "courses" | "department" | "program">, currentCode: string): string {
+  const dept = authorityDept(plan), current = String(currentCode || "").replace(/\D/g, "");
   const next = /^\d{4}$/.test(current) ? sheetKey(plan) : dept;
   return current && current.replace(/^0+(?=\d)/, "") === next.replace(/^0+(?=\d)/, "") ? "" : (dept ? next : "");
 }
@@ -191,12 +200,16 @@ export function sheetToReference(plan: ParsedPlan, own: readonly PlanCourse[], n
     const courses = own.filter(course => course.groupId === group.id).map(course => {
       const prerequisites = [...course.prereqAll];
       let externalAlternative: string | undefined;
+      const anyOf: string[][] = [];
       for (const any of course.prereqAny) {
         const real = any.filter(code => code !== "PEN");
-        if (any.includes("PEN") && real.length === 1) { prerequisites.push(real[0]); externalAlternative = "PEN"; }
-        else notes.push(`«${names.get(course.codeKey) || course.name}»: متطلبٌ «${any.join(" أو ")}» بين مقررين لا تدعمه القواعد؛ لم يُقيَّد به.`);
+        if (any.includes("PEN")) {
+          /* PEN اختبارٌ لا مقرر: «أ أو PEN» يبقى نصيحةً بالمطبوع بلا إلزام. */
+          if (real.length === 1) { prerequisites.push(real[0]); externalAlternative = "PEN"; }
+          else notes.push(`«${names.get(course.codeKey) || course.name}»: متطلبٌ «${any.join(" أو ")}» لا يُقيَّد.`);
+        } else if (real.length > 1) anyOf.push([...new Set(real)]);
       }
-      return { code: course.codeKey, name: names.get(course.codeKey) || course.name, credit: course.units, hours: course.hours, prerequisites: [...new Set(prerequisites)], ...(externalAlternative ? { externalAlternative } : {}) };
+      return { code: course.codeKey, name: names.get(course.codeKey) || course.name, credit: course.units, hours: course.hours, prerequisites: [...new Set(prerequisites)], ...(anyOf.length ? { anyOf } : {}), ...(externalAlternative ? { externalAlternative } : {}) };
     });
     if (!courses.length) continue;
     groups.push({ id: group.id, name: group.name, category: plan.sections.find(section => section.no === group.sectionNo)?.name || "", requiredUnits: group.units ?? group.offeredUnits, elective: group.kind === "elective", courses });

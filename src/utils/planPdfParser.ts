@@ -305,7 +305,13 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
     }
   });
 
-  for (const item of pendingAll) {
+  /* سطرٌ برمزٍ وحده (بلا اسمٍ ولا وحدات ولا ساعات) لكليةٍ غير كلية الصحيفة: إحالةٌ إلى مقررٍ خارجي (صحيفة 1996)، لا مقررٌ منها. */
+  const collegeCount = new Map<string, number>();
+  for (const course of plan.courses) collegeCount.set(course.college, (collegeCount.get(course.college) || 0) + 1);
+  const mainCollege = [...collegeCount].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  const references = new Set(pendingAll.filter(item => item.unitsMissing && item.hoursMissing && !item.course.name && item.course.college !== mainCollege).map(item => item.course));
+  if (references.size) plan.courses = plan.courses.filter(course => !references.has(course));
+  for (const item of pendingAll.filter(entry => !references.has(entry.course))) {
     if (item.unitsMissing) warnings.push(`مقرر ${item.course.code}: لم تُقرأ الوحدات`);
     if (item.hoursMissing) warnings.push(`مقرر ${item.course.code}: لم تُقرأ الساعات`);
   }

@@ -125,8 +125,15 @@ export function buildReferenceRules(reference: CurriculumReference, memberIdByCo
         if (needId && !all.includes(needId)) all.push(needId);
         else if (!needId && !skipCodes.has(referenceCodeKey(need))) notes.push(`متطلب «${need}» لمقرر «${course.name}» غير موجود في كتالوج الموقع.`);
       }
+      /* «أ أو ب»: مجموعةٌ يكفي واحدٌ منها؛ لا تُقيَّد إلا حين توجد كل أعضائها في الكتالوج، وإلا فالتقييد بالموجود وحده يحجب من اجتاز الآخر. */
+      const anyOf: number[][] = [];
+      for (const group of course.anyOf || []) {
+        const ids = group.map(code => knownIdByCode.get(referenceCodeKey(code)));
+        if (ids.every(Boolean)) anyOf.push([...new Set(ids as number[])]);
+        else notes.push(`متطلب «${group.join(" أو ")}» لمقرر «${course.name}» غير موجود في كتالوج الموقع.`);
+      }
       /* بديلٌ خارجي (PEN): لا يُقيَّد به المقرر، فالمتطلب المطبوع وحده يكفي أن يُنصح به لا أن يُشترط. */
-      if (all.length && !course.externalAlternative) rule.prereq = { all, anyOf: [] };
+      if ((all.length || anyOf.length) && !course.externalAlternative) rule.prereq = { all, anyOf };
       if (group.elective) { rule.groupId = `${reference.id}-${group.id}`; members.push(id); }
       rules.push(rule);
     }

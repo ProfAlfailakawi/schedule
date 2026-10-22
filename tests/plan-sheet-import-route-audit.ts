@@ -28,6 +28,8 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
       { AdSectionId: 51, AdCollegeId: 1, AdSectionCode: "18", AdSectionName: "قسم اللغة الإنجليزية" },
       { AdSectionId: 52, AdCollegeId: 1, AdSectionCode: "21", AdSectionName: "قسم المناهج وطرق التدريس" },
       { AdSectionId: 53, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم آخر برمز تسعة" },
+      { AdSectionId: 61, AdCollegeId: 1, AdSectionCode: "24", AdSectionName: "قسم الحاسوب" },
+      { AdSectionId: 71, AdCollegeId: 2, AdSectionCode: "88", AdSectionName: "قسم اسم خطأ" },
       { AdSectionId: 41, AdCollegeId: 1, AdSectionCode: "19", AdSectionName: "قسم التربية الخاصة" },
       { AdSectionId: 31, AdCollegeId: 3, AdSectionCode: "09", AdSectionName: "قسم الوسائل التعليمية" },
       { AdSectionId: 16, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
@@ -60,8 +62,8 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const pdf = fs.readFileSync("tests/fixtures/plans/tech-edu-2026.pdf");
   const oldPdf = fs.readFileSync("tests/fixtures/plans/tech-edu-2010.pdf");
-  const upload = async (who: string, sectionId: number, body: Buffer = pdf) => {
-    const res = await fetch(`${base}/api/plan-review/sheet/import?sectionId=${sectionId}`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body });
+  const upload = async (who: string, sectionId: number, body: Buffer = pdf, force = false) => {
+    const res = await fetch(`${base}/api/plan-review/sheet/import?sectionId=${sectionId}${force ? "&force=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body });
     return { status: res.status, json: await res.json().catch(() => ({})) as any };
   };
   try {
@@ -156,17 +158,38 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     /* المسبقات: مسبقٌ لمقررِ قسمٍ آخر لم يُرفع بعد يُعدّ ولا يضيع، ثم يُربط حين يوجد المقرر بإعادة الرفع */
     const english = fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0116.pdf");
     const firstEnglish = await upload("root", 51, english);
+    check(JSON.stringify(firstEnglish.json.unresolved) === JSON.stringify(["0109425", "0121322"]), "التقرير يذكر رموز المسبقات غير الموجودة", firstEnglish.json.unresolved);
     check(firstEnglish.status === 200 && firstEnglish.json.unlinked === 2, "مسبقٌ من قسمٍ لم يُرفع: يُعدّ ولا يُربط", firstEnglish.json);
     await Repository.createCourse(1, 52, "322", "مقرر المناهج", 3, 3, 0, false);
     await Repository.createCourse(1, 53, "425", "مقرر آخر", 3, 3, 0, false);
     const secondEnglish = await upload("root", 51, english);
-    check(secondEnglish.status === 200 && secondEnglish.json.unlinked === 0, "بعد وجود المقرر: كل المسبقات مربوطة", secondEnglish.json);
+    check(secondEnglish.status === 200 && secondEnglish.json.unlinked === 0 && secondEnglish.json.prereqLinked === secondEnglish.json.prereqPrinted && firstEnglish.json.prereqLinked === firstEnglish.json.prereqPrinted - 2, "بعد وجود المقرر: كل المسبقات المطبوعة مربوطة (٢ كانت ناقصة)", [firstEnglish.json.prereqLinked, firstEnglish.json.prereqPrinted, secondEnglish.json.prereqLinked]);
     const englishDraft = (await Repository.listRuleDrafts()).find(row => row.planId === secondEnglish.json.planId);
     const needy = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 51 && String(row.CourseCode) === "454");
     const depA = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 52 && String(row.CourseCode) === "322");
     const depB = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 53 && String(row.CourseCode) === "425");
     const rule = englishDraft?.rules.find(item => item.courseId === Number(needy?.AdCourseId));
     check(Boolean(rule?.prereq?.all?.includes(Number(depA?.AdCourseId)) && rule?.prereq?.all?.includes(Number(depB?.AdCourseId))), "المسبقان من القسمين الآخرين يظهران في قاعدة المقرر", rule);
+
+    /* الرفع التلقائي: اسمٌ مختلف («الحاسوب» و«معلم الحاسب») ورمز الهيئة نفسه (0124) يكفي، ويُسمّى القسم من الصحيفة */
+    const computer = await upload("root", 0, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0136.pdf"));
+    check(computer.status === 200 && computer.json.auto === true && (await Repository.getSections()).find(row => Number(row.AdSectionId) === 61)?.AdSectionName === "قسم معلم الحاسب", "تلقائي: اسمٌ مختلف ورمز الهيئة واحد يُقبل ويُسمّى القسم من الصحيفة", computer.json);
+
+    /* اسمٌ ورمزٌ خطأ معاً: يُرفض بالمقارنة، ويُقبل بعد أن يختار المسؤول القسم صراحةً (والكلية تبقى شرطاً) فيُصحَّح اسمه ورمزه */
+    const bothWrong = await upload("root", 71);
+    check(bothWrong.status === 422 && bothWrong.json.rejection?.kind === "department", "اسمٌ ورمزٌ خطأ معاً: يُرفض ويُعرض الاختلاف", bothWrong.json);
+    const forced = await upload("root", 71, pdf, true);
+    const fixed = (await Repository.getSections()).find(row => Number(row.AdSectionId) === 71);
+    check(forced.status === 200 && fixed?.AdSectionName === "قسم تكنولوجيا التعليم" && fixed?.AdSectionCode === "09", "رفعٌ صريح: الاسم والرمز يُصحَّحان من الصحيفة", forced.json);
+    check((await upload("root", 71, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0105.pdf"), true)).status === 200, "الرفع الصريح يقبل أي صحيفةٍ للقسم المختار صراحةً (قراره للمسؤول)");
+    check((await Repository.getSections()).find(row => Number(row.AdSectionId) === 41)?.AdSectionName === "قسم التربية الخاصة", "التربية الخاصة لا تُسمّى «علم النفس» من ترويسة صحيفتها");
+
+    /* قراءة الترويسة بلا كتابة (لتصفية الدفعة) */
+    const scanOf = async (who: string, body: Buffer) => { const res = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body }); return { status: res.status, json: await res.json().catch(() => ({})) as any }; };
+    const scanned = await scanOf("root", oldPdf);
+    check(scanned.status === 200 && scanned.json.program === "BA-0115" && scanned.json.year === 2010 && scanned.json.isNew === false && scanned.json.readable === true, "قراءة الترويسة: البرنامج والسنة والجديدة/القديمة", scanned.json);
+    check((await scanOf("other", oldPdf)).status === 403 && (await scanOf("root", Buffer.from("x"))).status === 422, "القراءة للحساب الرئيسي وPDF فقط");
+    check(Array.isArray(auto.json.sections) && auto.json.sections.length >= 2 && typeof auto.json.nameFixes === "number", "ردّ الرفع التلقائي يحمل أقسامه ليُحرَّر منه التقرير", auto.json);
   } finally { server.close(); }
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
