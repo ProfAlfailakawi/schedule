@@ -5,6 +5,7 @@
  * الرفضُ صندوقٌ أحمر قصير بأيقونات، بلا نصٍّ طويل.
  */
 import React, { useState } from "react";
+import { AR, countOf } from "../utils/arabicCount";
 import { AlertTriangle, Building2, CheckCircle2, FileText, GraduationCap, FileUp, FileX2, Link2, MousePointerClick, PencilLine, Plus, SearchX, ShieldAlert, X } from "lucide-react";
 
 interface SectionOption { sectionId: number; label: string; sites: number }
@@ -55,7 +56,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
         <div><b>رفع الخطة الدراسية لقسم</b><small>PDF من SWRCAPP · مقررات القسم وحدها · يعتمدها القسم بعد الرفع</small></div>
         <div className="pr-import-actions">
           <select aria-label="قسم الصحيفة" value={chosen} disabled={busy} onChange={e => { setChosen(Number(e.target.value)); setRejection(null); setOutcome(null); }}>
-            {targets.map(item => <option key={item.sectionId} value={item.sectionId}>{item.label}{item.sites > 1 ? ` (${item.sites} مواقع)` : ""}</option>)}
+            {targets.map(item => <option key={item.sectionId} value={item.sectionId}>{item.label}{item.sites > 1 ? ` (${countOf(item.sites, AR.site)})` : ""}</option>)}
           </select>
           <label className={`btn btn-primary${busy ? " is-busy" : ""}`}>
             <FileUp aria-hidden="true" size={16} /> {busy ? "جارٍ القراءة…" : "ارفع الصحيفة"}
@@ -96,7 +97,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
           <span title="مقررات جديدة"><Plus aria-hidden="true" /> {outcome.created}</span>
           <span title="مقررات صُحّحت"><PencilLine aria-hidden="true" /> {outcome.updated}</span>
           <span title="رُبطت بالصحيفة"><Link2 aria-hidden="true" /> {outcome.linked}</span>
-          <small>{outcome.planName} · بانتظار اعتماد القسم{outcome.sites > 1 ? ` · ${outcome.sites} مواقع` : ""}</small>
+          <small>{outcome.planName} · بانتظار اعتماد القسم{outcome.sites > 1 ? ` · ${countOf(outcome.sites, AR.site)}` : ""}</small>
         </div>
       ) : null}
     </section>
