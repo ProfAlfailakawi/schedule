@@ -153,6 +153,39 @@ export interface AdInstructor {
   AdInstructorLoad?: number;
 }
 
+/**
+ * ── إدارة النصاب التدريسي (ميزةٌ اختيارية) ───────────────────────────────────
+ *
+ * درجاتٌ علمية بنصابٍ أدنى وأعلى بالساعات، وإسنادٌ لكل عضو (الدرجة، ونصابٌ خاصٌّ إن لزم، وساعاتٌ
+ * إضافيةٌ مسموحة). وثيقةٌ واحدة (`main`): والميزةُ معطَّلةٌ حتى يفعّلها المسؤول، فلا أثرَ لها قبل ذلك.
+ * مستقلّةٌ عن `AdInstructorLoad` القائم (سقفُ المقترحات الدراسية)؛ لا تقرؤه ولا تكتب فيه.
+ */
+export interface AcademicRank {
+  id: string;
+  name: string;
+  minHours: number;
+  maxHours: number;
+}
+
+export interface TeachingLoadAssignment {
+  rankId?: string;
+  /** نصابٌ خاصّ بالعضو يتقدّم على نصاب درجته؛ غيابه = نصابُ الدرجة. */
+  minHours?: number;
+  maxHours?: number;
+  /** ساعاتٌ إضافيةٌ مسموحة فوق الحدّ الأعلى (انتدابٌ أو إشرافٌ أو ما يقرّه المسؤول). */
+  extraHours?: number;
+}
+
+export interface TeachingLoadConfig {
+  id: "main";
+  enabled: boolean;
+  ranks: AcademicRank[];
+  /** مفتاحُه رقمُ عضو هيئة التدريس. */
+  assignments: Record<string, TeachingLoadAssignment>;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
 export interface AdCourse {
   AdCourseId: number;
   AdCollegeId: number;

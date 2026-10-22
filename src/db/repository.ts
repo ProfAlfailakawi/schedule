@@ -1,4 +1,5 @@
 import { departmentFamily } from "../utils/sectionLabel";
+import { TEACHING_LOAD_DOC_ID, normalizeTeachingLoadConfig } from "../utils/teachingLoad";
 import { normalizeArabicText } from "../utils/arabicText";
 import fs from "fs";
 import { chooseStudentCaseSecret, STUDENT_CASE_SECRET_CONFLICT_MESSAGE, type StudentCaseSecretChoice } from "../server/studentCaseSecret";
@@ -58,6 +59,7 @@ import {
   StudyProposal,
   VisitingRoster,
   DepartmentDelegateDirectory,
+  TeachingLoadConfig,
   DepartmentRoomDirectory,
   RegistrationStats,
   StudentNeed,
@@ -258,6 +260,7 @@ interface DBState {
   degreeRules?: AdDegreeRule[];
   visitingRosters?: VisitingRoster[];
   departmentDelegates?: DepartmentDelegateDirectory[];
+  teachingLoadConfig?: TeachingLoadConfig[];
   departmentRooms?: DepartmentRoomDirectory[];
   registrationStats?: RegistrationStats[];
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
@@ -876,6 +879,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.degreeRules)) db.degreeRules = [];
       if (!Array.isArray(db.visitingRosters)) db.visitingRosters = [];
       if (!Array.isArray(db.departmentDelegates)) db.departmentDelegates = [];
+      if (!Array.isArray(db.teachingLoadConfig)) db.teachingLoadConfig = [];
       if (!Array.isArray(db.departmentRooms)) db.departmentRooms = [];
       if (!Array.isArray(db.scheduleDecisionMemories)) db.scheduleDecisionMemories = [];
       if (!Array.isArray(db.campusMobilityProfiles)) db.campusMobilityProfiles = [];
@@ -6125,6 +6129,27 @@ export const Repository = {
     db.departmentDelegates = [...(db.departmentDelegates || []).filter(item => item.scopeKey !== scopeKey), row];
     saveDatabase();
     return unique;
+  },
+
+  /* ── النصاب التدريسي: وثيقةٌ واحدة (`main`) ─────────────────────────────────
+   * معطَّلةٌ حتى يفعّلها المسؤول؛ وقراءةُ ما لم يُكتب بعدُ ترجع إعداداً فارغاً معطَّلاً، لا خطأً. */
+  getTeachingLoadConfig: async (): Promise<TeachingLoadConfig> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("teachingLoadConfig").doc(TEACHING_LOAD_DOC_ID).get();
+      return normalizeTeachingLoadConfig(doc.exists ? doc.data() : null);
+    }
+    return normalizeTeachingLoadConfig((db.teachingLoadConfig || [])[0]);
+  },
+
+  saveTeachingLoadConfig: async (config: unknown, updatedBy?: string): Promise<TeachingLoadConfig> => {
+    const row = { ...normalizeTeachingLoadConfig(config), updatedAt: new Date().toISOString(), ...(updatedBy ? { updatedBy } : {}) };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("teachingLoadConfig").doc(TEACHING_LOAD_DOC_ID).set(row, { merge: false });
+      return row;
+    }
+    db.teachingLoadConfig = [row];
+    saveDatabase();
+    return row;
   },
 
   /* ── منتدبو القسم للعائلة كلها (departmentFamily في sectionLabel) ─────────
