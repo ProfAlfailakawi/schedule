@@ -61,6 +61,8 @@ export interface DemoSandboxState {
   /* سجلُّ المباني والقاعات: بدونه لا يُحفظ موعدٌ في الصندوق (locationPreflight). */
   locationBuildings: MasterBuilding[]; locationRooms: MasterRoom[];
   registrationStats?: any[];
+  /* النصاب التدريسي (ميزةٌ اختيارية مفعَّلةٌ في الصندوق لتُشرح): انظر DEMO_TEACHING_LOAD. */
+  teachingLoadConfig?: any[];
 }
 
 function syntheticInstructors(): AdInstructor[] {
@@ -194,6 +196,29 @@ const OFFERINGS: Record<number, ReadonlyArray<readonly [code: string, sections: 
     ["0109114", 1], ["0109125", 1], ["0109135", 1], ["0109217", 1], ["0109227", 1], ["0109235", 1],
     ["0109247", 1], ["0109344", 1], ["0109354", 1],
   ],
+};
+
+/* ── النصاب التدريسي في الديمو ────────────────────────────────────────────────
+ *
+ * أربعُ درجات، وإسنادٌ لبعض أعضاء القسم يُري الحالتين معاً على جدول الفصل الجاري:
+ *   ضمن النصاب : (4) أستاذ مشارك 13 من 13 · (5) أستاذ مشارك 15 من 13+2 إضافية · (6) أستاذ 11 من 12 · (8) أستاذ مساعد 12 من 15
+ *   تجاوز      : (3) أستاذ 13 من 12 ← ساعةٌ واحدة · (12) أستاذ مساعد 19 من 15 ← أربع ساعات
+ *   دون الأدنى : (2) أستاذ مساعد 7 من 12 (للإعداد وحده؛ لا يُنبَّه به المخطّط)
+ * الأرقامُ نتيجةُ جدولٍ مبنيٍّ بخوارزميةٍ حتمية، ويحرسها اختبارُ النصاب فلا تنحرف بصمت. */
+export const DEMO_TEACHING_LOAD_RANKS = [
+  { id: "rank-professor", name: "أستاذ", minHours: 9, maxHours: 12 },
+  { id: "rank-associate", name: "أستاذ مشارك", minHours: 10, maxHours: 13 },
+  { id: "rank-assistant", name: "أستاذ مساعد", minHours: 12, maxHours: 15 },
+  { id: "rank-lecturer", name: "مدرّس", minHours: 12, maxHours: 15 },
+] as const;
+export const DEMO_TEACHING_LOAD_ASSIGNMENTS: Record<string, { rankId: string; extraHours?: number }> = {
+  "2": { rankId: "rank-assistant" },
+  "3": { rankId: "rank-professor" },
+  "4": { rankId: "rank-associate" },
+  "5": { rankId: "rank-associate", extraHours: 2 },
+  "6": { rankId: "rank-professor" },
+  "8": { rankId: "rank-assistant" },
+  "12": { rankId: "rank-assistant" },
 };
 
 const COHORT_SIZE = 6;
@@ -741,6 +766,10 @@ export function createDemoSandboxState(): DemoSandboxState {
       confidence: 0, historyTerms: 0, status: "pending",
     }], scheduleApprovals: seeded.approvals,
     locationBuildings: registry.buildings, locationRooms: registry.rooms,
+    teachingLoadConfig: [{
+      id: "main", enabled: true, ranks: DEMO_TEACHING_LOAD_RANKS.map(rank => ({ ...rank })),
+      assignments: structuredClone(DEMO_TEACHING_LOAD_ASSIGNMENTS), updatedAt: now, updatedBy: "بيانات الديمو",
+    }],
     registrationStats: [
       {
         id: planScope, scopeKey: planScope, collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID,
