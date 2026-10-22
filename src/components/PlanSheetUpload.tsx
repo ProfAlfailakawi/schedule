@@ -33,10 +33,11 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   const [rejection, setRejection] = useState<Rejection | null>(null);
   const [error, setError] = useState("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [batch, setBatch] = useState<{ done: number; total: number; ok: number; failed: Array<{ name: string; reason: string }> } | null>(null);
 
   const upload = async (file: File | undefined) => {
     if (!file || !chosen) return;
-    setBusy(true); setRejection(null); setError(""); setOutcome(null);
+    setBusy(true); setRejection(null); setError(""); setOutcome(null); setBatch(null);
     try {
       const response = await fetch(`/api/plan-review/sheet/import?sectionId=${chosen}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await file.arrayBuffer() });
       const data = await response.json().catch(() => ({} as any));
@@ -46,6 +47,26 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
       onDone(Number(data.sectionId || chosen), String(data.planId || ""));
     } catch (e: any) { setError(e.message || "تعذّر رفع الصحيفة"); }
     finally { setBusy(false); }
+  };
+
+  /* رفعُ كل الملفات دفعة واحدة: كل صحيفة تُوجَّه تلقائياً إلى قسمها باسمه، وما لم يُعرف قسمه يُذكر باسم ملفه. */
+  const uploadAll = async (files: File[]) => {
+    if (!files.length) return;
+    setBusy(true); setRejection(null); setError(""); setOutcome(null);
+    const state = { done: 0, total: files.length, ok: 0, failed: [] as Array<{ name: string; reason: string }> };
+    setBatch({ ...state });
+    let last = { sectionId: 0, planId: "" };
+    for (const file of files) {
+      try {
+        const response = await fetch("/api/plan-review/sheet/import", { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await file.arrayBuffer() });
+        const data = await response.json().catch(() => ({} as any));
+        if (response.ok) { state.ok += 1; last = { sectionId: Number(data.sectionId || 0), planId: String(data.planId || "") }; }
+        else state.failed.push({ name: file.name.replace(/\.pdf$/i, ""), reason: SHORT[data.rejection?.kind]?.title || ({ department: "لا قسم بهذا الاسم", college: "كلية أخرى" } as Record<string, string>)[data.rejection?.kind] || data.error || "تعذّر" });
+      } catch { state.failed.push({ name: file.name.replace(/\.pdf$/i, ""), reason: "تعذّر الرفع" }); }
+      state.done += 1; setBatch({ ...state, failed: [...state.failed] });
+    }
+    setBusy(false);
+    if (state.ok && last.sectionId) onDone(last.sectionId, last.planId);
   };
 
   const short = rejection ? SHORT[rejection.kind] : undefined;
@@ -61,6 +82,10 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
           <label className={`btn btn-primary${busy ? " is-busy" : ""}`}>
             <FileUp aria-hidden="true" size={16} /> {busy ? "جارٍ القراءة…" : "ارفع الصحيفة"}
             <input type="file" accept="application/pdf,.pdf" hidden disabled={busy || !chosen} aria-label="الخطة الدراسية PDF" onChange={e => { void upload(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+          <label className={`btn btn-secondary${busy ? " is-busy" : ""}`} data-guide-ignore="رفع كل الصحائف دفعة واحدة داخل شاشة مراجعة الصحيفة">
+            <FileUp aria-hidden="true" size={16} /> ارفع كل الصحف
+            <input type="file" accept="application/pdf,.pdf" multiple hidden disabled={busy} aria-label="كل الخطط الدراسية PDF دفعة واحدة" onChange={e => { void uploadAll([...(e.target.files || [])].slice(0, 120)); e.target.value = ""; }} />
           </label>
         </div>
       </div>
@@ -89,6 +114,15 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
             </div>
           ) : short ? <p className="section-plan-reject-short" aria-hidden="true"><short.icon /> <b>{short.title}</b> <span>· {short.hint}</span></p>
             : <p className="section-plan-reject-short">{rejection.message}</p>}
+        </div>
+      ) : null}
+      {batch ? (
+        <div className="pr-sheet-result" role="status">
+          <CheckCircle2 aria-hidden="true" />
+          <span title="دخلت"><Plus aria-hidden="true" /> {batch.ok}</span>
+          <span title="لم تدخل"><X aria-hidden="true" /> {batch.failed.length}</span>
+          <small>{batch.done < batch.total ? `${batch.done} / ${batch.total}` : "تم"}</small>
+          {batch.failed.length ? <ul>{batch.failed.map((item, index) => <li key={index}><b>{item.name}</b> · {item.reason}</li>)}</ul> : null}
         </div>
       ) : null}
       {outcome ? (

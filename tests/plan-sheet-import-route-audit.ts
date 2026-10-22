@@ -123,6 +123,13 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check(plans16.length === 2 && plans16.some(plan => plan.status === "active") && plans16.some(plan => plan.status === "transition"), "صحيفتان للقسم: فعّالة وسابقة");
     const orderless = await upload("root", 15, oldPdf);
     check(orderless.status === 422 && orderless.json.rejection?.kind === "order", "قسم فعّالته وحدها: القديمة تُرفض (ارفع القديمة قبل الجديدة)", orderless.json);
+
+    /* بلا قسمٍ مختار: تُوجَّه الصحيفة إلى الأقسام التي يطابق اسمُها قسمَها، ولا قسمَ بالاسم: رفضٌ بلا كتابة */
+    const auto = await upload("root", 0, pdf);
+    check(auto.status === 200 && auto.json.auto === true && auto.json.tracks >= 2, "رفع تلقائي: الصحيفة تصل أقسامها كلها باسمها", auto.json);
+    const beforeMath = JSON.stringify(await Repository.getCourses());
+    const mathMissing = await upload("root", 0, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0105.pdf"));
+    check(mathMissing.status === 422 && mathMissing.json.rejection?.kind === "department" && JSON.stringify(await Repository.getCourses()) === beforeMath, "رفع تلقائي: قسم الرياضيات غير موجود يُرفض بلا كتابة", mathMissing.json);
   } finally { server.close(); }
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);

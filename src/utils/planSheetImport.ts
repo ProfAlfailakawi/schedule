@@ -77,6 +77,12 @@ const countOfDept = (plan: Pick<ParsedPlan, "courses">, dept: string) => plan.co
 /** مفتاح قسم الصحيفة (كلية+قسم الغالبان بين مقرراتها): 0109. */
 export const sheetKey = (plan: Pick<ParsedPlan, "courses">) => `${dominantDepartment(plan, "college")}${dominantDepartment(plan)}`;
 
+/** اسمُ القسم المختار يطابق اسم قسم الصحيفة (احتواءً)، بلا اعتبارٍ للرمز. */
+export const sheetNameMatches = (plan: Pick<ParsedPlan, "department">, sectionName: string): boolean => {
+  const a = matchKey(stripSection(sectionName)), b = matchKey(plan.department);
+  return Boolean(b) && (a === b || matchKey(sectionName).includes(b) || b.includes(a));
+};
+
 /** مفتاح مقررات القسم المختار من الصحيفة: الغالب فيها، أو رمز القسم نفسه في صحائف القسم الإداري. */
 export function sheetOwnKey(plan: ParsedPlan, scope: Pick<SheetScope, "departmentKey" | "sectionName" | "collegeCode">): { key: string; umbrella: boolean } {
   const sectionKey = scope.departmentKey.replace(/\D/g, "");
