@@ -214,6 +214,17 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     const restored = await call("root", "POST", "/api/plan-review/previous-plans", { action: "restore", sectionIds: [21] });
     check(restored.json.changed === 1 && (await Repository.getCurriculumPlans(21)).some(plan => plan.status === "transition") && (await Repository.getOperationalCourseIds(21)).size === operationalBefore.size && (await call("root", "GET", "/api/plan-review/previous-ended?sectionId=21")).json.ended === false, "«أعد السابقة» تتراجع كلياً", restored.json);
 
+    /* أقسامٌ بلا صحائف: الأشيع من الصحائف الأخرى يصحّح مقرراتها، وما في صحيفةٍ فعّالة لا يُمسّ */
+    const reconcileCall = (who: string, courses: unknown[]) => call(who, "POST", "/api/plan-review/sheet/reconcile", { courses });
+    const c105Before = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 21 && row.CourseCode === "105")!;
+    const reconciled = await reconcileCall("root", [{ key: "0121322", name: depA!.CourseName, units: depA!.CourseCredit, hours: depA!.CourseHours }, { key: "0109105", name: "اسم آخر", units: 9, hours: 9 }]);
+    const depBack = (await Repository.getCourses()).find(row => Number(row.AdCourseId) === Number(depA!.AdCourseId))!, c105After = (await Repository.getCourses()).find(row => row.AdCourseId === c105Before.AdCourseId)!;
+    check(reconciled.json.updated === 1 && depBack.CourseName === depA!.CourseName && depBack.CourseCredit === depA!.CourseCredit && depBack.CourseHours === depA!.CourseHours && depBack.MaxStudent === 40, "قسمٌ بلا صحيفة: مقرره يُصحَّح بالأشيع والسعة كما هي", [reconciled.json, depBack]);
+    check(c105After.CourseName === c105Before.CourseName && c105After.CourseCredit === c105Before.CourseCredit, "مقررٌ في صحيفة فعّالة (قسمٌ له صحيفة) لا يُمسّه التجميع");
+    check((await reconcileCall("other", [])).status === 403, "التجميع للحساب الرئيسي وحده");
+    const scanEnglish = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": "root" }, body: english }).then(res => res.json()) as any;
+    check(Array.isArray(scanEnglish.others) && scanEnglish.others.length > 5 && scanEnglish.others.every((item: any[]) => item.length === 4 && /^\d{7}$/.test(String(item[0]))), "قراءة الترويسة تعيد مقررات الأقسام الأخرى للتجميع", scanEnglish.others?.slice(0, 2));
+
     /* قراءة الترويسة بلا كتابة (لتصفية الدفعة) */
     const scanOf = async (who: string, body: Buffer) => { const res = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body }); return { status: res.status, json: await res.json().catch(() => ({})) as any }; };
     const scanned = await scanOf("root", oldPdf);

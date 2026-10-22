@@ -32,6 +32,7 @@ import { collegeBranchRoot } from "../utils/branchScope";
 import { rowsToDrafts, type ImportPlan, type RuleImportRow } from "../utils/curriculumRulesImport";
 import { academicDigits, authorityDepartmentCode } from "../utils/authorityAcademicCodes";
 import { branchAudience } from "../utils/referenceApply";
+import { correctCourseName } from "../utils/courseNameCorrection";
 import { blockingWarnings, checkSheetScope, correctedNames, isNewSheet, sheetKey, sheetNameMatches, sheetOwnKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
 import { parsePlanItems } from "../utils/planPdfParser";
 import { extractPlanItems, PLAN_PDF_MAX_BYTES } from "./planPdfExtract";
@@ -522,8 +523,48 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     if (!body?.length || body.subarray(0, 5).toString("latin1") !== "%PDF-") { res.status(422).json({ error: "الملف ليس PDF." }); return; }
     try {
       const sheet = parsePlanItems(await extractPlanItems(body));
-      res.json({ program: sheet.program, programName: sheet.programName, year: sheet.startYear, department: sheet.department, isNew: isNewSheet(sheet), readable: sheet.courses.length > 0 && blockingWarnings(sheet).length === 0 });
+      const fresh = isNewSheet(sheet), ownKeys = new Set(ownCourses(sheet, sheetKey(sheet)).map(course => course.codeKey));
+      /* مقررات الأقسام الأخرى في الجديدة (تُجمع من كل الصحائف فيُعتمد الأشيع منها للأقسام التي لا صحيفة لها). */
+      const others = fresh ? sheet.courses.filter(course => !ownKeys.has(course.codeKey)).map(course => [course.codeKey, course.name, course.units, course.hours]) : [];
+      res.json({ program: sheet.program, programName: sheet.programName, year: sheet.startYear, department: sheet.department, isNew: fresh, readable: sheet.courses.length > 0 && blockingWarnings(sheet).length === 0, others });
     } catch { res.status(422).json({ error: "تعذّرت قراءة الملف." }); }
+  });
+
+  /* ── أقسامٌ لا صحيفة لها: مقرراتها ووحداتها وساعاتها من الصحائف الأخرى ─────────────────────────────
+     بعد دفعة الرفع تُرسل الواجهةُ الأشيعَ بين الصحائف الجديدة لكل مقرر قسمٍ آخر؛ فيُصحَّح به مقرر قسمٍ لم تدخل مقرراتُه صحيفةً فعّالة
+     (صاحب الصحيفة يصحّح مقرراته من صحيفته)، ومن لا أغلبية له يُذكر ولا يُمسّ. السعة لا تُلمس. */
+  app.post("/api/plan-review/sheet/reconcile", sheetLimit, deps.requireAuth, express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
+    if (!deps.isRootAdmin(req)) { fail(res, 403, "رفع الصحيفة للحساب الرئيسي وحده."); return; }
+    const entries = (Array.isArray(req.body?.courses) ? req.body.courses : []).slice(0, 5000) as Array<{ key: string; name: string; units: number; hours: number }>;
+    const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+    const authorityOf = (row: any) => authorityDepartmentCode((colleges as any[]).find(c => Number(c.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeCode, row.AdSectionCode);
+    const courses = await Repository.getCourses() as AdCourse[];
+    const activeCache = new Map<number, Set<number>>();
+    const activeIdsOf = async (sid: number) => {
+      if (!activeCache.has(sid)) {
+        const active = new Set((await Repository.getCurriculumPlans(sid)).filter(item => !item.virtual && item.status === "active").map(item => item.id));
+        activeCache.set(sid, new Set((await Repository.getCurriculumPlanCourses(sid)).filter(link => active.has(link.planId)).map(link => Number(link.AdCourseId))));
+      }
+      return activeCache.get(sid)!;
+    };
+    let updated = 0;
+    for (const entry of entries) {
+      const key = String(entry?.key || "").replace(/\D/g, "");
+      const units = Number(entry?.units), hours = Number(entry?.hours);
+      if (key.length < 7 || !String(entry?.name || "").trim() || !Number.isFinite(units) || !Number.isFinite(hours)) continue;
+      const number = Number(key.slice(4)), name = correctCourseName(String(entry.name)).name;
+      for (const home of (sections as any[]).filter(row => authorityOf(row) === key.slice(0, 4))) {
+        const rows = courses.filter(row => Number(row.AdSectionId) === Number(home.AdSectionId) && Number(referenceCodeKey(row.CourseCode).slice(-3)) === number);
+        if (rows.length !== 1) continue;
+        const row = rows[0];
+        if ((await activeIdsOf(Number(home.AdSectionId))).has(Number(row.AdCourseId))) continue;
+        if (String(row.CourseName).normalize("NFKC").trim() === name && Number(row.CourseCredit) === units && Number(row.CourseHours) === hours) continue;
+        await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, units, hours, Number(row.MaxStudent) || 0);
+        updated += 1;
+      }
+    }
+    res.locals.auditChanges = `مقررات أقسام بلا صحائف من الصحائف الأخرى: ${countOf(updated, AR.course)}`;
+    res.json({ ok: true, updated });
   });
 
   /* ── رفع «الخطة الدراسية» (صحيفة التخرج) لقسمٍ واحد: يُطبَّق مباشرةً، والقسم يعتمد بعدها ──────
