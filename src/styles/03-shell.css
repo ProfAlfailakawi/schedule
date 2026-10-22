@@ -342,6 +342,7 @@
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>span,
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>i,
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>label,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>.demo-student-link,
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>button{display:none}
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>svg{width:16px;height:16px}
   /* Only the RESTING spine stands its groups open — there the labels are gone,
@@ -1836,7 +1837,7 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
 /* Demo status is informative, not alarming: permanent, compact, and resettable. */
 
 /* Compact Demo status stays in navigation chrome and never covers content. */
-.demo-rail-chip{margin:4px 14px 8px;min-height:32px;padding:4px 6px 4px 10px;display:flex;flex-wrap:wrap;align-items:center;gap:7px;width:max-content;max-width:calc(100% - 28px);border:1px solid color-mix(in srgb,#b78a3a 34%,transparent);border-radius:999px;background:color-mix(in srgb,#8a641c 12%,var(--nav));color:#c7a86c;font-size:12px;font-weight:700;letter-spacing:0}.demo-rail-chip>svg{width:13px;height:13px}.demo-rail-chip>i{width:5px;height:5px;border-radius:50%;background:#55b99a;box-shadow:0 0 0 3px color-mix(in srgb,#55b99a 12%,transparent)}.demo-rail-chip>button{display:grid;place-items:center;width:44px;height:44px;padding:0;margin:-10px -8px -10px 1px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}.demo-rail-chip>button:hover{background:color-mix(in srgb,#fff 7%,transparent)}.demo-rail-chip>button svg{width:12px;height:12px}
+.demo-rail-chip{margin:4px 14px 8px;min-height:32px;padding:4px 6px 4px 10px;display:flex;flex-wrap:wrap;align-items:center;gap:7px;width:max-content;max-width:calc(100% - 28px);border:1px solid color-mix(in srgb,#b78a3a 34%,transparent);border-radius:20px;background:color-mix(in srgb,#8a641c 12%,var(--nav));color:#c7a86c;font-size:12px;font-weight:700;letter-spacing:0}.demo-rail-chip>svg{width:13px;height:13px}.demo-rail-chip>i{width:5px;height:5px;border-radius:50%;background:#55b99a;box-shadow:0 0 0 3px color-mix(in srgb,#55b99a 12%,transparent)}.demo-rail-chip>button{display:grid;place-items:center;width:44px;height:44px;padding:0;margin:-10px -8px -10px 1px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}.demo-rail-chip>button:hover{background:color-mix(in srgb,#fff 7%,transparent)}.demo-rail-chip>button svg{width:12px;height:12px}
 /* مبدّل الصفة داخل شريط الديمو: يفتح شاشةَ كل صفة ببياناتها الوهمية. */
 .demo-rail-chip>.demo-role-switch{display:inline-flex;align-items:center;gap:5px;margin-inline-start:2px;letter-spacing:normal;min-width:0;flex:1 1 100%;order:3}
 .demo-rail-chip>.demo-student-link{display:inline-flex;align-items:center;gap:6px;order:2;flex:1 1 100%;min-height:28px;padding:3px 9px;border-radius:9px;border:1px solid color-mix(in srgb,#b78a3a 55%,transparent);background:color-mix(in srgb,#b78a3a 22%,var(--nav));color:#f0dfb4;font-size:12px;font-weight:800;text-decoration:none;letter-spacing:normal}
