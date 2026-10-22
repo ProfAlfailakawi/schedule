@@ -191,12 +191,16 @@ export function sheetToReference(plan: ParsedPlan, own: readonly PlanCourse[], n
     const courses = own.filter(course => course.groupId === group.id).map(course => {
       const prerequisites = [...course.prereqAll];
       let externalAlternative: string | undefined;
+      const anyOf: string[][] = [];
       for (const any of course.prereqAny) {
         const real = any.filter(code => code !== "PEN");
-        if (any.includes("PEN") && real.length === 1) { prerequisites.push(real[0]); externalAlternative = "PEN"; }
-        else notes.push(`«${names.get(course.codeKey) || course.name}»: متطلبٌ «${any.join(" أو ")}» بين مقررين لا تدعمه القواعد؛ لم يُقيَّد به.`);
+        if (any.includes("PEN")) {
+          /* PEN اختبارٌ لا مقرر: «أ أو PEN» يبقى نصيحةً بالمطبوع بلا إلزام. */
+          if (real.length === 1) { prerequisites.push(real[0]); externalAlternative = "PEN"; }
+          else notes.push(`«${names.get(course.codeKey) || course.name}»: متطلبٌ «${any.join(" أو ")}» لا يُقيَّد.`);
+        } else if (real.length > 1) anyOf.push([...new Set(real)]);
       }
-      return { code: course.codeKey, name: names.get(course.codeKey) || course.name, credit: course.units, hours: course.hours, prerequisites: [...new Set(prerequisites)], ...(externalAlternative ? { externalAlternative } : {}) };
+      return { code: course.codeKey, name: names.get(course.codeKey) || course.name, credit: course.units, hours: course.hours, prerequisites: [...new Set(prerequisites)], ...(anyOf.length ? { anyOf } : {}), ...(externalAlternative ? { externalAlternative } : {}) };
     });
     if (!courses.length) continue;
     groups.push({ id: group.id, name: group.name, category: plan.sections.find(section => section.no === group.sectionNo)?.name || "", requiredUnits: group.units ?? group.offeredUnits, elective: group.kind === "elective", courses });

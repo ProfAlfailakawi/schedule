@@ -5,6 +5,8 @@
 export interface CurriculumReferenceCourse {
   code: string; name: string; credit: number; hours: number;
   prerequisites: string[]; externalAlternative?: string;
+  /** «أ أو ب»: يكفي اجتياز واحدٍ من كل مجموعة. */
+  anyOf?: string[][];
 }
 export interface CurriculumReferenceGroup {
   id: string; name: string; category: string; requiredUnits: number; elective: boolean;
