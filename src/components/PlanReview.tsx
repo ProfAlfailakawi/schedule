@@ -11,6 +11,7 @@
 import SearchableSelect from "./SearchableSelect";
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
 import PlanSheetUpload from "./PlanSheetUpload";
+import PreviousPlansPanel from "./PreviousPlansPanel";
 import PlanMapLines, { levelHue, planEdges } from "./PlanMapLines";
 import { arabicMatchKey } from "../utils/arabicText";
 /* اسمُ القسم في القائمة يحمل كليته («قسم تكنولوجيا التعليم · التربية الأساسية - بنات»): يُطابَق بالاحتواء. */
@@ -283,6 +284,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
       <PageTitle eyebrow="مراجعة الصحيفة" subtitle="مستوى كل مقرر ونوعه وما يسبقه، ثم يعتمدها رئيس لجنة الجدول.">قواعد المقررات</PageTitle>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
       {status?.canImport ? <PlanSheetUpload targets={status.uploadTargets || []} sectionId={sectionId} onDone={(id, plan) => { void loadStatus().then(() => { setSectionId(id); setPlanId(plan); setSelected(0); window.dispatchEvent(new Event("schedule:plan-review-updated")); }); }} /> : null}
+      {status?.canImport ? <PreviousPlansPanel /> : null}
       {status?.canImport ? <ImportPanel onDone={() => { void loadStatus().then(() => window.dispatchEvent(new Event("schedule:plan-review-updated"))); }} /> : null}
       {!status?.sections.length ? <EmptyState title="لا صحائف في نطاقك" detail="تظهر هنا صحائف الأقسام التي تملك نطاقها." /> : (
         <>

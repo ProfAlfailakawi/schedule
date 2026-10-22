@@ -118,6 +118,18 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check([...namesBefore].every(([id, text]) => { const row = afterCourses.find(item => item.AdCourseId === id)!; return `${row.CourseName}|${row.CourseCredit}|${row.CourseHours}` === text; }), "أسماء ووحدات المقررات القائمة كما صحّحتها الجديدة");
     check((await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === first.json.planId).length === activeLinksBefore, "الصحيفة الفعّالة لم تتغيّر");
     check((await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === legacy.json.planId).length >= 29, "مقررات القديمة (٢٩) في «السابقة»");
+    /* القديمة تصحّح مقرراً ليس في الفعّالة (اسمه ووحداته)، ولا تنقض ما في الفعّالة */
+    const linksNow = await Repository.getCurriculumPlanCourses(21);
+    const activeIds = new Set(linksNow.filter(link => link.planId === first.json.planId).map(link => Number(link.AdCourseId)));
+    const oldOnly = afterCourses.find(row => !activeIds.has(Number(row.AdCourseId)) && linksNow.some(link => link.planId === legacy.json.planId && Number(link.AdCourseId) === Number(row.AdCourseId)))!;
+    const shared = afterCourses.find(row => activeIds.has(Number(row.AdCourseId)))!;
+    await Repository.updateCourse(oldOnly.AdCourseId, oldOnly.AdCollegeId, oldOnly.AdSectionId, oldOnly.CourseCode, "اسم خطأ", 1, 1, 33);
+    await Repository.updateCourse(shared.AdCourseId, shared.AdCollegeId, shared.AdSectionId, shared.CourseCode, "اسم مختلف", shared.CourseCredit, shared.CourseHours, shared.MaxStudent);
+    const legacyAgain = await upload("root", 21, oldPdf);
+    const nowCourses = await Repository.getCourses();
+    const oldOnlyNow = nowCourses.find(row => row.AdCourseId === oldOnly.AdCourseId)!, sharedNow = nowCourses.find(row => row.AdCourseId === shared.AdCourseId)!;
+    check(legacyAgain.status === 200 && oldOnlyNow.CourseName === oldOnly.CourseName && oldOnlyNow.CourseCredit === oldOnly.CourseCredit && oldOnlyNow.MaxStudent === 33 && sharedNow.CourseName === "اسم مختلف", "القديمة تصحّح مقرراً ليس في الفعّالة (والسعة كما هي) ولا تنقض ما في الفعّالة", [oldOnlyNow, sharedNow]);
+    await Repository.updateCourse(shared.AdCourseId, shared.AdCollegeId, shared.AdSectionId, shared.CourseCode, shared.CourseName, shared.CourseCredit, shared.CourseHours, shared.MaxStudent);
     const sound = afterCourses.filter(row => row.CourseName === "تكنولوجيا الصوت");
     check(sound.length === 2 && new Set(sound.map(row => row.CourseCode)).size === 2, "المقرر نفسه برقمين (قديم وجديد): سجلان باسمٍ مكرر ورقمين مختلفين، لا دمج بالاسم", sound.map(row => row.CourseCode));
     check(new Set(afterCourses.map(row => Number(row.CourseCode))).size === afterCourses.length, "لا رقمَ يتكرر في القسم");
@@ -186,6 +198,21 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check(forced.status === 200 && fixed?.AdSectionName === "قسم تكنولوجيا التعليم" && fixed?.AdSectionCode === "09", "رفعٌ صريح: الاسم والرمز يُصحَّحان من الصحيفة", forced.json);
     check((await upload("root", 71, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0105.pdf"), true)).status === 200, "الرفع الصريح يقبل أي صحيفةٍ للقسم المختار صراحةً (قراره للمسؤول)");
     check((await Repository.getSections()).find(row => Number(row.AdSectionId) === 41)?.AdSectionName === "قسم التربية الخاصة", "التربية الخاصة لا تُسمّى «علم النفس» من ترويسة صحيفتها");
+
+    /* إنهاء الصحيفة السابقة لقسمٍ: الجدول يعرض الجديدة وحدها، والتراجع يعيدها */
+    const call = async (who: string, method: string, url: string, body?: unknown) => { const res = await fetch(`${base}${url}`, { method, headers: { "content-type": "application/json", "x-who": who }, body: body ? JSON.stringify(body) : undefined }); return { status: res.status, json: await res.json().catch(() => ({})) as any }; };
+    const listedBefore = await call("root", "GET", "/api/plan-review/previous-plans");
+    check(listedBefore.json.rows.find((row: any) => row.sectionId === 21)?.state === "running" && (await call("other", "GET", "/api/plan-review/previous-plans")).status === 403, "قائمة الأقسام: السابقة جارية، وللحساب الرئيسي وحده", listedBefore.json.rows);
+    const operationalBefore = await Repository.getOperationalCourseIds(21);
+    const ended = await call("root", "POST", "/api/plan-review/previous-plans", { action: "end", sectionIds: [21] });
+    const plans21 = await Repository.getCurriculumPlans(21), plans31 = await Repository.getCurriculumPlans(31);
+    check(ended.status === 200 && ended.json.changed === 1 && !plans21.some(plan => plan.status === "transition") && !plans31.some(plan => plan.status === "transition") && plans21.some(plan => plan.status === "active"), "«انتهوا» تؤرشف السابقة في المسار كله وتُبقي الفعّالة", ended.json);
+    const pickerEnded = await call("root", "GET", "/api/plan-review/previous-ended?sectionId=21");
+    const operationalAfter = await Repository.getOperationalCourseIds(21);
+    check(pickerEnded.json.ended === true && operationalAfter.size < operationalBefore.size && pickerEnded.json.courseIds.length === operationalAfter.size && (await call("root", "GET", "/api/plan-review/previous-ended?sectionId=11")).json.ended === false, "منتقي الجدول: مقررات الجديدة وحدها لقسمٍ أُنهي، وغيره كما هو", [operationalBefore.size, operationalAfter.size]);
+    check((await call("other", "POST", "/api/plan-review/previous-plans", { action: "end", sectionIds: [21] })).status === 403, "الإنهاء للحساب الرئيسي وحده");
+    const restored = await call("root", "POST", "/api/plan-review/previous-plans", { action: "restore", sectionIds: [21] });
+    check(restored.json.changed === 1 && (await Repository.getCurriculumPlans(21)).some(plan => plan.status === "transition") && (await Repository.getOperationalCourseIds(21)).size === operationalBefore.size && (await call("root", "GET", "/api/plan-review/previous-ended?sectionId=21")).json.ended === false, "«أعد السابقة» تتراجع كلياً", restored.json);
 
     /* قراءة الترويسة بلا كتابة (لتصفية الدفعة) */
     const scanOf = async (who: string, body: Buffer) => { const res = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body }); return { status: res.status, json: await res.json().catch(() => ({})) as any }; };

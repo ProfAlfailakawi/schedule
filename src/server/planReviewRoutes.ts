@@ -554,7 +554,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const scope = scopeOf(target);
       const rejection = checkSheetScope(sheet, scope, { force: force && sectionId === Number(req.query.sectionId) });
       if (rejection) return { status: 422, json: { error: rejection.message, rejection } };
-      /* القديمة تدخل «الصحيفة السابقة» وحدها: لا تسمّي القسم ولا تغيّر رمزه ولا تمسّ مقرراً قائماً (الكتالوج مشترك مع الجديدة). */
+      /* القديمة تدخل «الصحيفة السابقة» وحدها: لا تسمّي القسم ولا تغيّر رمزه، وتصحّح اسم المقرر ووحداته وساعاته إلا مقرراً في صحيفة فعّالة (الكتالوج مشترك مع الجديدة). */
       const isNew = isNewSheet(sheet);
       const { key: ownKey, umbrella } = sheetOwnKey(sheet, scope);
 
@@ -573,6 +573,16 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         }
       }
       const numberOf = (code: unknown) => Number(referenceCodeKey(code).slice(-3));
+      /* القديمة تصحّح الاسم والوحدات والساعات كالجديدة، إلا مقرراً في صحيفة فعّالة: الجديدة هي المعتمدة ولا تُنقض بالقديمة. */
+      const activeCache = new Map<number, Set<number>>();
+      const activeIdsOf = async (sid: number) => {
+        if (!activeCache.has(sid)) {
+          const active = new Set((await Repository.getCurriculumPlans(sid)).filter(item => !item.virtual && item.status === "active").map(item => item.id));
+          activeCache.set(sid, new Set((await Repository.getCurriculumPlanCourses(sid)).filter(link => active.has(link.planId)).map(link => Number(link.AdCourseId))));
+        }
+        return activeCache.get(sid)!;
+      };
+      const mayCorrect = async (row: AdCourse) => isNew || !(await activeIdsOf(Number(row.AdSectionId))).has(Number(row.AdCourseId));
 
       const applyTo = async (site: any) => {
         const cid = Number(site.AdCollegeId), sid = Number(site.AdSectionId);
@@ -622,7 +632,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
           if (!row) {
             try { await Repository.createCourse(cid, sid, storedCode(course), name, course.units, course.hours, 0, false); report.created += 1; }
             catch (error) { if (error instanceof DuplicateResourceError) notes.push(`الرمز ${storedCode(course)} مستعمل في القسم؛ لم يُنشأ.`); else throw error; }
-          } else if (isNew && (String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours)) {
+          } else if ((String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours) && await mayCorrect(row)) {
             await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, course.units, course.hours, Number(row.MaxStudent) || 0);
             report.updated += 1;
           } else report.unchanged += 1;
@@ -711,9 +721,9 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
             const same = existing.filter(row => Number(row.AdSectionId) === Number(home.AdSectionId) && numberOf(row.CourseCode) === Number(course.number));
             if (same.length > 1) continue;
             if (same.length) {
-              /* الجديدة هي المعتمدة: اسمٌ أو وحداتٌ أو ساعاتٌ تخالفها تُصحَّح (والسعة كما هي)؛ والقديمة لا تمسّ قائماً. */
+              /* اسمٌ أو وحداتٌ أو ساعاتٌ تخالف الصحيفة تُصحَّح (والسعة كما هي). */
               const row = same[0];
-              if (isNew && (String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours)) {
+              if ((String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours) && await mayCorrect(row)) {
                 await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, course.units, course.hours, Number(row.MaxStudent) || 0);
                 corrected += 1;
               }
@@ -761,6 +771,77 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     if (!done.length) { res.status(outs[0].status).json(outs[0].json); return; }
     res.locals.auditChanges = done.map(item => item.audit).filter(Boolean).join(" | ");
     res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), prereqPrinted: done.reduce((sum, item) => sum + Number(item.json.prereqPrinted || 0), 0), prereqLinked: done.reduce((sum, item) => sum + Number(item.json.prereqLinked || 0), 0), skipped: outs.length - done.length, sections: done.map(item => item.json.sectionName), renames: done.flatMap(item => item.json.renames || []), nameFixes: done.reduce((sum, item) => sum + (item.json.nameFixes?.length || 0), 0), otherDepartments: done[0].json.otherDepartments, addedOther: done.reduce((sum, item) => sum + Number(item.json.addedOther || 0), 0), correctedOther: done.reduce((sum, item) => sum + Number(item.json.correctedOther || 0), 0), noDepartment: [...new Set(done.flatMap(item => item.json.noDepartment || []))].sort(), programName: sheet.programName, unresolved: [...new Set(done.flatMap(item => item.json.unresolved || []))].sort() });
+  });
+
+  /* ── إنهاء الصحيفة السابقة لأقسامٍ يختارها المسؤول ─────────────────────────────────────────────
+     «انتهوا»: تُؤرشف صحيفتها السابقة (وصحائف مساراتها) فلا يظهر لها في الجدول إلا مقررات الجديدة،
+     وتبقى القديمة محفوظةً للفصول السابقة، ويُرجَع عن ذلك بزر «أعد السابقة». لا يُنهى إلا قسمٌ لجديدته صحيفةٌ فعّالة. */
+  const ENDED_BY = "إنهاء الصحيفة السابقة";
+  const sitesOfTrack = async (sectionId: number) => {
+    const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+    const track = groupDeptTracks(sections as any[], colleges as any[]).find(item => [item.canonical, ...item.mirrors].some(row => Number(row.AdSectionId) === sectionId));
+    return track ? [track.canonical, ...track.mirrors].map(row => Number(row.AdSectionId)) : [sectionId];
+  };
+  const previousStateOf = async (sites: number[]) => {
+    let running = false, ended = false, hasNew = false;
+    for (const sid of sites) {
+      const plans = (await Repository.getCurriculumPlans(sid)).filter(item => !item.virtual);
+      if (plans.some(item => item.status === "active")) hasNew = true;
+      if (plans.some(item => item.status === "transition")) running = true;
+      else if (plans.some(item => item.status === "archived" && String(item.archivedBy || "").startsWith(ENDED_BY))) ended = true;
+    }
+    return { state: running ? "running" : ended ? "ended" : "none", hasNew } as const;
+  };
+
+  app.get("/api/plan-review/previous-plans", deps.requireAuth, async (req: Request, res: Response) => {
+    if (!deps.isRootAdmin(req)) { fail(res, 403, "للحساب الرئيسي وحده."); return; }
+    res.setHeader("Cache-Control", "no-store");
+    const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+    const tracks = groupDeptTracks(sections as any[], colleges as any[]), names = trackLabels(tracks);
+    const rows = [];
+    for (const item of tracks) {
+      const sites = [item.canonical, ...item.mirrors].map(row => Number(row.AdSectionId));
+      const { state, hasNew } = await previousStateOf(sites);
+      rows.push({ sectionId: sites[0], label: names.get(item.key) || item.deptName, state, hasNew });
+    }
+    res.json({ rows });
+  });
+
+  app.post("/api/plan-review/previous-plans", deps.requireAuth, express.json(), async (req: Request, res: Response) => {
+    if (!deps.isRootAdmin(req)) { fail(res, 403, "للحساب الرئيسي وحده."); return; }
+    const action = req.body?.action === "restore" ? "restore" : "end";
+    const ids = [...new Set((Array.isArray(req.body?.sectionIds) ? req.body.sectionIds : []).map(Number).filter((id: number) => id > 0))].slice(0, 400) as number[];
+    if (!ids.length) { fail(res, 400, "اختر قسماً."); return; }
+    const by = deps.actorName(req);
+    let changed = 0;
+    const skipped: number[] = [];
+    for (const id of ids) {
+      let touched = 0;
+      for (const sid of await sitesOfTrack(id)) {
+        const plans = (await Repository.getCurriculumPlans(sid)).filter(item => !item.virtual);
+        if (action === "end") {
+          for (const plan of plans.filter(item => item.status === "transition")) {
+            if (!plans.some(item => item.status === "active" && (item.track || "") === (plan.track || ""))) continue;
+            await Repository.archiveCurriculumPlan(plan.id, sid, `${ENDED_BY} · ${by}`); touched += 1;
+          }
+        } else {
+          for (const plan of plans.filter(item => item.status === "archived" && String(item.archivedBy || "").startsWith(ENDED_BY))) { await Repository.restoreCurriculumPlan(plan.id, sid); touched += 1; }
+        }
+      }
+      if (touched) changed += 1; else skipped.push(id);
+    }
+    res.locals.auditChanges = `${action === "end" ? "إنهاء" : "إعادة"} الصحيفة السابقة: ${countOf(changed, AR.department)}`;
+    res.json({ ok: true, action, changed, skipped });
+  });
+
+  /* ما يحتاجه منتقي المقررات في الجدول: هل أُنهيت السابقة لقسمٍ، وما مقرراته التشغيلية (الجديدة). */
+  app.get("/api/plan-review/previous-ended", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const sectionId = Number(req.query.sectionId) || 0;
+    if (!sectionId) { res.json({ ended: false, courseIds: [] }); return; }
+    const { state } = await previousStateOf(await sitesOfTrack(sectionId));
+    if (state !== "ended") { res.json({ ended: false, courseIds: [] }); return; }
+    res.json({ ended: true, courseIds: [...await Repository.getOperationalCourseIds(sectionId)] });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */
