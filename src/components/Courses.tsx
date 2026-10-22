@@ -145,7 +145,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
         if (!response.ok) throw new Error(body?.error || "تعذر التحقق من الصحيفة الحالية");
         if (!alive) return;
         const active = (Array.isArray(body?.plans) ? body.plans : [])
-          .find((plan: CurriculumPlan) => plan.status === "active" && !plan.virtual) || null;
+          .find((plan: CurriculumPlan) => plan.status === "active" && !plan.virtual && !plan.track) || null;
         setCurriculumTarget({
           loading: false,
           bootstrap: Boolean(body?.bootstrap),

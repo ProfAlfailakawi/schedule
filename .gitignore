@@ -24,3 +24,6 @@ bun.lock
 cookies.txt
 .DS_Store
 * [0-9].html
+
+# نسخة احتياطية تولّدها الاختبارات
+database/*.backup

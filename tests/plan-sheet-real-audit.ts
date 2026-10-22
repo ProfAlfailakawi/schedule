@@ -42,6 +42,7 @@ const EXPECTED: Record<string, [string, number]> = {
   const specialScope = { collegeName: "كلية التربية الأساسية - بنات", collegeCode: "01", sectionName: "قسم التربية الخاصة", departmentKey: "0119" };
   check(checkSheetScope(special, specialScope) === null && ownCourses(special, sheetOwnKey(special, specialScope).key).length === 17, "التربية الخاصة: تُقبل في قسمها (17 مقرراً برمز 19)");
   check(checkSheetScope(special, { ...specialScope, sectionName: "قسم أصول التربية", departmentKey: "0120" })?.kind === "department", "التربية الخاصة: لا تُقبل في «أصول التربية»");
+  check(special.program === "BA-012102" && special.programName.includes("اعاقة سمعية"), "اسم البرنامج يُقرأ بجانب رمزه (مسار التربية الخاصة)");
   const kinder = parsePlanItems(await extractPlanItems(fs.readFileSync("tests/fixtures/plans/graduation-old/ba-0110-2024.pdf")));
   check(checkSheetScope(kinder, { ...specialScope, sectionName: "قسم رياض الأطفال", departmentKey: "0121" }) === null, "رياض الأطفال: تُقبل في قسمها");
   check(checkSheetScope(kinder, { ...specialScope, sectionName: "قسم أصول التربية", departmentKey: "0120" })?.kind === "department", "رياض الأطفال: لا تُقبل في «أصول التربية»");

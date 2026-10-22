@@ -3503,7 +3503,8 @@ export const Repository = {
   createCurriculumPlan: async (input: { collegeId:number; sectionId:number; name:string; code?:string; by?:string }): Promise<CurriculumPlan> => {
     const collegeId=Number(input.collegeId), sectionId=Number(input.sectionId);
     const now=new Date().toISOString();
-    const existing=await Repository.getCurriculumPlans(sectionId);
+    /* صحائفُ المسارات لا تُحسب في الثنائية الرئيسية: لا تُزاح ولا تمنع إنشاء «السابقة». */
+    const existing=(await Repository.getCurriculumPlans(sectionId)).filter(row=>!row.track);
     const courses=await Repository.getCoursesBySection(sectionId);
     /* The department's saved graduation rule is, by definition, the rule its
        current students were admitted under. It travels with them into «الصحيفة
@@ -3547,12 +3548,26 @@ export const Repository = {
       db.curriculumPlans.push(legacy);
       db.curriculumPlanCourses.push(...courses.map(course=>({id:`${legacy.id}_${course.AdCourseId}`,planId:legacy.id,AdCollegeId:collegeId,AdSectionId:sectionId,AdCourseId:course.AdCourseId,createdAt:now,createdBy:String(input.by||"")||undefined})));
     } else {
-      db.curriculumPlans=db.curriculumPlans.map(plan=>Number(plan.AdSectionId)===sectionId&&plan.status==="active"?{...plan,status:"transition"}:plan);
+      db.curriculumPlans=db.curriculumPlans.map(plan=>Number(plan.AdSectionId)===sectionId&&plan.status==="active"&&!plan.track?{...plan,status:"transition"}:plan);
     }
     db.curriculumPlans.push(newPlan); saveDatabase(); await markRegistrationRunsStale(); return newPlan;
   },
 
   /** Rename a plan or set its graduation rule. Status never changes here. */
+  /** صحيفةُ مسار (برنامج بتخصصٍ مزدوج) جديدةً أو سابقة: لا تُزيح شيئاً ولا تلتقط الكتالوج. */
+  createTrackPlan: async (input: { collegeId:number; sectionId:number; name:string; track:string; status:"active"|"transition"; by?:string }): Promise<CurriculumPlan> => {
+    const now=new Date().toISOString();
+    const plan:CurriculumPlan={
+      id: randomUUID(), AdCollegeId:Number(input.collegeId), AdSectionId:Number(input.sectionId),
+      name:String(input.name||"").trim(), track:String(input.track||"").trim(), status:input.status,
+      createdAt:now, createdBy:String(input.by||"")||undefined, ...(input.status==="active"?{activatedAt:now}:{}),
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("curriculumPlans").doc(plan.id).set(plan); await markRegistrationRunsStale(); return plan; }
+    if (!Array.isArray(db.curriculumPlans)) db.curriculumPlans=[];
+    db.curriculumPlans.push(plan); saveDatabase(); await markRegistrationRunsStale();
+    return plan;
+  },
+
   updateCurriculumPlan: async (planId:string, sectionId:number, patch:{ name?:string; degreeRule?:CurriculumDegreeRule }): Promise<CurriculumPlan> => {
     const plans=await Repository.getCurriculumPlans(sectionId),plan=plans.find(row=>row.id===planId);
     if(!plan)throw new Error("الصحيفة غير موجودة");
@@ -3586,7 +3601,7 @@ export const Repository = {
 
   attachCourseToActiveCurriculum: async (course:AdCourse, by=""): Promise<void> => {
     const plans=await Repository.getCurriculumPlans(Number(course.AdSectionId));
-    const active=plans.find(row=>row.status==="active");
+    const active=plans.find(row=>row.status==="active"&&!row.track);
     if(active) await Repository.addCourseToCurriculumPlan(active.id,course,by);
   },
 
