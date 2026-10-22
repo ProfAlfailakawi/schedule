@@ -690,11 +690,12 @@
 .pr-level-head b{color:inherit;font-size:.92rem}.pr-level-head small{color:inherit;opacity:.88}
 .pr-level-head-icon{background:rgb(255 255 255 / .22);color:inherit}
 /* البطاقة خفيفة: شارةُ الوحدات بلون المستوى، ثم الاسم، ثم الرقم بلون أسهمه */
-.pr-card{display:flex;align-items:center;gap:10px;padding:9px 12px;border-inline-start-width:1px;border-radius:14px}
+.pr-card{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:9px 12px;border-inline-start-width:1px;border-radius:14px}
 .pr-card .pr-credit{flex:none;display:grid;place-items:center;inline-size:26px;block-size:26px;border-radius:50%;background:var(--lvl,var(--accent));color:var(--accent-contrast);font-style:normal;font-size:.78rem;font-weight:700;font-variant-numeric:tabular-nums}
-.pr-card .pr-name{flex:1;min-width:0;font-size:.86rem;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+/* الاسمُ يأخذ ما يكفيه ثم يلتفّ بين الكلمات؛ فإن ضاقت البطاقة نزل الرمزُ إلى سطرٍ تحته بدل أن يُكسَر الاسمُ في وسط الكلمة العربية. */
+.pr-card .pr-name{flex:1 1 11ch;min-width:0;font-size:.86rem;line-height:1.45;color:var(--ink);overflow-wrap:break-word;word-break:normal;hyphens:manual}
 .pr-card .pr-name svg{margin-inline-start:4px;vertical-align:-1px}
-.pr-card .pr-code{flex:none;font-size:1.05rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--src,var(--muted))}
+.pr-card .pr-code{flex:none;font-size:.95rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--src,var(--muted))}
 .pr-card.dim .pr-credit{opacity:.7}
 .pr-key{margin:0;padding:8px 14px;border:1px dashed var(--line-strong);border-radius:14px;background:var(--surface);color:var(--ink-2);font-size:.82rem;text-align:center}
 .pr-lines{position:absolute;inset-block-start:0;left:0;z-index:1;pointer-events:none;overflow:visible}

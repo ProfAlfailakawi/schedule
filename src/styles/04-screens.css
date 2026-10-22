@@ -1372,6 +1372,10 @@
 .occupancy-pick-rows strong{min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .occupancy-pick-rows span{min-width:0;color:var(--muted);font-size:var(--t-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .occupancy-pick-rows em{font-style:normal;color:var(--muted-2);font-size:var(--t-xs);white-space:nowrap}
+/* شارة «منتدب» داخل صفٍّ من هذه اللوحة: القاعدةُ العامة أعلاه (span) تُصيبها فتقصّها وتلوّنها باهتةً؛ فتبقى كاملةً، ويُقصّ الاسمُ بنقاطٍ بدلها. */
+.occupancy-pick-rows .report-instructor-with-badge{display:flex;align-items:center;gap:4px;min-width:0}
+.occupancy-pick-rows .report-instructor-with-badge>.rib-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.occupancy-pick-rows .visiting-badge{flex:none;overflow:visible;text-overflow:clip;font-size:11px;color:color-mix(in srgb,var(--brass,#a8792a) 88%,var(--ink))}
 .occupancy-pick-rows time{
   color:var(--ink-2);font-size:var(--t-xs);font-variant-numeric:tabular-nums;
   font-family:var(--font-mono);white-space:nowrap;

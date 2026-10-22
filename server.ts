@@ -22,8 +22,9 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { visibleTermIds } from "./src/utils/scopedTerms";
 import { currentTermId, planningTermCandidates, termHasEnded, termIsArchive } from "./src/utils/termSequence";
+import { evaluateTeachingLoad, teachingHoursByInstructor, teachingLoadProblem } from "./src/utils/teachingLoad";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { AdCourse, AdSection, FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
+import type { AdCourse, AdInstructor, AdSection, FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
 import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
@@ -971,7 +972,7 @@ app.use("/api", authMiddleware as express.RequestHandler);
 
 // System administration is a showroom in demo: readable, never mutable. This is
 // server-side enforcement, so removing `disabled` in DevTools still cannot change it.
-const DEMO_READ_ONLY_PREFIXES = ["/users", "/permissions", "/user-scopes", "/system-backup"];
+const DEMO_READ_ONLY_PREFIXES = ["/users", "/permissions", "/user-scopes", "/system-backup", "/admin/teaching-load"];
 app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   if (!Repository.isDemoRequest() || req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") { next(); return; }
   if (req.path === "/auth/logout" || req.path === "/auth/heartbeat" || req.path === "/auth/presence" || req.path === "/demo/reset" || req.path === "/demo/role") { next(); return; }
@@ -3170,6 +3171,59 @@ app.put("/api/admin/section-schedule-windows",requirePermission(7),requireRootAd
   const selectedIds=new Set(sectionIds),terms=sortTermsNewestServer(await Repository.getTerms()),termId=Number(currentTermId(terms as any)||terms[0]?.AdTermId||0),rows=termId?await Repository.getSchedulesByScope({collegeId,termId}):[];
   const outOfWindowAppointments=rows.filter(row=>selectedIds.has(Number(row.AdSectionId))&&(!withinScheduleDay(timeToMinutes(row.fstarttime),timeToMinutes(row.fendtime),{startTime,endTime}))).length;
   res.json({success:true,updated:sectionIds.length,startTime,endTime,outOfWindowAppointments});
+});
+
+/* ══ النصاب التدريسي (ميزةٌ اختيارية، يديرها المسؤول المخوّل) ══════════════════
+   الإعدادُ للمدير الرئيسي وحده. والتنبيهُ للمخطّط قراءةٌ فقط: لا يمنع حفظَ موعدٍ ولا يمرّ بمساره، وما في هذه
+   المسارات لا يغيّر جدولاً ولا تقريراً. مُعطَّلةٌ افتراضياً: بلا تفعيلٍ لا يُحسب شيءٌ ولا يُرسَل. */
+async function teachingLoadHoursForTerm(termId: number) {
+  const [universe, courses] = await Promise.all([Repository.getSchedulesByScope({ termId }), Repository.getCourses()]);
+  const courseHours = new Map<number, number>(courses.map((course: AdCourse) => [Number(course.AdCourseId), Number(course.CourseHours) || 0] as [number, number]));
+  return teachingHoursByInstructor(universe, courseHours);
+}
+
+app.get("/api/admin/teaching-load", requirePermission(7), requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = sortTermsNewestServer(await Repository.getTerms());
+  const termId = Number(req.query.termId || 0) || Number(currentTermId(terms as any) || terms[0]?.AdTermId || 0);
+  const term = terms.find(item => Number(item.AdTermId) === termId);
+  const [config, instructors, hours] = await Promise.all([Repository.getTeachingLoadConfig(), Repository.getInstructors(), termId ? teachingLoadHoursForTerm(termId) : Promise.resolve(new Map<number, number>())]);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    config,
+    term: term ? { id: termId, name: String(term.AdTermName || "") } : null,
+    terms: terms.map(item => ({ id: Number(item.AdTermId), name: String(item.AdTermName || "") })),
+    instructors: sortArabicNamed(instructors, row => row.AdInstructorName).map(row => {
+      const status = evaluateTeachingLoad(config, Number(row.AdInstructorId), hours.get(Number(row.AdInstructorId)) || 0);
+      return { id: Number(row.AdInstructorId), name: String(row.AdInstructorName || ""), retired: Boolean(row.AdInstructorStatus), hours: status.hours, state: status.state, allowed: status.allowed, excess: status.excess };
+    }),
+  });
+});
+
+app.put("/api/admin/teaching-load", requirePermission(7), requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const problem = teachingLoadProblem(req.body);
+  if (problem) { res.status(400).json({ error: problem }); return; }
+  const instructorIds = new Set((await Repository.getInstructors()).map((row: AdInstructor) => Number(row.AdInstructorId)));
+  const unknown = Object.keys(req.body?.assignments && typeof req.body.assignments === "object" ? req.body.assignments : {}).find(key => !instructorIds.has(Number(key)));
+  if (unknown) { res.status(400).json({ error: `العضو رقم ${unknown} غير موجود.` }); return; }
+  res.json({ success: true, config: await Repository.saveTeachingLoadConfig(req.body, String(req.user?.Name || "")) });
+});
+
+app.get("/api/teaching-load/status", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const { collegeId, sectionId, termId } = smartContextFrom(req);
+  if (!collegeId || !sectionId || !termId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  res.setHeader("Cache-Control", "no-store");
+  const config = await Repository.getTeachingLoadConfig();
+  if (!config.enabled) { res.json({ enabled: false, over: [], withinCount: 0 }); return; }
+  const [scopeRows, hours, instructors] = await Promise.all([Repository.getSchedulesByScope({ collegeId, sectionId, termId }), teachingLoadHoursForTerm(termId), Repository.getInstructors()]);
+  const nameById = new Map<number, string>(instructors.map((row: AdInstructor) => [Number(row.AdInstructorId), String(row.AdInstructorName || "")] as [number, string]));
+  const inScope = [...new Set<number>(scopeRows.map(row => Number(row.AdInstructorId || 0)).filter(Boolean))];
+  const statuses = inScope.map(id => evaluateTeachingLoad(config, id, hours.get(id) || 0));
+  res.json({
+    enabled: true,
+    over: statuses.filter(item => item.state === "over").sort((a, b) => b.excess - a.excess)
+      .map(item => ({ id: item.instructorId, name: nameById.get(item.instructorId) || `عضو ${item.instructorId}`, rank: item.rank?.name || "", hours: item.hours, allowed: item.allowed, extra: item.extra, excess: item.excess })),
+    withinCount: statuses.filter(item => item.state === "within").length,
+  });
 });
 
 app.post("/api/sections", requirePermission(4), async (req: AuthenticatedRequest, res: Response) => {

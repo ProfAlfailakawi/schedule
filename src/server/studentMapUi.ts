@@ -166,6 +166,8 @@ export const STUDENT_MAP_CSS = `
 .kdb{position:fixed;inset:0;z-index:55;background:rgba(10,24,17,.45)}
 body.km-lock{overflow:hidden}
 .kd{position:fixed;z-index:56;inset-inline:0;inset-block-end:0;max-block-size:86dvh;overflow:auto;display:grid;gap:12px;align-content:start;padding:8px 18px calc(22px + env(safe-area-inset-bottom));border-radius:28px 28px 0 0;background:var(--card);box-shadow:0 -20px 50px -20px rgba(10,24,17,.55);animation:up .26s var(--ease)}
+/* الورقةُ بعرض عمود الصفحة (520px) موسّطة، لا شريطٌ بعرض الشاشة كلّها؛ وعلى الجوال تملأ العرض كما كانت. بلا استعلام عرض: صفحةُ «مساري» عمودٌ واحد. */
+.kd{max-inline-size:520px;margin-inline:auto}
 .kd::before{content:"";justify-self:center;inline-size:42px;block-size:5px;border-radius:5px;background:var(--line-strong);margin-block-end:4px}
 .kd-h{display:flex;gap:12px;align-items:flex-start}
 .kd-badge{flex:none;min-inline-size:58px;block-size:58px;padding:0 8px;border-radius:18px;display:grid;place-items:center;background:var(--h);color:#fff;font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}

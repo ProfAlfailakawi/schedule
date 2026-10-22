@@ -31,6 +31,7 @@
 @import "./components/dna/dna-theme.css";
 @import "./styles/27-intelligence-type.css";
 @import "./styles/28-dashboard-canvas.css";
+@import "./styles/29-teaching-load.css";
 /* 10-journey and 08-print moved to deferred.css — loaded in parallel, off the
    render-blocking path. They were the LAST two imports, so loading them after
    everything else preserves the cascade order exactly as it stands here. */

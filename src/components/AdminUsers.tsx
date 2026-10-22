@@ -3,8 +3,9 @@ import { sortByName } from "../utils/sorting";
 import LocationRegistryAdmin from "./LocationRegistryAdmin";
 import LocationQuickSetup from "./LocationQuickSetup";
 import SectionScheduleHours from "./SectionScheduleHours";
+import TeachingLoadSettings from "./TeachingLoadSettings";
 import AccountInvitation from "./AccountInvitation";
-import { Activity, ArchiveRestore, Building2, Check, ChevronLeft, Clock3, CopyPlus, DatabaseBackup, DoorOpen, Download, Eraser, FileArchive, FileCheck2, KeyRound, Landmark, RefreshCw, Save, ScrollText, Search, ShieldCheck, Trash2, Upload, UserCog, UsersRound, X } from "lucide-react";
+import { Activity, ArchiveRestore, Building2, Check, ChevronLeft, Clock3, CopyPlus, DatabaseBackup, DoorOpen, Download, Eraser, FileArchive, FileCheck2, GraduationCap, KeyRound, Landmark, RefreshCw, Save, ScrollText, Search, ShieldCheck, Trash2, Upload, UserCog, UsersRound, X } from "lucide-react";
 import {
   AddButton,
   Badge,
@@ -36,7 +37,7 @@ import type { HeadPlanRow } from "../utils/departmentHeadAccounts";
 /* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
    rail beside the users, the scopes and the log. It keeps its own screen and
    its own URL — this only moves the door it is opened from. */
-export type AdminMode = "users" | "permissions" | "scopes" | "audit" | "backup" | "copyTerm" | "locations" | "roomSetup" | "sectionHours";
+export type AdminMode = "users" | "permissions" | "scopes" | "audit" | "backup" | "copyTerm" | "locations" | "roomSetup" | "sectionHours" | "teachingLoad";
 type PageMode = "index" | "create" | "edit";
 interface SafeUser {
   SystemUserId: number;
@@ -550,7 +551,7 @@ export default function AdminUsers({
   const load = async () => {
     setError(null);
     try {
-      if (mode === "locations" || mode === "roomSetup" || mode === "sectionHours") return;
+      if (mode === "locations" || mode === "roomSetup" || mode === "sectionHours" || mode === "teachingLoad") return;
       if (mode === "backup") {
         if (!rootAdmin) throw new Error("هذه الخزنة مخصصة لحساب الإدارة الرئيسي فقط");
         const status = await api("/api/system-backup/status") as BackupStatus;
@@ -868,6 +869,7 @@ export default function AdminUsers({
     rootAdmin ? { value: "locations", label: "المباني والقاعات", icon: <Landmark /> } : null,
     rootAdmin ? { value: "roomSetup", label: "إضافة مبانٍ وقاعات", icon: <DoorOpen /> } : null,
     rootAdmin ? { value: "sectionHours", label: "أوقات دوام الأقسام", icon: <Clock3 /> } : null,
+    rootAdmin ? { value: "teachingLoad", label: "النصاب التدريسي", icon: <GraduationCap /> } : null,
     rootAdmin ? { value: "copyTerm", label: "نسخ فصل", icon: <CopyPlus /> } : null,
     rootAdmin ? { value: "backup", label: "النسخة الاحتياطية", icon: <DatabaseBackup /> } : null,
   ].filter(Boolean) as Array<{ value: string; label: string; icon: React.ReactNode }>;
@@ -906,6 +908,12 @@ export default function AdminUsers({
     return rootAdmin
       ? <SectionScheduleHours header={consoleHead()} demoReadOnly={demoReadOnly} />
       : <div className="content-stack admin-page">{consoleHead()}<Notice>ضبط أوقات دوام الأقسام متاح للمدير الرئيسي فقط.</Notice></div>;
+  }
+
+  if (mode === "teachingLoad") {
+    return rootAdmin
+      ? <TeachingLoadSettings header={consoleHead()} demoReadOnly={demoReadOnly} />
+      : <div className="content-stack admin-page">{consoleHead()}<Notice>إدارة النصاب التدريسي متاحة للمدير الرئيسي فقط.</Notice></div>;
   }
 
   const usersFormDrawer = (mode === "users" && page !== "index") ? (
