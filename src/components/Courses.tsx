@@ -515,7 +515,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
                     </label>
                   </Notice>
                 ) : (
-                  <Notice type="warning" inline>لا توجد صحيفة حالية فعّالة لهذا القسم. افتح «الصحائف الأكاديمية» لمراجعتها.</Notice>
+                  <Notice type="warning" inline>لا توجد صحيفة حالية فعّالة لهذا القسم.</Notice>
                 )}
               </div>
             ) : null}
@@ -577,7 +577,6 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
       {embedded ? (
         <EmbeddedAction slot={actionSlot}>
           <div className="course-head-actions">
-            <SecondaryButton data-guide-ignore="إدارة أكاديمية متخصصة للصحائف؛ لا تغيّر الجدول مباشرة" onClick={() => openCurriculum()}><GraduationCap /> الصحائف الأكاديمية</SecondaryButton>
             <AddButton onClick={create}>إنشاء مقرر</AddButton>
           </div>
         </EmbeddedAction>
@@ -585,7 +584,7 @@ export default function Courses({ embedded = false, actionSlot = null, scopes = 
         <PageTitle
           eyebrow="المكتبة الأكاديمية"
           subtitle="المكتبة والتفاصيل في لوحة واحدة"
-          action={<div className="course-head-actions"><SecondaryButton data-guide-ignore="إدارة أكاديمية متخصصة للصحائف؛ لا تغيّر الجدول مباشرة" onClick={() => openCurriculum()}><GraduationCap /> الصحائف الأكاديمية</SecondaryButton><AddButton onClick={create}>إنشاء مقرر</AddButton></div>}
+          action={<div className="course-head-actions"><AddButton onClick={create}>إنشاء مقرر</AddButton></div>}
         >
           المقررات الدراسية
         </PageTitle>

@@ -41,7 +41,7 @@ check(server.includes('CourseCodeSnapshot: String(course.CourseCode || "")'),"إ
 check(server.includes('لا تغيّر رقمه أو اسمه فوق التاريخ'),"تعديل كتالوج مستخدم تاريخياً لا يمحو هوية المقرر القديمة");
 
 check(courses.includes('/api/courses?operational=1'),"شاشة المقررات اليومية تعرض التشغيل فقط");
-check(courses.includes('الصحائف الأكاديمية'),"مدخل إدارة الصحائف ظاهر من شاشة المقررات");
+check(!courses.includes('<GraduationCap /> الصحائف الأكاديمية'),"شاشة المقررات بلا زر «الصحائف الأكاديمية» في رأسها");
 check(plans.includes('كل المقررات الحالية فعّالة تلقائياً'),"الوضع الانتقالي الأول موضح للأدمن بصرياً");
 check(plans.includes('تبدأ الصحيفة الجديدة فارغة')&&plans.includes('90٪'),"إنشاء الصحيفة الجديدة لا يكرر 90٪ من القديمة");
 check(plans.includes('أرشفة الصحيفة'),"إجراء الإغلاق/الأرشفة ظاهر في الإدارة");
