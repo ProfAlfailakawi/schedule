@@ -106,6 +106,9 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check([...namesBefore].every(([id, text]) => { const row = afterCourses.find(item => item.AdCourseId === id)!; return `${row.CourseName}|${row.CourseCredit}|${row.CourseHours}` === text; }), "أسماء ووحدات المقررات القائمة كما صحّحتها الجديدة");
     check((await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === first.json.planId).length === activeLinksBefore, "الصحيفة الفعّالة لم تتغيّر");
     check((await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === legacy.json.planId).length >= 29, "مقررات القديمة (٢٩) في «السابقة»");
+    const sound = afterCourses.filter(row => row.CourseName === "تكنولوجيا الصوت");
+    check(sound.length === 2 && new Set(sound.map(row => row.CourseCode)).size === 2, "المقرر نفسه برقمين (قديم وجديد): سجلان باسمٍ مكرر ورقمين مختلفين، لا دمج بالاسم", sound.map(row => row.CourseCode));
+    check(new Set(afterCourses.map(row => Number(row.CourseCode))).size === afterCourses.length, "لا رقمَ يتكرر في القسم");
     const orderless = await upload("root", 15, oldPdf);
     check(orderless.status === 422 && orderless.json.rejection?.kind === "order", "قسم فعّالته وحدها: القديمة تُرفض (ارفع القديمة قبل الجديدة)", orderless.json);
   } finally { server.close(); }
