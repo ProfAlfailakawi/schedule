@@ -20,7 +20,11 @@ jobs:
     name: Deploy to the official service (schedule-kw.com)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success')
+    # Single owner of production deploys: ONLY ProfAlfailakawi/schedule-kw may deploy.
+    # The same file lives in the previous repository, where this condition is always
+    # false, so a push or a re-enabled workflow there can never release to production.
+    # PRODUCTION_DEPLOY_ENABLED is the owner's kill switch (repository variable).
+    if: github.repository == 'ProfAlfailakawi/schedule-kw' && vars.PRODUCTION_DEPLOY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success'))
     steps:
       - name: Check out SCHEDULE
         uses: actions/checkout@v6
