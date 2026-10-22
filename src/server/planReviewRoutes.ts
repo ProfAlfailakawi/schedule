@@ -32,7 +32,7 @@ import { collegeBranchRoot } from "../utils/branchScope";
 import { rowsToDrafts, type ImportPlan, type RuleImportRow } from "../utils/curriculumRulesImport";
 import { academicDigits, authorityDepartmentCode } from "../utils/authorityAcademicCodes";
 import { branchAudience } from "../utils/referenceApply";
-import { checkSheetScope, correctedNames, isNewSheet, sheetKey, sheetNameMatches, sheetOwnKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
+import { blockingWarnings, checkSheetScope, correctedNames, isNewSheet, sheetKey, sheetNameMatches, sheetOwnKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
 import { parsePlanItems } from "../utils/planPdfParser";
 import { extractPlanItems, PLAN_PDF_MAX_BYTES } from "./planPdfExtract";
 
@@ -515,6 +515,17 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     res.json({ referenceId: reference.id, dryRun, sites: reports });
   });
 
+  /* قراءةُ ترويسة صحيفةٍ بلا أي كتابة: لتصفية الدفعة (الأحدث من القديمة لكل برنامج) قبل رفعها. */
+  app.post("/api/plan-review/sheet/scan", sheetLimit, deps.requireAuth, express.raw({ type: "application/octet-stream", limit: PLAN_PDF_MAX_BYTES + 4096 }), async (req: Request, res: Response) => {
+    if (!deps.isRootAdmin(req)) { fail(res, 403, "رفع الصحيفة للحساب الرئيسي وحده."); return; }
+    const body = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!body?.length || body.subarray(0, 5).toString("latin1") !== "%PDF-") { res.status(422).json({ error: "الملف ليس PDF." }); return; }
+    try {
+      const sheet = parsePlanItems(await extractPlanItems(body));
+      res.json({ program: sheet.program, programName: sheet.programName, year: sheet.startYear, department: sheet.department, isNew: isNewSheet(sheet), readable: sheet.courses.length > 0 && blockingWarnings(sheet).length === 0 });
+    } catch { res.status(422).json({ error: "تعذّرت قراءة الملف." }); }
+  });
+
   /* ── رفع «الخطة الدراسية» (صحيفة التخرج) لقسمٍ واحد: يُطبَّق مباشرةً، والقسم يعتمد بعدها ──────
      الحساب الرئيسي وحده. لا يُقبل إلا كشفُ الكلية والقسم المختارين (checkSheetScope) وقبل أي كتابة؛
      وتؤخذ مقررات القسم وحدها برقمها (105)، وتُصحَّح أسماؤها، ولا تُمسّ السعة أبداً. */
@@ -680,7 +691,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const first = results[0], total = (key: keyof typeof first.report) => results.reduce((sum, item) => sum + item.report[key], 0);
       const report = { updated: total("updated"), created: total("created"), linked: total("linked"), unchanged: total("unchanged"), rules: total("rules"), groups: total("groups"), unlinked: total("unlinked"), prereqPrinted: total("prereqPrinted"), prereqLinked: total("prereqLinked") };
       const fixes = first.fixes;
-      return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
+      return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, sectionName: first.renamed?.after || String(target.AdSectionName || ""), renames: results.filter(item => item.renamed || item.recoded).map(item => ({ sectionId: item.sectionId, renamed: item.renamed, recoded: item.recoded })), renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
     };
 
     if (sectionId) {
@@ -705,7 +716,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     const done = outs.filter(item => item.status === 200);
     if (!done.length) { res.status(outs[0].status).json(outs[0].json); return; }
     res.locals.auditChanges = done.map(item => item.audit).filter(Boolean).join(" | ");
-    res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), prereqPrinted: done.reduce((sum, item) => sum + Number(item.json.prereqPrinted || 0), 0), prereqLinked: done.reduce((sum, item) => sum + Number(item.json.prereqLinked || 0), 0), skipped: outs.length - done.length });
+    res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), prereqPrinted: done.reduce((sum, item) => sum + Number(item.json.prereqPrinted || 0), 0), prereqLinked: done.reduce((sum, item) => sum + Number(item.json.prereqLinked || 0), 0), skipped: outs.length - done.length, sections: done.map(item => item.json.sectionName), renames: done.flatMap(item => item.json.renames || []), nameFixes: done.reduce((sum, item) => sum + (item.json.nameFixes?.length || 0), 0), otherDepartments: done[0].json.otherDepartments, programName: sheet.programName });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */

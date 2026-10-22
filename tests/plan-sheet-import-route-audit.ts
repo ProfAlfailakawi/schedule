@@ -182,6 +182,13 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check(forced.status === 200 && fixed?.AdSectionName === "قسم تكنولوجيا التعليم" && fixed?.AdSectionCode === "09", "رفعٌ صريح: الاسم والرمز يُصحَّحان من الصحيفة", forced.json);
     check((await upload("root", 71, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0105.pdf"), true)).status === 200, "الرفع الصريح يقبل أي صحيفةٍ للقسم المختار صراحةً (قراره للمسؤول)");
     check((await Repository.getSections()).find(row => Number(row.AdSectionId) === 41)?.AdSectionName === "قسم التربية الخاصة", "التربية الخاصة لا تُسمّى «علم النفس» من ترويسة صحيفتها");
+
+    /* قراءة الترويسة بلا كتابة (لتصفية الدفعة) */
+    const scanOf = async (who: string, body: Buffer) => { const res = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body }); return { status: res.status, json: await res.json().catch(() => ({})) as any }; };
+    const scanned = await scanOf("root", oldPdf);
+    check(scanned.status === 200 && scanned.json.program === "BA-0115" && scanned.json.year === 2010 && scanned.json.isNew === false && scanned.json.readable === true, "قراءة الترويسة: البرنامج والسنة والجديدة/القديمة", scanned.json);
+    check((await scanOf("other", oldPdf)).status === 403 && (await scanOf("root", Buffer.from("x"))).status === 422, "القراءة للحساب الرئيسي وPDF فقط");
+    check(Array.isArray(auto.json.sections) && auto.json.sections.length >= 2 && typeof auto.json.nameFixes === "number", "ردّ الرفع التلقائي يحمل أقسامه ليُحرَّر منه التقرير", auto.json);
   } finally { server.close(); }
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
