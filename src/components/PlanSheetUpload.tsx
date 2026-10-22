@@ -26,7 +26,7 @@ interface ReportRow {
   file: string; status: "ok" | "skipped" | "rejected" | "unreadable"; reason?: string; detail?: string;
   program?: string; programName?: string; year?: number; era?: "new" | "old";
   tracks?: number; sites?: number; sections?: string[]; plan?: string; created?: number; updated?: number; linked?: number;
-  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[]; addedOther?: number; correctedOther?: number; noDepartment?: string[];
+  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[]; addedOther?: number; differsOther?: string[]; noDepartment?: string[];
 }
 /** ما يُحفظ في التقرير من ردّ الخادم لصحيفةٍ مقبولة. */
 const pick = (data: any): Partial<ReportRow> => ({
@@ -35,7 +35,7 @@ const pick = (data: any): Partial<ReportRow> => ({
   nameFixes: typeof data.nameFixes === "number" ? data.nameFixes : Array.isArray(data.nameFixes) ? data.nameFixes.length : 0,
   otherDepartments: Number(data.otherDepartments || 0), prereqLinked: Number(data.prereqLinked || 0), prereqPrinted: Number(data.prereqPrinted || 0),
   renames: Array.isArray(data.renames) ? data.renames : [], unresolved: Array.isArray(data.unresolved) ? data.unresolved : [],
-  addedOther: Number(data.addedOther || 0), correctedOther: Number(data.correctedOther || 0), noDepartment: Array.isArray(data.noDepartment) ? data.noDepartment : [],
+  addedOther: Number(data.addedOther || 0), differsOther: Array.isArray(data.differsOther) ? data.differsOther : [], noDepartment: Array.isArray(data.noDepartment) ? data.noDepartment : [],
 });
 
 /** رموز الأقسام المطبوعة في الصحف وغير الموجودة بالنظام، بعدد مقرراتها (للتقرير النهائي). */
@@ -60,11 +60,12 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [batch, setBatch] = useState<{ phase: BatchPhase; done: number; total: number; ok: number; skipped: number; failed: number; prereqLinked: number; prereqPrinted: number; rows: ReportRow[] } | null>(null);
 
+  const [reconcile, setReconcile] = useState<{ updated: number; ambiguous: string[] } | null>(null);
   const lastFile = useRef<File | null>(null);
   const upload = async (file: File | undefined, force = false) => {
     if (!file || !chosen) return;
     lastFile.current = file;
-    setBusy(true); setRejection(null); setError(""); setOutcome(null); setBatch(null);
+    setBusy(true); setRejection(null); setError(""); setOutcome(null); setBatch(null); setReconcile(null);
     try {
       const response = await fetch(`/api/plan-review/sheet/import?sectionId=${chosen}${force ? "&force=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await file.arrayBuffer() });
       const data = await response.json().catch(() => ({} as any));
@@ -80,7 +81,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
      ما عُرف قسمه وما رُفض وما تُرك (قديمةٌ أقدمُ من أحدث لبرنامجها) كلُّه في تقريرٍ يُنزَّل للمراجعة. */
   const uploadAll = async (files: File[]) => {
     if (!files.length) return;
-    setBusy(true); setRejection(null); setError(""); setOutcome(null);
+    setBusy(true); setRejection(null); setError(""); setOutcome(null); setReconcile(null);
     const state = { phase: "read" as BatchPhase, done: 0, total: files.length, ok: 0, skipped: 0, failed: 0, prereqLinked: 0, prereqPrinted: 0 };
     const rows: ReportRow[] = files.map(file => ({ file: file.name, status: "rejected" }));
     const publish = () => setBatch({ ...state, rows: rows.map(row => ({ ...row })) });
@@ -91,11 +92,13 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
     };
     /* 1) القراءة */
     const infos: Array<{ index: number; program: string; department: string; year: number; isNew: boolean } | null> = [];
+    const othersOf: Array<Array<[string, string, number, number]>> = [];
     for (let index = 0; index < files.length; index += 1) {
       try {
         const { response, data } = await post("/api/plan-review/sheet/scan", files[index]);
         if (response.ok && data.readable) {
           infos.push({ index, program: data.program, department: data.department, year: Number(data.year) || 0, isNew: Boolean(data.isNew) });
+          if (data.isNew && Array.isArray(data.others)) othersOf.push(data.others);
           Object.assign(rows[index], { program: data.program, programName: data.programName, year: data.year, era: data.isNew ? "new" : "old" });
         } else { infos.push(null); rows[index] = { ...rows[index], status: "unreadable", reason: "الملف غير مقروء" }; state.failed += 1; }
       } catch { infos.push(null); rows[index] = { ...rows[index], status: "unreadable", reason: "تعذّر الرفع" }; state.failed += 1; }
@@ -122,6 +125,25 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
       } catch { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: "تعذّر الرفع" }; }
       state.done += 1; publish();
     }
+    /* مقررات الأقسام التي لا صحيفة لها (الخدمية): الأشيع بين الصحائف الجديدة، ولا أغلبية = تُذكر ولا تُمسّ */
+    const votes = new Map<string, Map<string, { count: number; name: string; units: number; hours: number }>>();
+    for (const list of othersOf) for (const [key, name, units, hours] of list) {
+      const sig = `${name}|${units}|${hours}`, bucket = votes.get(key) || new Map();
+      bucket.set(sig, { count: (bucket.get(sig)?.count || 0) + 1, name, units, hours }); votes.set(key, bucket);
+    }
+    const winners: Array<{ key: string; name: string; units: number; hours: number }> = [], ambiguous: string[] = [];
+    for (const [key, bucket] of votes) {
+      const ranked = [...bucket.values()].sort((a, b) => b.count - a.count);
+      if (ranked.length > 1 && ranked[0].count === ranked[1].count) ambiguous.push(key); else winners.push({ key, name: ranked[0].name, units: ranked[0].units, hours: ranked[0].hours });
+    }
+    let reconciled = 0;
+    if (winners.length) {
+      try {
+        const response = await fetch("/api/plan-review/sheet/reconcile", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ courses: winners }) });
+        if (response.ok) reconciled = Number((await response.json().catch(() => ({}))).updated || 0);
+      } catch { /* المرور الأول كفى */ }
+    }
+    setReconcile({ updated: reconciled, ambiguous: ambiguous.sort() });
     /* 4) مرورٌ ثانٍ على ما قُبل: مسبقٌ لمقرر قسمٍ رُفع بعده يُربط الآن */
     state.phase = "prereq"; state.done = 0; state.total = accepted.length; publish();
     for (const index of accepted) {
@@ -137,7 +159,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   /* تقريرُ الدفعة (ملفٌ يُنزَّل) للمراجعة: لكل ملفٍ ما دخل وأين وما رُفض ولماذا. */
   const downloadReport = () => {
     if (!batch) return;
-    const text = JSON.stringify({ generatedAt: new Date().toISOString(), summary: { ok: batch.ok, skipped: batch.skipped, failed: batch.failed, prereqLinked: batch.prereqLinked, prereqPrinted: batch.prereqPrinted, missingDepartments: missingDepartments(batch.rows) }, files: batch.rows }, null, 1);
+    const text = JSON.stringify({ generatedAt: new Date().toISOString(), summary: { ok: batch.ok, skipped: batch.skipped, failed: batch.failed, prereqLinked: batch.prereqLinked, prereqPrinted: batch.prereqPrinted, missingDepartments: missingDepartments(batch.rows), otherDepartmentCoursesCorrected: reconcile?.updated || 0, otherDepartmentCoursesNoMajority: reconcile?.ambiguous || [] }, files: batch.rows }, null, 1);
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url; link.download = "تقرير-رفع-الصحف.json"; link.click();
