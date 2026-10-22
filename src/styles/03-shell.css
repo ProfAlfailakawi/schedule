@@ -913,16 +913,16 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
 
 .ob-dots{display:flex;gap:7px;align-items:center}
 .ob-dots button{
-  width:26px;height:4px;padding:0;border:0;border-radius:999px;
-  background:var(--line);cursor:pointer;transition:background .25s var(--ease),width .25s var(--ease);
+  width:26px;height:20px;padding:8px 0;border:0;border-radius:999px;background-clip:content-box;
+  background-color:var(--line);cursor:pointer;transition:background .25s var(--ease),width .25s var(--ease);
 }
-.ob-dots button.done{background:color-mix(in srgb,var(--accent) 42%,transparent)}
-.ob-dots button.on{width:38px;background:color-mix(in srgb,var(--accent) 26%,var(--line));position:relative;overflow:hidden}
+.ob-dots button.done{background-color:color-mix(in srgb,var(--accent) 42%,transparent)}
+.ob-dots button.on{width:38px;background-color:color-mix(in srgb,var(--accent) 26%,var(--line));position:relative;overflow:hidden}
 /* أثناء التشغيل التلقائي وحده: الشريط يمتلئ بمقدار مُهلة الفصل نفسها، فيعرف
    القارئ أن الجولة تمشي ومتى تنتقل — بدل أن يتساءل إن كانت متوقفة. */
 .ob-dots button.on::after{
-  content:"";position:absolute;inset:0;inline-size:100%;
-  border-radius:inherit;background:var(--accent);
+  content:"";position:absolute;inset:8px 0;inline-size:100%;
+  border-radius:999px;background:var(--accent);
   transform-origin:right center;transform:scaleX(1);
 }
 .ob-dots.is-playing button.on::after{animation:ob-dot-fill var(--hold,4s) linear both}

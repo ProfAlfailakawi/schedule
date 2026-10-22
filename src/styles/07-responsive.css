@@ -1902,6 +1902,7 @@ html[data-demo-admin-readonly="true"] .app-main::before{
   .sidebar .nav-section-title{min-height:44px}
   .sidebar .command-search kbd,.sidebar .rail-identity-name,.sidebar .user-card-section{font-size:12px}
   .smart-guide-fab{min-width:44px}
+  .demo-rail-chip>.demo-student-link{min-height:40px}
   .sidebar-brand>button{min-height:44px}
 }
 
