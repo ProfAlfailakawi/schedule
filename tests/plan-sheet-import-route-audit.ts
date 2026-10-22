@@ -29,6 +29,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
       { AdSectionId: 52, AdCollegeId: 1, AdSectionCode: "21", AdSectionName: "قسم المناهج وطرق التدريس" },
       { AdSectionId: 53, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم آخر برمز تسعة" },
       { AdSectionId: 61, AdCollegeId: 1, AdSectionCode: "24", AdSectionName: "قسم الحاسوب" },
+      { AdSectionId: 71, AdCollegeId: 2, AdSectionCode: "88", AdSectionName: "قسم اسم خطأ" },
       { AdSectionId: 41, AdCollegeId: 1, AdSectionCode: "19", AdSectionName: "قسم التربية الخاصة" },
       { AdSectionId: 31, AdCollegeId: 3, AdSectionCode: "09", AdSectionName: "قسم الوسائل التعليمية" },
       { AdSectionId: 16, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
@@ -61,8 +62,8 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const pdf = fs.readFileSync("tests/fixtures/plans/tech-edu-2026.pdf");
   const oldPdf = fs.readFileSync("tests/fixtures/plans/tech-edu-2010.pdf");
-  const upload = async (who: string, sectionId: number, body: Buffer = pdf) => {
-    const res = await fetch(`${base}/api/plan-review/sheet/import?sectionId=${sectionId}`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body });
+  const upload = async (who: string, sectionId: number, body: Buffer = pdf, force = false) => {
+    const res = await fetch(`${base}/api/plan-review/sheet/import?sectionId=${sectionId}${force ? "&force=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body });
     return { status: res.status, json: await res.json().catch(() => ({})) as any };
   };
   try {
@@ -172,6 +173,15 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     /* الرفع التلقائي: اسمٌ مختلف («الحاسوب» و«معلم الحاسب») ورمز الهيئة نفسه (0124) يكفي، ويُسمّى القسم من الصحيفة */
     const computer = await upload("root", 0, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0136.pdf"));
     check(computer.status === 200 && computer.json.auto === true && (await Repository.getSections()).find(row => Number(row.AdSectionId) === 61)?.AdSectionName === "قسم معلم الحاسب", "تلقائي: اسمٌ مختلف ورمز الهيئة واحد يُقبل ويُسمّى القسم من الصحيفة", computer.json);
+
+    /* اسمٌ ورمزٌ خطأ معاً: يُرفض بالمقارنة، ويُقبل بعد أن يختار المسؤول القسم صراحةً (والكلية تبقى شرطاً) فيُصحَّح اسمه ورمزه */
+    const bothWrong = await upload("root", 71);
+    check(bothWrong.status === 422 && bothWrong.json.rejection?.kind === "department", "اسمٌ ورمزٌ خطأ معاً: يُرفض ويُعرض الاختلاف", bothWrong.json);
+    const forced = await upload("root", 71, pdf, true);
+    const fixed = (await Repository.getSections()).find(row => Number(row.AdSectionId) === 71);
+    check(forced.status === 200 && fixed?.AdSectionName === "قسم تكنولوجيا التعليم" && fixed?.AdSectionCode === "09", "رفعٌ صريح: الاسم والرمز يُصحَّحان من الصحيفة", forced.json);
+    check((await upload("root", 71, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0105.pdf"), true)).status === 200, "الرفع الصريح يقبل أي صحيفةٍ للقسم المختار صراحةً (قراره للمسؤول)");
+    check((await Repository.getSections()).find(row => Number(row.AdSectionId) === 41)?.AdSectionName === "قسم التربية الخاصة", "التربية الخاصة لا تُسمّى «علم النفس» من ترويسة صحيفتها");
   } finally { server.close(); }
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);

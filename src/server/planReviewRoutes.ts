@@ -536,11 +536,12 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     };
 
     /** يطبّق الصحيفة على مسار القسم المختار (الرئيسي ومواقعه الفرعية): ردٌّ جاهز أو رفضٌ بلا أي كتابة. */
+    const force = req.query.force === "1";
     const process = async (target: any): Promise<{ status: number; json: any; audit?: string }> => {
       const rejectWith = (kind: string, message: string, extra: Record<string, unknown> = {}) => ({ status: 422, json: { error: message, rejection: { kind, message, ...extra } } });
       const sectionId = Number(target.AdSectionId);
       const scope = scopeOf(target);
-      const rejection = checkSheetScope(sheet, scope);
+      const rejection = checkSheetScope(sheet, scope, { force: force && sectionId === Number(req.query.sectionId) });
       if (rejection) return { status: 422, json: { error: rejection.message, rejection } };
       /* القديمة تدخل «الصحيفة السابقة» وحدها: لا تسمّي القسم ولا تغيّر رمزه ولا تمسّ مقرراً قائماً (الكتالوج مشترك مع الجديدة). */
       const isNew = isNewSheet(sheet);

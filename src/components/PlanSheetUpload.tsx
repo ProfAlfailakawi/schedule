@@ -4,7 +4,7 @@
  * مباشرةً (برقم المقرر، وأسماؤها مصحَّحة، والسعة كما هي)، ثم يعتمد القسم الصحيفة من «اعتماد الصحيفة».
  * الرفضُ صندوقٌ أحمر قصير بأيقونات، بلا نصٍّ طويل.
  */
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { AR, countOf } from "../utils/arabicCount";
 import { AlertTriangle, Building2, CheckCircle2, FileText, GraduationCap, FileUp, FileX2, Link2, MousePointerClick, PencilLine, Plus, SearchX, ShieldAlert, X } from "lucide-react";
 
@@ -36,11 +36,13 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [batch, setBatch] = useState<{ done: number; total: number; ok: number; prereqLinked: number; prereqPrinted: number; pass: 1 | 2; failed: Array<{ name: string; reason: string }> } | null>(null);
 
-  const upload = async (file: File | undefined) => {
+  const lastFile = useRef<File | null>(null);
+  const upload = async (file: File | undefined, force = false) => {
     if (!file || !chosen) return;
+    lastFile.current = file;
     setBusy(true); setRejection(null); setError(""); setOutcome(null); setBatch(null);
     try {
-      const response = await fetch(`/api/plan-review/sheet/import?sectionId=${chosen}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await file.arrayBuffer() });
+      const response = await fetch(`/api/plan-review/sheet/import?sectionId=${chosen}${force ? "&force=1" : ""}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await file.arrayBuffer() });
       const data = await response.json().catch(() => ({} as any));
       if (response.status === 422 && data.rejection) { setRejection(data.rejection as Rejection); return; }
       if (!response.ok) throw new Error(data.error || "تعذّر رفع الصحيفة");
@@ -125,6 +127,11 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
             </div>
           ) : short ? <p className="section-plan-reject-short" aria-hidden="true"><short.icon /> <b>{short.title}</b> <span>· {short.hint}</span></p>
             : <p className="section-plan-reject-short">{rejection.message}</p>}
+          {rejection.kind === "department" && lastFile.current ? (
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void upload(lastFile.current || undefined, true)} data-guide-ignore="رفع الصحيفة على القسم المختار صراحةً رغم اختلاف اسمه ورمزه داخل شاشة مراجعة الصحيفة">
+              <FileUp aria-hidden="true" size={16} /> ارفعها على هذا القسم رغم الاختلاف
+            </button>
+          ) : null}
         </div>
       ) : null}
       {batch ? (
