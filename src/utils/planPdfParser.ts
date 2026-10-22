@@ -88,6 +88,7 @@ type ColumnName = keyof typeof COLUMNS;
 const unmirror = (text: string): string => text.replace(/[()]/g, ch => (ch === "(" ? ")" : "("));
 const clean = (text: string): string => unmirror(String(text || "").normalize("NFKC")).replace(/\s+/g, " ").trim();
 const CODE = /^(\d{2,3}) (\d{2}) (\d{2})$/;
+const GLUED_PREREQ = /^[()]?(\d{2,3} \d{2} \d{2})\s*(?:أو)?[()]?$/;
 const STRAY_CODE = /^\d{2,3} \d{2} \+\d{2}$/;
 const inBand = (value: number, band: readonly [number, number]) => value >= band[0] && value <= band[1];
 
@@ -212,10 +213,13 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
         }
         /* «453 10 +01 تدريب ميداني (2)»: صدى سطرٍ سبق (تقسيم الصفحة)، لا مقرر جديد. */
         if (line.items.some(item => STRAY_CODE.test(item.str))) continue;
+        /* متطلبٌ بقوسٍ أو «أو» ملتصقةٍ برمزه («(251 05 01أو»): يُنزع الزائد ويُسجَّل «أو». */
+        const glued = line.items.some(item => GLUED_PREREQ.test(item.str) && !CODE.test(item.str));
+        if (glued) for (const item of line.items) { const m = item.str.match(GLUED_PREREQ); if (m && !CODE.test(item.str)) item.str = m[1]; }
         const codeItems = line.items.filter(item => CODE.test(item.str));
         const course = codeItems.find(item => inBand(item.x, band.code));
         const prereqs = codeItems.filter(item => inBand(item.x, band.prereq));
-        const orMark = line.items.some(item => /(^|\s)أو(\s|$)/.test(item.str));
+        const orMark = glued || line.items.some(item => /(^|\s)أو(\s|$)/.test(item.str));
         const pen = line.items.some(item => /\bPEN\b/.test(item.str));
 
         if (course) {

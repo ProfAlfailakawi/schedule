@@ -6,7 +6,7 @@
 import fs from "fs";
 import { extractPlanItems } from "../src/server/planPdfExtract";
 import { parsePlanItems } from "../src/utils/planPdfParser";
-import { blockingWarnings, checkSheetScope, correctedNames, dominantDepartment, ownCourses, printedTotalsNotes } from "../src/utils/planSheetImport";
+import { blockingWarnings, checkSheetScope, isNewSheet, sheetKey, correctedNames, dominantDepartment, ownCourses, printedTotalsNotes } from "../src/utils/planSheetImport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -31,6 +31,11 @@ const EXPECTED: Record<string, [string, number]> = {
     check(checkSheetScope(plan, { ...scope, sectionName: "قسم أصول التربية", departmentKey: "0199" })?.kind === "department", `${file}: تُرفض لقسمٍ آخر (اسماً ورمزاً)`);
     check(checkSheetScope(plan, { ...scope, collegeName: "كلية العلوم الإدارية", departmentKey: `02${dept}` })?.kind === "college", `${file}: تُرفض لكليةٍ أخرى`);
     check(correctedNames(ownCourses(plan, key)).fixes.every(fix => fix.after !== fix.before), `${file}: كل تصحيح اسمٍ يغيّر الاسم فعلاً`);
+  }
+  /* قديمتان بصيغٍ مختلفة: متطلبٌ بقوسٍ و«أو» ملتصقتين (الرياضيات)، وبرنامجٌ بلا ترويسة قسمٍ مألوفة */
+  for (const [file, dept, count] of [["ba-0105-2017", "05", 19], ["ba-0110-2024", "21", 11]] as const) {
+    const plan = parsePlanItems(await extractPlanItems(fs.readFileSync(`tests/fixtures/plans/graduation-old/${file}.pdf`)));
+    check(!isNewSheet(plan) && blockingWarnings(plan).length === 0 && dominantDepartment(plan) === dept && ownCourses(plan, sheetKey(plan)).length === count, `${file}: صحيفة قديمة تُقرأ بلا مانع (${count} مقرراً)`);
   }
   const notes = await Promise.all(["ba-0113", "ba-0109", "ba-0102"].map(async file => printedTotalsNotes(parsePlanItems(await extractPlanItems(fs.readFileSync(`tests/fixtures/plans/graduation-2026/${file}.pdf`)))).length));
   check(notes.every(n => n > 0), "المجاميع المطبوعة الخاطئة في الصحيفة تظهر ملاحظات");
