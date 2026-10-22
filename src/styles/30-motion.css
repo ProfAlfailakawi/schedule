@@ -1,0 +1,211 @@
+/* ==========================================================================
+   SCHEDULE — MOTION & POLISH LAYER  (round 2)
+
+   Presentation only. Loaded LAST (after 29-teaching-load), so it refines the
+   system without renaming or removing any hook the app or its tests use.
+
+   One small shared token set, then a handful of quiet behaviours:
+     · pages rise in once, children staggered 40ms apart (first eight only);
+     · tab panels, disclosures, menus and dialogs ease in;
+     · the active-nav rule grows into place, buttons answer a press.
+
+   Rules this file keeps, and why
+   ──────────────────────────────
+   1. The END STATE is the existing static design. Every animation is
+      `backwards`-filled with a `from` keyframe only: before the delay the
+      element sits at the `from` pose, after the animation nothing of it is left
+      — there is no forward-fill that could keep a transform (and so a
+      containing block for fixed children) alive.
+   2. Only opacity and the transform-family properties move (`translate`,
+      `scale`). The individual `translate` property composes with an element's
+      own `transform`, so a dialog centred with translate(-50%,-50%) is never
+      overwritten. Nothing here changes layout, so nothing can shift it.
+   3. Every selector sits inside `:where()` — specificity zero — so any
+      animation the app already declares on the same element keeps winning and
+      is never doubled. This layer only fills the gaps.
+   4. Everything lives under `prefers-reduced-motion: no-preference`. Under
+      `reduce` none of it exists and every element is simply visible.
+   5. No motion on the numbers that carry a decision: conflict / blocker /
+      approval / dossier content is excluded by name. Tables, form fields,
+      long-form text and anything being typed into are never targeted.
+   6. Nothing loops. 120–260ms, one curve.
+   ========================================================================== */
+
+:root{
+  --mo-ease:cubic-bezier(.2,.7,.2,1);
+  --mo-fast:120ms;
+  --mo-base:180ms;
+  --mo-slow:260ms;
+  --mo-rise:8px;
+  --mo-rise-sm:6px;
+  --mo-step:40ms;
+}
+
+/* --- Static polish (no motion) --------------------------------------------
+   Arabic headings break into balanced lines instead of one orphaned word, and
+   short explanatory paragraphs avoid a lone last word. Both are line-breaking
+   hints only: widths, heights and the copy itself are untouched. */
+.page-heading h1,
+.surface-head h2,
+.surface-head h3,
+.empty-state h3,
+.empty-state strong{text-wrap:balance}
+.page-heading p,
+.empty-state p,
+.master-empty span{text-wrap:pretty}
+
+/* Selection wears the brand jade rather than the browser blue. */
+::selection{background:color-mix(in srgb,var(--accent) 24%,transparent);color:inherit}
+
+/* Phone: the three scope selects (كلية / قسم / فصل) were three boxed cards of
+   ~100px each — a grey frame around a white frame around the control — which
+   pushed the first real content below the fold. Each becomes one quiet row:
+   label on the inline-start, control filling the rest, no second frame. Same
+   labels, same controls, same order and ids; only the arrangement changes. */
+@media (max-width:760px){
+  .visual-minimal.query-page .query-primary-filters>.field,
+  .visual-minimal .ask-scope-bar .query-primary-filters>.field,
+  .intel-context.visual-minimal .intel-context-fields>.field{
+    display:grid;
+    grid-template-columns:4.75rem minmax(0,1fr);
+    align-items:center;
+    column-gap:var(--s3);
+    row-gap:var(--s1);
+    padding:0 var(--s1);
+    border:0;
+    border-radius:0;
+    background:transparent;
+  }
+  .visual-minimal.query-page .query-primary-filters>.field>label,
+  .visual-minimal .ask-scope-bar .query-primary-filters>.field>label,
+  .intel-context.visual-minimal .intel-context-fields>.field>label{
+    margin:0;
+    line-height:1.4;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+  .visual-minimal.query-page .query-primary-filters>.field>.field-help,
+  .visual-minimal .ask-scope-bar .query-primary-filters>.field>.field-help,
+  .intel-context.visual-minimal .intel-context-fields>.field>.field-help{grid-column:1/-1}
+  .intel-context.visual-minimal .intel-context-fields{gap:var(--s2)}
+  .intel-context.visual-minimal .intel-context-fields select{height:44px;min-height:44px}
+  .visual-minimal.query-page .query-primary-filters,
+  .visual-minimal .ask-scope-bar .query-primary-filters{gap:var(--s2)}
+}
+
+@media (prefers-reduced-motion:no-preference){
+
+  @keyframes mo-fade{from{opacity:0}}
+  @keyframes mo-rise{from{opacity:0;translate:0 var(--mo-rise)}}
+  @keyframes mo-rise-sm{from{opacity:0;translate:0 var(--mo-rise-sm)}}
+  @keyframes mo-drop-sm{from{opacity:0;translate:0 calc(var(--mo-rise-sm) * -1)}}
+  @keyframes mo-indicator{from{opacity:0;scale:1 .35}}
+
+  /* --- Route change: the page root fades (opacity only, so no transform
+     can ever become the containing block of a fixed dock or dialog inside it),
+     and its direct children rise in a short stagger. */
+  :where(.content-frame>*){
+    animation:mo-fade var(--mo-base) var(--mo-ease) backwards;
+  }
+  :where(.content-frame>*>*:not(
+    .schedule-dock,.sr-only,[hidden],[role="dialog"],[role="alertdialog"],
+    [class*="backdrop"],[class*="scrim"],[class*="blocker"],[class*="conflict"],
+    [class*="approval"],[class*="dossier"],[class*="clash"],
+    .deck-decision,.dashboard-attention
+  )){
+    animation:mo-rise var(--mo-slow) var(--mo-ease) backwards;
+  }
+  :where(.content-frame>*>*:nth-child(2)){animation-delay:calc(var(--mo-step) * 1)}
+  :where(.content-frame>*>*:nth-child(3)){animation-delay:calc(var(--mo-step) * 2)}
+  :where(.content-frame>*>*:nth-child(4)){animation-delay:calc(var(--mo-step) * 3)}
+  :where(.content-frame>*>*:nth-child(5)){animation-delay:calc(var(--mo-step) * 4)}
+  :where(.content-frame>*>*:nth-child(6)){animation-delay:calc(var(--mo-step) * 5)}
+  :where(.content-frame>*>*:nth-child(7)){animation-delay:calc(var(--mo-step) * 6)}
+  :where(.content-frame>*>*:nth-child(8)){animation-delay:calc(var(--mo-step) * 7)}
+  /* Past the eighth child the page is already settled: no animation. */
+  :where(.content-frame>*>*:nth-child(n+9)){animation:none}
+
+  /* --- Card and tile groups: the same stagger, one level down. */
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:not([class*="blocker"],[class*="conflict"],[class*="approval"],[class*="clash"])){
+    animation:mo-rise var(--mo-slow) var(--mo-ease) backwards;
+  }
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(2)){animation-delay:calc(var(--mo-step) * 1)}
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(3)){animation-delay:calc(var(--mo-step) * 2)}
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(4)){animation-delay:calc(var(--mo-step) * 3)}
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(5)){animation-delay:calc(var(--mo-step) * 4)}
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(6)){animation-delay:calc(var(--mo-step) * 5)}
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(7)){animation-delay:calc(var(--mo-step) * 6)}
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(8)){animation-delay:calc(var(--mo-step) * 7)}
+  :where(:is(.insight-preview-list,.deck-signals,.deck-metrics,.inbox-glance,.reg-flow,
+    .admin-quiet-summary,.request-deck,.dashboard-workload-preview)>*:nth-child(n+9)){animation:none}
+
+  /* --- Tabs: the panel that arrives cross-fades in. */
+  :where([role="tabpanel"]){
+    animation:mo-rise-sm var(--mo-base) var(--mo-ease) backwards;
+  }
+
+  /* --- Disclosure: the body eases open (opacity + 6px) — height is left to the
+     browser, so nothing reflows mid-animation. */
+  :where(details[open]>*:not(summary)){
+    animation:mo-rise-sm var(--mo-base) var(--mo-ease) backwards;
+  }
+
+  /* --- Menus and popovers. */
+  :where([role="menu"]){
+    animation:mo-drop-sm var(--mo-fast) var(--mo-ease) backwards;
+  }
+
+  /* --- Dialogs, sheets, drawers. A node that is itself the dimmed backdrop
+     only fades; the card inside it rises. The approval dossier is left to its
+     own static presentation. */
+  :where([role="dialog"]:not([class*="backdrop"],[class*="scrim"],[class*="-root"],.ad-dialog,.approval-sheet),
+         [role="alertdialog"]:not([class*="backdrop"],[class*="scrim"])){
+    animation:mo-rise-sm var(--mo-base) var(--mo-ease) backwards;
+  }
+  :where([role="dialog"][class*="backdrop"],[role="dialog"][class*="scrim"],[role="alertdialog"][class*="backdrop"]){
+    animation:mo-fade var(--mo-base) var(--mo-ease) backwards;
+  }
+  :where(
+    .share-backdrop,.review-backdrop,.transfer-backdrop,.views-dialog-backdrop,
+    .signature-backdrop,.meeting-backdrop,.cmdk-backdrop,.spotlight-backdrop,
+    .pdf-report-backdrop,.vault-confirm-backdrop,.undo-log-backdrop,
+    .query-detail-backdrop,.pr-modal-backdrop,.drift-sheet-backdrop,
+    .location-admin-modal-backdrop
+  ){
+    animation:mo-fade var(--mo-base) var(--mo-ease) backwards;
+  }
+
+  /* --- Active navigation: the brass rule grows into place on the row that
+     just became current. */
+  :where(.side-nav-link.active)::before{
+    animation:mo-indicator var(--mo-slow) var(--mo-ease) backwards;
+  }
+
+  /* --- Press: a button answers the finger with a 2% shrink (the existing 1px
+     sink is replaced, not stacked). Disabled buttons never react. */
+  .btn:active:not(:disabled){transform:scale(.98)}
+
+  /* --- Direction cue: a forward arrow inside an action moves 2px on hover.
+     Lucide names the left-pointing glyphs; in RTL, left is forward. */
+  :where(.btn,.page-heading-action a) :is(.lucide-arrow-left,.lucide-chevron-left){
+    transition:translate var(--mo-base) var(--mo-ease);
+  }
+  :where(.btn,.page-heading-action a):hover :is(.lucide-arrow-left,.lucide-chevron-left){
+    translate:-2px 0;
+  }
+}
+
+/* Printing never waits on an animation. */
+@media print{
+  :where(.content-frame>*,.content-frame>*>*,[role="tabpanel"],[role="dialog"],details>*){
+    animation:none !important;
+  }
+}
