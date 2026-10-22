@@ -284,8 +284,7 @@ check(publicSchedule.includes('resolved.link.kind === "students"'), "رابط ا
 check(server.includes('resolved.link.kind === "survey" || resolved.link.kind === "students"'), "ولا تقويم ICS منه");
 check(server.includes('if (resolved.link.kind === "students") {\n    res.redirect(302, `/t/'), "/s/ يحوّل رابط الطلبة إلى /t/");
 check(fs.readFileSync("tests/public-pages-syntax-audit.ts", "utf8").includes('"studentSchedulePage"'), "صفحة الطلبة في تدقيق صياغة الصفحات العامة");
-const qr = fs.readFileSync("src/components/StudentQrButton.tsx", "utf8");
-check(qr.includes('import("../utils/qrcodeGenerator")') && qr.includes('kind: "students"') && qr.includes("print") && qr.includes("toDataURL"), "زرّ QR: توليدٌ في المتصفح، طباعة وتنزيل");
+check(!fs.existsSync("src/components/StudentQrButton.tsx") && !transfer.includes("StudentQrButton"), "بطاقة النشر بلا زرّ «رمز QR للطلبة» المكرّر: الرمز يخرج من نافذة النشر ومن «مساري»");
 
 console.log(`\nSection planning & student QR audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

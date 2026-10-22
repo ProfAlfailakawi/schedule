@@ -10,8 +10,8 @@
  *
  * ما يفعله هذا السكربت، وكلّه آمنٌ لإعادة التشغيل:
  *   ١. القسم الغائب عن إحدى الكليات الأربع يُنشأ فيها بالرمز والاسم نفسيهما.
- *   ٢. الحساب الغائب يُنشأ موقوفاً وبلا كلمة سر (يضع المدير الكلمة ويفعّله
- *      من شاشة المستخدمين).
+ *   ٢. الحساب الغائب يُنشأ مفعَّلاً بكلمة السر الافتراضية (scripts/lib/defaultPassword.ts)
+ *      ليغيّرها صاحبه عند أول دخول؛ والقائمُ الموقوف بلا كلمة سر يُفعَّل بها أيضاً.
  *   ٣. الحساب القائم يُوسَّع نطاقه ليشمل كل الكليات الأربع — لا يُحذف له نطاق
  *      ولا تُغيَّر صفته ولا كلمة سره ولا اسم دخوله.
  *   ٤. ما كان ملتبساً (بادئة متعارضة، اسم قسم مكرر برموز مختلفة) لا يُمسّ،
@@ -36,6 +36,7 @@ const APPLY = process.argv.includes("--apply");
 const { initDatabase, Repository } = await import("../src/db/repository");
 const { planAdvisorAccounts, ADVISOR_KIND, HEAD_KIND } = await import("../src/utils/departmentHeadAccounts");
 const { roleDefinition } = await import("../src/utils/academicRoles");
+const { defaultCredentials, needsDefaultCredentials, DEFAULT_ACCOUNT_PASSWORD } = await import("./lib/defaultPassword");
 const { departmentFamilyKey } = await import("../src/utils/sectionLabel");
 const { officialCollegeSitePrefix } = await import("../src/utils/locationCollegePrefixes");
 
@@ -129,8 +130,8 @@ for (const [familyKey, members] of families) {
       if (APPLY) {
         const def = roleDefinition(kind.role);
         const user = await Repository.createUser({
-          Name: `${kind.namePrefix} ${familyName}`, SystemUserLogin: login, SystemUserPass: "",
-          IsAdminUser: false, IsActive: false, IsLocked: false, IsDeleted: false, AdInstructorId: 0, Role: kind.role,
+          Name: `${kind.namePrefix} ${familyName}`, SystemUserLogin: login, ...defaultCredentials(Repository),
+          IsAdminUser: false, IsLocked: false, IsDeleted: false, AdInstructorId: 0, Role: kind.role,
         } as any);
         await Repository.saveSecurityByUser(user.SystemUserId, def.formIds);
         await Repository.saveUserAssigns(user.SystemUserId, desired);
@@ -138,6 +139,10 @@ for (const [familyKey, members] of families) {
         created++;
       } else wouldCreate++;
       continue;
+    }
+    if (needsDefaultCredentials(existing)) {
+      console.log(`  * ${existing.SystemUserLogin}: تفعيل بكلمة السر الافتراضية`);
+      if (APPLY) await Repository.updateUser(Number(existing.SystemUserId), defaultCredentials(Repository) as any);
     }
     const current = (assigns as any[]).filter(a => Number(a.SystemUserId) === Number(existing.SystemUserId));
     const have = new Set(current.map(scopeKey));
@@ -153,6 +158,6 @@ for (const [familyKey, members] of families) {
 
 if (review.length) { console.log("\n── للمراجعة اليدوية (لم يُمسّ شيء منها)"); for (const line of review) console.log(`  ? ${line}`); }
 console.log(APPLY
-  ? `\nأُنشئ: ${sectionsCreated} قسماً، ${created} حساباً (موقوفة وبلا كلمة سر)، ووُسّع نطاق ${widened} حساباً.`
+  ? `\nأُنشئ: ${sectionsCreated} قسماً، ${created} حساباً (مفعَّلة بكلمة السر الافتراضية: ${DEFAULT_ACCOUNT_PASSWORD})، ووُسّع نطاق ${widened} حساباً.`
   : `\nمعاينة: ${sectionsToCreate} قسماً و${wouldCreate} حساباً سيُنشأ، ونطاق ${wouldWiden} حساباً سيُوسَّع. أعد التشغيل مع --apply.`);
 process.exit(0);
