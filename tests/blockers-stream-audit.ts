@@ -212,7 +212,7 @@ await (async () => {
   check(clashes.length >= 1 && clashes.length <= 2, `B15 تعارضٌ أو اثنان مقصودان في الفصل الأول (${clashes.length})`);
   check(clashes.every(c => [c.rowId, c.otherId].some(id => /حالة تجريبية مقصودة/.test(String(demo.schedules.find(r => r.id === id)?.fdetail || "")))),
     "B15 وكل تعارضٍ مقصود مشروحٌ في ملاحظة موعده");
-  check(demo.terms.length === 6 && demo.terms.filter((t: any) => !t.AdTermClosed).length === 2 && demo.sections.length === 3, "B15 الفصلان الدراسيان (الجاري والقادم) وأربعةُ فصولِ تاريخٍ مغلقة وثلاثة أقسام لعرض الديمو");
+  check(demo.terms.length === 8 && demo.terms.filter((t: any) => !t.AdTermClosed).length === 2 && demo.sections.length === 3, "B15 الفصلان الدراسيان (الجاري والقادم) وستةُ فصولِ تاريخٍ مغلقة وثلاثة أقسام لعرض الديمو");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

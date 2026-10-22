@@ -33,12 +33,13 @@ export function ConfidenceMeter({ confidence, compact = false }: { confidence: C
 }
 
 /** أعمدةٌ صغيرة: شعبُ كل فصلٍ سابق، ثم المتوقَّع (متقطّع بمداه)، وخطُّ المخطَّط الآن. */
-function SeriesBars({ row }: { row: DemandPrediction }) {
+function SeriesBars({ row, hasHistory }: { row: DemandPrediction; hasHistory: boolean }) {
   const max = Math.max(1, row.high, row.planned, ...row.series);
   const bars = row.series.length + 1;
   const w = 8, gap = 4, h = 34;
   const y = (v: number) => h - Math.round((v / max) * (h - 2));
-  if (!row.series.length) return <small className="pi-series-none">بلا تاريخ</small>;
+  /* مقرّرٌ له تاريخٌ في القسم لكن لا شعبَ له في فصول هذا الموسم: يُقال ذلك، لا «بلا تاريخ». */
+  if (!row.series.length) return <small className="pi-series-none">{hasHistory ? "لا يُطرح في هذا الموسم" : "بلا تاريخ"}</small>;
   return (
     <svg className="pi-series" viewBox={`0 0 ${bars * (w + gap)} ${h + 2}`} role="img" aria-label={`شعب الفصول السابقة ${row.series.join("، ")}؛ المتوقع ${row.expected}؛ المخطط ${row.planned}`}>
       {row.series.map((value, index) => <rect key={index} x={index * (w + gap)} y={y(value)} width={w} height={h - y(value) + 1} rx="2" className="pi-bar" />)}
@@ -90,7 +91,7 @@ export default function PredictiveInsightPanel({ canSchedule, onNavigate, onChan
     const prereq = action.courseId ? byPrereq.get(action.courseId) : undefined;
     const source = demand || prereq;
     if ((action.kind === "open-sections" || action.kind === "open-prereq") && action.oneClick && canSchedule && source?.collegeId && source?.sectionId) {
-      return <RadarSchedule course={{ courseId: source.courseId, name: source.name, collegeId: source.collegeId, sectionId: source.sectionId }} termId={termId} onChanged={onChanged} />;
+      return <RadarSchedule course={{ courseId: source.courseId, name: source.name, collegeId: source.collegeId, sectionId: source.sectionId, forecastCount: action.kind === "open-sections" ? action.count : undefined }} termId={termId} onChanged={onChanged} />;
     }
     if (action.disabledReason) return <small className="pi-why-off"><Lock aria-hidden="true" />{action.disabledReason}</small>;
     if (onNavigate && canSchedule) return <SecondaryButton type="button" onClick={() => onNavigate("schedules")} data-guide-ignore="يفتح ورشة الجدول للمراجعة؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> افتح الورشة</SecondaryButton>;
@@ -134,7 +135,7 @@ export default function PredictiveInsightPanel({ canSchedule, onNavigate, onChan
         {shownDemand.length ? <ul className="pi-rows">{shownDemand.map(row => (
           <li key={row.courseId} className="pi-row" data-level={row.confidence.level}>
             <div className="pi-row-name"><b>{row.name}</b><small>{row.code}</small></div>
-            <SeriesBars row={row} />
+            <SeriesBars row={row} hasHistory={r.historyTerms > 0} />
             <div className="pi-row-num" title={`المدى ${row.low}–${row.high}`}>
               <span>{nf(row.planned)}</span>{row.trend === "up" ? <TrendingUp aria-hidden="true" /> : row.trend === "down" ? <TrendingDown aria-hidden="true" /> : <span aria-hidden="true">←</span>}<b>{nf(row.expected)}</b>
               {row.delta !== 0 ? <em data-sign={row.delta > 0 ? "plus" : "minus"}><bdi dir="ltr">{row.delta > 0 ? "+" : "−"}{nf(Math.abs(row.delta))}</bdi></em> : null}

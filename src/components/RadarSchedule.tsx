@@ -6,7 +6,7 @@ import ApplyProposal, { postScheduleProposal, postWhatIf } from "./ApplyProposal
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 /** مقرّرٌ يُقترح له فتحُ شعبة: ما يكفي لقراءة الاقتراح من محرّك الفتح (لا يعرف الرادارَ ولا التنبّؤ). */
-export interface RadarScheduleCourse { courseId: number; name: string; shortfall?: number; collegeId?: number; sectionId?: number }
+export interface RadarScheduleCourse { courseId: number; name: string; shortfall?: number; collegeId?: number; sectionId?: number; /** عددُ الشعب التي يتوقّعها التنبّؤ: إن لم يجد رغباتٌ حيّة ما يقترحه، يُقترح من التوقّع. */ forecastCount?: number }
 
 export const request = async (url: string, init?: RequestInit) => {
   const response = await fetch(url, init);
@@ -27,12 +27,21 @@ export default function RadarSchedule({ course, termId, onChanged }: { course: R
   const [proposal, setProposal] = useState<any>(null);
   const [message, setMessage] = useState("");
   const [noCeiling, setNoCeiling] = useState(false);
+  const [fromForecast, setFromForecast] = useState(false);
   const read = async () => {
     setState("loading"); setMessage("");
     try {
       const data = await request(`/api/schedules/demand?collegeId=${course.collegeId}&sectionId=${course.sectionId}&termId=${termId}`);
       setNoCeiling((data?.openings?.noCeiling || []).some((item: any) => Number(item.courseId) === course.courseId));
-      setProposal((data?.openings?.proposals || []).find((item: any) => Number(item.courseId) === course.courseId) || null);
+      let found = (data?.openings?.proposals || []).find((item: any) => Number(item.courseId) === course.courseId) || null;
+      setFromForecast(false);
+      /* لا رغباتٍ حيّة تُنقص مقاعده: يُقترح من توقّع التاريخ (ما قاله التنبّؤ نفسُه) بدل ردٍّ لا يدلّ على شيء. */
+      if (!found && course.forecastCount) {
+        const preview = await request(`/api/schedules/openings-preview?collegeId=${course.collegeId}&sectionId=${course.sectionId}&termId=${termId}&courseId=${course.courseId}&count=${course.forecastCount}`).catch(() => null);
+        found = (preview?.openings?.proposals || []).find((item: any) => Number(item.courseId) === course.courseId && (item.placements || []).length) || null;
+        if (found) { setFromForecast(true); setNoCeiling(false); }
+      }
+      setProposal(found);
       setState("ready");
     } catch (e: any) { setMessage(e.message || "تعذّرت قراءة الاقتراح."); setState("idle"); }
   };
@@ -50,6 +59,7 @@ export default function RadarSchedule({ course, termId, onChanged }: { course: R
       ) : null}
       {state === "ready" && proposal ? (
         <div className="sm-act-list">
+          {fromForecast ? <small className="sm-act-note">اقتراحٌ من توقّع الفصول السابقة، لا من رغبات الطلبة الحاليين.</small> : null}
           {proposal.simulationImpact ? (() => {
             type Cap = { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number };
             const impact = proposal.simulationImpact as { before?: Cap; after?: Cap; delta12: number; delta15: number; conflictsBefore: number; conflictsAfter: number };

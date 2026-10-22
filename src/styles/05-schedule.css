@@ -7681,6 +7681,17 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   box-shadow:var(--shadow-sm)!important;overflow:visible!important;
 }
 .hall-barter-board.is-open .hall-barter-opportunity-grid{grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr))!important}
+/* لا شيء داخل الشاشة المفتوحة يفرض عرضاً أكبر من صندوقها: أعمدة الشبكة الضمنية
+   وعناصرها كانت `auto` فتُقاس بأعرض محتوى (أسماء أقسام طويلة، قوائم منسدلة)، وفي RTL
+   يخرج الفائض من جهة البداية حيث لا يصل التمرير. العمود هنا واحدٌ بحدٍّ أدنى صفر،
+   وكل ما فيه ينكمش ويلفّ النصّ. */
+.hall-barter-board.is-open .hall-barter-body{grid-template-columns:minmax(0,1fr)}
+.hall-barter-board.is-open .hall-barter-body>*,
+.hall-barter-board.is-open .hall-barter-section>*{min-width:0;max-width:100%}
+.hall-barter-board.is-open :where(strong,small,em,span,b){overflow-wrap:break-word}
+.hall-barter-board.is-open .hall-barter-selects>select{max-width:100%;min-width:0}
+.hall-barter-board.is-open .hall-barter-pending-row>article{grid-template-columns:minmax(0,.8fr) minmax(0,1.5fr) auto auto}
+.hall-barter-board.is-open .hall-barter-pending-label{white-space:normal}
 /* Physical left is intentional: inline-start is the right side in RTL. */
 .hall-barter-screen-close{
   position:fixed;top:max(18px,env(safe-area-inset-top));left:max(18px,env(safe-area-inset-left));right:auto!important;
