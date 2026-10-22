@@ -32,7 +32,7 @@ import { collegeBranchRoot } from "../utils/branchScope";
 import { rowsToDrafts, type ImportPlan, type RuleImportRow } from "../utils/curriculumRulesImport";
 import { authorityDepartmentCode } from "../utils/authorityAcademicCodes";
 import { branchAudience } from "../utils/referenceApply";
-import { checkSheetScope, correctedNames, printedTotalsNotes, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
+import { checkSheetScope, correctedNames, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
 import { parsePlanItems } from "../utils/planPdfParser";
 import { extractPlanItems, PLAN_PDF_MAX_BYTES } from "./planPdfExtract";
 
@@ -541,7 +541,6 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     const inBranch = ownCourses(sheet, departmentKey).filter(course => !(course.girlsOnly && branch && branchAudience(branch) !== "girls"));
     const { names, fixes } = correctedNames(inBranch);
     const { reference, notes } = sheetToReference(sheet, inBranch, names);
-    notes.unshift(...printedTotalsNotes(sheet));
     const numberOf = (code: unknown) => Number(referenceCodeKey(code).slice(-3));
     const report: { updated: number; created: number; linked: number; unchanged: number; otherDepartments: number; girlsOnlySkipped: number; rules: number; groups: number } =
       { updated: 0, created: 0, linked: 0, unchanged: 0, otherDepartments: sheet.courses.length - ownCourses(sheet, departmentKey).length, girlsOnlySkipped: ownCourses(sheet, departmentKey).length - inBranch.length, rules: 0, groups: 0 };

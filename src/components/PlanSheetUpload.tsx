@@ -15,7 +15,6 @@ interface Rejection {
 interface Outcome {
   renamed: { before: string; after: string } | null;
   planId: string; planName: string; planCreated: boolean; created: number; updated: number; linked: number; unchanged: number; rules: number;
-  nameFixes: Array<{ code: string; before: string; after: string }>; notes: string[];
 }
 
 const SHORT: Record<string, { icon: typeof FileX2; title: string; hint: string }> = {
@@ -97,12 +96,6 @@ export default function PlanSheetUpload({ sections, sectionId, onDone }: { secti
           <span title="رُبطت بالصحيفة"><Link2 aria-hidden="true" /> {outcome.linked}</span>
           <small>{outcome.planName} · بانتظار اعتماد القسم</small>
           {outcome.renamed ? <small><GraduationCap aria-hidden="true" size={14} /> {outcome.renamed.before} ← {outcome.renamed.after}</small> : null}
-          {outcome.nameFixes.length ? (
-            <details><summary>أسماء صُحّحت ({outcome.nameFixes.length})</summary>
-              <ul>{outcome.nameFixes.map(f => <li key={f.code}><b>{f.code}</b> {f.before} ← {f.after}</li>)}</ul>
-            </details>
-          ) : null}
-          {outcome.notes.length ? <details><summary>ملاحظات ({outcome.notes.length})</summary><ul>{outcome.notes.map((n, i) => <li key={i}>{n}</li>)}</ul></details> : null}
         </div>
       ) : null}
     </section>
