@@ -26,7 +26,7 @@ interface ReportRow {
   file: string; status: "ok" | "skipped" | "rejected" | "unreadable"; reason?: string; detail?: string;
   program?: string; programName?: string; year?: number; era?: "new" | "old";
   tracks?: number; sites?: number; sections?: string[]; plan?: string; created?: number; updated?: number; linked?: number;
-  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[]; addedOther?: number; differsOther?: string[]; noDepartment?: string[];
+  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[]; addedOther?: number; differsOther?: string[]; noDepartment?: string[]; rollover?: boolean;
 }
 /** ما يُحفظ في التقرير من ردّ الخادم لصحيفةٍ مقبولة. */
 const pick = (data: any): Partial<ReportRow> => ({
@@ -35,7 +35,7 @@ const pick = (data: any): Partial<ReportRow> => ({
   nameFixes: typeof data.nameFixes === "number" ? data.nameFixes : Array.isArray(data.nameFixes) ? data.nameFixes.length : 0,
   otherDepartments: Number(data.otherDepartments || 0), prereqLinked: Number(data.prereqLinked || 0), prereqPrinted: Number(data.prereqPrinted || 0),
   renames: Array.isArray(data.renames) ? data.renames : [], unresolved: Array.isArray(data.unresolved) ? data.unresolved : [],
-  addedOther: Number(data.addedOther || 0), differsOther: Array.isArray(data.differsOther) ? data.differsOther : [], noDepartment: Array.isArray(data.noDepartment) ? data.noDepartment : [],
+  addedOther: Number(data.addedOther || 0), rollover: Boolean(data.rollover), differsOther: Array.isArray(data.differsOther) ? data.differsOther : [], noDepartment: Array.isArray(data.noDepartment) ? data.noDepartment : [],
 });
 
 /** رموز الأقسام المطبوعة في الصحف وغير الموجودة بالنظام، بعدد مقرراتها (للتقرير النهائي). */
@@ -49,6 +49,7 @@ const SHORT: Record<string, { icon: typeof FileX2; title: string; hint: string }
   unreadable: { icon: FileX2, title: "الملف غير مقروء", hint: "ارفع PDF «الخطة الدراسية» من SWRCAPP" },
   unverified: { icon: ShieldAlert, title: "القراءة لا تطابق حسابها", hint: "أرسل الملف لفحصه" },
   order: { icon: SearchX, title: "لا صحيفة سابقة للقسم", hint: "ارفع القديمة قبل الجديدة" },
+  previous: { icon: History, title: "للقسم سابقة جارية", hint: "اضغط «انتهوا» لها ثم ارفع الأحدث" },
   empty: { icon: SearchX, title: "لا مقررات لهذا القسم", hint: "في الصحيفة" },
 };
 

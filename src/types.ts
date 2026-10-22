@@ -216,6 +216,8 @@ export interface CurriculumPlan {
    * للمسار جديدتُه وسابقتُه، ولا تدخل في ثنائية «الجديدة/السابقة» الرئيسية للقسم ولا تُزيحها.
    */
   track?: string;
+  /** سنة بدء الصحيفة المرفوعة التي غذّت هذه الخطة: بها يُعرف أن صحيفة أحدث تأتي «تدويراً» لا تحديثاً. */
+  sheetYear?: number;
   createdAt: string;
   createdBy?: string;
   activatedAt?: string;

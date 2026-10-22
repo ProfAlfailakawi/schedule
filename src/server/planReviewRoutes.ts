@@ -607,11 +607,20 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const mainPlansOf = (id: number) => livePlansOf(id).then(rows => rows.filter(item => !item.track));
       /* برنامجٌ بتخصصٍ مزدوج (BA-012402…): صحيفةُ مسارٍ مستقلة داخل القسم، لها جديدتُها وسابقتُها. */
       const trackProgram = /^BA-\d{4}\d{2}$/.test(sheet.program) ? sheet.program : "";
-      if (!isNew && !trackProgram) {
-        for (const item of targets) {
-          const rows = await mainPlansOf(Number(item.AdSectionId));
-          if (rows.length && !rows.some(plan => plan.status === "transition")) { return rejectWith("order", "لا صحيفة سابقة للقسم. ارفع القديمة قبل الجديدة."); }
-        }
+      /* التدوير: صحيفةٌ أحدث من سنة الفعّالة تصير الفعّالة وتنتقل القائمة إلى «السابقة» (للقسم المعني وحده)؛ نفس السنة تحديث؛ أقدم تدخل «السابقة». */
+      const planScopeOf = async (sid: number) => (await livePlansOf(sid)).filter(item => (trackProgram ? item.track === trackProgram : !item.track));
+      const eraOf = async (sid: number): Promise<{ isNew: boolean; rollover: boolean }> => {
+        if (!isNew) return { isNew: false, rollover: false };
+        const active = (await planScopeOf(sid)).find(item => item.status === "active");
+        const year = Number(active?.sheetYear) || 0;
+        if (active && year && sheet.startYear > year) return { isNew: true, rollover: true };
+        if (active && year && sheet.startYear < year) return { isNew: false, rollover: false };
+        return { isNew: true, rollover: false };
+      };
+      for (const item of targets) {
+        const era = await eraOf(Number(item.AdSectionId)), rows = await planScopeOf(Number(item.AdSectionId));
+        if (era.rollover && rows.some(plan => plan.status === "transition")) { return rejectWith("previous", "للقسم صحيفة سابقة جارية. اضغط «انتهوا» لها ثم ارفع الصحيفة الأحدث."); }
+        if (!era.isNew && !trackProgram && rows.length && !rows.some(plan => plan.status === "transition")) { return rejectWith("order", "لا صحيفة سابقة للقسم. ارفع القديمة قبل الجديدة."); }
       }
       const numberOf = (code: unknown) => Number(referenceCodeKey(code).slice(-3));
       /* القديمة تصحّح الاسم والوحدات والساعات كالجديدة، إلا مقرراً في صحيفة فعّالة: الجديدة هي المعتمدة ولا تُنقض بالقديمة. */
@@ -623,10 +632,11 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         }
         return activeCache.get(sid)!;
       };
-      const mayCorrect = async (row: AdCourse) => isNew || !(await activeIdsOf(Number(row.AdSectionId))).has(Number(row.AdCourseId));
+      const mayCorrect = async (row: AdCourse, newEra: boolean) => newEra || !(await activeIdsOf(Number(row.AdSectionId))).has(Number(row.AdCourseId));
 
       const applyTo = async (site: any) => {
         const cid = Number(site.AdCollegeId), sid = Number(site.AdSectionId);
+        const era = await eraOf(sid), isNew = era.isNew;
         /* اسم القسم ورمزه من الصحيفة المعتمدة (ما كُتب يدوياً يُصحَّح إليها)، بعد قبول الكلية والقسم. */
         const renamedTo = isNew && !umbrella ? sheetSectionName(sheet, String(site.AdSectionName || "")) : "";
         const recodedTo = isNew && !umbrella ? sheetSectionCode(sheet, String(site.AdSectionCode || "")) : "";
@@ -651,17 +661,25 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
           const ensure = async (status: "active" | "transition") => mine.find(item => item.status === status)
             || await Repository.createTrackPlan({ collegeId: cid, sectionId: sid, name: `${label} · ${status === "active" ? "الجديدة" : "السابقة"}`, track: trackProgram, status, by });
           const wantedStatus = isNew ? "active" : "transition";
-          planCreated = !mine.some(item => item.status === wantedStatus);
-          plan = await ensure(wantedStatus);
-          await ensure(isNew ? "transition" : "active");
+          if (era.rollover) {
+            const previousActive = mine.find(item => item.status === "active");
+            if (previousActive) await Repository.patchCurriculumPlan(previousActive.id, sid, { status: "transition" });
+            plan = await Repository.createTrackPlan({ collegeId: cid, sectionId: sid, name: `${label} · الجديدة ${sheet.startYear}`, track: trackProgram, status: "active", by });
+            planCreated = true;
+          } else {
+            planCreated = !mine.some(item => item.status === wantedStatus);
+            plan = await ensure(wantedStatus);
+            await ensure(isNew ? "transition" : "active");
+          }
         } else {
-          plan = wanted(await mainPlansOf(sid));
+          plan = era.rollover ? undefined : wanted(await mainPlansOf(sid));
           if (!plan) {
             await Repository.createCurriculumPlan({ collegeId: cid, sectionId: sid, name: `الصحيفة الجديدة ${sheet.semesterLabel || sheet.startYear || ""}`.trim(), by });
             plan = wanted(await mainPlansOf(sid)); planCreated = true;
           }
         }
         if (!plan) throw new Error("تعذّر إنشاء صحيفة للقسم.");
+        if (sheet.startYear && (era.rollover || !plan.sheetYear)) plan = { ...plan, ...(await Repository.patchCurriculumPlan(plan.id, sid, { sheetYear: sheet.startYear })) };
 
         /* 1) المقررات: تصحيح الاسم/الوحدات/الساعات وإضافة الناقص؛ السعة كما هي. */
         let courses = await Repository.getCourses() as AdCourse[];
@@ -673,7 +691,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
           if (!row) {
             try { await Repository.createCourse(cid, sid, storedCode(course), name, course.units, course.hours, 0, false); report.created += 1; }
             catch (error) { if (error instanceof DuplicateResourceError) notes.push(`الرمز ${storedCode(course)} مستعمل في القسم؛ لم يُنشأ.`); else throw error; }
-          } else if ((String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours) && await mayCorrect(row)) {
+          } else if ((String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours) && await mayCorrect(row, isNew)) {
             await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, course.units, course.hours, Number(row.MaxStudent) || 0);
             report.updated += 1;
           } else report.unchanged += 1;
@@ -738,7 +756,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         /* مسبقات مطبوعة ↔ مربوطة بالقواعد (للمسؤول وحده): الفرق نصائحُ PEN ومسبقاتُ مقرراتٍ لم تُرفع صحائف أقسامها. */
         report.prereqPrinted = reference.groups.flatMap(group => group.courses).reduce((sum, course) => sum + course.prerequisites.length + (course.anyOf?.length || 0), 0);
         report.prereqLinked = built.rules.reduce((sum, rule) => sum + (rule.prereq?.all?.length || 0) + (rule.prereq?.anyOf?.length || 0), 0);
-        return { sectionId: sid, plan, planCreated, report, renamed, recoded, fixes, notes, unresolved };
+        return { sectionId: sid, plan, planCreated, rollover: era.rollover, report, renamed, recoded, fixes, notes, unresolved };
       };
 
       /* ما في الصحيفة من مقررات أقسامٍ أخرى (خدمية وغيرها): الناقص منها يُضاف إلى قسمه برقمه واسمه من الصحيفة
@@ -786,7 +804,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const first = results[0], total = (key: keyof typeof first.report) => results.reduce((sum, item) => sum + item.report[key], 0);
       const report = { updated: total("updated"), created: total("created"), linked: total("linked"), unchanged: total("unchanged"), rules: total("rules"), groups: total("groups"), unlinked: total("unlinked"), prereqPrinted: total("prereqPrinted"), prereqLinked: total("prereqLinked") };
       const fixes = first.fixes;
-      return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، ${countOf(others.added, AR.course)} مضافة من أقسام أخرى، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, sectionName: first.renamed?.after || String(target.AdSectionName || ""), unresolved: [...new Set(results.flatMap(item => item.unresolved))].sort(), renames: results.filter(item => item.renamed || item.recoded).map(item => ({ sectionId: item.sectionId, renamed: item.renamed, recoded: item.recoded })), renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, addedOther: others.added, differsOther: others.differs, noDepartment: others.noDepartment, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
+      return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، ${countOf(others.added, AR.course)} مضافة من أقسام أخرى، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, sectionName: first.renamed?.after || String(target.AdSectionName || ""), unresolved: [...new Set(results.flatMap(item => item.unresolved))].sort(), renames: results.filter(item => item.renamed || item.recoded).map(item => ({ sectionId: item.sectionId, renamed: item.renamed, recoded: item.recoded })), renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, rollover: results.some(item => item.rollover), ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, addedOther: others.added, differsOther: others.differs, noDepartment: others.noDepartment, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
     };
 
     if (sectionId) {
