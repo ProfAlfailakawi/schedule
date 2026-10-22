@@ -158,6 +158,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     /* المسبقات: مسبقٌ لمقررِ قسمٍ آخر لم يُرفع بعد يُعدّ ولا يضيع، ثم يُربط حين يوجد المقرر بإعادة الرفع */
     const english = fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0116.pdf");
     const firstEnglish = await upload("root", 51, english);
+    check(JSON.stringify(firstEnglish.json.unresolved) === JSON.stringify(["0109425", "0121322"]), "التقرير يذكر رموز المسبقات غير الموجودة", firstEnglish.json.unresolved);
     check(firstEnglish.status === 200 && firstEnglish.json.unlinked === 2, "مسبقٌ من قسمٍ لم يُرفع: يُعدّ ولا يُربط", firstEnglish.json);
     await Repository.createCourse(1, 52, "322", "مقرر المناهج", 3, 3, 0, false);
     await Repository.createCourse(1, 53, "425", "مقرر آخر", 3, 3, 0, false);

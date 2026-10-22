@@ -26,7 +26,7 @@ interface ReportRow {
   file: string; status: "ok" | "skipped" | "rejected" | "unreadable"; reason?: string; detail?: string;
   program?: string; programName?: string; year?: number; era?: "new" | "old";
   tracks?: number; sites?: number; sections?: string[]; plan?: string; created?: number; updated?: number; linked?: number;
-  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[];
+  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[];
 }
 /** ما يُحفظ في التقرير من ردّ الخادم لصحيفةٍ مقبولة. */
 const pick = (data: any): Partial<ReportRow> => ({
@@ -34,7 +34,7 @@ const pick = (data: any): Partial<ReportRow> => ({
   plan: String(data.planName || ""), created: Number(data.created || 0), updated: Number(data.updated || 0), linked: Number(data.linked || 0),
   nameFixes: typeof data.nameFixes === "number" ? data.nameFixes : Array.isArray(data.nameFixes) ? data.nameFixes.length : 0,
   otherDepartments: Number(data.otherDepartments || 0), prereqLinked: Number(data.prereqLinked || 0), prereqPrinted: Number(data.prereqPrinted || 0),
-  renames: Array.isArray(data.renames) ? data.renames : [],
+  renames: Array.isArray(data.renames) ? data.renames : [], unresolved: Array.isArray(data.unresolved) ? data.unresolved : [],
 });
 
 const SHORT: Record<string, { icon: typeof FileX2; title: string; hint: string }> = {
