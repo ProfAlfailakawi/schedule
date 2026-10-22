@@ -7,12 +7,13 @@
 import React, { useState } from "react";
 import { AlertTriangle, Building2, CheckCircle2, FileText, GraduationCap, FileUp, FileX2, Link2, MousePointerClick, PencilLine, Plus, SearchX, ShieldAlert, X } from "lucide-react";
 
-interface SectionOption { sectionId: number; sectionName: string }
+interface SectionOption { sectionId: number; label: string; sites: number }
 interface Rejection {
   kind: string; message: string;
   mismatch?: { fields: Array<"college" | "department">; sheet: { college?: string; department?: string; departmentCode?: string }; chosen: { college?: string; department?: string; departmentCode?: string } };
 }
 interface Outcome {
+  sites: number;
   renamed: { before: string; after: string } | null;
   recoded: { before: string; after: string } | null;
   planId: string; planName: string; planCreated: boolean; created: number; updated: number; linked: number; unchanged: number; rules: number;
@@ -25,8 +26,8 @@ const SHORT: Record<string, { icon: typeof FileX2; title: string; hint: string }
   empty: { icon: SearchX, title: "لا مقررات لهذا القسم", hint: "في الصحيفة" },
 };
 
-export default function PlanSheetUpload({ sections, sectionId, onDone }: { sections: SectionOption[]; sectionId: number; onDone: (sectionId: number, planId: string) => void }) {
-  const [chosen, setChosen] = useState(sectionId || sections[0]?.sectionId || 0);
+export default function PlanSheetUpload({ targets, sectionId, onDone }: { targets: SectionOption[]; sectionId: number; onDone: (sectionId: number, planId: string) => void }) {
+  const [chosen, setChosen] = useState(targets.find(item => item.sectionId === sectionId)?.sectionId || targets[0]?.sectionId || 0);
   const [busy, setBusy] = useState(false);
   const [rejection, setRejection] = useState<Rejection | null>(null);
   const [error, setError] = useState("");
@@ -41,7 +42,7 @@ export default function PlanSheetUpload({ sections, sectionId, onDone }: { secti
       if (response.status === 422 && data.rejection) { setRejection(data.rejection as Rejection); return; }
       if (!response.ok) throw new Error(data.error || "تعذّر رفع الصحيفة");
       setOutcome(data as Outcome);
-      onDone(chosen, String(data.planId || ""));
+      onDone(Number(data.sectionId || chosen), String(data.planId || ""));
     } catch (e: any) { setError(e.message || "تعذّر رفع الصحيفة"); }
     finally { setBusy(false); }
   };
@@ -54,7 +55,7 @@ export default function PlanSheetUpload({ sections, sectionId, onDone }: { secti
         <div><b>رفع الخطة الدراسية لقسم</b><small>PDF من SWRCAPP · مقررات القسم وحدها · يعتمدها القسم بعد الرفع</small></div>
         <div className="pr-import-actions">
           <select aria-label="قسم الصحيفة" value={chosen} disabled={busy} onChange={e => { setChosen(Number(e.target.value)); setRejection(null); setOutcome(null); }}>
-            {sections.map(s => <option key={s.sectionId} value={s.sectionId}>{s.sectionName}</option>)}
+            {targets.map(item => <option key={item.sectionId} value={item.sectionId}>{item.label}{item.sites > 1 ? ` (${item.sites} مواقع)` : ""}</option>)}
           </select>
           <label className={`btn btn-primary${busy ? " is-busy" : ""}`}>
             <FileUp aria-hidden="true" size={16} /> {busy ? "جارٍ القراءة…" : "ارفع الصحيفة"}
@@ -95,7 +96,7 @@ export default function PlanSheetUpload({ sections, sectionId, onDone }: { secti
           <span title="مقررات جديدة"><Plus aria-hidden="true" /> {outcome.created}</span>
           <span title="مقررات صُحّحت"><PencilLine aria-hidden="true" /> {outcome.updated}</span>
           <span title="رُبطت بالصحيفة"><Link2 aria-hidden="true" /> {outcome.linked}</span>
-          <small>{outcome.planName} · بانتظار اعتماد القسم</small>
+          <small>{outcome.planName} · بانتظار اعتماد القسم{outcome.sites > 1 ? ` · ${outcome.sites} مواقع` : ""}</small>
         </div>
       ) : null}
     </section>

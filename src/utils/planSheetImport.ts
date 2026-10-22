@@ -64,8 +64,30 @@ export function dominantDepartment(plan: Pick<ParsedPlan, "courses">, field: "de
 export const NEW_PLAN_FROM_YEAR = 2026;
 export const isNewSheet = (plan: Pick<ParsedPlan, "startYear">) => plan.startYear >= NEW_PLAN_FROM_YEAR;
 
+/**
+ * صحائفُ برامج التربية الخاصة ورياض الأطفال تُطبع باسم القسم الإداري («علم النفس»، «علم التربية») لا باسم القسم
+ * المختص؛ فيُقبل القسمُ المختار إن كان رمزُه بين رموز مقررات الصحيفة بعشرة مقرراتٍ فأكثر، وتؤخذ مقرراتُ رمزه وحدها.
+ * لا يمسّ هذا صحيفةً باسم قسمٍ حقيقي (تكنولوجيا التعليم…)، فلا تُقبل في «أصول التربية» لوجود مقرراتٍ خدميةٍ منها.
+ */
+export const UMBRELLA_DEPARTMENTS = ["علم النفس", "علم التربية"];
+const MIN_UMBRELLA_COURSES = 10;
+const isUmbrellaSheet = (plan: Pick<ParsedPlan, "department">) => UMBRELLA_DEPARTMENTS.some(name => arabicMatchKey(name) === matchKey(plan.department));
+const countOfDept = (plan: Pick<ParsedPlan, "courses">, dept: string) => plan.courses.filter(course => course.dept === dept).length;
+
 /** مفتاح قسم الصحيفة (كلية+قسم الغالبان بين مقرراتها): 0109. */
 export const sheetKey = (plan: Pick<ParsedPlan, "courses">) => `${dominantDepartment(plan, "college")}${dominantDepartment(plan)}`;
+
+/** مفتاح مقررات القسم المختار من الصحيفة: الغالب فيها، أو رمز القسم نفسه في صحائف القسم الإداري. */
+export function sheetOwnKey(plan: ParsedPlan, scope: Pick<SheetScope, "departmentKey" | "sectionName" | "collegeCode">): { key: string; umbrella: boolean } {
+  const sectionKey = scope.departmentKey.replace(/\D/g, "");
+  const known = /^\d{4}$/.test(sectionKey), deptCode = known ? sectionKey.slice(2) : "";
+  const sheetDept = dominantDepartment(plan);
+  const nameMatches = matchKey(stripSection(scope.sectionName)) === matchKey(plan.department) || matchKey(scope.sectionName).includes(matchKey(plan.department)) || matchKey(plan.department).includes(matchKey(scope.sectionName));
+  if (!nameMatches && !(deptCode && sheetDept === deptCode) && isUmbrellaSheet(plan) && deptCode && countOfDept(plan, deptCode) >= MIN_UMBRELLA_COURSES) {
+    return { key: `${dominantDepartment(plan, "college")}${deptCode}`, umbrella: true };
+  }
+  return { key: sheetKey(plan), umbrella: false };
+}
 
 /** هل تُقبل هذه الصحيفة لهذا القسم؟ null = تُقبل. لا يُكتب شيءٌ قبل أن تمرّ كل الفحوص. */
 export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejection | null {
@@ -87,7 +109,8 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
   const nameMatches = matchKey(stripSection(scope.sectionName)) === matchKey(plan.department)
     || matchKey(scope.sectionName).includes(matchKey(plan.department)) || matchKey(plan.department).includes(matchKey(scope.sectionName));
   const codeMatches = Boolean(deptCode) && sheetDept === deptCode;
-  if (collegeDiffers || (!nameMatches && !codeMatches)) {
+  const umbrella = !nameMatches && !codeMatches && isUmbrellaSheet(plan) && Boolean(deptCode) && countOfDept(plan, deptCode) >= MIN_UMBRELLA_COURSES;
+  if (collegeDiffers || (!nameMatches && !codeMatches && !umbrella)) {
     const fields: SheetMismatch["fields"] = [...(collegeDiffers ? ["college" as const] : []), ...(!nameMatches && !codeMatches ? ["department" as const] : [])];
     const mismatch: SheetMismatch = {
       fields,
@@ -98,7 +121,7 @@ export function checkSheetScope(plan: ParsedPlan, scope: SheetScope): SheetRejec
     const what = collegeDiffers && fields.includes("department") ? "الكلية والقسم" : collegeDiffers ? "الكلية" : "القسم";
     return { kind, mismatch, message: `الصحيفة ليست لما اخترت: هي لـ${[collegeDiffers ? plan.college : "", `قسم «${plan.department}» (${sheetDept})`].filter(Boolean).join("، ")}، والمختار ${[collegeDiffers ? scope.collegeName : "", `قسم «${stripSection(scope.sectionName)}»${deptCode ? ` (${deptCode})` : ""}`].filter(Boolean).join("، ")}. اختر ${what} الصحيح أو ارفع الصحيفة الصحيحة.` };
   }
-  const own = ownCourses(plan, sheetKey(plan));
+  const own = ownCourses(plan, sheetOwnKey(plan, scope).key);
   if (!own.length) return { kind: "empty", message: "لا مقررات لهذا القسم في الصحيفة." };
   const numbers = own.map(course => Number(course.number));
   if (new Set(numbers).size !== numbers.length) return { kind: "unverified", message: "رقم مقرر يتكرر بين رمزين فرعيين للقسم: لا يمكن حفظه برقمه وحده." };

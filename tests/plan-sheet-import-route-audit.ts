@@ -19,18 +19,19 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-sheet-import-"));
   fs.writeFileSync(path.join(dir, "db.json"), JSON.stringify({
     users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [],
-    colleges: [{ AdCollegeId: 1, AdCollegeCode: "012", AdCollegeName: "كلية التربية الأساسية - بنات" }],
+    colleges: [{ AdCollegeId: 1, AdCollegeCode: "012", AdCollegeName: "كلية التربية الأساسية - بنات" }, { AdCollegeId: 2, AdCollegeCode: "011", AdCollegeName: "كلية التربية الأساسية - بنين" }, { AdCollegeId: 3, AdCollegeCode: "012", AdCollegeName: "كلية التربية الأساسية - بنات - الجهراء" }],
     sections: [
       { AdSectionId: 21, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم الوسائل التعليمية" },
       { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "01", AdSectionName: "قسم أصول التربية" },
       { AdSectionId: 13, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم المواد التأسيسية" },
-      { AdSectionId: 14, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم تكنولوجيا التعليم" },
-      { AdSectionId: 16, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
-      { AdSectionId: 15, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 14, AdCollegeId: 2, AdSectionCode: "142", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 31, AdCollegeId: 3, AdSectionCode: "09", AdSectionName: "قسم الوسائل التعليمية" },
+      { AdSectionId: 16, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 15, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
     ],
     instructors: [], schedules: [], rooms: [], courseTransitions: [],
     courses: [{ AdCourseId: 301, AdCollegeId: 1, AdSectionId: 21, CourseCode: "105", CourseName: "أسس تكنولوجيا التعلم", CourseCredit: 3, CourseHours: 3, MaxStudent: 60 }],
-    curriculumPlans: [{ id: "p15", AdCollegeId: 1, AdSectionId: 15, name: "فعّالة", status: "active", createdAt: "2026-01-01" }], curriculumPlanCourses: [],
+    curriculumPlans: [{ id: "p15", AdCollegeId: 2, AdSectionId: 15, name: "فعّالة", status: "active", createdAt: "2026-01-01" }], curriculumPlanCourses: [],
   }), { mode: 0o600 });
   process.env.NODE_ENV = "test"; process.env.DATA_MODE = "demo"; process.env.SCHEDULE_PRIVATE_DIR = dir;
   const quiet = console.warn; console.warn = () => {};
@@ -73,15 +74,18 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check(wrongManualCode.status === 200 && wrongManualCode.json.recoded?.before === "142" && wrongManualCode.json.recoded?.after === "09" && (await Repository.getSections()).find(row => Number(row.AdSectionId) === 14)?.AdSectionCode === "09", "رمزٌ كُتب يدوياً خطأً واسمه يطابق: يُقبل ويُصحَّح إلى رمز الصحيفة", wrongManualCode.json);
 
     const first = await upload("root", 21);
+    check(first.json.sites === 2, "الصحيفة للمسار كله: بنات الرئيسي والجهراء معاً", first.json.sites);
     check(first.status === 200 && first.json.ok === true, "الرفع يُقبل للقسم الصحيح", first.json);
     check(first.json.renamed?.after === "قسم تكنولوجيا التعليم" && (await Repository.getSections()).find(row => Number(row.AdSectionId) === 21)?.AdSectionName === "قسم تكنولوجيا التعليم", "اسم القسم أُخذ من الصحيفة بنمط «قسم …»", first.json.renamed);
+    const jahra = (await Repository.getCourses()).filter(row => Number(row.AdSectionId) === 31);
+    check(jahra.length === 27 && (await Repository.getCurriculumPlans(31)).some(plan => plan.status === "active") && (await Repository.getSections()).find(row => Number(row.AdSectionId) === 31)?.AdSectionName === "قسم تكنولوجيا التعليم", "موقع الجهراء نال المقررات والصحيفة والتسمية نفسها");
     const courses = (await Repository.getCourses()).filter(row => Number(row.AdSectionId) === 21);
     check(courses.length === 27, `٢٧ مقرراً للقسم (${courses.length})`);
     check(courses.every(row => /^\d{2,3}$/.test(String(row.CourseCode))), "الرموز المحفوظة رقم المقرر وحده");
     const c105 = courses.find(row => row.CourseCode === "105")!;
     check(c105.CourseName !== "أسس تكنولوجيا التعلم" && c105.MaxStudent === 60, `الاسم صُحّح من الصحيفة والسعة بقيت ٦٠ (${c105.CourseName})`);
     check(courses.filter(row => row.CourseCode !== "105").every(row => Number(row.MaxStudent) === 0), "السعة لم تُوضع للجدد");
-    check(first.json.created === 26 && first.json.updated === 1, `جديد ٢٦ ومصحَّح ١ (${first.json.created}/${first.json.updated})`);
+    check(first.json.created === 53 && first.json.updated === 1, `جديد ٢٦ في الرئيسي و٢٧ في الجهراء، ومصحَّح ١ (${first.json.created}/${first.json.updated})`);
     check(first.json.otherDepartments === 37, `مقررات الأقسام الأخرى لم تُؤخذ (${first.json.otherDepartments})`);
     const plans = await Repository.getCurriculumPlans(21);
     check(plans.some(plan => plan.status === "active") && plans.some(plan => plan.code === "LEGACY"), "صحيفة فعّالة جديدة و«السابقة» محفوظة");
