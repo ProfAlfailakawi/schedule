@@ -36,6 +36,11 @@ for (const region of OFFICIAL_REGIONS) {
 for (const region of RETIRED_REGIONS) {
   if (deploys.some(block => block.includes(region)) || new RegExp(`for region[^\\n]*${region}`).test(workflow)) failures.push(`النشر يعود إلى المنطقة المحذوفة ${region} (يعيد إنشاء الخدمة).`);
 }
+/* مالك النشر الوحيد: المستودع الجديد فقط، مع مفتاح إيقاف. الملف نفسه موجود في المستودع القديم فيبقى النشر فيه معطلاً. */
+const deployIf = workflow.match(/^\s+if:.*$/m)?.[0] || "";
+if (!deployIf.includes("github.repository == 'ProfAlfailakawi/schedule-kw'")) failures.push("شرط job النشر لا يحصر النشر في المستودع ProfAlfailakawi/schedule-kw.");
+if (!deployIf.includes("vars.PRODUCTION_DEPLOY_ENABLED == 'true'")) failures.push("شرط job النشر لا يحوي مفتاح الإيقاف PRODUCTION_DEPLOY_ENABLED.");
+if (!/concurrency:\s*\n\s+group: schedule-production-deploy\s*\n\s+cancel-in-progress: false/.test(workflow)) failures.push("سير النشر يفقد concurrency group الذي يمنع نشرين متزامنين.");
 if (!/schedule-kw\.com/.test(workflow)) failures.push("سير النشر لا يتحقق من الدومين الرسمي بعد النشر.");
 
 /* ٢. لا أمر يمسّ ربط الدومين في أي ملف من المستودع. */
