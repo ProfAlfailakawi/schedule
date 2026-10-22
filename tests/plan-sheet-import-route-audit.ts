@@ -93,6 +93,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check(courses.filter(row => row.CourseCode !== "105").every(row => Number(row.MaxStudent) === 0), "السعة لم تُوضع للجدد");
     check(first.json.created === 53 && first.json.updated === 1, `جديد ٢٦ في الرئيسي و٢٧ في الجهراء، ومصحَّح ١ (${first.json.created}/${first.json.updated})`);
     check(first.json.otherDepartments === 37, `مقررات الأقسام الأخرى لم تُؤخذ (${first.json.otherDepartments})`);
+    check(Array.isArray(first.json.noDepartment) && first.json.noDepartment.every((item: string) => /^\d{4}×\d+$/.test(item)), "قسمٌ غير موجود بالنظام يُذكر برمزه في التقرير", first.json.noDepartment);
     const plans = await Repository.getCurriculumPlans(21);
     check(plans.some(plan => plan.status === "active") && plans.some(plan => plan.code === "LEGACY"), "صحيفة فعّالة جديدة و«السابقة» محفوظة");
     const links = (await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === first.json.planId);
@@ -158,16 +159,14 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     /* المسبقات: مسبقٌ لمقررِ قسمٍ آخر لم يُرفع بعد يُعدّ ولا يضيع، ثم يُربط حين يوجد المقرر بإعادة الرفع */
     const english = fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0116.pdf");
     const firstEnglish = await upload("root", 51, english);
-    check(JSON.stringify(firstEnglish.json.unresolved) === JSON.stringify(["0109425", "0121322"]), "التقرير يذكر رموز المسبقات غير الموجودة", firstEnglish.json.unresolved);
-    check(firstEnglish.status === 200 && firstEnglish.json.unlinked === 2, "مسبقٌ من قسمٍ لم يُرفع: يُعدّ ولا يُربط", firstEnglish.json);
-    await Repository.createCourse(1, 52, "322", "مقرر المناهج", 3, 3, 0, false);
-    await Repository.createCourse(1, 53, "425", "مقرر آخر", 3, 3, 0, false);
-    const secondEnglish = await upload("root", 51, english);
-    check(secondEnglish.status === 200 && secondEnglish.json.unlinked === 0 && secondEnglish.json.prereqLinked === secondEnglish.json.prereqPrinted && firstEnglish.json.prereqLinked === firstEnglish.json.prereqPrinted - 2, "بعد وجود المقرر: كل المسبقات المطبوعة مربوطة (٢ كانت ناقصة)", [firstEnglish.json.prereqLinked, firstEnglish.json.prereqPrinted, secondEnglish.json.prereqLinked]);
-    const englishDraft = (await Repository.listRuleDrafts()).find(row => row.planId === secondEnglish.json.planId);
-    const needy = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 51 && String(row.CourseCode) === "454");
+    check(firstEnglish.status === 200 && firstEnglish.json.unlinked === 0 && firstEnglish.json.unresolved.length === 0 && firstEnglish.json.prereqLinked === firstEnglish.json.prereqPrinted, "مقررات الأقسام الأخرى المطبوعة تُضاف فتُربط مسبقاتها", firstEnglish.json);
     const depA = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 52 && String(row.CourseCode) === "322");
     const depB = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 53 && String(row.CourseCode) === "425");
+    check(Boolean(depA && depB) && firstEnglish.json.addedOther > 0, "مقرر القسم الخدمي الناقص أُضيف إلى قسمه من الصحيفة", [depA, depB, firstEnglish.json.addedOther]);
+    const secondEnglish = await upload("root", 51, english);
+    check(secondEnglish.status === 200 && secondEnglish.json.addedOther === 0 && secondEnglish.json.unlinked === 0 && secondEnglish.json.prereqLinked === secondEnglish.json.prereqPrinted, "الرفع المتكرر لا يُكرّر المضاف", secondEnglish.json);
+    const englishDraft = (await Repository.listRuleDrafts()).find(row => row.planId === secondEnglish.json.planId);
+    const needy = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 51 && String(row.CourseCode) === "454");
     const rule = englishDraft?.rules.find(item => item.courseId === Number(needy?.AdCourseId));
     check(Boolean(rule?.prereq?.all?.includes(Number(depA?.AdCourseId)) && rule?.prereq?.all?.includes(Number(depB?.AdCourseId))), "المسبقان من القسمين الآخرين يظهران في قاعدة المقرر", rule);
 
