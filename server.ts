@@ -16843,6 +16843,35 @@ app.get("/api/schedules/section-gap", requirePermission(7), async (req: Authenti
   res.json(data);
 });
 
+/* ── اقتراحُ شعبٍ من التوقّع لا من رغبات هذا الفصل ───────────────────────────────
+   «تنبّؤ الفصل القادم» يقول «افتح شعبةً لهذا المقرر» من تاريخ القسم، وقد لا يكون في رغبات الطلبة الحاليين ما يُنقص مقاعده — فكان زرُّ
+   «ماذا لو فتحنا» يردّ «لا مقاعد ناقصة» ولا يدلّ على شيء. هنا يُبنى الطلبُ من عدد الشعب المتوقَّع نفسِه (مقاعدُ الشعب القائمة + شعبةٌ لكل
+   `count`)، ويمرّ بمحرّك الفتح نفسِه: قاعةٌ وأستاذٌ بنصابه ووقتٌ بلا تعارض. قراءةٌ فقط؛ والاعتماد بمعاينةٍ وتأكيد كأي اقتراح. */
+app.get("/api/schedules/openings-preview", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const { collegeId, sectionId, termId } = smartContextFrom(req);
+  const courseId = Number(req.query.courseId || 0);
+  const count = Math.max(1, Math.min(8, Math.round(Number(req.query.count || 1))));
+  if (!collegeId || !sectionId || !termId || !courseId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const [courses, termWeek, sectionHistory, people, registry, style] = await Promise.all([
+    Repository.getCourses(), Repository.getSchedulesByScope({ termId }), Repository.getSchedulesByScope({ collegeId, sectionId }),
+    Repository.getInstructors().catch(() => []), readLocationRegistry(), departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId }),
+  ]);
+  const course = (courses as AdCourse[]).find(row => Number(row.AdCourseId) === courseId && Number(row.AdSectionId) === sectionId);
+  if (!course) { res.status(404).json({ error: "المقرر غير موجود في هذا القسم" }); return; }
+  const week = termWeek.filter(row => Number(row.AdSectionId) === sectionId && Number(row.AdCollegeId) === collegeId);
+  const capacity = Number(course.MaxStudent) || 0;
+  const open = new Set(week.filter(row => Number(row.AdCourseId) === courseId).map(row => String(row.SCode))).size;
+  const demand = {
+    respondents: 1, pairs: [], unwanted: [], headline: "",
+    courses: [{ courseId, name: String(course.CourseName || ""), code: String(course.CourseCode || ""), students: open * capacity + (count - 1) * capacity + 1, share: 0 }],
+  };
+  const openings: OpeningReading = capacity > 0
+    ? readSectionOpenings(week, termWeek, courses as AdCourse[], people as any[], sectionHistory, demand as any, null, style?.reading || null, style?.doorway || 0, 6, registry.rooms, termId)
+    : { proposals: [], noCeiling: [{ courseId, name: String(course.CourseName || ""), demand: count }], headline: "" };
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ openings, forecast: true, count });
+});
+
 app.get("/api/schedules/demand", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);

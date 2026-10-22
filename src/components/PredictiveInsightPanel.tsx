@@ -91,7 +91,7 @@ export default function PredictiveInsightPanel({ canSchedule, onNavigate, onChan
     const prereq = action.courseId ? byPrereq.get(action.courseId) : undefined;
     const source = demand || prereq;
     if ((action.kind === "open-sections" || action.kind === "open-prereq") && action.oneClick && canSchedule && source?.collegeId && source?.sectionId) {
-      return <RadarSchedule course={{ courseId: source.courseId, name: source.name, collegeId: source.collegeId, sectionId: source.sectionId }} termId={termId} onChanged={onChanged} />;
+      return <RadarSchedule course={{ courseId: source.courseId, name: source.name, collegeId: source.collegeId, sectionId: source.sectionId, forecastCount: action.kind === "open-sections" ? action.count : undefined }} termId={termId} onChanged={onChanged} />;
     }
     if (action.disabledReason) return <small className="pi-why-off"><Lock aria-hidden="true" />{action.disabledReason}</small>;
     if (onNavigate && canSchedule) return <SecondaryButton type="button" onClick={() => onNavigate("schedules")} data-guide-ignore="يفتح ورشة الجدول للمراجعة؛ لا يكتب شيئاً"><CalendarPlus aria-hidden="true" /> افتح الورشة</SecondaryButton>;

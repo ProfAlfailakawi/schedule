@@ -55,5 +55,17 @@ const barter = demo.hallBarterRequests.map((r: any) => r.status);
 check(["pending", "approved", "rejected", "cancelled"].every(status => barter.includes(status)), "سجلُّ استعارة القاعات: قيد الانتظار ومقبولٌ ومرفوضٌ ومنتهي المهلة");
 check(demo.hallBarterRequests.every((r: any) => r.status !== "cancelled" || r.cancelReason), "سببُ الإلغاء مكتوب");
 
+/* ── زرُّ «ماذا لو فتحنا» لا يردّ بلا شيء حين يقترح التنبّؤ شعبةً ولا رغبات حيّة تُنقص مقاعدها ── */
+import fs from "node:fs";
+const server = fs.readFileSync("server.ts", "utf8");
+const route = server.slice(server.indexOf('app.get("/api/schedules/openings-preview"'), server.indexOf('app.get("/api/schedules/demand"'));
+check(route.includes("requirePermission(7)") && route.includes("isScopeAllowed(req, collegeId, sectionId)"), "اقتراحُ التوقّع محكومٌ بالصلاحية والنطاق");
+check(!/Repository\.(create|update|delete|save)\w*/.test(route), "اقتراحُ التوقّع قراءةٌ فقط: لا يكتب شيئاً");
+check(route.includes("readSectionOpenings(") && route.includes("(count - 1) * capacity + 1"), "يمرّ بمحرّك فتح الشعب نفسِه: مقاعدُ القائم + شعبةٌ لكل واحدة متوقَّعة");
+const radar = fs.readFileSync("src/components/RadarSchedule.tsx", "utf8");
+check(radar.includes("/api/schedules/openings-preview") && radar.includes("forecastCount") && radar.includes("اقتراحٌ من توقّع الفصول السابقة"), "الزرّ يرجع إلى التوقّع حين لا رغباتٍ حيّة، ويقول ذلك");
+const panel = fs.readFileSync("src/components/PredictiveInsightPanel.tsx", "utf8");
+check(panel.includes('forecastCount: action.kind === "open-sections" ? action.count : undefined'), "لوحة التنبّؤ تمرّر عددَ الشعب المتوقَّع");
+
 console.log(`\nDemo fill audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
