@@ -225,6 +225,23 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     const scanEnglish = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": "root" }, body: english }).then(res => res.json()) as any;
     check(Array.isArray(scanEnglish.others) && scanEnglish.others.length > 5 && scanEnglish.others.every((item: any[]) => item.length === 4 && /^\d{7}$/.test(String(item[0]))), "قراءة الترويسة تعيد مقررات الأقسام الأخرى للتجميع", scanEnglish.others?.slice(0, 2));
 
+    /* تدوير الصحيفة: صحيفةٌ أحدث من سنة الفعّالة تصير الفعّالة وتنتقل القائمة إلى «السابقة»، بعد إنهاء السابقة الجارية */
+    const active21 = (await Repository.getCurriculumPlans(21)).find(plan => plan.status === "active" && !plan.track)!;
+    check(active21.sheetYear === 2026, "سنة الصحيفة محفوظة عند الرفع", active21.sheetYear);
+    await Repository.patchCurriculumPlan(active21.id, 21, { sheetYear: 2020 });
+    const plansBeforeRoll = (await Repository.getCurriculumPlans(21)).length;
+    const blocked = await upload("root", 21);
+    check(blocked.status === 422 && blocked.json.rejection?.kind === "previous" && (await Repository.getCurriculumPlans(21)).length === plansBeforeRoll, "صحيفةٌ أحدث مع سابقة جارية: تُرفض بلا كتابة", blocked.json);
+    await call("root", "POST", "/api/plan-review/previous-plans", { action: "end", sectionIds: [21] });
+    const rolled = await upload("root", 21);
+    const afterRoll = await Repository.getCurriculumPlans(21);
+    const newActive = afterRoll.find(plan => plan.status === "active" && !plan.track)!;
+    check(rolled.status === 200 && rolled.json.rollover === true && rolled.json.planCreated === true && newActive.id !== active21.id && newActive.sheetYear === 2026 && afterRoll.find(plan => plan.id === active21.id)?.status === "transition", "التدوير: فعّالةٌ جديدة، والقائمة تنتقل إلى «السابقة»", rolled.json);
+    check(afterRoll.filter(plan => plan.status === "active" && !plan.track).length === 1 && (await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === newActive.id).length === 27 && (await Repository.getCurriculumPlanCourses(21)).filter(link => link.planId === active21.id).length > 0, "مقررات الجديدة في الفعّالة، والسابقة تحتفظ بمقرراتها");
+    check((await Repository.getCurriculumPlans(31)).filter(plan => plan.status === "active" && !plan.track).length === 1, "المواقع الفرعية للمسار تدور معه");
+    const again = await upload("root", 21);
+    check(again.status === 200 && !again.json.rollover && again.json.planCreated === false && (await Repository.getCurriculumPlans(21)).length === afterRoll.length, "إعادة الرفع بنفس السنة: تحديثٌ لا تدوير");
+
     /* قراءة الترويسة بلا كتابة (لتصفية الدفعة) */
     const scanOf = async (who: string, body: Buffer) => { const res = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body }); return { status: res.status, json: await res.json().catch(() => ({})) as any }; };
     const scanned = await scanOf("root", oldPdf);
