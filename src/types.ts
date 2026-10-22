@@ -211,6 +211,11 @@ export interface CurriculumPlan {
   status: CurriculumPlanStatus;
   /** True only for the virtual compatibility plan synthesized before first setup. */
   virtual?: boolean;
+  /**
+   * صحيفةُ مسارٍ داخل القسم (برنامج بتخصصٍ مزدوج، كمسارات التربية الخاصة): رمز برنامجها («BA-012402»).
+   * للمسار جديدتُه وسابقتُه، ولا تدخل في ثنائية «الجديدة/السابقة» الرئيسية للقسم ولا تُزيحها.
+   */
+  track?: string;
   createdAt: string;
   createdBy?: string;
   activatedAt?: string;

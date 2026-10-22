@@ -63,6 +63,8 @@ export interface PlanCourse {
 
 export interface ParsedPlan {
   program: string;
+  /** اسم البرنامج المطبوع بجانب رمزه («علوم - تربيه خاصه اعاقة سمعية»)؛ فارغ إن لم يُقرأ. */
+  programName: string;
   /** سنة بدء الخطة (الأصغر من «2027-2026» المطبوعة معكوسة). */
   startYear: number;
   semesterLabel: string;
@@ -128,7 +130,7 @@ const centre = (item: PlanItem) => item.x + item.w / 2;
 export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
   const warnings: string[] = [];
   const plan: ParsedPlan = {
-    program: "", startYear: 0, semesterLabel: "", college: "", department: "", degree: "", degreeUnits: 0,
+    program: "", programName: "", startYear: 0, semesterLabel: "", college: "", department: "", degree: "", degreeUnits: 0,
     sections: [], groups: [], courses: [], warnings,
   };
 
@@ -137,6 +139,11 @@ export function parsePlanItems(pages: PlanItem[][]): ParsedPlan {
   const headText = (pred: (item: PlanItem) => boolean) => head.filter(pred).sort((a, b) => b.x - a.x);
   const program = head.find(item => /^BA-\d+$/i.test(item.str));
   plan.program = program ? program.str.toUpperCase() : "";
+  if (program) {
+    /* اسم البرنامج على سطر رمزه نفسه إلى يساره (الترويسة تُقرأ معكوسة). */
+    const title = head.filter(item => Math.abs(item.y - program.y) < 4 && item.x + item.w < program.x && !/^BA-/i.test(item.str)).sort((a, b) => b.str.length - a.str.length)[0];
+    plan.programName = title?.str || "";
+  }
   const semester = head.find(item => /^الفصل\s.*\d{4}-\d{4}/.test(item.str));
   if (semester) {
     plan.semesterLabel = semester.str;

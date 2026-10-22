@@ -25,6 +25,10 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
       { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "01", AdSectionName: "قسم أصول التربية" },
       { AdSectionId: 13, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم المواد التأسيسية" },
       { AdSectionId: 14, AdCollegeId: 2, AdSectionCode: "142", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 51, AdCollegeId: 1, AdSectionCode: "18", AdSectionName: "قسم اللغة الإنجليزية" },
+      { AdSectionId: 52, AdCollegeId: 1, AdSectionCode: "21", AdSectionName: "قسم المناهج وطرق التدريس" },
+      { AdSectionId: 53, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم آخر برمز تسعة" },
+      { AdSectionId: 41, AdCollegeId: 1, AdSectionCode: "19", AdSectionName: "قسم التربية الخاصة" },
       { AdSectionId: 31, AdCollegeId: 3, AdSectionCode: "09", AdSectionName: "قسم الوسائل التعليمية" },
       { AdSectionId: 16, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
       { AdSectionId: 15, AdCollegeId: 2, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
@@ -130,6 +134,39 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     const beforeMath = JSON.stringify(await Repository.getCourses());
     const mathMissing = await upload("root", 0, fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0105.pdf"));
     check(mathMissing.status === 422 && mathMissing.json.rejection?.kind === "department" && JSON.stringify(await Repository.getCourses()) === beforeMath, "رفع تلقائي: قسم الرياضيات غير موجود يُرفض بلا كتابة", mathMissing.json);
+
+    /* التربية الخاصة: قسمٌ واحد ومقرراتٌ مشتركة، ولكل مسارٍ صحيفتاه (جديدة وسابقة) بلا إزاحة الثنائية الرئيسية */
+    const trackA = await upload("root", 41, fs.readFileSync("tests/fixtures/plans/graduation-old/ba-012102-2010.pdf"));
+    check(trackA.status === 200 && /السابقة$/.test(trackA.json.planName) && trackA.json.planName.includes("اعاقة سمعية"), "مسار التربية الخاصة الأول يدخل صحيفته السابقة", trackA.json);
+    const trackB = await upload("root", 41, fs.readFileSync("tests/fixtures/plans/graduation-old/ba-012402-2010.pdf"));
+    check(trackB.status === 200 && trackB.json.planId !== trackA.json.planId, "المسار الثاني صحيفةٌ أخرى", trackB.json);
+    const plans41 = await Repository.getCurriculumPlans(41);
+    check(plans41.length === 4 && plans41.every(plan => plan.track) && new Set(plans41.map(plan => plan.track)).size === 2 && plans41.filter(plan => plan.status === "active").length === 2 && plans41.filter(plan => plan.status === "transition").length === 2, "لكل مسارٍ جديدةٌ وسابقة", plans41.map(plan => `${plan.track}/${plan.status}`));
+    const courses41 = (await Repository.getCourses()).filter(row => Number(row.AdSectionId) === 41);
+    check(new Set(courses41.map(row => Number(row.CourseCode))).size === courses41.length, "مقررات القسم مشتركة بلا تكرار رقم");
+    const links41 = await Repository.getCurriculumPlanCourses(41);
+    const linked = (planId: string) => links41.filter(link => link.planId === planId).length;
+    check(linked(trackA.json.planId) === 17 && linked(trackB.json.planId) === 17 && courses41.length < 34, `مسارٌ بـ١٧ مقرراً ومشتركٌ بينهما (${courses41.length} مقرراً للقسم)`, [linked(trackA.json.planId), linked(trackB.json.planId), courses41.length]);
+    await upload("root", 41, fs.readFileSync("tests/fixtures/plans/graduation-old/ba-012102-2010.pdf"));
+    check((await Repository.getCurriculumPlans(41)).length === 4, "إعادة رفع المسار لا تنشئ صحائف");
+    await Repository.createCurriculumPlan({ collegeId: 1, sectionId: 41, name: "الصحيفة الجديدة", by: "test" });
+    const after41 = await Repository.getCurriculumPlans(41);
+    check(after41.filter(plan => plan.track).every(plan => plans41.find(old => old.id === plan.id)?.status === plan.status) && after41.filter(plan => !plan.track).length === 2, "صحيفةٌ رئيسية جديدة للقسم لا تزيح المسارات", after41.map(plan => `${plan.track || "-"}/${plan.status}`));
+
+    /* المسبقات: مسبقٌ لمقررِ قسمٍ آخر لم يُرفع بعد يُعدّ ولا يضيع، ثم يُربط حين يوجد المقرر بإعادة الرفع */
+    const english = fs.readFileSync("tests/fixtures/plans/graduation-2026/ba-0116.pdf");
+    const firstEnglish = await upload("root", 51, english);
+    check(firstEnglish.status === 200 && firstEnglish.json.unlinked === 2, "مسبقٌ من قسمٍ لم يُرفع: يُعدّ ولا يُربط", firstEnglish.json);
+    await Repository.createCourse(1, 52, "322", "مقرر المناهج", 3, 3, 0, false);
+    await Repository.createCourse(1, 53, "425", "مقرر آخر", 3, 3, 0, false);
+    const secondEnglish = await upload("root", 51, english);
+    check(secondEnglish.status === 200 && secondEnglish.json.unlinked === 0, "بعد وجود المقرر: كل المسبقات مربوطة", secondEnglish.json);
+    const englishDraft = (await Repository.listRuleDrafts()).find(row => row.planId === secondEnglish.json.planId);
+    const needy = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 51 && String(row.CourseCode) === "454");
+    const depA = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 52 && String(row.CourseCode) === "322");
+    const depB = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 53 && String(row.CourseCode) === "425");
+    const rule = englishDraft?.rules.find(item => item.courseId === Number(needy?.AdCourseId));
+    check(Boolean(rule?.prereq?.all?.includes(Number(depA?.AdCourseId)) && rule?.prereq?.all?.includes(Number(depB?.AdCourseId))), "المسبقان من القسمين الآخرين يظهران في قاعدة المقرر", rule);
   } finally { server.close(); }
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);

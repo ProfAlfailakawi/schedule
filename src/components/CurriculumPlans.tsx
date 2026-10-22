@@ -154,7 +154,7 @@ export default function CurriculumPlans({
 
   const courses = useMemo<AdCourse[]>(() => sortByName<AdCourse>(data?.courses ?? [], row => row.CourseName), [data?.courses]);
   const byId = useMemo(() => new Map(courses.map(course => [Number(course.AdCourseId), course])), [courses]);
-  const livePlans = (data?.plans || []).filter(plan => plan.status !== "archived");
+  const livePlans = (data?.plans || []).filter(plan => plan.status !== "archived" && !plan.track);
   const active = data?.bootstrap ? null : livePlans.find(plan => plan.status === "active") || null;
   const previous = data?.bootstrap ? null : livePlans.find(plan => plan.status === "transition") || null;
   const archivedPlans = (data?.plans || []).filter(plan => plan.status === "archived");
