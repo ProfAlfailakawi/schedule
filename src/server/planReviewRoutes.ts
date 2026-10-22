@@ -574,7 +574,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         const inBranch = ownCourses(sheet, ownKey).filter(course => !(course.girlsOnly && branch && branchAudience(branch) !== "girls"));
         const { names, fixes } = correctedNames(inBranch);
         const { reference, notes } = sheetToReference(sheet, inBranch, names);
-        const report = { updated: 0, created: 0, linked: 0, unchanged: 0, rules: 0, groups: 0, unlinked: 0 };
+        const report = { updated: 0, created: 0, linked: 0, unchanged: 0, rules: 0, groups: 0, unlinked: 0, prereqPrinted: 0, prereqLinked: 0 };
 
         /* الجديدة تدخل الصحيفة الفعّالة (وتُنشأ إن لم توجد قبل أي تعديلٍ ليحفظ «السابقةُ» الكتالوجَ كما كان)،
            والقديمة تدخل «الصحيفة السابقة». لا تختلط إحداهما بالأخرى. */
@@ -667,6 +667,9 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         report.rules = built.rules.length; report.groups = built.groups.length;
         /* مسبقاتٌ مطبوعة لمقرراتٍ ليست في كتالوج الموقع بعد (قسمٌ لم تُرفع صحيفته): تُربط عند الرفع التالي. */
         report.unlinked = built.notes.filter(note => /غير موجود في كتالوج/.test(note)).length;
+        /* مسبقات مطبوعة ↔ مربوطة بالقواعد (للمسؤول وحده): الفرق نصائحُ PEN ومسبقاتُ مقرراتٍ لم تُرفع صحائف أقسامها. */
+        report.prereqPrinted = reference.groups.flatMap(group => group.courses).reduce((sum, course) => sum + course.prerequisites.length + (course.anyOf?.length || 0), 0);
+        report.prereqLinked = built.rules.reduce((sum, rule) => sum + (rule.prereq?.all?.length || 0) + (rule.prereq?.anyOf?.length || 0), 0);
         return { sectionId: sid, plan, planCreated, report, renamed, recoded, fixes, notes };
       };
 
@@ -674,7 +677,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       try { for (const site of targets) results.push(await applyTo(site)); }
       catch (error) { return { status: 500, json: { error: error instanceof Error ? error.message : "تعذّر تطبيق الصحيفة." } }; }
       const first = results[0], total = (key: keyof typeof first.report) => results.reduce((sum, item) => sum + item.report[key], 0);
-      const report = { updated: total("updated"), created: total("created"), linked: total("linked"), unchanged: total("unchanged"), rules: total("rules"), groups: total("groups"), unlinked: total("unlinked") };
+      const report = { updated: total("updated"), created: total("created"), linked: total("linked"), unchanged: total("unchanged"), rules: total("rules"), groups: total("groups"), unlinked: total("unlinked"), prereqPrinted: total("prereqPrinted"), prereqLinked: total("prereqLinked") };
       const fixes = first.fixes;
       return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
     };
@@ -699,7 +702,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     const done = outs.filter(item => item.status === 200);
     if (!done.length) { res.status(outs[0].status).json(outs[0].json); return; }
     res.locals.auditChanges = done.map(item => item.audit).filter(Boolean).join(" | ");
-    res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), skipped: outs.length - done.length });
+    res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), prereqPrinted: done.reduce((sum, item) => sum + Number(item.json.prereqPrinted || 0), 0), prereqLinked: done.reduce((sum, item) => sum + Number(item.json.prereqLinked || 0), 0), skipped: outs.length - done.length });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */

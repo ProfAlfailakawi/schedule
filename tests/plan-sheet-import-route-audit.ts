@@ -160,7 +160,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     await Repository.createCourse(1, 52, "322", "مقرر المناهج", 3, 3, 0, false);
     await Repository.createCourse(1, 53, "425", "مقرر آخر", 3, 3, 0, false);
     const secondEnglish = await upload("root", 51, english);
-    check(secondEnglish.status === 200 && secondEnglish.json.unlinked === 0, "بعد وجود المقرر: كل المسبقات مربوطة", secondEnglish.json);
+    check(secondEnglish.status === 200 && secondEnglish.json.unlinked === 0 && secondEnglish.json.prereqLinked === secondEnglish.json.prereqPrinted && firstEnglish.json.prereqLinked === firstEnglish.json.prereqPrinted - 2, "بعد وجود المقرر: كل المسبقات المطبوعة مربوطة (٢ كانت ناقصة)", [firstEnglish.json.prereqLinked, firstEnglish.json.prereqPrinted, secondEnglish.json.prereqLinked]);
     const englishDraft = (await Repository.listRuleDrafts()).find(row => row.planId === secondEnglish.json.planId);
     const needy = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 51 && String(row.CourseCode) === "454");
     const depA = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 52 && String(row.CourseCode) === "322");

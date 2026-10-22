@@ -14,7 +14,7 @@ interface Rejection {
   mismatch?: { fields: Array<"college" | "department">; sheet: { college?: string; department?: string; departmentCode?: string }; chosen: { college?: string; department?: string; departmentCode?: string } };
 }
 interface Outcome {
-  unlinked: number;
+  unlinked: number; prereqPrinted: number; prereqLinked: number;
   sites: number;
   renamed: { before: string; after: string } | null;
   recoded: { before: string; after: string } | null;
@@ -34,7 +34,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   const [rejection, setRejection] = useState<Rejection | null>(null);
   const [error, setError] = useState("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [batch, setBatch] = useState<{ done: number; total: number; ok: number; unlinked: number; pass: 1 | 2; failed: Array<{ name: string; reason: string }> } | null>(null);
+  const [batch, setBatch] = useState<{ done: number; total: number; ok: number; prereqLinked: number; prereqPrinted: number; pass: 1 | 2; failed: Array<{ name: string; reason: string }> } | null>(null);
 
   const upload = async (file: File | undefined) => {
     if (!file || !chosen) return;
@@ -54,7 +54,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   const uploadAll = async (files: File[]) => {
     if (!files.length) return;
     setBusy(true); setRejection(null); setError(""); setOutcome(null);
-    const state = { done: 0, total: files.length, ok: 0, unlinked: 0, pass: 1 as 1 | 2, failed: [] as Array<{ name: string; reason: string }> };
+    const state = { done: 0, total: files.length, ok: 0, prereqLinked: 0, prereqPrinted: 0, pass: 1 as 1 | 2, failed: [] as Array<{ name: string; reason: string }> };
     setBatch({ ...state });
     let last = { sectionId: 0, planId: "" };
     const send = async (file: File) => {
@@ -73,7 +73,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
     /* مرورٌ ثانٍ على ما قُبل: مسبقٌ لمقررِ قسمٍ رُفع بعده لم يكن موجوداً وقت الأول، فيُربط الآن. */
     state.pass = 2; state.done = 0; state.total = accepted.length;
     for (const file of accepted) {
-      try { const { response, data } = await send(file); if (response.ok) state.unlinked += Number(data.unlinked || 0); } catch { /* المرور الأول كفى */ }
+      try { const { response, data } = await send(file); if (response.ok) { state.prereqLinked += Number(data.prereqLinked || 0); state.prereqPrinted += Number(data.prereqPrinted || 0); } } catch { /* المرور الأول كفى */ }
       state.done += 1; setBatch({ ...state, failed: [...state.failed] });
     }
     setBusy(false);
@@ -132,7 +132,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
           <CheckCircle2 aria-hidden="true" />
           <span title="دخلت"><Plus aria-hidden="true" /> {batch.ok}</span>
           <span title="لم تدخل"><X aria-hidden="true" /> {batch.failed.length}</span>
-          {batch.unlinked ? <span title="مسبقاتٌ لمقرراتٍ ليست في أي صحيفة مرفوعة"><AlertTriangle aria-hidden="true" /> {batch.unlinked}</span> : null}
+          {batch.prereqPrinted ? <span title="مسبقات مربوطة من المطبوعة؛ الباقي نصيحةُ PEN أو مقرراتُ أقسامٍ لم تُرفع صحائفها"><Link2 aria-hidden="true" /> {batch.prereqLinked}/{batch.prereqPrinted}</span> : null}
           <small>{batch.done < batch.total || (batch.pass === 1 && busy) ? `${batch.pass === 2 ? "المسبقات · " : ""}${batch.done} / ${batch.total}` : "تم"}</small>
           {batch.failed.length ? <ul>{batch.failed.map((item, index) => <li key={index}><b>{item.name}</b> · {item.reason}</li>)}</ul> : null}
         </div>
@@ -143,7 +143,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
           <span title="مقررات جديدة"><Plus aria-hidden="true" /> {outcome.created}</span>
           <span title="مقررات صُحّحت"><PencilLine aria-hidden="true" /> {outcome.updated}</span>
           <span title="رُبطت بالصحيفة"><Link2 aria-hidden="true" /> {outcome.linked}</span>
-          {outcome.unlinked ? <span title="مسبقاتٌ لمقرراتٍ لم تُرفع صحيفة قسمها بعد: تُربط عند الرفع التالي"><AlertTriangle aria-hidden="true" /> {outcome.unlinked}</span> : null}
+          <span title={outcome.prereqLinked < outcome.prereqPrinted ? "مسبقات مربوطة من المطبوعة؛ الباقي نصيحةُ PEN أو مقررُ قسمٍ لم تُرفع صحيفته بعد (يُربط عند الرفع التالي)" : "كل المسبقات المطبوعة مربوطة"}><Link2 aria-hidden="true" /> {outcome.prereqLinked}/{outcome.prereqPrinted}</span>
           <small>{outcome.planName} · بانتظار اعتماد القسم{outcome.sites > 1 ? ` · ${countOf(outcome.sites, AR.site)}` : ""}</small>
         </div>
       ) : null}
