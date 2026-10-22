@@ -45,8 +45,14 @@ const sections: AdSection[] = [
 
 /* اثنا عشر أستاذاً للقسم، وأربعة منتدبون من أقسامٍ أخرى (13–16). */
 const DEPARTMENT_INSTRUCTORS = 12;
-const instructorNames = Array.from({ length: 16 }, (_, index) => `عضو هيئة تدريس تجريبي ${index + 1}`);
+/* 1–12 أعضاء قسم تكنولوجيا التعليم، 13–16 منتدبون من أقسامٍ أخرى، 17–22 للتربية الفنية، 23–28 للتصميم التعليمي. */
+const instructorNames = Array.from({ length: 28 }, (_, index) => `عضو هيئة تدريس تجريبي ${index + 1}`);
 export const DEMO_VISITING_INSTRUCTOR_IDS = [13, 14, 15] as const;
+/** القسمان الآخران في الصندوق: مقرراتُهما وأعضاؤهما وجداولُهما، ليُرى الميزانُ والتسليمُ على ثلاثة أقسام لا على قسمٍ وحيد. */
+export const DEMO_OTHER_DEPARTMENTS = [
+  { sectionId: 2, instructorIds: [17, 18, 19, 20, 21, 22] },
+  { sectionId: 3, instructorIds: [23, 24, 25, 26, 27, 28] },
+] as const;
 
 export interface DemoSandboxState {
   users: SystemUser[]; formNames: FormName[]; formSecurity: FormSecurity[]; collegeUserAssign: AdCollegeUserAssign[];
@@ -71,8 +77,28 @@ function syntheticInstructors(): AdInstructor[] {
     AdInstructorCivil: generateSyntheticCivilId(),
     AdInstructorName: name,
     AdInstructorMobile: `5000${String(index + 1).padStart(4, "0")}`,
+    /* نصابُ أعضاء القسم (ساعات الفصل): شرطُ أن يُقترح أستاذٌ لشعبةٍ جديدة في رادار التسجيل ومركز الذكاء —
+       بلا نصابٍ مسجَّل يبقى الاقتراحُ «بلا أستاذ». للمنتدبين لا نصاب: لا يُسنَد إليهم اقتراح. */
+    ...(index < DEPARTMENT_INSTRUCTORS || index >= 16 ? { AdInstructorLoad: 18 } : {}),
   }));
 }
+
+/* مقرراتُ القسمين الآخرين (أسماءٌ محايدة بلا ارتباطٍ بخطة حقيقية): [الرمز، الاسم، الساعات]. الرمزُ على هيئة رموز الجامعة
+   (الخانة الخامسة = المستوى)، فيُقرأ مستوى كل مقرر في الشاشات كما في قسم تكنولوجيا التعليم. */
+const DEMO_OTHER_COURSES: ReadonlyArray<readonly [sectionId: number, rows: ReadonlyArray<readonly [string, string, number]>]> = [
+  [2, [
+    ["0110101", "مدخل إلى التربية الفنية", 3], ["0110102", "أسس الرسم والتلوين", 3], ["0110111", "التربية الفنية للطفل", 3],
+    ["0110121", "مبادئ التصميم الفني", 3], ["0110203", "الخزف والنحت", 4], ["0110215", "فنون الطباعة", 4],
+    ["0110224", "تاريخ الفن", 3], ["0110232", "طرق تدريس التربية الفنية", 3], ["0110314", "الفنون الإسلامية", 3],
+    ["0110327", "التصميم الزخرفي", 4], ["0110405", "مشروع فني", 4], ["0110418", "التذوق الفني والنقد", 3],
+  ]],
+  [3, [
+    ["0111101", "مبادئ التصميم التعليمي", 3], ["0111112", "نظريات التصميم", 3], ["0111121", "تحليل الاحتياجات التعليمية", 3],
+    ["0111203", "تصميم المحتوى الرقمي", 4], ["0111214", "كتابة السيناريو التعليمي", 3], ["0111225", "تصميم الاختبارات", 3],
+    ["0111233", "الرسوم المتحركة التعليمية", 4], ["0111306", "تقويم التصميم التعليمي", 3], ["0111317", "التعلم التكيفي", 3],
+    ["0111404", "مشروع التصميم", 4], ["0111412", "إدارة مشاريع التصميم", 3], ["0111426", "التعلم المصغّر", 3],
+  ]],
+];
 
 /* مقرراتُ القسم من الصحيفتين (رمزها يبدأ بـ0109)، الجديدةُ أولاً فتغلب تسميتُها
    على القديمة إن اتفق الرمز. السعةُ تتدرّج مع المستوى، وعملياتُ الأربع ساعاتٍ أصغر. */
@@ -83,7 +109,7 @@ function syntheticCourses(): AdCourse[] {
       if (course.code.startsWith("0109") && !seen.has(course.code)) seen.set(course.code, course);
     }
   }
-  return [...seen.values()].sort((a, b) => a.code.localeCompare(b.code)).map((course, index) => {
+  const own = [...seen.values()].sort((a, b) => a.code.localeCompare(b.code)).map((course, index) => {
     const level = Number(course.code[4]) || 1;
     return {
       AdCourseId: index + 1, AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID,
@@ -91,6 +117,13 @@ function syntheticCourses(): AdCourse[] {
       MaxStudent: course.hours >= 4 ? 30 : Math.max(40, 70 - level * 5),
     };
   });
+  let nextId = own.length;
+  const others: AdCourse[] = DEMO_OTHER_COURSES.flatMap(([sectionId, rows]) => rows.map(([code, name, hours]) => ({
+    AdCourseId: ++nextId, AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: sectionId,
+    CourseCode: code, CourseName: name, CourseCredit: hours >= 4 ? 3 : hours, CourseHours: hours,
+    MaxStudent: hours >= 4 ? 28 : 40,
+  })));
+  return [...own, ...others];
 }
 
 /* ── سجلُّ مبانٍ وقاعاتٍ للبيئة التجريبية ─────────────────────────────────
@@ -108,6 +141,8 @@ const DEMO_BUILDINGS: readonly DemoBuildingSeed[] = [
     ["101", [1], "قاعة ذكية 40 مقعدًا"], ["102", [1], "قاعة محاضرات 35 مقعدًا"], ["103", [1], "قاعة نقاش 30 مقعدًا"],
     ["104", [1], "قاعة محاضرات 45 مقعدًا"], ["L01", [1], "مختبر حاسب"], ["S01", [1], "استوديو إنتاج"],
     ["201", [2], "قاعة قسم التربية الفنية 35 مقعدًا"], ["202", [3], "قاعة قسم التصميم التعليمي 30 مقعدًا"],
+    ["203", [2], "قاعة محاضرات التربية الفنية 32 مقعدًا"], ["204", [2], "قاعة نقاش التربية الفنية 28 مقعدًا"], ["S02", [2], "مرسم 28 مقعدًا"],
+    ["205", [3], "قاعة محاضرات التصميم التعليمي 30 مقعدًا"], ["206", [3], "قاعة نقاش التصميم التعليمي 26 مقعدًا"], ["L02", [3], "مختبر تصميم 26 مقعدًا"],
   ] },
   { prefix: "901", siteLetter: "A", number: "02", collegeId: DEMO_COLLEGE_ID, name: "مبنى القاعات المركزية", rooms: [
     ["301", [1], "قاعة كبرى 120 مقعدًا"], ["302", [1], "قاعة كبرى 100 مقعد"],
@@ -230,6 +265,8 @@ const COHORT_SIZE = 6;
  * شعبٍ يتبدّل قليلاً بين فصلٍ وفصل — مقرراتٌ يتصاعد طلبُها، ومقرراتٌ ثابتة، ومقرراتٌ تتراجع —
  * وإحصاءِ «الباقي/الشاغر» لكل فصل. كلُّها مغلقةٌ للقراءة، بلا دورة اعتماد. */
 export const DEMO_HISTORY_TERMS: ReadonlyArray<{ id: number; name: string; weeksBack: number }> = [
+  { id: 7, name: "الفصل الأول 2023/2024", weeksBack: 156 },
+  { id: 8, name: "الفصل الثاني 2023/2024", weeksBack: 134 },
   { id: 3, name: "الفصل الأول 2024/2025", weeksBack: 104 },
   { id: 4, name: "الفصل الثاني 2024/2025", weeksBack: 82 },
   { id: 5, name: "الفصل الأول 2025/2026", weeksBack: 52 },
@@ -237,14 +274,31 @@ export const DEMO_HISTORY_TERMS: ReadonlyArray<{ id: number; name: string; weeks
 ];
 /** فرقُ عدد الشعب عن الفصل الجاري لكل مقرر (بالترتيب في قائمة الطرح)، فصلاً بعد فصل من الأقدم. */
 const HISTORY_SHAPE: ReadonlyArray<readonly number[]> = [
-  [0, 0, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [-1, 0, 0, 0], [1, 1, 0, 0], [0, 0, 0, 0],
+  [0, 0, 0, 0, 1, 1], [1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0], [-1, 0, 0, 0, 0, 0], [1, 1, 1, 1, 0, 0], [0, 0, 0, 0, 0, 0],
 ];
-const historyOffer = (index: number): ReadonlyArray<readonly [code: string, sections: number]> =>
-  (OFFERINGS[DEMO_TERM_CURRENT] || []).map(([code, count], order) =>
-    [code, Math.max(1, count + HISTORY_SHAPE[order % HISTORY_SHAPE.length][index])] as const);
-function placeTerm(termId: number, courses: AdCourse[], startId: number, offerOverride?: ReadonlyArray<readonly [code: string, sections: number]>): FSchedule[] {
+/**
+ * ما يُطرح في كل فصلٍ تاريخي: الأول (الخريفي) يكرّر قائمةَ الفصل الجاري بتبدّلٍ طفيف، والثاني (الربيعي)
+ * مقرراتُ الموسم الآخر التي لا تُطرح في الجاري (مشروع التخرج والتدريب الميداني والمتقدّمة…) مع مقرراتٍ
+ * أساسية تُطرح في الموسمين. فلا مقرّرٌ في صحيفة القسم بلا تاريخ، ويُرى «يُخطَّط له في فصل ذلك الموسم».
+ */
+const TIGHT_SEAT_CODES = new Set(["0109105", "0109122", "0109221", "0109224", "0109233"]);
+const historyOffer = (index: number, courses: readonly AdCourse[]): ReadonlyArray<readonly [code: string, sections: number]> => {
+  const current = OFFERINGS[DEMO_TERM_CURRENT] || [];
+  /* المقرراتُ الخمسةُ الضيّقة المقاعد (رادار التسجيل) كان طلبها يتصاعد في تاريخ القسم أيضاً: فيتقدّم اقتراحُ فتح شعبٍ لها في «تنبّؤ الفصل القادم»، ويجد زرُّ «ماذا لو فتحنا» ما يقترحه. */
+  const shaped = current.map(([code, count], order) => [code, Math.max(1, count + HISTORY_SHAPE[order % HISTORY_SHAPE.length][index] + (TIGHT_SEAT_CODES.has(code) && index >= 2 ? 1 : 0))] as const);
+  if (index % 2 === 0) return shaped;
+  /* الربيعيُّ: كلُّ ما يُطرح في الخريفيّ (فتبقى أنماطُ المقررات الأساسية ثابتةً عبر الفصول وتبقى الثقةُ في التنبّؤ) مع مقرراتِ الموسم الآخر. */
+  const inCurrent = new Set(current.map(([code]) => code));
+  const other = courses.filter(course => Number(course.AdSectionId) === DEMO_SECTION_ID).map(course => course.CourseCode).filter(code => !inCurrent.has(code)).sort();
+  return [...shaped, ...other.map(code => [code, 1] as const)];
+};
+interface PlaceScope { sectionId: number; instructorIds: readonly number[] }
+const OWN_SCOPE: PlaceScope = { sectionId: DEMO_SECTION_ID, instructorIds: Array.from({ length: DEPARTMENT_INSTRUCTORS }, (_, i) => i + 1) };
+function placeTerm(termId: number, courses: AdCourse[], startId: number, offerOverride?: ReadonlyArray<readonly [code: string, sections: number]>, scope: PlaceScope = OWN_SCOPE, limits: { hallCap?: number; dayCap?: number } = {}): FSchedule[] {
+  const hallCap = limits.hallCap ?? 5, dayCap = limits.dayCap ?? 2;
   const rows: FSchedule[] = [];
-  const halls = hallsForSection(DEMO_SECTION_ID);
+  const halls = hallsForSection(scope.sectionId);
+  const staff = scope.instructorIds;
   const busy = new Set<string>();
   const perDay = new Map<string, number>();
   const hallLoad = new Map<string, number>();
@@ -260,7 +314,7 @@ function placeTerm(termId: number, courses: AdCourse[], startId: number, offerOv
     const lab = course.CourseHours >= 4;
     const hallPool = lab ? [...halls.filter(isLabHall), ...halls.filter(h => !isLabHall(h))] : [...halls.filter(h => !isLabHall(h)), ...halls.filter(isLabHall)];
     for (let section = 1; section <= count; section += 1, index += 1) {
-      const home = (course.AdCourseId * 2 + section) % DEPARTMENT_INSTRUCTORS;
+      const home = (course.AdCourseId * 2 + section) % staff.length;
       let placed: FSchedule | null = null;
       for (let s = 0; s < SLOTS.length && !placed; s += 1) {
         const slot = SLOTS[(index * 5 + s) % SLOTS.length];
@@ -268,18 +322,18 @@ function placeTerm(termId: number, courses: AdCourse[], startId: number, offerOv
         for (let h = 0; h < hallPool.length && !placed; h += 1) {
           const hall = hallPool[(index + h) % hallPool.length];
           if (busy.has(`${termId}|${slot.key}|hall|${hall.roomId}`)) continue;
-          if ((hallLoad.get(hall.roomId) || 0) >= 5) continue; // لا قاعةٌ تحمل أكثر من خمس محاضرات في الفصل
-          for (let i = 0; i < DEPARTMENT_INSTRUCTORS && !placed; i += 1) {
-            const instructorId = ((home + i) % DEPARTMENT_INSTRUCTORS) + 1;
+          if ((hallLoad.get(hall.roomId) || 0) >= hallCap) continue; // لا قاعةٌ تحمل أكثر من خمس محاضرات في الفصل (الجاري)
+          for (let i = 0; i < staff.length && !placed; i += 1) {
+            const instructorId = staff[(home + i) % staff.length];
             if (busy.has(`${termId}|${slot.key}|ins|${instructorId}`)) continue;
-            if ((perDay.get(`${termId}|${slot.day}|${instructorId}`) || 0) >= 2) continue;
+            if ((perDay.get(`${termId}|${slot.day}|${instructorId}`) || 0) >= dayCap) continue;
             busy.add(`${termId}|${slot.key}|hall|${hall.roomId}`);
             busy.add(`${termId}|${slot.key}|ins|${instructorId}`);
             perDay.set(`${termId}|${slot.day}|${instructorId}`, (perDay.get(`${termId}|${slot.day}|${instructorId}`) || 0) + 1);
             used.add(slot.key);
             hallLoad.set(hall.roomId, (hallLoad.get(hall.roomId) || 0) + 1);
             placed = {
-              id: startId + rows.length, AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: DEMO_SECTION_ID, AdTermId: termId,
+              id: startId + rows.length, AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: scope.sectionId, AdTermId: termId,
               AdCourseId: course.AdCourseId, AdCourseName: course.CourseName, SCode: String(section).padStart(2, "0"),
               AdInstructorId: instructorId, ...slot.days, fstarttime: slot.start, fendtime: slot.end,
               ...hallFields(hall), fdetail: "", rev: 0,
@@ -543,6 +597,43 @@ function seedApprovalUniverse(schedules: FSchedule[], acceptedFirst: FSchedule[]
     logged(30, COMMITTEE, "PUT", `/api/schedules/${t1[0].id}`, "تعديل", `القاعة ${t1[0].AdRoomCode}/${t1[0].AdRoomHall}`);
   }
 
+  /* ── القسمان الآخران: قصتان مختلفتان في الفصل نفسه ────────────────────────────────────────────
+     التربية الفنية: قُبل جدولُها في الجولة الأولى (يراه العميدان معتمداً). التصميم التعليمي: وقّعته اللجنةُ ورئيسُ القسم
+     وأُرسل إلى التسجيل ويراجعه الآن (يظهر في وارد رئيس التسجيل). فلا يبقى الميزان قسماً واحداً وقسمين «لم يبدأ». */
+  /* الفاعلُ في سجلّ هذين القسمين حسابا الصندوق نفسُهما (لجنةٌ ورئيس قسم): للصندوق حسابٌ واحدٌ لكل صفة، والاسمُ المكتوب اسمُ صاحبة الدور في القسم المعنيّ. */
+  const otherStories: Array<{ sectionId: number; name: string; accepted: boolean; signedDaysAgo: number }> = [
+    { sectionId: 2, name: "التربية الفنية", accepted: true, signedDaysAgo: 20 },
+    { sectionId: 3, name: "التصميم التعليمي", accepted: false, signedDaysAgo: 4 },
+  ];
+  for (const story of otherStories) {
+    const rows = rowsOf(DEMO_TERM_CURRENT).filter(row => Number(row.AdSectionId) === story.sectionId);
+    if (rows.length < 4) continue;
+    const scope = `${DEMO_COLLEGE_ID}:${story.sectionId}:${DEMO_TERM_CURRENT}`;
+    const versionId = `demo-ver-s${story.sectionId}-round1`;
+    const committee = `د. رئيس لجنة جدول ${story.name} (تجريبي)`, head = `د. رئيس قسم ${story.name} (تجريبي)`;
+    versions.push({
+      id: versionId, scopeKey: scope, createdAt: iso(story.signedDaysAgo), rowCount: rows.length, SystemUserId: 16, userName: committee,
+      AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: story.sectionId, AdTermId: DEMO_TERM_CURRENT,
+      label: story.accepted ? "النسخة المقبولة — الجولة الأولى" : "نسخة الجولة الأولى — كما أُرسلت إلى التسجيل", source: "manual", rows: structuredClone(rows),
+    });
+    approvals.push({
+      id: scope, scopeKey: scope, AdCollegeId: DEMO_COLLEGE_ID, AdSectionId: story.sectionId, AdTermId: DEMO_TERM_CURRENT,
+      status: story.accepted ? "accepted" : "submitted", currentRound: 1,
+      signatures: [
+        { stage: "committee", SystemUserId: 16, userName: committee, roleLabel: "رئيس لجنة الجدول", at: iso(story.signedDaysAgo + 1), versionId, rowCount: rows.length, regulationNoticeCount: 0, verifyCode: `CMT-${story.sectionId}41${story.sectionId}` },
+        { stage: "head", SystemUserId: 15, userName: head, roleLabel: "رئيس القسم العلمي", at: iso(story.signedDaysAgo), versionId, rowCount: rows.length, regulationNoticeCount: 0, verifyCode: `HEAD-${story.sectionId}93${story.sectionId}` },
+      ],
+      rounds: [{
+        number: 1, submittedAt: iso(story.signedDaysAgo), submittedBy: committee, reviewedVersionId: versionId,
+        ...(story.accepted ? { acceptedAt: iso(story.signedDaysAgo - 3), acceptedBy: "أ. رئيس التسجيل", acceptedVersionId: versionId } : {}),
+      }],
+      pendingAdditions: [], updatedAt: iso(story.accepted ? story.signedDaysAgo - 3 : story.signedDaysAgo),
+    });
+    logged(24 * story.signedDaysAgo, [16, committee], "POST", "/api/approvals/sign", "إضافة", `توقيع اللجنة — ${story.name} · الجولة 1 · ${countOf(rows.length, AR.appointment)}`);
+    logged(24 * story.signedDaysAgo - 1, [15, head], "POST", "/api/approvals/sign", "إضافة", `توقيع رئيس القسم — أُرسل إلى التسجيل · ${story.name}`);
+    if (story.accepted) logged(24 * (story.signedDaysAgo - 3), REG_HEAD, "POST", "/api/approvals/accept", "إضافة", `اعتماد جدول ${story.name} — الجولة 1`);
+  }
+
   /* ── مواعيد التسليم: طلبُ تمديدٍ من القسم ينتظر رئيسَ التسجيل، فيفتح لوحته على ما يفعله: يمنح أو يرفض. */
   const first = approvals.find(row => row.scopeKey === key(1));
   if (first) {
@@ -633,8 +724,9 @@ export function createDemoSandboxState(): DemoSandboxState {
   /* مخالفتان لائحيتان تُضافان بعد القبول (مراجعةٌ لا منع)، فيُقرأ تقريرُ الجدول بكشفهما. */
   first.push(...plantRegulation(first, courses, DEMO_TERM_CURRENT, first.length + 1));
   /* المنتدبون يدرّسون شعباً فعلية (لا يزاحمون أحداً: لا يظهرون في الإسناد الطمّاع). */
-  for (const [rows, picks] of [[first, [[6, 13], [9, 14], [12, 15]]]] as const) {
-    for (const [at, instructorId] of picks) if (rows[at]) rows[at].AdInstructorId = instructorId;
+  /* وفي النسخة المقبولة كذلك: العميدان يريان المعتمدَ وحده، فبدونهم تبقى عدسةُ «المنتدبون» عندهما فارغة. */
+  for (const rows of [first, acceptedFirst]) {
+    for (const [at, instructorId] of [[6, 13], [9, 14], [12, 15]] as const) if (rows[at]) rows[at].AdInstructorId = instructorId;
   }
   /* لقطةٌ ترويجيةٌ لتغييرات الجدول: شعبتان من مقررين مختلفين حُذفتا بعد
      اعتماد النسخة الأولى، فتظهران بوضوح في تقرير الديمو كمقررات محذوفة. */
@@ -669,8 +761,12 @@ export function createDemoSandboxState(): DemoSandboxState {
     if (demoDeletedIds.has(Number(first[index].id))) first.splice(index, 1);
   }
   /* فصولُ التاريخ: جداولُها مبنيةٌ نظيفة، تُقرأ ولا تُعدَّل. */
-  const history = DEMO_HISTORY_TERMS.flatMap((term, index) => placeTerm(term.id, courses, 10_000 + term.id * 1_000, historyOffer(index)));
-  const schedules = [...first, ...history];
+  const history = DEMO_HISTORY_TERMS.flatMap((term, index) => placeTerm(term.id, courses, 10_000 + term.id * 1_000, historyOffer(index, courses), OWN_SCOPE, { hallCap: 13, dayCap: 3 }));
+  /* القسمان الآخران: جدولُ كلٍّ منهما للفصل الجاري، مبنيٌّ بالخوارزمية نفسها بقاعاته وأعضائه، فيُقرأ ميزانُ الأقسام على ثلاثة. */
+  const otherOffer = (sectionId: number) => (DEMO_OTHER_COURSES.find(([id]) => id === sectionId)?.[1] || []).map(([code], order) => [code, order === 1 ? 2 : 1] as const);
+  const otherRows = DEMO_OTHER_DEPARTMENTS.map(({ sectionId, instructorIds }) =>
+    placeTerm(DEMO_TERM_CURRENT, courses, 30_000 + sectionId * 1_000, otherOffer(sectionId), { sectionId, instructorIds }));
+  const schedules = [...first, ...otherRows.flat(), ...history];
 
   /* أسماءُ الشاشات كما في academicRoles.ts (2…17). الرقمان 1 و13 غير موصوفين هناك فسُمّيا بما اختاره المالك (تجريبي فقط). */
   const FORM_LABELS = ["الصفحة الرئيسية", "الكليات", "الأساتذة", "الأقسام", "الفصول", "المقررات", "الجداول ومركز الذكاء", "استعلام الأساتذة", "استعلام القاعات", "استعلام الأوقات", "المستخدمون", "الصلاحيات", "لوحة المؤشرات", "تقرير القسم", "النطاقات", "القاعات والأوقات", "البحث المتقدم"];
@@ -723,12 +819,13 @@ export function createDemoSandboxState(): DemoSandboxState {
      فارغة (حيث تراجع). بالعمود نفسه الذي يقرؤه التنبّؤ (`unregistered`). */
   const historyStats = DEMO_HISTORY_TERMS.map((term, index) => {
     const remainingByCourse: Record<string, number> = {}, vacantByCourse: Record<string, number> = {};
-    (OFFERINGS[DEMO_TERM_CURRENT] || []).forEach(([code], order) => {
+    historyOffer(index, courses).forEach(([code], order) => {
       const course = courses.find(row => row.CourseCode === code);
       if (!course) return;
-      const delta = HISTORY_SHAPE[order % HISTORY_SHAPE.length][index];
+      /* الخريفيُّ بتبدّل شعبه؛ والربيعيُّ يتصاعد طلبُ أول ستةٍ من مقرراته في آخر فصل. */
+      const delta = index % 2 === 0 ? HISTORY_SHAPE[order % HISTORY_SHAPE.length][index] : (order < 6 ? 1 : 0);
       const capacity = Number(course.MaxStudent) || 40;
-      remainingByCourse[String(course.AdCourseId)] = delta > 0 && index === DEMO_HISTORY_TERMS.length - 1 ? Math.round(capacity * 0.7) : 0;
+      remainingByCourse[String(course.AdCourseId)] = delta > 0 && index >= DEMO_HISTORY_TERMS.length - 2 ? Math.round(capacity * 0.7) : 0;
       vacantByCourse[String(course.AdCourseId)] = delta < 0 ? Math.round(capacity * 0.4) : 0;
     });
     const scope = `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${term.id}`;
@@ -764,7 +861,22 @@ export function createDemoSandboxState(): DemoSandboxState {
       requesterCollegeId: DEMO_COLLEGE_ID, requesterSectionId: 2, requesterUserId: 15, requesterName: "رئيس قسم التربية الفنية",
       ownerCollegeId: DEMO_COLLEGE_ID, ownerSectionId: DEMO_SECTION_ID,
       confidence: 0, historyTerms: 0, status: "pending",
-    }], scheduleApprovals: seeded.approvals,
+    },
+    /* سجلُّ الفصل: طلبان سبق الردُّ عليهما (قُبل ورُفض) وثالثٌ انتهت مهلته، فلا يُفتح السجلُّ على طلبٍ واحد. */
+    ...([
+      { id: "demo-hall-barter-approved-1", room: "302", day: "fthursday", from: "17:00", to: "18:00", sectionId: 3, user: 0, name: "رئيس قسم التصميم التعليمي", status: "approved", ago: 3, confidence: 80, terms: 3, responder: [15, HEAD_NAME] },
+      { id: "demo-hall-barter-rejected-1", room: "301", day: "fsunday", from: "17:00", to: "18:00", sectionId: 3, user: 0, name: "رئيس قسم التصميم التعليمي", status: "rejected", ago: 6, confidence: 55, terms: 3, responder: [15, HEAD_NAME] },
+      { id: "demo-hall-barter-expired-1", room: "302", day: "fmonday", from: "17:00", to: "18:00", sectionId: 2, user: 0, name: "رئيس قسم التربية الفنية", status: "cancelled", ago: 9, confidence: 70, terms: 2, responder: null },
+    ] as const).map(item => ({
+      id: item.id, createdAt: new Date(Date.now() - item.ago * 86_400_000).toISOString(), updatedAt: new Date(Date.now() - (item.ago - 1) * 86_400_000).toISOString(),
+      AdTermId: DEMO_TERM_CURRENT, buildingId: demoBuildingId(DEMO_BUILDINGS[1]), roomId: demoRoomId(DEMO_BUILDINGS[1], item.room),
+      roomCode: demoBuildingCode(DEMO_BUILDINGS[1]), roomHall: item.room, day: item.day, startTime: item.from, endTime: item.to,
+      requesterCollegeId: DEMO_COLLEGE_ID, requesterSectionId: item.sectionId, requesterUserId: item.user, requesterName: item.name,
+      ownerCollegeId: DEMO_COLLEGE_ID, ownerSectionId: DEMO_SECTION_ID,
+      confidence: item.confidence, historyTerms: item.terms, status: item.status,
+      ...(item.responder ? { respondedAt: new Date(Date.now() - (item.ago - 1) * 86_400_000).toISOString(), responderUserId: item.responder[0], responderName: item.responder[1] } : {}),
+      ...(item.status === "cancelled" ? { cancelReason: "انتهت مهلة الرد قبل أن يردّ القسم المالك." } : {}),
+    }))], scheduleApprovals: seeded.approvals,
     locationBuildings: registry.buildings, locationRooms: registry.rooms,
     teachingLoadConfig: [{
       id: "main", enabled: true, ranks: DEMO_TEACHING_LOAD_RANKS.map(rank => ({ ...rank })),

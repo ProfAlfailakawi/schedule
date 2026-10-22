@@ -86,7 +86,8 @@ for (const account of DEMO_ROLE_ACCOUNTS) {
 
 /* ── ٣) دورةٌ عاشت، لا صندوقٌ فارغ ──────────────────────────────────────── */
 
-check(state.scheduleApprovals.length === 1, "بُذرت دورةُ اعتمادٍ للفصل الوحيد");
+check(state.scheduleApprovals.length === 3 && state.scheduleApprovals.every(a => a.AdTermId === 1), "بُذرت دوراتُ اعتمادٍ للأقسام الثلاثة في الفصل الجاري");
+check(["returned", "accepted", "submitted"].every(status => state.scheduleApprovals.some(a => a.status === status)), "ثلاثُ قصص: مُرجَع (تكنولوجيا التعليم)، ومعتمد (التربية الفنية)، وعند التسجيل (التصميم التعليمي)");
 const submitted = state.scheduleApprovals.find(a => a.status === "returned"); // جولاتٌ عدّة: أُرسل وقُبل ثم أُرجع
 const returned = state.scheduleApprovals.find(a => a.status === "returned");
 const accepted = state.scheduleApprovals.find(a => a.status === "accepted" || a.rounds.some((r: any) => r.acceptedAt));

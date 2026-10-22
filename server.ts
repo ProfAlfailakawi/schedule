@@ -2264,7 +2264,12 @@ async function seedDemoStories(): Promise<void> {
 
   /* عدّاداتُ المشاهدة: رابطٌ لم يفتحه أحدٌ يُري «0» أمام الجمهور. تُرفع بالدالة
      نفسها التي تعدّ بها الصفحاتُ العامة، داخل صندوق الزائر وحده. */
-  for (const [link, opens] of [[staffLink, 14], [survey, 9]] as const) {
+  /* رابطُ جدول القسم المنشور: ثالثُ ما يجده المنسّق في لوحة النشر (للعرض، بمشاهداتٍ تُري أن الرابط يُفتح). */
+  const departmentLink = await Repository.createShareLink({
+    ...linkBase, kind: "department", label: shareLinkLabel("department", sectionName, termName),
+    expiresAt: iso(60), showInstructors: true,
+  } as any);
+  for (const [link, opens] of [[staffLink, 14], [survey, 9], [departmentLink, 31]] as const) {
     for (let opened = 0; opened < opens; opened++) await Repository.touchShareLink(link.id);
   }
 
@@ -2311,7 +2316,7 @@ async function seedDemoStories(): Promise<void> {
   // ── طلبا أستاذين (c): واحدٌ ينتظر القسم، وآخرُ قُرّر برفضٍ وبدائل.
   const courseName = new Map(courses.map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
   const collegeNameById = new Map(colleges.map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
-  const teachers = [...new Set(scopeRows.map(row => Number(row.AdInstructorId)).filter(Boolean))].slice(0, 2);
+  const teachers = [...new Set(scopeRows.map(row => Number(row.AdInstructorId)).filter(Boolean))].slice(0, 6);
   const candidateSlots: Array<{ days: RequestDayKey[]; start: string }> = [
     { days: ["fsunday", "ftuesday"], start: "12:30" }, { days: ["fmonday", "fwednesday"], start: "14:00" },
     { days: ["fsunday", "ftuesday"], start: "15:30" }, { days: ["fmonday", "fwednesday"], start: "08:00" },
@@ -2328,15 +2333,17 @@ async function seedDemoStories(): Promise<void> {
       showInstructors: false,
     } as any);
     /* الأستاذ فتح رابطه (linkOpenedAt أدناه): العدّادُ يوافق القصة لا «0». */
-    for (let opened = 0; opened < 3 + index; opened++) await Repository.touchShareLink(link.id);
+    for (let opened = 0; opened < (index === 3 ? 0 : 3 + index); opened++) await Repository.touchShareLink(link.id);
     const opened = iso(-6);
     let request = await Repository.createInstructorRequest({
       AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdInstructorId: instructorId, linkId: link.id,
       window: { opensAt: opened, closesAt: requestsCloseAtFromDate(iso(10).slice(0, 10)) }, source: "draft", status: "sent",
       items: own.map(row => requestItemFromRow(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), collegeNameById)),
-      timeline: [{ kind: "link-created", at: opened, by: "القسم" }, { kind: "link-opened", at: iso(-5) }],
+      timeline: [{ kind: "link-created", at: opened, by: "القسم" }, ...(index === 3 ? [] : [{ kind: "link-opened" as const, at: iso(-5) }])],
     });
-    request = { ...request, linkOpenedAt: iso(-5) };
+    request = index === 3 ? request : { ...request, linkOpenedAt: iso(-5) };
+    /* حالتان بلا إرسال: أستاذٌ فتح رابطه ولم يرسل بعد (2)، وآخرُ لم يفتحه (3) — فيرى القسمُ «ينتظر الأستاذ» لا طلبين فقط. */
+    if (index === 2 || index === 3) { await Repository.saveInstructorRequest(request); continue; }
     /* بندٌ واحدٌ يُطلب نقله إلى أوّل موعدٍ يقبله حكمُ النظام نفسُه (judgeRequestItems). */
     const target = request.items.findIndex(item => Number(item.before?.sectionId || sectionId) === sectionId);
     if (target < 0) continue;
@@ -2354,14 +2361,24 @@ async function seedDemoStories(): Promise<void> {
       if (attempt.items[target].verdict === "clear") acceptable.push({ slot, judged: attempt });
     }
     if (!acceptable.length) continue;
-    const judged = acceptable[0].judged;
+    const judged = acceptable[index >= 4 ? Math.min(index - 3, acceptable.length - 1) : 0].judged;
     const submittedAt = iso(-4 + index);
     const signed = {
       ...judged, status: "submitted" as const, submittedAt,
       signature: { at: submittedAt, fingerprint: await surveyFingerprint(normalizeCivilId(person.AdInstructorCivil)), verifyCode: verificationCode(request.id, instructorId, submittedAt) },
       timeline: [...request.timeline, { kind: "submitted" as const, at: submittedAt, detail: "1" }, { kind: "received" as const, at: submittedAt, by: "القسم" }],
     };
-    if (index === 0) { await Repository.saveInstructorRequest(signed); continue; }
+    if (index === 0 || index === 5) { await Repository.saveInstructorRequest(signed); continue; }
+    /* (4) طلبٌ أُرسل فقبله القسمُ وثبّته: يُغلق بقرارٍ مثبَّت لا بقاءَ فيه لمن ينتظر. */
+    if (index === 4) {
+      const fixedAt = iso(-2);
+      await Repository.saveInstructorRequest({
+        ...signed, status: "settled",
+        items: signed.items.map((item, at) => at !== target ? item : { ...item, decision: { state: "fixed" as const, decidedBy: committee.role, decidedAt: fixedAt } }),
+        timeline: [...signed.timeline, { kind: "item-fixed" as const, at: fixedAt, by: committee.role, itemIndex: target }, { kind: "settled" as const, at: fixedAt, by: committee.role }],
+      });
+      continue;
+    }
     const decidedAt = iso(-1);
     const offered = acceptable.slice(1, 3)
       .map(({ slot }) => ({ day: slot.days[0], days: slot.days, start: slot.start, end: endForRequest(slot.days, slot.start) }));

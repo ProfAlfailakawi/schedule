@@ -117,7 +117,7 @@ function p2Registry() {
   state.schedules.filter(r => r.AdTermId === 1 && !String(r.fdetail || "").includes("حالة تجريبية مقصودة")).forEach(r => perHall.set(String(r.roomId), (perHall.get(String(r.roomId)) || 0) + 1));
   check(Math.max(...perHall.values()) <= 5, "ولا قاعةٌ تحمل أكثر من خمس محاضرات — فلا «نقطة اعتماد حساسة» مصطنعة");
   /* فصلٌ جارٍ وفصلٌ ثانٍ يختبر إحالة كشف التسجيل عند غياب كشفه. */
-  check(state.terms.length === 6 && state.terms.some((term: any) => term.AdTermName === "الفصل الثاني 2026/2027") && state.terms.filter((term: any) => /202[45]\/202[56]/.test(String(term.AdTermName)) && term.AdTermClosed === true).length === 4, "الفصلان الأول والثاني موجودان في الصندوق، ومعهما أربعةُ فصولٍ سابقة مغلقة (تاريخٌ للتنبّؤ وبصمة القسم)");
+  check(state.terms.length === 8 && state.terms.some((term: any) => term.AdTermName === "الفصل الثاني 2026/2027") && state.terms.filter((term: any) => /202[345]\/202[456]/.test(String(term.AdTermName)) && term.AdTermClosed === true).length === 6, "الفصلان الأول والثاني موجودان في الصندوق، ومعهما ستةُ فصولٍ سابقة مغلقة (تاريخٌ للتنبّؤ وبصمة القسم)");
   const [current] = state.terms;
   const day = 86_400_000, startOf = (t: any) => Date.parse(t.AdTermStart), endOf = (t: any) => startOf(t) + t.AdTermWeeks * 7 * day;
   check(startOf(current) <= Date.now() && endOf(current) > Date.now(), `الفصل الجاري جارٍ اليوم (${current.AdTermName})`);
