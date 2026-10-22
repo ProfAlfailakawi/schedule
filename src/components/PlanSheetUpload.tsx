@@ -26,7 +26,7 @@ interface ReportRow {
   file: string; status: "ok" | "skipped" | "rejected" | "unreadable"; reason?: string; detail?: string;
   program?: string; programName?: string; year?: number; era?: "new" | "old";
   tracks?: number; sites?: number; sections?: string[]; plan?: string; created?: number; updated?: number; linked?: number;
-  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[]; addedOther?: number; noDepartment?: string[];
+  nameFixes?: number; otherDepartments?: number; prereqLinked?: number; prereqPrinted?: number; renames?: unknown[]; unresolved?: string[]; addedOther?: number; correctedOther?: number; noDepartment?: string[];
 }
 /** ما يُحفظ في التقرير من ردّ الخادم لصحيفةٍ مقبولة. */
 const pick = (data: any): Partial<ReportRow> => ({
@@ -35,8 +35,15 @@ const pick = (data: any): Partial<ReportRow> => ({
   nameFixes: typeof data.nameFixes === "number" ? data.nameFixes : Array.isArray(data.nameFixes) ? data.nameFixes.length : 0,
   otherDepartments: Number(data.otherDepartments || 0), prereqLinked: Number(data.prereqLinked || 0), prereqPrinted: Number(data.prereqPrinted || 0),
   renames: Array.isArray(data.renames) ? data.renames : [], unresolved: Array.isArray(data.unresolved) ? data.unresolved : [],
-  addedOther: Number(data.addedOther || 0), noDepartment: Array.isArray(data.noDepartment) ? data.noDepartment : [],
+  addedOther: Number(data.addedOther || 0), correctedOther: Number(data.correctedOther || 0), noDepartment: Array.isArray(data.noDepartment) ? data.noDepartment : [],
 });
+
+/** رموز الأقسام المطبوعة في الصحف وغير الموجودة بالنظام، بعدد مقرراتها (للتقرير النهائي). */
+const missingDepartments = (rows: ReportRow[]) => {
+  const total = new Map<string, number>();
+  for (const row of rows) for (const item of row.noDepartment || []) { const [code, count] = item.split("×"); total.set(code, Math.max(total.get(code) || 0, Number(count) || 0)); }
+  return [...total].map(([code, courses]) => ({ code, courses })).sort((a, b) => a.code.localeCompare(b.code));
+};
 
 const SHORT: Record<string, { icon: typeof FileX2; title: string; hint: string }> = {
   unreadable: { icon: FileX2, title: "الملف غير مقروء", hint: "ارفع PDF «الخطة الدراسية» من SWRCAPP" },
@@ -130,7 +137,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
   /* تقريرُ الدفعة (ملفٌ يُنزَّل) للمراجعة: لكل ملفٍ ما دخل وأين وما رُفض ولماذا. */
   const downloadReport = () => {
     if (!batch) return;
-    const text = JSON.stringify({ generatedAt: new Date().toISOString(), summary: { ok: batch.ok, skipped: batch.skipped, failed: batch.failed, prereqLinked: batch.prereqLinked, prereqPrinted: batch.prereqPrinted }, files: batch.rows }, null, 1);
+    const text = JSON.stringify({ generatedAt: new Date().toISOString(), summary: { ok: batch.ok, skipped: batch.skipped, failed: batch.failed, prereqLinked: batch.prereqLinked, prereqPrinted: batch.prereqPrinted, missingDepartments: missingDepartments(batch.rows) }, files: batch.rows }, null, 1);
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url; link.download = "تقرير-رفع-الصحف.json"; link.click();

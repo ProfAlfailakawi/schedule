@@ -699,6 +699,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         const authorityOf = (row: any) => authorityDepartmentCode((colleges as any[]).find(c => Number(c.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeCode, row.AdSectionCode);
         const existing = await Repository.getCourses() as AdCourse[];
         const added: string[] = [], noDepartment = new Map<string, number>();
+        let corrected = 0;
         for (const course of others) {
           const key = `${course.college}${course.dept}`;
           const homes = (sections as any[]).filter(row => authorityOf(row) === key);
@@ -706,24 +707,35 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
           for (const home of homes) {
             const branch = collegeBranchRoot(colleges as any[], Number(home.AdCollegeId));
             if (course.girlsOnly && branch && branchAudience(branch) !== "girls") continue;
-            if (existing.some(row => Number(row.AdSectionId) === Number(home.AdSectionId) && numberOf(row.CourseCode) === Number(course.number))) continue;
+            const name = names.get(course.codeKey) || course.name;
+            const same = existing.filter(row => Number(row.AdSectionId) === Number(home.AdSectionId) && numberOf(row.CourseCode) === Number(course.number));
+            if (same.length > 1) continue;
+            if (same.length) {
+              /* الجديدة هي المعتمدة: اسمٌ أو وحداتٌ أو ساعاتٌ تخالفها تُصحَّح (والسعة كما هي)؛ والقديمة لا تمسّ قائماً. */
+              const row = same[0];
+              if (isNew && (String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours)) {
+                await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, course.units, course.hours, Number(row.MaxStudent) || 0);
+                corrected += 1;
+              }
+              continue;
+            }
             try {
-              await Repository.createCourse(Number(home.AdCollegeId), Number(home.AdSectionId), storedCode(course), names.get(course.codeKey) || course.name, course.units, course.hours, 0, false);
+              await Repository.createCourse(Number(home.AdCollegeId), Number(home.AdSectionId), storedCode(course), name, course.units, course.hours, 0, false);
               added.push(`${course.codeKey}@${home.AdSectionId}`);
             } catch (error) { if (!(error instanceof DuplicateResourceError)) throw error; }
           }
         }
-        return { added: added.length, noDepartment: [...noDepartment].map(([code, count]) => `${code}×${count}`).sort() };
+        return { added: added.length, corrected, noDepartment: [...noDepartment].map(([code, count]) => `${code}×${count}`).sort() };
       };
 
       const results = [];
-      let others = { added: 0, noDepartment: [] as string[] };
+      let others = { added: 0, corrected: 0, noDepartment: [] as string[] };
       try { others = await addOtherDepartments(); for (const site of targets) results.push(await applyTo(site)); }
       catch (error) { return { status: 500, json: { error: error instanceof Error ? error.message : "تعذّر تطبيق الصحيفة." } }; }
       const first = results[0], total = (key: keyof typeof first.report) => results.reduce((sum, item) => sum + item.report[key], 0);
       const report = { updated: total("updated"), created: total("created"), linked: total("linked"), unchanged: total("unchanged"), rules: total("rules"), groups: total("groups"), unlinked: total("unlinked"), prereqPrinted: total("prereqPrinted"), prereqLinked: total("prereqLinked") };
       const fixes = first.fixes;
-      return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، ${countOf(others.added, AR.course)} مضافة من أقسام أخرى، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, sectionName: first.renamed?.after || String(target.AdSectionName || ""), unresolved: [...new Set(results.flatMap(item => item.unresolved))].sort(), renames: results.filter(item => item.renamed || item.recoded).map(item => ({ sectionId: item.sectionId, renamed: item.renamed, recoded: item.recoded })), renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, addedOther: others.added, noDepartment: others.noDepartment, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
+      return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، ${countOf(others.added, AR.course)} مضافة و${countOf(others.corrected, AR.course)} مصحَّحة من أقسام أخرى، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, sectionName: first.renamed?.after || String(target.AdSectionName || ""), unresolved: [...new Set(results.flatMap(item => item.unresolved))].sort(), renames: results.filter(item => item.renamed || item.recoded).map(item => ({ sectionId: item.sectionId, renamed: item.renamed, recoded: item.recoded })), renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, addedOther: others.added, correctedOther: others.corrected, noDepartment: others.noDepartment, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
     };
 
     if (sectionId) {
@@ -748,7 +760,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     const done = outs.filter(item => item.status === 200);
     if (!done.length) { res.status(outs[0].status).json(outs[0].json); return; }
     res.locals.auditChanges = done.map(item => item.audit).filter(Boolean).join(" | ");
-    res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), prereqPrinted: done.reduce((sum, item) => sum + Number(item.json.prereqPrinted || 0), 0), prereqLinked: done.reduce((sum, item) => sum + Number(item.json.prereqLinked || 0), 0), skipped: outs.length - done.length, sections: done.map(item => item.json.sectionName), renames: done.flatMap(item => item.json.renames || []), nameFixes: done.reduce((sum, item) => sum + (item.json.nameFixes?.length || 0), 0), otherDepartments: done[0].json.otherDepartments, addedOther: done.reduce((sum, item) => sum + Number(item.json.addedOther || 0), 0), noDepartment: [...new Set(done.flatMap(item => item.json.noDepartment || []))].sort(), programName: sheet.programName, unresolved: [...new Set(done.flatMap(item => item.json.unresolved || []))].sort() });
+    res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), prereqPrinted: done.reduce((sum, item) => sum + Number(item.json.prereqPrinted || 0), 0), prereqLinked: done.reduce((sum, item) => sum + Number(item.json.prereqLinked || 0), 0), skipped: outs.length - done.length, sections: done.map(item => item.json.sectionName), renames: done.flatMap(item => item.json.renames || []), nameFixes: done.reduce((sum, item) => sum + (item.json.nameFixes?.length || 0), 0), otherDepartments: done[0].json.otherDepartments, addedOther: done.reduce((sum, item) => sum + Number(item.json.addedOther || 0), 0), correctedOther: done.reduce((sum, item) => sum + Number(item.json.correctedOther || 0), 0), noDepartment: [...new Set(done.flatMap(item => item.json.noDepartment || []))].sort(), programName: sheet.programName, unresolved: [...new Set(done.flatMap(item => item.json.unresolved || []))].sort() });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */

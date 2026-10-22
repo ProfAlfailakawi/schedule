@@ -165,6 +165,10 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     check(Boolean(depA && depB) && firstEnglish.json.addedOther > 0, "مقرر القسم الخدمي الناقص أُضيف إلى قسمه من الصحيفة", [depA, depB, firstEnglish.json.addedOther]);
     const secondEnglish = await upload("root", 51, english);
     check(secondEnglish.status === 200 && secondEnglish.json.addedOther === 0 && secondEnglish.json.unlinked === 0 && secondEnglish.json.prereqLinked === secondEnglish.json.prereqPrinted, "الرفع المتكرر لا يُكرّر المضاف", secondEnglish.json);
+    await Repository.updateCourse(depA!.AdCourseId, depA!.AdCollegeId, depA!.AdSectionId, depA!.CourseCode, "اسم خطأ", 1, 1, 40);
+    const fixedElsewhere = await upload("root", 51, english);
+    const depAfter = (await Repository.getCourses()).find(row => Number(row.AdCourseId) === Number(depA!.AdCourseId))!;
+    check(fixedElsewhere.json.correctedOther === 1 && depAfter.CourseName === depA!.CourseName && depAfter.CourseCredit === depA!.CourseCredit && depAfter.CourseHours === depA!.CourseHours && depAfter.MaxStudent === 40, "مقررٌ قائم من قسم آخر خطأ اسمه ووحداته يُصحَّح من الجديدة والسعة كما هي", [fixedElsewhere.json.correctedOther, depAfter]);
     const englishDraft = (await Repository.listRuleDrafts()).find(row => row.planId === secondEnglish.json.planId);
     const needy = (await Repository.getCourses()).find(row => Number(row.AdSectionId) === 51 && String(row.CourseCode) === "454");
     const rule = englishDraft?.rules.find(item => item.courseId === Number(needy?.AdCourseId));
