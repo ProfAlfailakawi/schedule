@@ -32,7 +32,7 @@ import { collegeBranchRoot } from "../utils/branchScope";
 import { rowsToDrafts, type ImportPlan, type RuleImportRow } from "../utils/curriculumRulesImport";
 import { academicDigits, authorityDepartmentCode } from "../utils/authorityAcademicCodes";
 import { branchAudience } from "../utils/referenceApply";
-import { checkSheetScope, correctedNames, isNewSheet, sheetKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
+import { checkSheetScope, correctedNames, isNewSheet, sheetNameMatches, sheetOwnKey, sheetSectionCode, sheetSectionName, ownCourses, sheetToReference, storedCode } from "../utils/planSheetImport";
 import { parsePlanItems } from "../utils/planPdfParser";
 import { extractPlanItems, PLAN_PDF_MAX_BYTES } from "./planPdfExtract";
 
@@ -139,7 +139,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
   const fail = (res: Response, status: number, error: string, extra: Record<string, unknown> = {}) => res.status(status).json({ error, ...extra });
   const roleId = (req: any): string => roleDefinition(req.user?.Role).id;
   /* رفعُ صحيفة يقرأ ملفاً كاملاً ويكتب في الكتالوج: حدٌّ سخيٌّ يمنع حلقةً من شغل الخادم. */
-  const sheetLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "ملفاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد الرفع." } });
+  const sheetLimit = rateLimit({ windowMs: 60_000, limit: 150, standardHeaders: true, legacyHeaders: false, message: { error: "ملفاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد الرفع." } });
 
   /** من يرى الصحيفة: صاحبُ نطاقها بصفةٍ تفتح الشاشة، أو إدارةُ النظام. */
   const canSee = (req: any, plan: Plan) =>
@@ -262,7 +262,12 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => plan.status !== "archived" && !plan.virtual);
       if (plans.length || isTechnologyEducation(section.AdSectionName) || deps.isRootAdmin(req)) reachable.push({ sectionId, sectionName: sections.get(sectionId) || String(section.AdSectionName || ""), plans: [...plans].sort((x, y) => Number(pendingIds.has(y.id)) - Number(pendingIds.has(x.id)) || Number(y.status === "active") - Number(x.status === "active")).map(plan => ({ id: plan.id, name: plan.name, status: plan.status, pending: pendingIds.has(plan.id) })) });
     }
-    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isRootAdmin(req) });
+    /* وجهات رفع الصحيفة: مساراتُ الأقسام (بنات بموقعيها، وبنين) لا مواقعُ مفردة. */
+    const uploadTargets = !deps.isRootAdmin(req) ? [] : (() => {
+      const tracks = groupDeptTracks(sectionRows as any[], collegeRows as any[]), names = trackLabels(tracks);
+      return tracks.map(item => ({ sectionId: Number(item.canonical.AdSectionId), label: names.get(item.key) || item.deptName, sites: 1 + item.mirrors.length }));
+    })();
+    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, uploadTargets, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isRootAdmin(req) });
   });
 
   /* The supplied source sheets are a read-only comparison, available to both
@@ -516,109 +521,154 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
   app.post("/api/plan-review/sheet/import", sheetLimit, deps.requireAuth, express.raw({ type: "application/octet-stream", limit: PLAN_PDF_MAX_BYTES + 4096 }), async (req: Request, res: Response) => {
     if (!deps.isRootAdmin(req)) { fail(res, 403, "رفع الصحيفة للحساب الرئيسي وحده."); return; }
     const reject = (kind: string, message: string) => { res.status(422).json({ error: message, rejection: { kind, message } }); };
-    const sectionId = Number(req.query.sectionId);
+    const sectionId = Number(req.query.sectionId) || 0;
     const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
-    const target = (sections as any[]).find(row => Number(row.AdSectionId) === sectionId);
-    if (!target) { fail(res, 404, "اختر القسم أولاً."); return; }
-    const cid = Number(target.AdCollegeId), sid = sectionId;
-    const college = (colleges as any[]).find(row => Number(row.AdCollegeId) === cid);
     const body = Buffer.isBuffer(req.body) ? req.body : null;
     if (!body?.length) { fail(res, 400, "لا ملف."); return; }
     if (body.subarray(0, 5).toString("latin1") !== "%PDF-") { reject("unreadable", "الملف ليس PDF. ارفع «الخطة الدراسية» كما تطبعها SWRCAPP (نصاً لا صورة)."); return; }
     let sheet;
     try { sheet = parsePlanItems(await extractPlanItems(body)); }
     catch (error) { reject("unreadable", error instanceof Error && /[؀-ۿ]/.test(error.message) ? error.message : "تعذّرت قراءة الملف. ارفع «الخطة الدراسية» PDF كما تطبعها SWRCAPP."); return; }
-    const departmentKey = authorityDepartmentCode(college?.AdCollegeCode, target.AdSectionCode);
-    const rejection = checkSheetScope(sheet, { collegeName: String(college?.AdCollegeName || ""), collegeCode: academicDigits(college?.AdCollegeCode).slice(0, 2), sectionName: String(target.AdSectionName || ""), departmentKey });
-    if (rejection) { res.status(422).json({ error: rejection.message, rejection }); return; }
-
     const by = deps.actorName(req);
-    /* اسم القسم ورمزه من الصحيفة المعتمدة (ما كُتب يدوياً يُصحَّح إليها)، بعد قبول الكلية والقسم. */
-    /* القديمة تدخل «الصحيفة السابقة» وحدها: لا تسمّي القسم ولا تغيّر رمزه ولا تمسّ مقرراً قائماً (الكتالوج مشترك مع الجديدة). */
-    const isNew = isNewSheet(sheet);
-    const renamedTo = isNew ? sheetSectionName(sheet, String(target.AdSectionName || "")) : "";
-    const recodedTo = isNew ? sheetSectionCode(sheet, String(target.AdSectionCode || "")) : "";
-    const renamed = renamedTo ? { before: String(target.AdSectionName || ""), after: renamedTo } : null;
-    const recoded = recodedTo ? { before: String(target.AdSectionCode || ""), after: recodedTo } : null;
-    if (renamed || recoded) await Repository.updateSection(sid, cid, recoded?.after ?? String(target.AdSectionCode || ""), renamed?.after ?? String(target.AdSectionName || ""));
-    const departmentKeyOfSheet = sheetKey(sheet);
-    const branch = collegeBranchRoot(colleges as any[], cid);
-    const inBranch = ownCourses(sheet, departmentKeyOfSheet).filter(course => !(course.girlsOnly && branch && branchAudience(branch) !== "girls"));
-    const { names, fixes } = correctedNames(inBranch);
-    const { reference, notes } = sheetToReference(sheet, inBranch, names);
-    const numberOf = (code: unknown) => Number(referenceCodeKey(code).slice(-3));
-    const report: { updated: number; created: number; linked: number; unchanged: number; otherDepartments: number; girlsOnlySkipped: number; rules: number; groups: number } =
-      { updated: 0, created: 0, linked: 0, unchanged: 0, otherDepartments: sheet.courses.length - ownCourses(sheet, departmentKeyOfSheet).length, girlsOnlySkipped: ownCourses(sheet, departmentKeyOfSheet).length - inBranch.length, rules: 0, groups: 0 };
-
-    /* الجديدة تدخل الصحيفة الفعّالة (وتُنشأ إن لم توجد قبل أي تعديلٍ ليحفظ «السابقةُ» الكتالوجَ كما كان)،
-       والقديمة تدخل «الصحيفة السابقة». لا تختلط إحداهما بالأخرى. */
-    const livePlans = () => Repository.getCurriculumPlans(sid).then(rows => rows.filter(item => !item.virtual && item.status !== "archived"));
-    const wanted = (rows: Awaited<ReturnType<typeof livePlans>>) => rows.find(item => item.status === (isNew ? "active" : "transition"));
-    let plan = wanted(await livePlans()), planCreated = false;
-    if (!plan && !isNew && (await livePlans()).length) { reject("order", "لا صحيفة سابقة للقسم. ارفع القديمة قبل الجديدة."); return; }
-    if (!plan) {
-      await Repository.createCurriculumPlan({ collegeId: cid, sectionId: sid, name: `الصحيفة الجديدة ${sheet.semesterLabel || sheet.startYear || ""}`.trim(), by });
-      plan = wanted(await livePlans()); planCreated = true;
-    }
-    if (!plan) { fail(res, 500, "تعذّر إنشاء صحيفة للقسم."); return; }
-
-    /* 1) المقررات: تصحيح الاسم/الوحدات/الساعات وإضافة الناقص؛ السعة كما هي. */
-    let courses = await Repository.getCourses() as AdCourse[];
-    for (const course of inBranch) {
-      const matches = courses.filter(row => Number(row.AdSectionId) === sid && numberOf(row.CourseCode) === Number(course.number));
-      if (matches.length > 1) { notes.push(`الرمز ${storedCode(course)} يطابق أكثر من مقرر في القسم: لم يُمسّ.`); continue; }
-      const name = names.get(course.codeKey) || course.name;
-      const row = matches[0];
-      if (!row) {
-        try { await Repository.createCourse(cid, sid, storedCode(course), name, course.units, course.hours, 0, false); report.created += 1; }
-        catch (error) { if (error instanceof DuplicateResourceError) notes.push(`الرمز ${storedCode(course)} مستعمل في القسم؛ لم يُنشأ.`); else throw error; }
-      } else if (isNew && (String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours)) {
-        await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, course.units, course.hours, Number(row.MaxStudent) || 0);
-        report.updated += 1;
-      } else report.unchanged += 1;
-    }
-
-    /* 2) ربط مقررات القسم بالصحيفة. */
-    courses = await Repository.getCourses() as AdCourse[];
-    const sectionCodes = new Map((sections as any[]).map(row => [Number(row.AdSectionId), authorityDepartmentCode(colleges.find((c: any) => Number(c.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeCode, row.AdSectionCode)] as const));
-    const keyOf = (row: AdCourse) => {
-      const code = referenceCodeKey(row.CourseCode), dept = sectionCodes.get(Number(row.AdSectionId)) || "";
-      return /^\d{1,3}$/.test(code) && /^\d{4}$/.test(dept) ? `${dept}${code.padStart(3, "0")}` : code;
+    const scopeOf = (section: any) => {
+      const college = (colleges as any[]).find(row => Number(row.AdCollegeId) === Number(section.AdCollegeId));
+      return { collegeName: String(college?.AdCollegeName || ""), collegeCode: academicDigits(college?.AdCollegeCode).slice(0, 2), sectionName: String(section.AdSectionName || ""), departmentKey: authorityDepartmentCode(college?.AdCollegeCode, section.AdSectionCode) };
     };
-    const knownIdByCode = new Map<string, number>(), memberIdByCode = new Map<string, number>();
-    for (const row of courses) if (Number(row.AdCollegeId) === cid) knownIdByCode.set(keyOf(row), Number(row.AdCourseId));
-    const members = new Set<number>((await Repository.getCurriculumPlanCourses(sid)).filter(link => link.planId === plan!.id).map(link => Number(link.AdCourseId)));
-    for (const course of inBranch) {
-      const row = courses.find(item => Number(item.AdSectionId) === sid && numberOf(item.CourseCode) === Number(course.number));
-      if (!row) continue;
-      memberIdByCode.set(course.codeKey, Number(row.AdCourseId));
-      if (!members.has(Number(row.AdCourseId))) { await Repository.addCourseToCurriculumPlan(plan.id, row, by); report.linked += 1; }
+
+    /** يطبّق الصحيفة على مسار القسم المختار (الرئيسي ومواقعه الفرعية): ردٌّ جاهز أو رفضٌ بلا أي كتابة. */
+    const process = async (target: any): Promise<{ status: number; json: any; audit?: string }> => {
+      const rejectWith = (kind: string, message: string, extra: Record<string, unknown> = {}) => ({ status: 422, json: { error: message, rejection: { kind, message, ...extra } } });
+      const sectionId = Number(target.AdSectionId);
+      const scope = scopeOf(target);
+      const rejection = checkSheetScope(sheet, scope);
+      if (rejection) return { status: 422, json: { error: rejection.message, rejection } };
+      /* القديمة تدخل «الصحيفة السابقة» وحدها: لا تسمّي القسم ولا تغيّر رمزه ولا تمسّ مقرراً قائماً (الكتالوج مشترك مع الجديدة). */
+      const isNew = isNewSheet(sheet);
+      const { key: ownKey, umbrella } = sheetOwnKey(sheet, scope);
+
+      /* الصحيفةُ لمسارٍ كامل: بناتُ القسم (الرئيسي والجهراء والفحيحيل) صحيفةٌ واحدة، وللبنين مسارُهم. */
+      const track = groupDeptTracks(sections as any[], colleges as any[]).find(item => [item.canonical, ...item.mirrors].some(row => Number(row.AdSectionId) === sectionId));
+      const targets = (track ? [track.canonical, ...track.mirrors] : [target]).map(row => (sections as any[]).find(item => Number(item.AdSectionId) === Number(row.AdSectionId))).filter(Boolean) as any[];
+      const livePlansOf = (id: number) => Repository.getCurriculumPlans(id).then(rows => rows.filter(item => !item.virtual && item.status !== "archived"));
+      if (!isNew) {
+        for (const item of targets) {
+          const rows = await livePlansOf(Number(item.AdSectionId));
+          if (rows.length && !rows.some(plan => plan.status === "transition")) { return rejectWith("order", "لا صحيفة سابقة للقسم. ارفع القديمة قبل الجديدة."); }
+        }
+      }
+      const numberOf = (code: unknown) => Number(referenceCodeKey(code).slice(-3));
+
+      const applyTo = async (site: any) => {
+        const cid = Number(site.AdCollegeId), sid = Number(site.AdSectionId);
+        /* اسم القسم ورمزه من الصحيفة المعتمدة (ما كُتب يدوياً يُصحَّح إليها)، بعد قبول الكلية والقسم. */
+        const renamedTo = isNew && !umbrella ? sheetSectionName(sheet, String(site.AdSectionName || "")) : "";
+        const recodedTo = isNew && !umbrella ? sheetSectionCode(sheet, String(site.AdSectionCode || "")) : "";
+        const renamed = renamedTo ? { before: String(site.AdSectionName || ""), after: renamedTo } : null;
+        const recoded = recodedTo ? { before: String(site.AdSectionCode || ""), after: recodedTo } : null;
+        if (renamed || recoded) await Repository.updateSection(sid, cid, recoded?.after ?? String(site.AdSectionCode || ""), renamed?.after ?? String(site.AdSectionName || ""));
+        const branch = collegeBranchRoot(colleges as any[], cid);
+        const inBranch = ownCourses(sheet, ownKey).filter(course => !(course.girlsOnly && branch && branchAudience(branch) !== "girls"));
+        const { names, fixes } = correctedNames(inBranch);
+        const { reference, notes } = sheetToReference(sheet, inBranch, names);
+        const report = { updated: 0, created: 0, linked: 0, unchanged: 0, rules: 0, groups: 0 };
+
+        /* الجديدة تدخل الصحيفة الفعّالة (وتُنشأ إن لم توجد قبل أي تعديلٍ ليحفظ «السابقةُ» الكتالوجَ كما كان)،
+           والقديمة تدخل «الصحيفة السابقة». لا تختلط إحداهما بالأخرى. */
+        const wanted = (rows: Awaited<ReturnType<typeof livePlansOf>>) => rows.find(item => item.status === (isNew ? "active" : "transition"));
+        let plan = wanted(await livePlansOf(sid)), planCreated = false;
+        if (!plan) {
+          await Repository.createCurriculumPlan({ collegeId: cid, sectionId: sid, name: `الصحيفة الجديدة ${sheet.semesterLabel || sheet.startYear || ""}`.trim(), by });
+          plan = wanted(await livePlansOf(sid)); planCreated = true;
+        }
+        if (!plan) throw new Error("تعذّر إنشاء صحيفة للقسم.");
+
+        /* 1) المقررات: تصحيح الاسم/الوحدات/الساعات وإضافة الناقص؛ السعة كما هي. */
+        let courses = await Repository.getCourses() as AdCourse[];
+        for (const course of inBranch) {
+          const matches = courses.filter(row => Number(row.AdSectionId) === sid && numberOf(row.CourseCode) === Number(course.number));
+          if (matches.length > 1) { notes.push(`الرمز ${storedCode(course)} يطابق أكثر من مقرر في القسم: لم يُمسّ.`); continue; }
+          const name = names.get(course.codeKey) || course.name;
+          const row = matches[0];
+          if (!row) {
+            try { await Repository.createCourse(cid, sid, storedCode(course), name, course.units, course.hours, 0, false); report.created += 1; }
+            catch (error) { if (error instanceof DuplicateResourceError) notes.push(`الرمز ${storedCode(course)} مستعمل في القسم؛ لم يُنشأ.`); else throw error; }
+          } else if (isNew && (String(row.CourseName).normalize("NFKC").trim() !== name || Number(row.CourseCredit) !== course.units || Number(row.CourseHours) !== course.hours)) {
+            await Repository.updateCourse(row.AdCourseId, row.AdCollegeId, row.AdSectionId, row.CourseCode, name, course.units, course.hours, Number(row.MaxStudent) || 0);
+            report.updated += 1;
+          } else report.unchanged += 1;
+        }
+
+        /* 2) ربط مقررات القسم بالصحيفة. */
+        courses = await Repository.getCourses() as AdCourse[];
+        const sectionCodes = new Map((sections as any[]).map(row => [Number(row.AdSectionId), authorityDepartmentCode(colleges.find((c: any) => Number(c.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeCode, row.AdSectionCode)] as const));
+        const keyOf = (row: AdCourse) => {
+          const code = referenceCodeKey(row.CourseCode), dept = sectionCodes.get(Number(row.AdSectionId)) || "";
+          return /^\d{1,3}$/.test(code) && /^\d{4}$/.test(dept) ? `${dept}${code.padStart(3, "0")}` : code;
+        };
+        const knownIdByCode = new Map<string, number>(), memberIdByCode = new Map<string, number>();
+        for (const row of courses) if (Number(row.AdCollegeId) === cid) knownIdByCode.set(keyOf(row), Number(row.AdCourseId));
+        const members = new Set<number>((await Repository.getCurriculumPlanCourses(sid)).filter(link => link.planId === plan!.id).map(link => Number(link.AdCourseId)));
+        for (const course of inBranch) {
+          const row = courses.find(item => Number(item.AdSectionId) === sid && numberOf(item.CourseCode) === Number(course.number));
+          if (!row) continue;
+          memberIdByCode.set(course.codeKey, Number(row.AdCourseId));
+          if (!members.has(Number(row.AdCourseId))) { await Repository.addCourseToCurriculumPlan(plan.id, row, by); report.linked += 1; }
+        }
+
+        /* 3) مسوّدة القواعد: لا تُعتمد (يعتمدها القسم)، ولا تمحو ما كتبه. متطلباتُ الأقسام الأخرى تدخل مقفولةً للقراءة. */
+        const externalIdByCode = new Map<string, number>();
+        for (const group of reference.groups) for (const course of group.courses) for (const need of course.prerequisites) {
+          const id = knownIdByCode.get(referenceCodeKey(need));
+          if (id && !memberIdByCode.has(need)) externalIdByCode.set(need, id);
+        }
+        const ruleScope = new Map<string, number>([...memberIdByCode, ...externalIdByCode]);
+        const built = buildReferenceRules(reference, memberIdByCode, ruleScope.size ? new Map([...knownIdByCode, ...ruleScope]) : knownIdByCode, new Set());
+        const live = await Repository.getRuleSet(plan.id);
+        const allIds = new Set<number>(ruleScope.values());
+        const externalIds = [...externalIdByCode.values()];
+        await Repository.updateRuleDraft(plan.id, current => {
+          const base: CurriculumRuleSet = current ? { ...current } : { id: plan!.id, planId: plan!.id, AdCollegeId: cid, AdSectionId: sid, rules: live?.rules || [], groups: live?.groups || [], externals: live?.externals, version: live?.version || 0, status: "review", basedOnVersion: live?.version || 0, updatedAt: "", updatedBy: by };
+          const hasRule = new Set(base.rules.map(rule => rule.courseId));
+          const hasGroup = new Set(base.groups.map(group => group.id));
+          const rules = normalizeRules([...base.rules, ...built.rules.filter(rule => !hasRule.has(rule.courseId))]);
+          const groups = [...base.groups, ...built.groups.filter(group => !hasGroup.has(group.id)).map(group => normalizeGroup({ ...group, courseIds: group.courseIds.filter(id => allIds.has(id)) })).filter(Boolean) as ElectiveGroup[]];
+          const externals = [...new Set([...(base.externals || []), ...externalIds])].sort((a, b) => a - b);
+          return { ...base, rules: withDerivedGroups(rules, groups), groups, externals, status: "review", updatedAt: new Date().toISOString(), updatedBy: `رفع الصحيفة · ${by}` };
+        });
+        report.rules = built.rules.length; report.groups = built.groups.length;
+        return { sectionId: sid, plan, planCreated, report, renamed, recoded, fixes, notes };
+      };
+
+      const results = [];
+      try { for (const site of targets) results.push(await applyTo(site)); }
+      catch (error) { return { status: 500, json: { error: error instanceof Error ? error.message : "تعذّر تطبيق الصحيفة." } }; }
+      const first = results[0], total = (key: keyof typeof first.report) => results.reduce((sum, item) => sum + item.report[key], 0);
+      const report = { updated: total("updated"), created: total("created"), linked: total("linked"), unchanged: total("unchanged"), rules: total("rules"), groups: total("groups") };
+      const fixes = first.fixes;
+      return { status: 200, audit:  `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()} (${countOf(results.length, AR.site)}): ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${first.renamed ? `، تسمية القسم «${first.renamed.before}» ← «${first.renamed.after}»` : ""}${first.recoded ? `، رمز القسم ${first.recoded.before || "—"} ← ${first.recoded.after}` : ""}`, json: { ok: true, era: isNew ? "new" : "old", sites: results.length, sectionId: first.sectionId, renamed: first.renamed, recoded: first.recoded, program: sheet.program, planId: first.plan.id, planName: first.plan.name, planCreated: first.planCreated, ...report, otherDepartments: sheet.courses.length - ownCourses(sheet, ownKey).length, nameFixes: fixes, notes: first.notes.slice(0, 30) } };
+    };
+
+    if (sectionId) {
+      const target = (sections as any[]).find(row => Number(row.AdSectionId) === sectionId);
+      if (!target) { fail(res, 404, "اختر القسم أولاً."); return; }
+      const out = await process(target);
+      if (out.audit) res.locals.auditChanges = out.audit;
+      res.status(out.status).json(out.json);
+      return;
     }
 
-    /* 3) مسوّدة القواعد: لا تُعتمد (يعتمدها القسم)، ولا تمحو ما كتبه. متطلباتُ الأقسام الأخرى تدخل مقفولةً للقراءة. */
-    const externalIdByCode = new Map<string, number>();
-    for (const group of reference.groups) for (const course of group.courses) for (const need of course.prerequisites) {
-      const id = knownIdByCode.get(referenceCodeKey(need));
-      if (id && !memberIdByCode.has(need)) externalIdByCode.set(need, id);
-    }
-    const ruleScope = new Map<string, number>([...memberIdByCode, ...externalIdByCode]);
-    const built = buildReferenceRules(reference, memberIdByCode, ruleScope.size ? new Map([...knownIdByCode, ...ruleScope]) : knownIdByCode, new Set());
-    const live = await Repository.getRuleSet(plan.id);
-    const allIds = new Set<number>(ruleScope.values());
-    const externalIds = [...externalIdByCode.values()];
-    await Repository.updateRuleDraft(plan.id, current => {
-      const base: CurriculumRuleSet = current ? { ...current } : { id: plan!.id, planId: plan!.id, AdCollegeId: cid, AdSectionId: sid, rules: live?.rules || [], groups: live?.groups || [], externals: live?.externals, version: live?.version || 0, status: "review", basedOnVersion: live?.version || 0, updatedAt: "", updatedBy: by };
-      const hasRule = new Set(base.rules.map(rule => rule.courseId));
-      const hasGroup = new Set(base.groups.map(group => group.id));
-      const rules = normalizeRules([...base.rules, ...built.rules.filter(rule => !hasRule.has(rule.courseId))]);
-      const groups = [...base.groups, ...built.groups.filter(group => !hasGroup.has(group.id)).map(group => normalizeGroup({ ...group, courseIds: group.courseIds.filter(id => allIds.has(id)) })).filter(Boolean) as ElectiveGroup[]];
-      const externals = [...new Set([...(base.externals || []), ...externalIds])].sort((a, b) => a - b);
-      return { ...base, rules: withDerivedGroups(rules, groups), groups, externals, status: "review", updatedAt: new Date().toISOString(), updatedBy: `رفع الصحيفة · ${by}` };
+    /* بلا قسمٍ مختار: تُوجَّه الصحيفة إلى الأقسام التي يطابق اسمُها قسمَ الصحيفة (أو يخصّها رمزها في صحائف القسم الإداري). */
+    const matched = groupDeptTracks(sections as any[], colleges as any[]).map(item => item.canonical as any).filter(section => {
+      const scope = scopeOf(section);
+      return checkSheetScope(sheet, scope) === null && (sheetNameMatches(sheet, scope.sectionName) || sheetOwnKey(sheet, scope).umbrella);
     });
-    report.rules = built.rules.length; report.groups = built.groups.length;
-    notes.push(...built.notes.slice(0, 20));
-    res.locals.auditChanges = `رفع الخطة الدراسية ${sheet.program} لقسم ${String(target.AdSectionName || "").trim()}: ${countOf(report.created, AR.course)} جديدة، ${countOf(report.updated, AR.course)} مصحَّحة، تصحيح ${fixes.length} من الأسماء${renamed ? `، تسمية القسم «${renamed.before}» ← «${renamed.after}»` : ""}${recoded ? `، رمز القسم ${recoded.before || "—"} ← ${recoded.after}` : ""}`;
-    res.json({ ok: true, era: isNew ? "new" : "old", renamed, recoded, program: sheet.program, planId: plan.id, planName: plan.name, planCreated, ...report, nameFixes: fixes, notes: notes.slice(0, 30) });
+    if (!matched.length) { reject("department", `لم أجد في النظام قسماً باسم «${String(sheet.department || "").replace(/^قسم\s+/, "")}». اختر القسم يدوياً.`); return; }
+    const outs: Array<{ status: number; json: any; audit?: string }> = [];
+    for (const section of matched) outs.push(await process(section));
+    const done = outs.filter(item => item.status === 200);
+    if (!done.length) { res.status(outs[0].status).json(outs[0].json); return; }
+    res.locals.auditChanges = done.map(item => item.audit).filter(Boolean).join(" | ");
+    res.json({ ok: true, auto: true, tracks: done.length, sites: done.reduce((sum, item) => sum + Number(item.json.sites || 0), 0), era: done[0].json.era, program: sheet.program, planName: done[0].json.planName, sectionId: done[0].json.sectionId, planId: done[0].json.planId, created: done.reduce((sum, item) => sum + Number(item.json.created || 0), 0), updated: done.reduce((sum, item) => sum + Number(item.json.updated || 0), 0), linked: done.reduce((sum, item) => sum + Number(item.json.linked || 0), 0), skipped: outs.length - done.length });
   });
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */

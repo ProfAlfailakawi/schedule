@@ -29,6 +29,7 @@ interface Status {
   sections: Array<{ sectionId: number; sectionName: string; plans: Array<{ id: string; name: string; status?: string; pending?: boolean }> }>;
   canApprove: boolean;
   canImport?: boolean;
+  uploadTargets?: Array<{ sectionId: number; label: string; sites: number }>;
 }
 interface CourseRow { id: number; code: string; name: string; credit: number; hours: number; capacity: number; collegeId: number; sectionId: number; ownerSectionName: string; owned: boolean; external?: boolean; category?: string }
 interface View {
@@ -281,7 +282,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     <div className="pr-page" dir="rtl">
       <PageTitle eyebrow="مراجعة الصحيفة" subtitle="مستوى كل مقرر ونوعه وما يسبقه، ثم يعتمدها رئيس لجنة الجدول.">قواعد المقررات</PageTitle>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
-      {status?.canImport ? <PlanSheetUpload sections={status.sections} sectionId={sectionId} onDone={(id, plan) => { void loadStatus().then(() => { setSectionId(id); setPlanId(plan); setSelected(0); window.dispatchEvent(new Event("schedule:plan-review-updated")); }); }} /> : null}
+      {status?.canImport ? <PlanSheetUpload targets={status.uploadTargets || []} sectionId={sectionId} onDone={(id, plan) => { void loadStatus().then(() => { setSectionId(id); setPlanId(plan); setSelected(0); window.dispatchEvent(new Event("schedule:plan-review-updated")); }); }} /> : null}
       {status?.canImport ? <ImportPanel onDone={() => { void loadStatus().then(() => window.dispatchEvent(new Event("schedule:plan-review-updated"))); }} /> : null}
       {!status?.sections.length ? <EmptyState title="لا صحائف في نطاقك" detail="تظهر هنا صحائف الأقسام التي تملك نطاقها." /> : (
         <>

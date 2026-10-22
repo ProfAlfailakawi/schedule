@@ -6,7 +6,7 @@
 import fs from "fs";
 import { extractPlanItems } from "../src/server/planPdfExtract";
 import { parsePlanItems } from "../src/utils/planPdfParser";
-import { blockingWarnings, checkSheetScope, isNewSheet, sheetKey, correctedNames, dominantDepartment, ownCourses, printedTotalsNotes } from "../src/utils/planSheetImport";
+import { blockingWarnings, checkSheetScope, isNewSheet, sheetKey, sheetOwnKey, correctedNames, dominantDepartment, ownCourses, printedTotalsNotes } from "../src/utils/planSheetImport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -37,6 +37,14 @@ const EXPECTED: Record<string, [string, number]> = {
     const plan = parsePlanItems(await extractPlanItems(fs.readFileSync(`tests/fixtures/plans/graduation-old/${file}.pdf`)));
     check(!isNewSheet(plan) && blockingWarnings(plan).length === 0 && dominantDepartment(plan) === dept && ownCourses(plan, sheetKey(plan)).length === count, `${file}: صحيفة قديمة تُقرأ بلا مانع (${count} مقرراً)`);
   }
+  /* التربية الخاصة ورياض الأطفال: صحائفها باسم القسم الإداري، فيُقبل القسم المختص برمزه ولا يُقبل «أصول التربية» */
+  const special = parsePlanItems(await extractPlanItems(fs.readFileSync("tests/fixtures/plans/graduation-old/ba-012102-2010.pdf")));
+  const specialScope = { collegeName: "كلية التربية الأساسية - بنات", collegeCode: "01", sectionName: "قسم التربية الخاصة", departmentKey: "0119" };
+  check(checkSheetScope(special, specialScope) === null && ownCourses(special, sheetOwnKey(special, specialScope).key).length === 17, "التربية الخاصة: تُقبل في قسمها (17 مقرراً برمز 19)");
+  check(checkSheetScope(special, { ...specialScope, sectionName: "قسم أصول التربية", departmentKey: "0120" })?.kind === "department", "التربية الخاصة: لا تُقبل في «أصول التربية»");
+  const kinder = parsePlanItems(await extractPlanItems(fs.readFileSync("tests/fixtures/plans/graduation-old/ba-0110-2024.pdf")));
+  check(checkSheetScope(kinder, { ...specialScope, sectionName: "قسم رياض الأطفال", departmentKey: "0121" }) === null, "رياض الأطفال: تُقبل في قسمها");
+  check(checkSheetScope(kinder, { ...specialScope, sectionName: "قسم أصول التربية", departmentKey: "0120" })?.kind === "department", "رياض الأطفال: لا تُقبل في «أصول التربية»");
   const notes = await Promise.all(["ba-0113", "ba-0109", "ba-0102"].map(async file => printedTotalsNotes(parsePlanItems(await extractPlanItems(fs.readFileSync(`tests/fixtures/plans/graduation-2026/${file}.pdf`)))).length));
   check(notes.every(n => n > 0), "المجاميع المطبوعة الخاطئة في الصحيفة تظهر ملاحظات");
   console.log(`\n${passed} passed, ${failed} failed`);
