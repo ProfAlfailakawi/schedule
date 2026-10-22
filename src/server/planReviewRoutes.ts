@@ -567,6 +567,33 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     res.json({ ok: true, updated });
   });
 
+  /* ── لقطةٌ لحال النظام بعد الرفع (للتقرير الذي يُنزَّل): لكل قسمٍ مقرراته وصحائفه وعدد مقررات كل صحيفة ── */
+  app.get("/api/plan-review/sheet/audit", deps.requireAuth, async (req: Request, res: Response) => {
+    if (!deps.isRootAdmin(req)) { fail(res, 403, "رفع الصحيفة للحساب الرئيسي وحده."); return; }
+    res.setHeader("Cache-Control", "no-store");
+    const [sections, colleges, courses] = await Promise.all([Repository.getSections(), Repository.getColleges(), Repository.getCourses()]);
+    const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+    const courseCount = new Map<number, number>();
+    for (const row of courses as AdCourse[]) courseCount.set(Number(row.AdSectionId), (courseCount.get(Number(row.AdSectionId)) || 0) + 1);
+    const rows: any[] = [];
+    const list = sections as any[];
+    for (let at = 0; at < list.length; at += 10) {
+      rows.push(...await Promise.all(list.slice(at, at + 10).map(async section => {
+        const sid = Number(section.AdSectionId);
+        const [plans, links] = await Promise.all([Repository.getCurriculumPlans(sid), Repository.getCurriculumPlanCourses(sid)]);
+        const perPlan = new Map<string, number>();
+        for (const link of links) perPlan.set(link.planId, (perPlan.get(link.planId) || 0) + 1);
+        return {
+          sectionId: sid, college: collegeName.get(Number(section.AdCollegeId)) || "", name: String(section.AdSectionName || ""), code: String(section.AdSectionCode || ""),
+          authority: authorityDepartmentCode((colleges as any[]).find(c => Number(c.AdCollegeId) === Number(section.AdCollegeId))?.AdCollegeCode, section.AdSectionCode),
+          courses: courseCount.get(sid) || 0,
+          plans: plans.filter(plan => !plan.virtual).map(plan => ({ name: plan.name, status: plan.status, track: plan.track || "", sheetYear: plan.sheetYear || 0, courses: perPlan.get(plan.id) || 0, archivedBy: plan.archivedBy || "" })),
+        };
+      })));
+    }
+    res.json({ generatedAt: new Date().toISOString(), totals: { sections: rows.length, courses: (courses as AdCourse[]).length, plans: rows.reduce((sum, row) => sum + row.plans.length, 0) }, sections: rows });
+  });
+
   /* ── رفع «الخطة الدراسية» (صحيفة التخرج) لقسمٍ واحد: يُطبَّق مباشرةً، والقسم يعتمد بعدها ──────
      الحساب الرئيسي وحده. لا يُقبل إلا كشفُ الكلية والقسم المختارين (checkSheetScope) وقبل أي كتابة؛
      وتؤخذ مقررات القسم وحدها برقمها (105)، وتُصحَّح أسماؤها، ولا تُمسّ السعة أبداً. */

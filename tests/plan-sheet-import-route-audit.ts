@@ -242,6 +242,11 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     const again = await upload("root", 21);
     check(again.status === 200 && !again.json.rollover && again.json.planCreated === false && (await Repository.getCurriculumPlans(21)).length === afterRoll.length, "إعادة الرفع بنفس السنة: تحديثٌ لا تدوير");
 
+    /* لقطة حال النظام للتقرير: للحساب الرئيسي وحده، بكل قسمٍ وصحائفه وعدد مقرراتها */
+    const audit = await call("root", "GET", "/api/plan-review/sheet/audit");
+    const row21 = audit.json.sections?.find((row: any) => row.sectionId === 21);
+    check(audit.status === 200 && audit.json.totals.sections === audit.json.sections.length && row21?.courses >= 27 && row21.plans.some((plan: any) => plan.status === "active" && plan.sheetYear === 2026 && plan.courses === 27) && (await call("other", "GET", "/api/plan-review/sheet/audit")).status === 403, "لقطة حال النظام: الأقسام والصحائف وعدد المقررات، للرئيسي وحده", row21);
+
     /* قراءة الترويسة بلا كتابة (لتصفية الدفعة) */
     const scanOf = async (who: string, body: Buffer) => { const res = await fetch(`${base}/api/plan-review/sheet/scan`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-who": who }, body }); return { status: res.status, json: await res.json().catch(() => ({})) as any }; };
     const scanned = await scanOf("root", oldPdf);
