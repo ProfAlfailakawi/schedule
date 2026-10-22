@@ -9676,7 +9676,15 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       const seasonOk=seasonWord.test(targetName);
       const targetYears=(targetName.match(/(?:19|20)\d{2}/g)||[]).map(Number);
       const yearsOk=header.term.years.every((year:number)=>targetYears.includes(year));
-      if(!seasonOk||!yearsOk)return{status:409,body:{
+      /* ملف من فصل سابق للفصل المختار يُسمح به (يُنبَّه إليه في المعاينة)؛ الفصل
+         اللاحق أو غير المعروف يبقى مرفوضاً. الترتيب: سنة البداية ثم الأول/الثاني/الصيفي. */
+      const seasonRank=(season:string)=>season==="first"?0:season==="second"?1:2;
+      const targetSeason=/الاول|الأول/.test(targetName)?"first":/الثاني|الثانى/.test(targetName)?"second":/صيفي|صيفى/.test(targetName)?"summer":"";
+      const sourceStart=Math.min(...header.term.years.map(Number));
+      const targetStart=targetYears.length?Math.min(...targetYears):0;
+      const sourceIsEarlier=Boolean(targetSeason&&targetStart&&Number.isFinite(sourceStart))
+        &&(sourceStart<targetStart||(sourceStart===targetStart&&seasonRank(header.term.season)<seasonRank(targetSeason)));
+      if((!seasonOk||!yearsOk)&&!sourceIsEarlier)return{status:409,body:{
         error:`هذا الملف للفصل «${header.term.label}»، بينما أنت تعمل على «${String(targetTerm.AdTermName||"")}». لم يتم استيراد أي صف.`,
         code:"PDF_TERM_MISMATCH",sourceTerm:header.term.label,targetTerm:String(targetTerm.AdTermName||""),
       }};
