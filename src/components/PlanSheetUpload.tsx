@@ -63,6 +63,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
 
   const [reconcile, setReconcile] = useState<{ updated: number; ambiguous: string[] } | null>(null);
   const lastFile = useRef<File | null>(null);
+  const batchFiles = useRef<File[]>([]);
   const upload = async (file: File | undefined, force = false) => {
     if (!file || !chosen) return;
     lastFile.current = file;
@@ -82,14 +83,27 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
      ما عُرف قسمه وما رُفض وما تُرك (قديمةٌ أقدمُ من أحدث لبرنامجها) كلُّه في تقريرٍ يُنزَّل للمراجعة. */
   const uploadAll = async (files: File[]) => {
     if (!files.length) return;
+    batchFiles.current = files;
     setBusy(true); setRejection(null); setError(""); setOutcome(null); setReconcile(null);
     const state = { phase: "read" as BatchPhase, done: 0, total: files.length, ok: 0, skipped: 0, failed: 0, prereqLinked: 0, prereqPrinted: 0 };
     const rows: ReportRow[] = files.map(file => ({ file: file.name, status: "rejected" }));
     const publish = () => setBatch({ ...state, rows: rows.map(row => ({ ...row })) });
     publish();
+    /* انقطاعٌ عابر (شبكة، 5xx، 429) لا يُسقط الملف: ثلاث محاولات بانتظارٍ متزايد، وآخر خطأٍ يُسجَّل في التقرير. */
+    const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     const post = async (path: string, file: File) => {
-      const response = await fetch(path, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await file.arrayBuffer() });
-      return { response, data: await response.json().catch(() => ({} as any)) };
+      let last = "";
+      const body = await file.arrayBuffer().catch((e: any) => { last = `قراءة الملف: ${e?.name || ""} ${e?.message || ""}`.trim(); return null; });
+      if (!body) throw new Error(last || "تعذّرت قراءة الملف من الجهاز");
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt) await wait(1500 * attempt);
+        try {
+          const response = await fetch(path, { method: "POST", credentials: "include", headers: { "content-type": "application/octet-stream" }, body });
+          if ([429, 502, 503, 504].includes(response.status) && attempt < 2) { last = `HTTP ${response.status}`; continue; }
+          return { response, data: await response.json().catch(() => ({} as any)) };
+        } catch (e: any) { last = `${e?.name || "خطأ"}: ${e?.message || ""}`.trim(); }
+      }
+      throw new Error(last || "انقطع الاتصال");
     };
     /* 1) القراءة */
     const infos: Array<{ index: number; program: string; department: string; year: number; isNew: boolean } | null> = [];
@@ -102,7 +116,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
           if (data.isNew && Array.isArray(data.others)) othersOf.push(data.others);
           Object.assign(rows[index], { program: data.program, programName: data.programName, year: data.year, era: data.isNew ? "new" : "old" });
         } else { infos.push(null); rows[index] = { ...rows[index], status: "unreadable", reason: "الملف غير مقروء" }; state.failed += 1; }
-      } catch { infos.push(null); rows[index] = { ...rows[index], status: "unreadable", reason: "تعذّر الرفع" }; state.failed += 1; }
+      } catch (e: any) { infos.push(null); rows[index] = { ...rows[index], status: "unreadable", reason: "تعذّر الرفع", detail: String(e?.message || e) }; state.failed += 1; }
       state.done += 1; publish();
     }
     /* 2) القديمة المتكررة لبرنامجٍ واحد: الأحدث وحدها */
@@ -122,8 +136,8 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
       try {
         const { response, data } = await post("/api/plan-review/sheet/import", files[item.index]);
         if (response.ok) { accepted.push(item.index); state.ok += 1; last = { sectionId: Number(data.sectionId || 0), planId: String(data.planId || "") }; rows[item.index] = { ...rows[item.index], status: "ok", ...pick(data) }; }
-        else { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: data.rejection?.kind === "department" ? "لا قسم بهذا الاسم أو الرمز" : (SHORT[data.rejection?.kind]?.title || data.error || "تعذّر"), detail: data.rejection?.message }; }
-      } catch { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: "تعذّر الرفع" }; }
+        else { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: data.rejection?.kind === "department" ? "لا قسم بهذا الاسم أو الرمز" : (SHORT[data.rejection?.kind]?.title || data.error || "تعذّر"), detail: data.rejection?.message || `HTTP ${response.status}` }; }
+      } catch (e: any) { state.failed += 1; rows[item.index] = { ...rows[item.index], status: "rejected", reason: "تعذّر الرفع", detail: String(e?.message || e) }; }
       state.done += 1; publish();
     }
     /* مقررات الأقسام التي لا صحيفة لها (الخدمية): الأشيع بين الصحائف الجديدة، ولا أغلبية = تُذكر ولا تُمسّ */
@@ -148,7 +162,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
     /* 4) مرورٌ ثانٍ على ما قُبل: مسبقٌ لمقرر قسمٍ رُفع بعده يُربط الآن */
     state.phase = "prereq"; state.done = 0; state.total = accepted.length; publish();
     for (const index of accepted) {
-      try { const { response, data } = await post("/api/plan-review/sheet/import", files[index]); if (response.ok) rows[index] = { ...rows[index], ...pick(data) }; } catch { /* المرور الأول كفى */ }
+      try { const { response, data } = await post("/api/plan-review/sheet/import", files[index]); if (response.ok) { const again = pick(data); rows[index] = { ...rows[index], prereqLinked: again.prereqLinked, prereqPrinted: again.prereqPrinted, unresolved: again.unresolved, differsOther: again.differsOther, noDepartment: again.noDepartment }; } } catch { /* المرور الأول كفى */ }
       state.done += 1; publish();
     }
     for (const index of accepted) { state.prereqLinked += rows[index].prereqLinked || 0; state.prereqPrinted += rows[index].prereqPrinted || 0; }
@@ -166,6 +180,9 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
     link.href = url; link.download = "تقرير-رفع-الصحف.json"; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
+  /* ملفاتٌ سقطت بانقطاعٍ عابر (لا برفضٍ من النظام): تُعاد وحدها. */
+  const transientFailed = () => (batch?.rows || []).map((row, index) => (row.status === "unreadable" || (row.status === "rejected" && row.reason === "تعذّر الرفع") ? batchFiles.current[index] : null)).filter((file): file is File => Boolean(file));
 
   const short = rejection ? SHORT[rejection.kind] : undefined;
   return (
@@ -214,6 +231,7 @@ export default function PlanSheetUpload({ targets, sectionId, onDone }: { target
           {batch.skipped ? <span title="قديمةٌ أقدمُ من أحدث لبرنامجها: تُركت"><History aria-hidden="true" /> {batch.skipped}</span> : null}
           {batch.phase === "done" && batch.prereqPrinted ? <span title="مسبقات مربوطة من المطبوعة؛ الباقي نصيحةُ PEN أو مقرراتُ أقسامٍ لم تُرفع صحائفها"><Link2 aria-hidden="true" /> {batch.prereqLinked}/{batch.prereqPrinted}</span> : null}
           <small>{batch.phase === "done" ? "تم" : `${batch.phase === "read" ? "قراءة" : batch.phase === "upload" ? "رفع" : "المسبقات"} · ${batch.done} / ${batch.total}`}</small>
+          {batch.phase === "done" && !busy && transientFailed().length ? <button type="button" className="btn btn-secondary" onClick={() => { const again = transientFailed(); void uploadAll(again); }} data-guide-ignore="إعادة رفع الملفات التي انقطع رفعها داخل شاشة مراجعة الصحيفة"><History aria-hidden="true" size={16} /> أعد {transientFailed().length} فاشلة</button> : null}
           {batch.phase === "done" ? <button type="button" className="btn btn-secondary" onClick={downloadReport} data-guide-ignore="تنزيل تقرير رفع الصحائف للمراجعة داخل شاشة مراجعة الصحيفة"><Download aria-hidden="true" size={16} /> تقرير المراجعة</button> : null}
           {batch.rows.some(row => row.status !== "ok" && row.status !== "skipped") ? <ul>{batch.rows.filter(row => row.status !== "ok" && row.status !== "skipped").map((row, index) => <li key={index}><b>{row.file.replace(/\.pdf$/i, "")}</b> · {row.reason}</li>)}</ul> : null}
         </div>
