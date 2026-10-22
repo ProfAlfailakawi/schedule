@@ -8,7 +8,6 @@ import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview, { PageReviewWait } from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
-import StudentQrButton from "./StudentQrButton";
 import SectionPlanning from "./SectionPlanning";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { isAssignableInstructor } from "../utils/instructorStatus";
@@ -1628,8 +1627,6 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <p>جدول القسم لمن يحمل الرابط، أو بطاقة لكل أستاذ يطلب منها تعديل جدوله.</p>
                 </div>
                 {termIsArchive(terms.find(row => Number(row.AdTermId) === Number(termId)), terms) ? null : <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} appearance="primary" />}
-                {/* رمزُ QR للطلبة: جدولُ القسم المعتمد للفصل الجاري دائماً. */}
-                {collegeId && sectionId ? <StudentQrButton data-guide-feature-id="schedule.tool.data" collegeId={collegeId} sectionId={sectionId} termId={termId} /> : null}
               </div>
             </>
           ) : null}

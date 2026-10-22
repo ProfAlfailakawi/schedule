@@ -97,3 +97,9 @@
 .pi-stack-key b{color:var(--ink);font-variant-numeric:tabular-nums}
 .pi-note{color:var(--muted)}
 .pi-how summary{display:flex;align-items:center;gap:6px;cursor:pointer}
+
+/* كلمةُ الثقة في الصفوف المصغّرة، وحالةُ «بلا تاريخ» بدل رسمٍ فارغ، ومفتاحُ رمز الثقة في الدليل. */
+.pi-conf .pi-conf-word{font-size:var(--t-xs);font-weight:600;color:var(--muted)}
+.pi-series-none{inline-size:92px;text-align:center;color:var(--muted);font-size:var(--t-xs)}
+.pi-legend .pi-legend-conf{display:inline-flex;align-items:center;gap:4px}
+.pi-legend .k-conf{inline-size:14px;block-size:10px;border-radius:2px;background:linear-gradient(90deg,var(--success) 0 30%,transparent 30% 35%,var(--success) 35% 65%,transparent 65% 70%,var(--success) 70% 100%)}

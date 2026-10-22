@@ -117,11 +117,11 @@ function p2Registry() {
   state.schedules.filter(r => r.AdTermId === 1 && !String(r.fdetail || "").includes("حالة تجريبية مقصودة")).forEach(r => perHall.set(String(r.roomId), (perHall.get(String(r.roomId)) || 0) + 1));
   check(Math.max(...perHall.values()) <= 5, "ولا قاعةٌ تحمل أكثر من خمس محاضرات — فلا «نقطة اعتماد حساسة» مصطنعة");
   /* فصلٌ جارٍ وفصلٌ ثانٍ يختبر إحالة كشف التسجيل عند غياب كشفه. */
-  check(state.terms.length === 2 && state.terms.some((term: any) => term.AdTermName === "الفصل الثاني 2026/2027"), "الفصلان الأول والثاني موجودان في الصندوق");
+  check(state.terms.length === 6 && state.terms.some((term: any) => term.AdTermName === "الفصل الثاني 2026/2027") && state.terms.filter((term: any) => /202[45]\/202[56]/.test(String(term.AdTermName)) && term.AdTermClosed === true).length === 4, "الفصلان الأول والثاني موجودان في الصندوق، ومعهما أربعةُ فصولٍ سابقة مغلقة (تاريخٌ للتنبّؤ وبصمة القسم)");
   const [current] = state.terms;
   const day = 86_400_000, startOf = (t: any) => Date.parse(t.AdTermStart), endOf = (t: any) => startOf(t) + t.AdTermWeeks * 7 * day;
   check(startOf(current) <= Date.now() && endOf(current) > Date.now(), `الفصل الجاري جارٍ اليوم (${current.AdTermName})`);
-  check(/2026\/2027/.test(String(current.AdTermName)) && state.schedules.every(r => r.AdTermId === current.AdTermId), "وهو من السنة الدراسية 2026/2027 وكلُّ الجداول فيه");
+  check(/2026\/2027/.test(String(current.AdTermName)) && state.schedules.some(r => r.AdTermId === current.AdTermId) && state.schedules.every(r => r.AdTermId === current.AdTermId || state.terms.some((term: any) => term.AdTermId === r.AdTermId && term.AdTermClosed === true)), "وهو من السنة الدراسية 2026/2027 وجداولُه فيه، وما سواه جداولُ تاريخٍ مغلقة");
   check(state.hallBarterRequests.some((request: any) => request.status === "pending" && request.requesterSectionId === 2 && request.ownerSectionId === 1 && request.roomHall === "301"), "طلب استعارة تجريبي بين قسمين مختلفين");
   check(state.registrationStats?.some((row: any) => row.termId === 1 && row.remainingSource?.column === "unregistered")
     && state.registrationStats?.some((row: any) => row.termId === 2 && row.remainingSource == null), "كشف الفصل الأول موجود والثاني بلا كشف لاختبار fallback");

@@ -197,13 +197,33 @@ const OFFERINGS: Record<number, ReadonlyArray<readonly [code: string, sections: 
 };
 
 const COHORT_SIZE = 6;
-function placeTerm(termId: number, courses: AdCourse[], startId: number): FSchedule[] {
+
+/* ── تاريخٌ للديمو: أربعة فصولٍ سابقة ────────────────────────────────────────
+ *
+ * التنبّؤ وبصمة القسم يقرآن الفصولَ السابقة، ولا فصلَ سابقاً بلا تاريخ: فتظهر «تاريخ غير كافٍ».
+ * فللقسم فصلان من كل سنة (الأول والثاني) لسنتين دراسيتين، بجداولَ تُبنى بالخوارزمية نفسها وبعدد
+ * شعبٍ يتبدّل قليلاً بين فصلٍ وفصل — مقرراتٌ يتصاعد طلبُها، ومقرراتٌ ثابتة، ومقرراتٌ تتراجع —
+ * وإحصاءِ «الباقي/الشاغر» لكل فصل. كلُّها مغلقةٌ للقراءة، بلا دورة اعتماد. */
+export const DEMO_HISTORY_TERMS: ReadonlyArray<{ id: number; name: string; weeksBack: number }> = [
+  { id: 3, name: "الفصل الأول 2024/2025", weeksBack: 104 },
+  { id: 4, name: "الفصل الثاني 2024/2025", weeksBack: 82 },
+  { id: 5, name: "الفصل الأول 2025/2026", weeksBack: 52 },
+  { id: 6, name: "الفصل الثاني 2025/2026", weeksBack: 30 },
+];
+/** فرقُ عدد الشعب عن الفصل الجاري لكل مقرر (بالترتيب في قائمة الطرح)، فصلاً بعد فصل من الأقدم. */
+const HISTORY_SHAPE: ReadonlyArray<readonly number[]> = [
+  [0, 0, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [-1, 0, 0, 0], [1, 1, 0, 0], [0, 0, 0, 0],
+];
+const historyOffer = (index: number): ReadonlyArray<readonly [code: string, sections: number]> =>
+  (OFFERINGS[DEMO_TERM_CURRENT] || []).map(([code, count], order) =>
+    [code, Math.max(1, count + HISTORY_SHAPE[order % HISTORY_SHAPE.length][index])] as const);
+function placeTerm(termId: number, courses: AdCourse[], startId: number, offerOverride?: ReadonlyArray<readonly [code: string, sections: number]>): FSchedule[] {
   const rows: FSchedule[] = [];
   const halls = hallsForSection(DEMO_SECTION_ID);
   const busy = new Set<string>();
   const perDay = new Map<string, number>();
   const hallLoad = new Map<string, number>();
-  const offer = OFFERINGS[termId] || [];
+  const offer = offerOverride || OFFERINGS[termId] || [];
   const cohortSlots = new Map<number, Set<string>>();
   let index = 0;
   for (const [order, [code, count]] of offer.entries()) {
@@ -307,6 +327,11 @@ function demoTerms(now: Date): AdTerm[] {
   return [
     { AdTermId: DEMO_TERM_CURRENT, AdTermName: "الفصل الأول 2026/2027", AdTermStart: start.toISOString().slice(0, 10), AdTermWeeks: 15, AdTermSubmissionDeadline: new Date(now.getTime() + 7 * day).toISOString().slice(0, 10) },
     { AdTermId: DEMO_TERM_SECOND, AdTermName: "الفصل الثاني 2026/2027", AdTermStart: new Date(now.getTime() + 110 * day).toISOString().slice(0, 10), AdTermWeeks: 15, AdTermSubmissionDeadline: new Date(now.getTime() + 125 * day).toISOString().slice(0, 10) },
+    /* التاريخُ بعد الجاري والقادم في القائمة: ما يُفتح افتراضياً هو الجاري. */
+    ...DEMO_HISTORY_TERMS.map(term => ({
+      AdTermId: term.id, AdTermName: term.name, AdTermStart: new Date(start.getTime() - term.weeksBack * 7 * day).toISOString().slice(0, 10),
+      AdTermWeeks: 15, AdTermClosed: true,
+    } as AdTerm)),
   ];
 }
 
@@ -336,6 +361,15 @@ const DEMO_ROLE_SEEDS: DemoRoleSeed[] = [
   { role: "committeeChair", id: 16, name: "د. رئيس لجنة جدول تكنولوجيا التعليم", login: "demo.committee" },
   { role: "standard",       id: 17, name: "أ. مستخدم عادي",                  login: "demo.standard" },
 ];
+/* حسابان إضافيان لعرض الديمو على الإدارة العامة: «المسجل العام» بصلاحيات عميد التسجيل نفسها،
+   و«الإرشاد العام» بصفة المرشد. وفي الصندوق قسمٌ واحدٌ ذو بيانات، فنطاقاهما نطاقُ صفتيهما نفسُه؛ وصفتاهما من الصفات القائمة، فلا قاعدةَ جديدة
+   ولا شاشة؛ ومفتاحُ الشريط وحدَه يميّزهما، لأن التبديل يتمّ بمفتاح الصفة. */
+interface DemoExtraSeed extends DemoRoleSeed { key: string; label: string }
+const DEMO_EXTRA_SEEDS: DemoExtraSeed[] = [
+  { key: "registrarGeneral", label: "المسجل العام", role: "registrarDean", id: 20, name: "د. المسجل العام", login: "demo.regeneral" },
+  { key: "advisorGeneral", label: "الإرشاد العام", role: "advisor", id: 21, name: "أ. الإرشاد العام", login: "demo.advisorgeneral" },
+];
+const DEMO_ACCOUNT_SEEDS: DemoRoleSeed[] = [...DEMO_ROLE_SEEDS, ...DEMO_EXTRA_SEEDS];
 const COMMITTEE_NAME = "د. رئيس لجنة جدول تكنولوجيا التعليم";
 const HEAD_NAME = "د. رئيس قسم تكنولوجيا التعليم";
 
@@ -343,13 +377,13 @@ const HEAD_NAME = "د. رئيس قسم تكنولوجيا التعليم";
 export const DEMO_SWITCH_ACCOUNTS: Array<{ role: string; label: string; SystemUserId: number }> = [];
 
 /** مفتاحُ الشريط للحساب المعروض الآن. */
-export function demoActiveRoleKey(_userId: number, role: unknown): string {
-  return String(role || "");
+export function demoActiveRoleKey(userId: number, role: unknown): string {
+  return DEMO_EXTRA_SEEDS.find(seed => seed.id === Number(userId))?.key || String(role || "");
 }
 
 export const DEMO_ROLE_ACCOUNTS: Array<{ role: AcademicRole; label: string; SystemUserId: number }> =
   DEMO_ROLE_SEEDS.map(seed => ({ role: seed.role, label: roleDefinition(seed.role).label, SystemUserId: seed.id }));
-DEMO_SWITCH_ACCOUNTS.push(...DEMO_ROLE_ACCOUNTS);
+DEMO_SWITCH_ACCOUNTS.push(...DEMO_ROLE_ACCOUNTS, ...DEMO_EXTRA_SEEDS.map(seed => ({ role: seed.key, label: seed.label, SystemUserId: seed.id })));
 
 function demoAssignsFor(role: AcademicRole): Array<{ AdCollegeId: number; AdSectionId: number }> {
   const mode = roleDefinition(role).scopeMode;
@@ -609,7 +643,9 @@ export function createDemoSandboxState(): DemoSandboxState {
   for (let index = first.length - 1; index >= 0; index -= 1) {
     if (demoDeletedIds.has(Number(first[index].id))) first.splice(index, 1);
   }
-  const schedules = [...first];
+  /* فصولُ التاريخ: جداولُها مبنيةٌ نظيفة، تُقرأ ولا تُعدَّل. */
+  const history = DEMO_HISTORY_TERMS.flatMap((term, index) => placeTerm(term.id, courses, 10_000 + term.id * 1_000, historyOffer(index)));
+  const schedules = [...first, ...history];
 
   /* أسماءُ الشاشات كما في academicRoles.ts (2…17). الرقمان 1 و13 غير موصوفين هناك فسُمّيا بما اختاره المالك (تجريبي فقط). */
   const FORM_LABELS = ["الصفحة الرئيسية", "الكليات", "الأساتذة", "الأقسام", "الفصول", "المقررات", "الجداول ومركز الذكاء", "استعلام الأساتذة", "استعلام القاعات", "استعلام الأوقات", "المستخدمون", "الصلاحيات", "لوحة المؤشرات", "تقرير القسم", "النطاقات", "القاعات والأوقات", "البحث المتقدم"];
@@ -617,7 +653,7 @@ export function createDemoSandboxState(): DemoSandboxState {
 
   const users: SystemUser[] = [
     { SystemUserId: 1, Name: "مدير البيئة التجريبية", SystemUserLogin: "demo.admin", SystemUserPass: "", IsAdminUser: true, IsActive: true, IsLocked: false, IsDeleted: false },
-    ...DEMO_ROLE_SEEDS.map(seed => ({
+    ...DEMO_ACCOUNT_SEEDS.map(seed => ({
       SystemUserId: seed.id, Name: seed.name, SystemUserLogin: seed.login, SystemUserPass: "",
       IsAdminUser: false, IsActive: true, IsLocked: false, IsDeleted: false, Role: seed.role,
       /* من يدرّس فعلاً (رئيس القسم، رئيس اللجنة، المستخدم العادي) مربوطٌ بأستاذٍ في
@@ -630,13 +666,13 @@ export function createDemoSandboxState(): DemoSandboxState {
   let legacy = 0;
   const formSecurity: FormSecurity[] = [
     ...formNames.map(form => ({ legacyId: ++legacy, SystemUserId: 1, FormNameId: form.FormNameId })),
-    ...DEMO_ROLE_SEEDS.flatMap(seed => roleDefinition(seed.role).formIds.map(formId => ({ legacyId: ++legacy, SystemUserId: seed.id, FormNameId: formId }))),
+    ...DEMO_ACCOUNT_SEEDS.flatMap(seed => roleDefinition(seed.role).formIds.map(formId => ({ legacyId: ++legacy, SystemUserId: seed.id, FormNameId: formId }))),
   ];
 
   let assignId = 0;
   const collegeUserAssign: AdCollegeUserAssign[] = [
     ...sections.map(section => ({ legacyId: ++assignId, SystemUserId: 1, AdCollegeId: section.AdCollegeId, AdSectionId: section.AdSectionId })),
-    ...DEMO_ROLE_SEEDS.flatMap(seed => demoAssignsFor(seed.role).map(a => ({ legacyId: ++assignId, SystemUserId: seed.id, AdCollegeId: a.AdCollegeId, AdSectionId: a.AdSectionId }))),
+    ...DEMO_ACCOUNT_SEEDS.flatMap(seed => demoAssignsFor(seed.role).map(a => ({ legacyId: ++assignId, SystemUserId: seed.id, AdCollegeId: a.AdCollegeId, AdSectionId: a.AdSectionId }))),
   ];
 
   const rooms: AdRoom[] = DEMO_HALLS.map((hall, index) => ({ AdRoomId: index + 1, AdRoomCode: hall.code, AdRoomHall: hall.hall, AdRoomDescrip: hall.description }));
@@ -658,6 +694,26 @@ export function createDemoSandboxState(): DemoSandboxState {
   const accepted = Object.fromEntries(plannedCourses.map(([id, sections], index) => [String(id), sections.size + (index === 0 ? 2 : 1)]));
   const remaining = Object.fromEntries(plannedCourses.map(([id], index) => [String(id), [1315, 3, 268][index]]));
   const planScope = `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${DEMO_TERM_CURRENT}`;
+  /* «الباقي/الشاغر» لكل فصلٍ سابق: من تعذّر عليه التسجيل (يتصاعد حيث زاد الطلب)، والمقاعد التي بقيت
+     فارغة (حيث تراجع). بالعمود نفسه الذي يقرؤه التنبّؤ (`unregistered`). */
+  const historyStats = DEMO_HISTORY_TERMS.map((term, index) => {
+    const remainingByCourse: Record<string, number> = {}, vacantByCourse: Record<string, number> = {};
+    (OFFERINGS[DEMO_TERM_CURRENT] || []).forEach(([code], order) => {
+      const course = courses.find(row => row.CourseCode === code);
+      if (!course) return;
+      const delta = HISTORY_SHAPE[order % HISTORY_SHAPE.length][index];
+      const capacity = Number(course.MaxStudent) || 40;
+      remainingByCourse[String(course.AdCourseId)] = delta > 0 && index === DEMO_HISTORY_TERMS.length - 1 ? Math.round(capacity * 0.7) : 0;
+      vacantByCourse[String(course.AdCourseId)] = delta < 0 ? Math.round(capacity * 0.4) : 0;
+    });
+    const scope = `${DEMO_COLLEGE_ID}:${DEMO_SECTION_ID}:${term.id}`;
+    return {
+      id: scope, scopeKey: scope, collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID, termId: term.id,
+      counts: {}, remaining: remainingByCourse, vacant: vacantByCourse, accepted: {},
+      remainingSource: { fileName: "كشف المتبقي التجريبي (تاريخ).pdf", importedAt: now, column: "unregistered" },
+      updatedAt: now, updatedBy: "بيانات الديمو",
+    };
+  });
   return {
     users, formNames, formSecurity, collegeUserAssign,
     terms: demoTerms(new Date()),
@@ -697,6 +753,7 @@ export function createDemoSandboxState(): DemoSandboxState {
         collegeId: DEMO_COLLEGE_ID, sectionId: DEMO_SECTION_ID, termId: DEMO_TERM_SECOND,
         counts: {}, remaining: {}, vacant: {}, accepted: {}, updatedAt: now, updatedBy: "بيانات الديمو",
       },
+      ...historyStats,
     ],
   };
 }

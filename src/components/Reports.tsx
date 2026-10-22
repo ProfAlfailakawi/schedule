@@ -185,7 +185,7 @@ const ROLE_LENSES: Record<string, Lens[]> = {
      أولى فارغة لا تجيب أحداً. ثم الجداول نفسها وما يُكمل الصورة. */
   dean:           ["balance", "list", "week", "fairness", "courseLoad", "visiting"],
   viceDean:       ["balance", "list", "week", "fairness", "courseLoad", "visiting", "instructor", "room", "roomInstructor", "matrix"],
-  registrarDean:  ["balance", "fairness", "courseLoad"],
+  registrarDean:  ["balance", "list", "room", "roomInstructor", "matrix"],
   registrarHead:  ["balance", "list", "room", "roomInstructor", "matrix"],
   registrarStaff: ["balance", "list", "room", "roomInstructor"],
 };
@@ -1944,7 +1944,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         </header>
         <div className="occupancy-pick-rows">
           <article>
-            <strong className="report-instructor-with-badge">{pickedInstructor?.AdInstructorName || "بدون أستاذ"}{isVisitingInstructor(selectedResult.AdInstructorId) ? <VisitingBadge compact /> : null}</strong>
+            <strong className="report-instructor-with-badge"><span className="rib-name">{pickedInstructor?.AdInstructorName || "بدون أستاذ"}</span>{isVisitingInstructor(selectedResult.AdInstructorId) ? <VisitingBadge compact /> : null}</strong>
             <span>{sectionById.get(selectedResult.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
             <em>{dayText(selectedResult) || "بلا أيام"}</em>
             <time dir="ltr">{formatScheduleTimeRange(selectedResult.fstarttime, selectedResult.fendtime)}</time>
@@ -2654,7 +2654,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       {picked.map(row => (
                         <article key={row.id}>
                           <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
-                          <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
+                          <span className="report-instructor-with-badge"><span className="rib-name">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                           <em>{dayText(row)}</em>
                           <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                         </article>

@@ -90,9 +90,9 @@ export const ACADEMIC_ROLES: AcademicRoleDefinition[] = [
   {
     id: "registrarDean",
     label: "عميد التسجيل",
-    hint: "كل الكليات، قراءة فقط: ميزان الأقسام وحالة التسليم والوارد.",
+    hint: "كل الكليات، قراءة فقط: ما يراه رئيس التسجيل من تقارير واستعلامات، وحالة التسليم والوارد، بلا أزرار قرار.",
     readOnly: true,
-    formIds: [REPORT_DEPARTMENT],
+    formIds: [REPORT_DEPARTMENT, QUERY_INSTRUCTOR, QUERY_ROOM, QUERY_ROOM_TIME],
     scopeMode: "allColleges",
     landing: "balance",
     order: 3,
