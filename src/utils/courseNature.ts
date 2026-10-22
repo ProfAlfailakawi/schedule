@@ -208,6 +208,8 @@ export function learnAll(rows: FSchedule[]): Map<number, CourseNature> {
   return out;
 }
 
+const MIN_PRIOR_TERMS = 2;
+
 /**
  * Is this appointment out of character for its course?
  *
@@ -219,6 +221,12 @@ export function learnAll(rows: FSchedule[]): Map<number, CourseNature> {
  */
 export function departsFromNature(row: FSchedule, nature?: CourseNature | null): string | null {
   if (!nature || nature.confidence === "low") return null;
+  // A department's first terms in the program have no past of their own: the
+  // "habit" would be nothing but the appointment just entered. Only terms before
+  // this row's own count as history, and at least two of them.
+  const rowTerm = Number(row.AdTermId) || 0;
+  const priorTerms = nature.seenInTerms.filter(term => !rowTerm || term < rowTerm);
+  if (priorTerms.length < MIN_PRIOR_TERMS) return null;
   const length = Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
   const days = daysOf(row).length;
   if (!length || !days) return null;

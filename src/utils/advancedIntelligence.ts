@@ -180,7 +180,12 @@ export function buildHistoricalTimeModel(rows: FSchedule[], terms: AdTerm[], yea
     const year = Number(String(term.AdTermName || "").match(/(\d{4})\s*\//)?.[1] || 0);
     return !year || year >= anchorYear - years;
   }).map(term => Number(term.AdTermId)));
-  const history = rows.filter(row => allowed.has(Number(row.AdTermId || 0)));
+  const inWindow = rows.filter(row => allowed.has(Number(row.AdTermId || 0)));
+  // A department's first term has no past: what it has just typed would be
+  // "learned" back at it as history, and flag its own new appointments as
+  // unusual. Without a single earlier term on record there is nothing to learn.
+  const anchorId = Number(anchor?.AdTermId || 0);
+  const history = anchorId && !inWindow.some(row => Number(row.AdTermId || 0) !== anchorId) ? [] : inWindow;
   const rankedTerms = [...terms].filter(term => allowed.has(Number(term.AdTermId || 0))).sort((a, b) => termChronology(b) - termChronology(a));
   const weights = new Map<number, number>();
   rankedTerms.forEach((term, index) => {
