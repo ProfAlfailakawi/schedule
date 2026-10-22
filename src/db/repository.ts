@@ -260,6 +260,7 @@ interface DBState {
   degreeRules?: AdDegreeRule[];
   visitingRosters?: VisitingRoster[];
   departmentDelegates?: DepartmentDelegateDirectory[];
+  departmentFaculty?: DepartmentDelegateDirectory[];
   teachingLoadConfig?: TeachingLoadConfig[];
   departmentRooms?: DepartmentRoomDirectory[];
   registrationStats?: RegistrationStats[];
@@ -879,6 +880,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.degreeRules)) db.degreeRules = [];
       if (!Array.isArray(db.visitingRosters)) db.visitingRosters = [];
       if (!Array.isArray(db.departmentDelegates)) db.departmentDelegates = [];
+      if (!Array.isArray(db.departmentFaculty)) db.departmentFaculty = [];
       if (!Array.isArray(db.teachingLoadConfig)) db.teachingLoadConfig = [];
       if (!Array.isArray(db.departmentRooms)) db.departmentRooms = [];
       if (!Array.isArray(db.scheduleDecisionMemories)) db.scheduleDecisionMemories = [];
@@ -6150,6 +6152,45 @@ export const Repository = {
     const unique = [...new Set([...seed, id].map(Number).filter(Boolean))];
     const row: DepartmentDelegateDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, instructorIds: unique, updatedAt: new Date().toISOString() };
     db.departmentDelegates = [...(db.departmentDelegates || []).filter(item => item.scopeKey !== scopeKey), row];
+    saveDatabase();
+  },
+
+  /* ── أعضاء هيئة تدريس القسم المسجَّلون يدوياً ────────────────────────────────
+   * دليلٌ مستقلٌّ عن دليل المنتدبين: من يضيفه المنسّق زميلاً في قسمه من قائمة
+   * الأستاذ ليس منتدباً، فلا يدخل قائمة المنتدبين ولا يُوسم بها. وهو يُقرأ
+   * عضويةً في القسم قبل أول جدول يُنشر. */
+  getDepartmentFaculty: async (collegeId: number, sectionId: number): Promise<number[]> => {
+    const members = await Repository.familyOf(collegeId, sectionId);
+    const lists = await Promise.all(members.map(async m => {
+      const scopeKey = `${m.collegeId}:${m.sectionId}`;
+      if (firestoreDb && !demoSandboxContext.getStore()) {
+        const doc = await firestoreDb.collection("departmentFaculty").doc(scopeKey.replace(/:/g, "_")).get();
+        return doc.exists ? (((doc.data() as DepartmentDelegateDirectory).instructorIds || []).map(Number)) : [];
+      }
+      return ((db.departmentFaculty || []).find(row => row.scopeKey === scopeKey)?.instructorIds || []).map(Number);
+    }));
+    return [...new Set(lists.flat().filter(id => Number.isFinite(id) && id > 0))];
+  },
+
+  addDepartmentFaculty: async (collegeId: number, sectionId: number, instructorId: number): Promise<void> => {
+    const id = Number(instructorId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const scopeKey = `${collegeId}:${sectionId}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("departmentFaculty").doc(scopeKey.replace(/:/g, "_")).set({
+        id: scopeKey, scopeKey, collegeId, sectionId,
+        instructorIds: FieldValue.arrayUnion(id),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      return;
+    }
+    const existing = (db.departmentFaculty || []).find(item => item.scopeKey === scopeKey);
+    const row: DepartmentDelegateDirectory = {
+      id: scopeKey, scopeKey, collegeId, sectionId,
+      instructorIds: [...new Set([...(existing?.instructorIds || []), id].map(Number))],
+      updatedAt: new Date().toISOString(),
+    };
+    db.departmentFaculty = [...(db.departmentFaculty || []).filter(item => item.scopeKey !== scopeKey), row];
     saveDatabase();
   },
 

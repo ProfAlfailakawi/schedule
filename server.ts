@@ -1871,7 +1871,7 @@ async function departmentInstructorIdSet(
   const pools = await Promise.all(scopes.map(async scope => {
     const [history, delegates, roster] = await Promise.all([
       Repository.getSchedulesByScope({ collegeId: scope.collegeId, sectionId: scope.sectionId }),
-      Repository.getDepartmentDelegates(scope.collegeId, scope.sectionId),
+      Promise.all([Repository.getDepartmentDelegates(scope.collegeId, scope.sectionId), Repository.getDepartmentFaculty(scope.collegeId, scope.sectionId)]).then(lists => lists.flat()),
       Repository.getVisitingRoster(scope.collegeId, scope.sectionId, termId),
     ]);
     return { history, delegates, roster };
@@ -3421,7 +3421,10 @@ async function instructorCircleFor(req: AuthenticatedRequest): Promise<Set<numbe
   const groups = await Promise.all(scopeRows.map(async row => {
     const [taught, directory] = await Promise.all([
       Repository.getInstructorsByScope(Number(row.AdSectionId), 0),
-      Repository.getDepartmentDelegates(Number(row.AdCollegeId), Number(row.AdSectionId)),
+      Promise.all([
+        Repository.getDepartmentDelegates(Number(row.AdCollegeId), Number(row.AdSectionId)),
+        Repository.getDepartmentFaculty(Number(row.AdCollegeId), Number(row.AdSectionId)),
+      ]).then(lists => lists.flat()),
     ]);
     return [...taught.map(person => Number(person.AdInstructorId)), ...directory.map(Number)];
   }));
@@ -3505,7 +3508,9 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
     const rosterIds = collegeId && termId ? await Repository.getVisitingRoster(collegeId, sectionId, termId) : [];
     /* دليل القسم اليدوي جزء من «أساتذة القسم» قبل أول جدول يُنشر: من سجّله
        المنسّق عضواً يجب أن يظهر هنا فوراً، لا بعد أول نشر يشتقّ منه التاريخ. */
-    const directoryIds = collegeId ? await Repository.getDepartmentDelegates(collegeId, sectionId) : [];
+    const directoryIds = collegeId
+      ? [...await Repository.getDepartmentDelegates(collegeId, sectionId), ...await Repository.getDepartmentFaculty(collegeId, sectionId)]
+      : [];
     const manualIds = [...new Set([...rosterIds, ...directoryIds].map(Number).filter(Boolean))];
     const manualPeople = manualIds.length
       ? (await Repository.getInstructors()).filter(person => manualIds.includes(Number(person.AdInstructorId)))
@@ -3572,7 +3577,7 @@ app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: Authentic
   /* الضمّ ذرّي: إضافتان متزامنتان لا تمحو إحداهما عضوَ الأخرى. */
   const enrol = async (instructorId: number) => {
     if (!scoped) return;
-    await Repository.addDepartmentDelegate(collegeId, sectionId, Number(instructorId));
+    await Repository.addDepartmentFaculty(collegeId, sectionId, Number(instructorId));
   };
 
   const exists = await Repository.getInstructorByCivil(AdInstructorCivil);
@@ -9774,6 +9779,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const preferredInstructorIds=new Set<number>([
     ...sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)),
     ...departmentDelegates.map(Number),
+    ...(await Repository.getDepartmentFaculty(collegeId,sectionId)).map(Number),
     ...visitingRoster.map(Number),
   ].filter((id:number)=>Number.isFinite(id)&&id>0));
   /* ── القسم الذي يستورد جدوله الأول ────────────────────────────────────────
@@ -15093,7 +15099,7 @@ const isPersonalStaffLink = (link: ScheduleShareLink) => link.kind === "staff" &
 async function personalLinkEligibleIds(collegeId: number, sectionId: number, termId: number): Promise<Set<number>> {
   const [rows, delegates] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
-    Repository.getDepartmentDelegates(collegeId, sectionId).catch(() => [] as number[]),
+    Promise.all([Repository.getDepartmentDelegates(collegeId, sectionId), Repository.getDepartmentFaculty(collegeId, sectionId)]).then(lists => lists.flat()).catch(() => [] as number[]),
   ]);
   return new Set([...rows.map(row => Number(row.AdInstructorId)), ...delegates.map(Number)].filter(id => id > 0));
 }
