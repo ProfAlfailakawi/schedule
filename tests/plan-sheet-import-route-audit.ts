@@ -25,6 +25,7 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
       { AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "01", AdSectionName: "قسم أصول التربية" },
       { AdSectionId: 13, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم المواد التأسيسية" },
       { AdSectionId: 14, AdCollegeId: 1, AdSectionCode: "142", AdSectionName: "قسم تكنولوجيا التعليم" },
+      { AdSectionId: 16, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
       { AdSectionId: 15, AdCollegeId: 1, AdSectionCode: "09", AdSectionName: "قسم تكنولوجيا التعليم" },
     ],
     instructors: [], schedules: [], rooms: [], courseTransitions: [],
@@ -109,6 +110,13 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
     const sound = afterCourses.filter(row => row.CourseName === "تكنولوجيا الصوت");
     check(sound.length === 2 && new Set(sound.map(row => row.CourseCode)).size === 2, "المقرر نفسه برقمين (قديم وجديد): سجلان باسمٍ مكرر ورقمين مختلفين، لا دمج بالاسم", sound.map(row => row.CourseCode));
     check(new Set(afterCourses.map(row => Number(row.CourseCode))).size === afterCourses.length, "لا رقمَ يتكرر في القسم");
+    /* قسمٌ بلا أي صحيفة (حال بقية الأقسام): القديمة أولاً ثم الجديدة، كلٌّ في صحيفتها */
+    const oldFirst = await upload("root", 16, oldPdf);
+    check(oldFirst.status === 200 && oldFirst.json.era === "old" && oldFirst.json.planName === "الصحيفة السابقة", "قسم بلا صحائف: القديمة أولاً تدخل «السابقة»", oldFirst.json);
+    const newAfter = await upload("root", 16);
+    check(newAfter.status === 200 && newAfter.json.era === "new" && newAfter.json.planId !== oldFirst.json.planId && newAfter.json.planCreated === false, "ثم الجديدة تدخل الفعّالة (أُنشئت مع السابقة)", newAfter.json);
+    const plans16 = (await Repository.getCurriculumPlans(16)).filter(plan => !plan.virtual);
+    check(plans16.length === 2 && plans16.some(plan => plan.status === "active") && plans16.some(plan => plan.status === "transition"), "صحيفتان للقسم: فعّالة وسابقة");
     const orderless = await upload("root", 15, oldPdf);
     check(orderless.status === 422 && orderless.json.rejection?.kind === "order", "قسم فعّالته وحدها: القديمة تُرفض (ارفع القديمة قبل الجديدة)", orderless.json);
   } finally { server.close(); }
